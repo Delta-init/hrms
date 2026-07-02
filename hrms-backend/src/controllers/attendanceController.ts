@@ -6,6 +6,7 @@ import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new AttendanceService();
 
+
 export const createAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = createAttendanceSchema.safeParse(req.body);
