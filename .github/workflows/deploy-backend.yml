@@ -1,0 +1,54 @@
+name: Deploy Backend
+
+# Deploys hrms-backend to the VPS over SSH.
+# Runs on every push to main that touches the backend, and can be triggered manually.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hrms-backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {}
+
+# Never run two deploys at once; cancel an in-flight one if a newer push lands.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH (password auth)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}          # VPS IP
+          username: ${{ secrets.VPS_USERNAME }}  # e.g. root
+          password: ${{ secrets.VPS_PASSWORD }}  # VPS login password
+          port: ${{ secrets.VPS_PORT }}          # usually 22
+          script_stop: true                      # abort on first failed command
+          script: |
+            set -euo pipefail
+
+            # Make bun + pm2 reachable in this non-interactive shell.
+            export PATH="$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+            APP_ROOT="${{ secrets.VPS_APP_PATH }}"   # repo root on the VPS, e.g. /root/hrms
+            echo "▶ Deploying backend from: $APP_ROOT"
+
+            cd "$APP_ROOT"
+
+            # Pull latest main. reset --hard guarantees the deploy matches origin
+            # exactly. Untracked files (like hrms-backend/.env) are preserved.
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            cd hrms-backend
+
+            # Install exactly what the lockfile specifies.
+            bun install --frozen-lockfile
+
+            # Start on first deploy, reload on every deploy after that.
+            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 save

@@ -2,7 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { AuthUser, ApiResponse, LoginResponse } from "@/types";
 
-const API_URL = process.env.API_URL ?? "http://localhost:5055/api/v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
 
 export interface ImpersonatedBy {
   id: string;
@@ -63,9 +63,11 @@ export const authOptions: NextAuthOptions = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ticket: credentials.ticket }),
         });
+       
         const json = (await res.json()) as ApiResponse<
           LoginResponse & { impersonatedBy?: ImpersonatedBy }
         >;
+         console.log(json,`${API_URL}/auth/exchange`)
         if (!res.ok || !json.success || !json.data) {
           throw new Error(json.message ?? "Session exchange failed");
         }
