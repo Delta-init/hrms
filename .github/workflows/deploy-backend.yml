@@ -50,5 +50,5 @@ jobs:
             bun install --frozen-lockfile
 
             # Start on first deploy, reload on every deploy after that.
-            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 restart hrms-api
             pm2 save
