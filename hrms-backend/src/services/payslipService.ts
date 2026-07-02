@@ -1,0 +1,144 @@
+import { Payslip } from "../models/Payslip.js";
+import { Employee } from "../models/Employee.js";
+import { Attendance } from "../models/Attendance.js";
+import { LeaveRequest } from "../models/LeaveRequest.js";
+import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/payslipValidation.js";
+import type { PaginationQuery, IEmployee } from "../types/index.js";
+import { buildPagination } from "../utils/response.js";
+
+interface PayslipQuery extends PaginationQuery {
+  employee?: string;
+  month?: string;
+}
+
+const POP = [
+  { path: "employee", select: "name employeeCode designation department salary currency" },
+  { path: "issuedBy", select: "name email" },
+];
+
+function monthBounds(month: string) {
+  const start = new Date(`${month}-01T00:00:00.000Z`);
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  return { start, end };
+}
+
+export class PayslipService {
+  async create(input: CreatePayslipInput, issuerId: string) {
+    const emp = await Employee.findById(input.employee);
+    if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+
+    const existing = await Payslip.findOne({ employee: input.employee, month: input.month });
+    if (existing) throw Object.assign(new Error("A payslip already exists for this employee and month"), { statusCode: 409 });
+
+    const { start } = monthBounds(input.month);
+    const doc = new Payslip({
+      ...input,
+      monthDate: start,
+      user: emp.user ?? null,
+      currency: input.currency || emp.currency || "AED",
+    });
+    const status = input.status ?? "draft";
+    doc.status = status;
+    if (status === "issued" || status === "paid") { doc.issuedBy = issuerId as never; doc.issuedAt = new Date(); }
+    if (status === "paid") doc.paidAt = new Date();
+    await doc.save();
+    return Payslip.findById(doc._id).populate(POP);
+  }
+
+  async list(query: PayslipQuery) {
+    const page = Math.max(1, parseInt(query.page ?? "1", 10));
+    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
+    const skip = (page - 1) * limit;
+
+    const filter: Record<string, unknown> = {};
+    if (query.employee) filter.employee = query.employee;
+    if (query.month) filter.month = query.month;
+    if (query.status) filter.status = query.status;
+
+    const sortable = new Set(["month", "netPay", "grossPay", "status", "createdAt"]);
+    const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "month";
+    const sortDir = query.sortOrder === "asc" ? 1 : -1;
+
+    const [records, total] = await Promise.all([
+      Payslip.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
+      Payslip.countDocuments(filter),
+    ]);
+    return { records, pagination: buildPagination(total, page, limit) };
+  }
+
+  async listMine(userId: string, query: PayslipQuery) {
+    const page = Math.max(1, parseInt(query.page ?? "1", 10));
+    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
+    const skip = (page - 1) * limit;
+    const filter: Record<string, unknown> = { user: userId, status: { $in: ["issued", "paid"] } };
+    if (query.month) filter.month = query.month;
+    const [records, total] = await Promise.all([
+      Payslip.find(filter).populate(POP).sort({ month: -1 }).skip(skip).limit(limit).lean(),
+      Payslip.countDocuments(filter),
+    ]);
+    return { records, pagination: buildPagination(total, page, limit) };
+  }
+
+  async getById(id: string) {
+    const record = await Payslip.findById(id).populate(POP);
+    if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+    return record;
+  }
+
+  async update(id: string, input: UpdatePayslipInput, actorId: string) {
+    const record = await Payslip.findById(id);
+    if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+
+    if (input.month !== undefined) { record.month = input.month; record.monthDate = monthBounds(input.month).start; }
+    if (input.currency !== undefined) record.currency = input.currency;
+    if (input.earnings !== undefined) record.earnings = input.earnings as never;
+    if (input.deductions !== undefined) record.deductions = input.deductions as never;
+    if (input.workingDays !== undefined) record.workingDays = input.workingDays;
+    if (input.paidDays !== undefined) record.paidDays = input.paidDays;
+    if (input.lopDays !== undefined) record.lopDays = input.lopDays;
+    if (input.notes !== undefined) record.notes = input.notes ?? undefined;
+
+    if (input.status !== undefined && input.status !== record.status) {
+      record.status = input.status;
+      if ((input.status === "issued" || input.status === "paid") && !record.issuedAt) {
+        record.issuedBy = actorId as never;
+        record.issuedAt = new Date();
+      }
+      if (input.status === "paid") record.paidAt = new Date();
+    }
+
+    await record.save();
+    return Payslip.findById(id).populate(POP);
+  }
+
+  async remove(id: string) {
+    const record = await Payslip.findByIdAndDelete(id);
+    if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+    return { message: "Payslip deleted successfully" };
+  }
+
+  /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
+  async summary(employeeId: string, month: string) {
+    const emp = await Employee.findById(employeeId).lean<IEmployee & { user?: unknown }>();
+    if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    const { start, end } = monthBounds(month);
+
+    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary: emp.salary ?? 0, currency: emp.currency ?? "AED" };
+    if (!emp.user) return base;
+
+    const [att, unpaid] = await Promise.all([
+      Attendance.find({ user: emp.user, date: { $gte: start, $lt: end } }).select("status").lean(),
+      LeaveRequest.find({ user: emp.user, type: "unpaid", status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("days").lean(),
+    ]);
+    for (const a of att) {
+      if (a.status === "present") base.present++;
+      else if (a.status === "late") base.late++;
+      else if (a.status === "half_day") base.half++;
+      else if (a.status === "absent") base.absent++;
+    }
+    base.unpaidLeaveDays = unpaid.reduce((s, l) => s + (l.days || 0), 0);
+    base.lopDays = Math.round((base.absent + base.unpaidLeaveDays + base.half * 0.5) * 100) / 100;
+    return base;
+  }
+}
