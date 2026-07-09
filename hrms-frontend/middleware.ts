@@ -19,6 +19,7 @@ export const config = {
     "/regularization/:path*",
     "/payroll/:path*",
     "/work-schedules/:path*",
+    "/resignations/:path*",
     "/users/:path*",
     "/roles/:path*",
     "/settings/:path*",

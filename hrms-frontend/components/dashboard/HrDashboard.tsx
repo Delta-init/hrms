@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper,
+  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,13 +24,14 @@ export function HrDashboard() {
   const { data, isLoading } = useDashboardSummary();
   const firstName = user?.name?.split(" ")[0] ?? "there";
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
-  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, pendingLeaves: 0, pendingRegularizations: 0 };
+  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0 };
 
   const stats = [
     { label: "Birthdays today", value: c.birthdays, icon: Cake, tint: "text-pink-600 bg-pink-500/10", href: undefined },
     { label: "On leave today", value: c.onLeaveToday, icon: Plane, tint: "text-violet-600 bg-violet-500/10", href: "/leave" },
     { label: "Pending leave", value: c.pendingLeaves, icon: CalendarClock, tint: "text-amber-600 bg-amber-500/10", href: "/leave" },
     { label: "Pending regularizations", value: c.pendingRegularizations, icon: ClipboardCheck, tint: "text-sky-600 bg-sky-500/10", href: "/regularization" },
+    { label: "Serving notice", value: c.servingNotice, icon: LogOut, tint: "text-orange-600 bg-orange-500/10", href: "/resignations" },
   ];
 
   return (
@@ -46,7 +47,7 @@ export function HrDashboard() {
       </motion.div>
 
       {/* Stat tiles */}
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {stats.map((s) => {
           const body = (
             <Card className={cn("group p-5 transition-shadow", s.href && "cursor-pointer hover:shadow-lg")}>
@@ -104,6 +105,16 @@ export function HrDashboard() {
               <PersonRow key={r._id} name={nameOf(r.user)} sub={`${REGULARIZATION_TYPE_LABELS[r.type]} · ${fmtDate(r.date)}`} tint="bg-sky-500/10 text-sky-600" icon={ClipboardCheck} badge="pending" />
             ))}</div>
           ) : <Empty text="No corrections awaiting review." />}
+        </Panel>
+
+        {/* Serving notice */}
+        <Panel icon={LogOut} title="Serving notice" tint="text-orange-600" href="/resignations">
+          {data?.servingNotice?.length ? (
+            <div className="space-y-2">{data.servingNotice.map((n) => {
+              const left = Math.ceil((new Date(n.lastWorkingDay).getTime() - Date.now()) / 86400000);
+              return <PersonRow key={n._id} name={nameOf(n.employee)} sub={`Last day ${fmtDate(n.lastWorkingDay)} · ${left > 0 ? `${left}d left` : "due"}`} tint="bg-orange-500/10 text-orange-600" icon={LogOut} badge={left <= 7 ? "soon" : undefined} />;
+            })}</div>
+          ) : <Empty text="Nobody is serving notice." />}
         </Panel>
       </div>
     </div>

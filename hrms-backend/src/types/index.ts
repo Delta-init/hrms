@@ -25,6 +25,7 @@ export const HRMS_MODULES = [
   "payroll",
   "workSchedules",
   "cards",
+  "resignations",
   "users",
   "roles",
   "settings",
@@ -198,7 +199,7 @@ export interface IDepartment extends Document {
 
 // ─── Employee ───────────────────────────────────────────────────────────────
 export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
-export type EmployeeStatus = "active" | "probation" | "on_leave" | "terminated";
+export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated";
 export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
 export type MaritalStatus = "married" | "unmarried";
@@ -283,6 +284,7 @@ export interface IEmployee extends Document {
   oldCompanyExperience?: string;
   confirmationDate?: Date | null;
   probationPeriodDays?: number;
+  noticePeriodDays?: number;
   reportingTo?: Types.ObjectId | IEmployee | IUser | null;
   reportingToKind?: "Employee" | "User";
 
@@ -427,6 +429,26 @@ export interface ICard extends Document {
   notes?: string;
   /** Virtual — "expired" when expiryDate is in the past, else "active". */
   status?: CardStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Resignation & Notice Period ────────────────────────────────────────────
+export type ResignationStatus = "pending" | "accepted" | "rejected" | "withdrawn" | "relieved";
+
+export interface IResignation extends Document {
+  _id: Types.ObjectId;
+  employee: Types.ObjectId | IEmployee;
+  /** Login account of the employee, if any (for convenience). */
+  user?: Types.ObjectId | IUser | null;
+  resignationDate: Date;
+  noticePeriodDays: number;
+  lastWorkingDay: Date;
+  reason?: string;
+  status: ResignationStatus;
+  reviewedBy?: Types.ObjectId | IUser | null;
+  reviewedAt?: Date | null;
+  reviewNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }

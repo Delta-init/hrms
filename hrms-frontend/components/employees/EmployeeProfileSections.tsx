@@ -70,6 +70,7 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all" 
             <Item label="Joining date" value={fmtDate(e.joiningDate)} icon={CalendarDays} />
             <Item label="Confirmation date" value={fmtDate(e.confirmationDate)} icon={CalendarDays} />
             <Item label="Probation" value={e.probationPeriodDays ? `${e.probationPeriodDays} days` : "—"} />
+            <Item label="Notice period" value={e.noticePeriodDays != null ? `${e.noticePeriodDays} days` : "—"} />
             <Item label="Current experience" value={experience(e.joiningDate)} icon={Clock3} accent />
             <Item label="Previous experience" value={e.oldCompanyExperience ?? "—"} full />
           </Grid>

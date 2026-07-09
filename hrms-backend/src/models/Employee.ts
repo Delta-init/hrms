@@ -110,7 +110,7 @@ const employeeSchema = new Schema<IEmployee>(
     joiningDate: { type: Date, default: null },
     status: {
       type: String,
-      enum: ["active", "probation", "on_leave", "terminated"],
+      enum: ["active", "probation", "on_leave", "notice_period", "terminated"],
       default: "active",
     },
     location: { type: String, trim: true, maxlength: [120, "Location cannot exceed 120 characters"] },
@@ -131,6 +131,7 @@ const employeeSchema = new Schema<IEmployee>(
     oldCompanyExperience: { type: String, trim: true, maxlength: 1000 },
     confirmationDate: { type: Date, default: null },
     probationPeriodDays: { type: Number, min: 0, default: 0 },
+    noticePeriodDays: { type: Number, min: 0, default: 60 },
     // Manager can be either an Employee record or a login User (dynamic ref).
     reportingTo: { type: Schema.Types.ObjectId, refPath: "reportingToKind", default: null },
     reportingToKind: { type: String, enum: ["Employee", "User"], default: "Employee" },

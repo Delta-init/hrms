@@ -20,6 +20,7 @@ const statusStyles: Record<string, string> = {
   active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   probation: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   on_leave: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+  notice_period: "bg-orange-500/10 text-orange-600 border-orange-500/20",
   terminated: "bg-red-500/10 text-red-600 border-red-500/20",
 };
 const deptName = (e: Employee) => (e.department && typeof e.department === "object" ? e.department.name : null);

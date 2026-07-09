@@ -1,6 +1,7 @@
 import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
+import { Resignation } from "../models/Resignation.js";
 
 /** Employees whose birthday (month + day of dob) falls on the given date. */
 export async function birthdaysOn(date = new Date()) {
@@ -30,7 +31,7 @@ export class DashboardService {
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
-    const [birthdays, onLeaveToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount] = await Promise.all([
+    const [birthdays, onLeaveToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount] = await Promise.all([
       birthdaysOn(now),
       LeaveRequest.find({ status: "approved", startDate: { $lte: end }, endDate: { $gte: start } })
         .populate("user", "name email designation").sort({ startDate: 1 }).limit(50).lean(),
@@ -40,6 +41,9 @@ export class DashboardService {
         .populate("user", "name email designation").sort({ createdAt: -1 }).limit(8).lean(),
       LeaveRequest.countDocuments({ status: "pending" }),
       Regularization.countDocuments({ status: "pending" }),
+      Resignation.find({ status: "accepted" })
+        .populate("employee", "name employeeCode designation").sort({ lastWorkingDay: 1 }).limit(8).lean(),
+      Resignation.countDocuments({ status: "accepted" }),
     ]);
 
     return {
@@ -48,11 +52,13 @@ export class DashboardService {
       onLeaveToday,
       pendingLeaves,
       pendingRegularizations: pendingRegs,
+      servingNotice,
       counts: {
         birthdays: birthdays.length,
         onLeaveToday: onLeaveToday.length,
         pendingLeaves: pendingLeaveCount,
         pendingRegularizations: pendingRegCount,
+        servingNotice: servingNoticeCount,
       },
     };
   }

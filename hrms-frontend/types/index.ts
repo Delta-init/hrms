@@ -20,6 +20,7 @@ export const HRMS_MODULES = [
   "payroll",
   "workSchedules",
   "cards",
+  "resignations",
   "users",
   "roles",
   "settings",
@@ -37,6 +38,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   regularization: "Regularization",
   workSchedules: "Work Schedules",
   cards: "Cards",
+  resignations: "Resignations",
   users: "Users",
   roles: "Roles & Permissions",
   settings: "Settings",
@@ -127,7 +129,7 @@ export type DepartmentSimple = Pick<Department, "_id" | "name" | "code">;
 
 // ─── Employee ────────────────────────────────────────────────────────────────
 export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
-export type EmployeeStatus = "active" | "probation" | "on_leave" | "terminated";
+export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated";
 
 export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   full_time: "Full-time",
@@ -140,6 +142,7 @@ export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   active: "Active",
   probation: "Probation",
   on_leave: "On Leave",
+  notice_period: "Notice Period",
   terminated: "Terminated",
 };
 
@@ -234,6 +237,7 @@ export interface Employee {
   oldCompanyExperience?: string;
   confirmationDate?: string | null;
   probationPeriodDays?: number;
+  noticePeriodDays?: number;
   reportingTo?: EmployeeRef | { _id: string; name: string; email?: string } | string | null;
   reportingToKind?: "Employee" | "User";
 
@@ -505,13 +509,21 @@ export interface RegularizationLite {
   date: string;
   status: RegularizationStatus;
 }
+export interface NoticeLite {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  resignationDate: string;
+  lastWorkingDay: string;
+  noticePeriodDays: number;
+}
 export interface DashboardSummary {
   date: string;
   birthdays: BirthdayPerson[];
   onLeaveToday: LeaveLite[];
   pendingLeaves: LeaveLite[];
   pendingRegularizations: RegularizationLite[];
-  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number };
+  servingNotice: NoticeLite[];
+  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number };
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
@@ -527,6 +539,32 @@ export interface Card {
   expiryDate?: string | null;
   notes?: string;
   status?: CardStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Resignation ──────────────────────────────────────────────────────────────
+export type ResignationStatus = "pending" | "accepted" | "rejected" | "withdrawn" | "relieved";
+export const RESIGNATION_STATUS_LABELS: Record<ResignationStatus, string> = {
+  pending: "Pending",
+  accepted: "Serving notice",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+  relieved: "Relieved",
+};
+
+export interface Resignation {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string; department?: DepartmentSimple | string | null } | string | null;
+  user?: { _id: string; name: string; email?: string } | string | null;
+  resignationDate: string;
+  noticePeriodDays: number;
+  lastWorkingDay: string;
+  reason?: string;
+  status: ResignationStatus;
+  reviewedBy?: { _id: string; name: string } | string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const employmentType = z.enum(["full_time", "part_time", "contract", "intern"]);
-const status = z.enum(["active", "probation", "on_leave", "terminated"]);
+const status = z.enum(["active", "probation", "on_leave", "notice_period", "terminated"]);
 const title = z.enum(["mr", "mrs", "ms", "dr"]);
 const gender = z.enum(["male", "female", "other"]);
 const marital = z.enum(["married", "unmarried"]);
@@ -66,6 +66,7 @@ const profileFields = {
   oldCompanyExperience: z.string().max(1000).optional().nullable(),
   confirmationDate: z.coerce.date().optional().nullable(),
   probationPeriodDays: z.coerce.number().min(0).optional(),
+  noticePeriodDays: z.coerce.number().min(0).optional(),
   reportingTo: z.string().optional().nullable(),
   reportingToKind: z.enum(["Employee", "User"]).optional(),
   bank: bankSchema.optional(),

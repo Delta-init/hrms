@@ -57,6 +57,7 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
         designation: e.designation ?? "", department: idOf(e.department), location: e.location ?? "",
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
+        noticePeriodDays: e.noticePeriodDays ?? 60,
         // Composite "kind:id" so a manager can be an Employee or a login User.
         reportingTo: idOf(e.reportingTo) ? `${e.reportingToKind ?? "Employee"}:${idOf(e.reportingTo)}` : "",
         oldCompanyExperience: e.oldCompanyExperience ?? "",
@@ -192,6 +193,7 @@ export function EmployeeSectionDialog({
               <div className={field}><Label>Joining date</Label><Input type="date" {...register("joiningDate")} /></div>
               <div className={field}><Label>Confirmation date</Label><Input type="date" {...register("confirmationDate")} /></div>
               <div className={field}><Label>Probation period (days)</Label><Input type="number" min="0" {...register("probationPeriodDays")} /></div>
+              <div className={field}><Label>Notice period (days)</Label><Input type="number" min="0" {...register("noticePeriodDays")} /></div>
               <div className={`${field} col-span-2`}><Label>Previous company experience</Label><Textarea rows={3} {...register("oldCompanyExperience")} /></div>
             </div>
           )}

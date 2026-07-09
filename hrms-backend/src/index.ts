@@ -8,6 +8,7 @@ import { env } from "./config/env.js";
 import routes from "./routes/index.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import { startBirthdayCron } from "./jobs/birthdayJob.js";
+import { startResignationCron } from "./jobs/resignationJob.js";
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use(errorHandler);
 const start = async () => {
   await connectDB();
   startBirthdayCron();
+  startResignationCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);
