@@ -6,6 +6,8 @@ import {
   refreshToken,
   getProfile,
   changePassword,
+  getMyProfile,
+  completeProfile,
 } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -21,5 +23,8 @@ router.post("/refresh-token", refreshToken);
 router.get("/profile", authenticate, getProfile);
 router.get("/me", authenticate, getProfile);
 router.put("/change-password", authenticate, changePassword);
+// Self-service onboarding (fills the caller's own employee record).
+router.get("/my-profile", authenticate, getMyProfile);
+router.post("/complete-profile", authenticate, completeProfile);
 
 export default router;

@@ -50,6 +50,12 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    // When false, the user is sent through the onboarding form on login to
+    // fill mandatory details on their linked employee record.
+    profileCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

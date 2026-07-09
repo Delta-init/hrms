@@ -59,6 +59,7 @@ export interface IUser extends Document {
   workSchedule?: Types.ObjectId | IWorkSchedule | null;
   status: "active" | "inactive" | "invited";
   mustResetPassword: boolean;
+  profileCompleted: boolean;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;

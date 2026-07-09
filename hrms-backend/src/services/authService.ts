@@ -1,6 +1,7 @@
 import { User } from "../models/User.js";
+import { Employee } from "../models/Employee.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken, signTicket, verifyTicket } from "../utils/jwt.js";
-import type { LoginInput, ChangePasswordInput, SetPasswordInput } from "../validations/authValidation.js";
+import type { LoginInput, ChangePasswordInput, SetPasswordInput, CompleteProfileInput } from "../validations/authValidation.js";
 import type { IUser, IRole } from "../types/index.js";
 
 export class AuthService {
@@ -123,6 +124,47 @@ export class AuthService {
     const userObj = user.toJSON() as unknown as Omit<IUser, "password">;
 
     return { accessToken, refreshToken, user: userObj };
+  }
+
+  // ── Onboarding ───────────────────────────────────────────────────────────
+  /**
+   * The caller's linked employee (to prefill the onboarding form). If they have
+   * no employee to onboard, mark them complete so the gate stops prompting.
+   */
+  async getMyProfile(userId: string) {
+    const employee = await Employee.findOne({ user: userId })
+      .populate("department", "name code")
+      .populate("reportingTo", "name employeeCode");
+    if (!employee) {
+      await User.findByIdAndUpdate(userId, { profileCompleted: true });
+      return { employee: null, profileCompleted: true };
+    }
+    const user = await User.findById(userId).select("profileCompleted");
+    return { employee, profileCompleted: !!user?.profileCompleted };
+  }
+
+  /** Save the mandatory onboarding details onto the caller's own employee. */
+  async completeProfile(userId: string, input: CompleteProfileInput) {
+    const employee = await Employee.findOne({ user: userId });
+    if (!employee) {
+      throw Object.assign(
+        new Error("No employee is linked to your account. Please contact your administrator."),
+        { statusCode: 400 }
+      );
+    }
+    const { education, emergencyContact, ...rest } = input;
+    Object.assign(employee, rest, {
+      education: [education],
+      emergencyContacts: [emergencyContact],
+    });
+    await employee.save();
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { profileCompleted: true },
+      { new: true }
+    ).populate("role");
+    return user!.toJSON() as unknown as Omit<IUser, "password">;
   }
 
   // ── Impersonation ──────────────────────────────────────────────────────────

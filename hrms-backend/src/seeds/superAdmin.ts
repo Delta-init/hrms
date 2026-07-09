@@ -105,6 +105,14 @@ async function seed() {
       console.log(`ℹ️  Super Admin user already exists: ${env.SUPER_ADMIN_EMAIL}`);
     }
 
+    // Backfill: users that predate the onboarding feature (no profileCompleted
+    // field yet) are marked complete so only NEW activations are prompted.
+    const backfill = await User.updateMany(
+      { profileCompleted: { $exists: false } },
+      { $set: { profileCompleted: true } }
+    );
+    if (backfill.modifiedCount > 0) console.log(`✅ Marked ${backfill.modifiedCount} existing user(s) profile-complete`);
+
     // Default work schedules
     const schedules = [
       { name: "Dubai Day Shift", description: "Standard 9-6 shift, Dubai", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5], graceMinutes: 10 },

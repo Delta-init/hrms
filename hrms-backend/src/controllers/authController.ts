@@ -6,6 +6,7 @@ import {
   refreshTokenSchema,
   changePasswordSchema,
   setPasswordSchema,
+  completeProfileSchema,
 } from "../validations/authValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -89,6 +90,29 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response, n
 
     const result = await authService.changePassword(req.user!.userId, parsed.data);
     sendSuccess(res, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = await authService.getMyProfile(req.user!.userId);
+    sendSuccess(res, "Profile retrieved", data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const completeProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = completeProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors);
+      return;
+    }
+    const user = await authService.completeProfile(req.user!.userId, parsed.data);
+    sendSuccess(res, "Profile completed", user);
   } catch (error) {
     next(error);
   }

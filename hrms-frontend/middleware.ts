@@ -10,6 +10,7 @@ export default withAuth({
 
 export const config = {
   matcher: [
+    "/onboarding",
     "/dashboard/:path*",
     "/employees/:path*",
     "/departments/:path*",

@@ -259,6 +259,7 @@ export interface AuthUser {
   role: Role;
   designation?: string;
   status: "active" | "inactive" | "invited";
+  profileCompleted?: boolean;
 }
 
 export interface LoginResponse {

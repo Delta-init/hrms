@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
+import { OnboardingGate } from "@/components/layout/OnboardingGate";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -11,6 +12,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         enableSystem
         disableTransitionOnChange
       >
+    <OnboardingGate />
     <div className="flex h-screen w-full overflow-hidden bg-muted/30">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col p-2 md:p-3">

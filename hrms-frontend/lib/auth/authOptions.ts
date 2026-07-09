@@ -81,7 +81,7 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         const u = user as unknown as {
           appUser: AuthUser;
@@ -94,6 +94,11 @@ export const authOptions: NextAuthOptions = {
         token.appUser = u.appUser;
         // Set/clear impersonation on every (re)auth so restore wipes it.
         token.impersonatedBy = u.impersonatedBy ?? undefined;
+      }
+      // Session update (e.g. after onboarding) — patch the cached appUser so the
+      // gate stops redirecting without a full re-login.
+      if (trigger === "update" && session?.appUser) {
+        token.appUser = { ...(token.appUser as AuthUser), ...(session.appUser as Partial<AuthUser>) };
       }
       return token;
     },
