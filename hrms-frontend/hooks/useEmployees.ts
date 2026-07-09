@@ -25,6 +25,21 @@ export const useEmployee = (id?: string) =>
     enabled: !!id,
   });
 
+/** Resolve the employee linked to a login account (404 → null, no retry). */
+export const useEmployeeByUser = (userId?: string) =>
+  useQuery({
+    queryKey: [...KEY, "by-user", userId],
+    queryFn: async () => {
+      try {
+        return (await api.get<ApiResponse<Employee>>(`/employees/by-user/${userId}`)).data.data!;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!userId,
+    retry: false,
+  });
+
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({

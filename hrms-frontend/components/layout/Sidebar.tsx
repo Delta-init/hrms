@@ -15,7 +15,6 @@ import {
   Wallet,
   Clock,
   ClipboardCheck,
-  CreditCard,
   Settings,
   X,
 } from "lucide-react";
@@ -47,7 +46,6 @@ export const navItems: {
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
-  { href: "/cards", label: "Cards", icon: CreditCard, permModule: "cards" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
   { href: "/settings", label: "Settings", icon: Settings, permModule: null },

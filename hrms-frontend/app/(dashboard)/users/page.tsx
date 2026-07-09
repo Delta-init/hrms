@@ -1,12 +1,11 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Users, Plus, MoreHorizontal, Pencil, Trash2, Eye, ContactRound } from "lucide-react";
 import { useUsers } from "@/hooks/useUsers";
 import { useRolesSimple } from "@/hooks/useRoles";
 import { useAuth, useImpersonate } from "@/hooks/useAuth";
 import { toast } from "@/lib/toast";
-import api from "@/lib/axios";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -31,26 +30,14 @@ const statusStyles: Record<string, string> = {
 
 export default function UsersPage() {
   const { user: me, hasPermission } = useAuth();
-  const router = useRouter();
   const canCreate = hasPermission("users", "create");
   const canEdit = hasPermission("users", "edit");
   const canDelete = hasPermission("users", "delete");
-  const canEditEmployee = hasPermission("employees", "edit");
   const impersonate = useImpersonate();
 
   const doImpersonate = async (id: string) => {
     try { await impersonate(id); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Could not impersonate"); }
-  };
-
-  // Resolve the employee linked to this login account, then open its profile.
-  const openEmployeeProfile = async (userId: string) => {
-    try {
-      const res = await api.get<{ data: { _id: string } }>(`/employees/by-user/${userId}`);
-      router.push(`/employees/${res.data.data._id}`);
-    } catch {
-      toast.error("No employee profile is linked to this user.");
-    }
   };
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
@@ -68,7 +55,7 @@ export default function UsersPage() {
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(u.name)}</div>
           <div className="min-w-0">
-            <p className="truncate font-medium">{u.name}</p>
+            <Link href={`/users/${u._id}`} className="block truncate font-medium hover:text-primary hover:underline">{u.name}</Link>
             <p className="truncate text-xs text-muted-foreground">{u.email}</p>
           </div>
         </div>
@@ -83,19 +70,19 @@ export default function UsersPage() {
     },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
-      render: (u) => (canEdit || canDelete || canEditEmployee) ? (
+      render: (u) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild className="cursor-pointer"><Link href={`/users/${u._id}`}><ContactRound className="mr-2 h-4 w-4" />Open profile &amp; cards</Link></DropdownMenuItem>
             {canEdit && <DropdownMenuItem onClick={() => { setSelected(u); setDialogOpen(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit user</DropdownMenuItem>}
-            {canEditEmployee && <DropdownMenuItem onClick={() => openEmployeeProfile(u._id)} className="cursor-pointer"><ContactRound className="mr-2 h-4 w-4" />Edit employee profile</DropdownMenuItem>}
             {canEdit && u._id !== me?._id && !(typeof u.role === "object" && u.role.isSystemRole) && (
               <DropdownMenuItem onClick={() => doImpersonate(u._id)} className="cursor-pointer"><Eye className="mr-2 h-4 w-4" />Impersonate</DropdownMenuItem>
             )}
             {canDelete && <DropdownMenuItem onClick={() => { setSelected(u); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
-      ) : null,
+      ),
     },
   ];
 

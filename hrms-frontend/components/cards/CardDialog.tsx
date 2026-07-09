@@ -21,14 +21,16 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   card?: Card | null;
+  /** When set, the card is locked to this client (user) and the picker is hidden. */
+  lockClientId?: string;
 }
 
 const idOf = (v: unknown) => (v && typeof v === "object" ? (v as { _id: string })._id : (v as string) || "");
 const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
 
-export function CardDialog({ open, onOpenChange, card }: Props) {
+export function CardDialog({ open, onOpenChange, card, lockClientId }: Props) {
   const isEditing = !!card;
-  const { data: usersData } = useUsers({ limit: "200" });
+  const { data: usersData } = useUsers(lockClientId ? undefined : { limit: "200" });
   const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateCard();
   const { mutate: update, isPending: updating } = useUpdateCard();
@@ -43,13 +45,13 @@ export function CardDialog({ open, onOpenChange, card }: Props) {
     if (!open) return;
     if (card) {
       reset({
-        cardNumber: card.cardNumber, name: card.name, client: idOf(card.client),
+        cardNumber: card.cardNumber, name: card.name, client: idOf(card.client) || lockClientId || "",
         issueDate: toDateInput(card.issueDate), expiryDate: toDateInput(card.expiryDate), notes: card.notes ?? "",
       });
     } else {
-      reset({ cardNumber: "", name: "", client: "", issueDate: "", expiryDate: "", notes: "" });
+      reset({ cardNumber: "", name: "", client: lockClientId ?? "", issueDate: "", expiryDate: "", notes: "" });
     }
-  }, [open, card, reset]);
+  }, [open, card, reset, lockClientId]);
 
   const onSubmit = (data: CardFormValues) => {
     const payload = {
@@ -80,16 +82,18 @@ export function CardDialog({ open, onOpenChange, card }: Props) {
             <Input id="name" placeholder="Jane Doe" {...register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
-          <div className="space-y-1.5">
-            <Label>Client *</Label>
-            <Controller name="client" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select a client (user)" /></SelectTrigger>
-                <SelectContent>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}</SelectContent>
-              </Select>
-            )} />
-            {errors.client && <p className="text-xs text-destructive">{errors.client.message}</p>}
-          </div>
+          {!lockClientId && (
+            <div className="space-y-1.5">
+              <Label>Client *</Label>
+              <Controller name="client" control={control} render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue placeholder="Select a client (user)" /></SelectTrigger>
+                  <SelectContent>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}</SelectContent>
+                </Select>
+              )} />
+              {errors.client && <p className="text-xs text-destructive">{errors.client.message}</p>}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="issueDate">Issue Date</Label>
