@@ -4,20 +4,21 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Loader2, Pencil, Trash2, User2, Briefcase, Landmark, GraduationCap,
-  MapPin, Home, ShieldAlert, Mail, Phone, CalendarDays, Clock3,
+  MapPin, Home, ShieldAlert, Mail, Phone, CalendarDays, Clock3, ChevronDown, Check,
 } from "lucide-react";
-import { useEmployee, useDeleteEmployee } from "@/hooks/useEmployees";
+import { useEmployee, useDeleteEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmployeeSectionDialog, type ProfileSection } from "@/components/employees/EmployeeSectionDialog";
 import { getInitials, cn } from "@/lib/utils";
 import {
   EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS, GENDER_LABELS, MARITAL_LABELS,
-  type Employee, type EmployeeRef,
+  type Employee, type EmployeeRef, type EmployeeStatus,
 } from "@/types";
 
 const statusStyles: Record<string, string> = {
@@ -54,6 +55,7 @@ export default function EmployeeDetailPage() {
   const canEdit = hasPermission("employees", "edit");
   const canDelete = hasPermission("employees", "delete");
   const { mutate: remove, isPending: deleting } = useDeleteEmployee();
+  const { mutate: update, isPending: updatingStatus } = useUpdateEmployee();
 
   const [section, setSection] = useState<ProfileSection | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -83,7 +85,28 @@ export default function EmployeeDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="capitalize">{EMPLOYMENT_TYPE_LABELS[e.employmentType]}</Badge>
-            <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span>
+            {canEdit ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild disabled={updatingStatus}>
+                  <button className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity hover:opacity-80", statusStyles[e.status])}>
+                    {updatingStatus ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                    {EMPLOYEE_STATUS_LABELS[e.status]}
+                    <ChevronDown className="h-3 w-3 opacity-70" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(Object.keys(EMPLOYEE_STATUS_LABELS) as EmployeeStatus[]).map((s) => (
+                    <DropdownMenuItem key={s} className="cursor-pointer" onClick={() => s !== e.status && update({ id: e._id, data: { status: s } })}>
+                      <span className={cn("mr-2 h-2 w-2 rounded-full", statusStyles[s].split(" ")[0])} />
+                      {EMPLOYEE_STATUS_LABELS[s]}
+                      {s === e.status && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span>
+            )}
             {canDelete && <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/5 hover:text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 className="h-3.5 w-3.5" />Delete</Button>}
           </div>
         </div>

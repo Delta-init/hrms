@@ -14,7 +14,7 @@ const POP = [
   { path: "department", select: "name code" },
   { path: "workSchedule", select: "name timeZone loginTime logoutTime" },
   { path: "user", select: "name email" },
-  { path: "reportingTo", select: "name employeeCode designation" },
+  { path: "reportingTo", select: "name employeeCode designation email" },
 ];
 
 /** Normalize optional ref/blank fields for persistence. */

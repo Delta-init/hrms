@@ -263,7 +263,8 @@ export interface IEmployee extends Document {
   oldCompanyExperience?: string;
   confirmationDate?: Date | null;
   probationPeriodDays?: number;
-  reportingTo?: Types.ObjectId | IEmployee | null;
+  reportingTo?: Types.ObjectId | IEmployee | IUser | null;
+  reportingToKind?: "Employee" | "User";
 
   // ── Bank / education / addresses / emergency ──
   bank?: IBankDetails;

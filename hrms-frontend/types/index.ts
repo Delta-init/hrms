@@ -211,7 +211,8 @@ export interface Employee {
   oldCompanyExperience?: string;
   confirmationDate?: string | null;
   probationPeriodDays?: number;
-  reportingTo?: EmployeeRef | string | null;
+  reportingTo?: EmployeeRef | { _id: string; name: string; email?: string } | string | null;
+  reportingToKind?: "Employee" | "User";
 
   // Bank / education / addresses / emergency
   bank?: BankDetails;

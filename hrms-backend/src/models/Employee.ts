@@ -101,7 +101,9 @@ const employeeSchema = new Schema<IEmployee>(
     oldCompanyExperience: { type: String, trim: true, maxlength: 1000 },
     confirmationDate: { type: Date, default: null },
     probationPeriodDays: { type: Number, min: 0, default: 0 },
-    reportingTo: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+    // Manager can be either an Employee record or a login User (dynamic ref).
+    reportingTo: { type: Schema.Types.ObjectId, refPath: "reportingToKind", default: null },
+    reportingToKind: { type: String, enum: ["Employee", "User"], default: "Employee" },
 
     // ── Bank / education / addresses / emergency ──
     bank: { type: bankSchema, default: undefined },

@@ -49,6 +49,7 @@ const profileFields = {
   confirmationDate: z.coerce.date().optional().nullable(),
   probationPeriodDays: z.coerce.number().min(0).optional(),
   reportingTo: z.string().optional().nullable(),
+  reportingToKind: z.enum(["Employee", "User"]).optional(),
   bank: bankSchema.optional(),
   education: z.array(educationSchema).optional(),
   currentAddress: addressSchema.optional(),

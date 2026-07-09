@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUpdateEmployee, useEmployees } from "@/hooks/useEmployees";
+import { useUsers } from "@/hooks/useUsers";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import {
   BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS,
@@ -52,7 +53,9 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
         designation: e.designation ?? "", department: idOf(e.department), location: e.location ?? "",
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
-        reportingTo: idOf(e.reportingTo), oldCompanyExperience: e.oldCompanyExperience ?? "",
+        // Composite "kind:id" so a manager can be an Employee or a login User.
+        reportingTo: idOf(e.reportingTo) ? `${e.reportingToKind ?? "Employee"}:${idOf(e.reportingTo)}` : "",
+        oldCompanyExperience: e.oldCompanyExperience ?? "",
       };
     case "bank":
       return { bank: { bankAccountNumber: e.bank?.bankAccountNumber ?? "", ibanIfsc: e.bank?.ibanIfsc ?? "", bankName: e.bank?.bankName ?? "", nameInBank: e.bank?.nameInBank ?? "" } };
@@ -89,7 +92,9 @@ export function EmployeeSectionDialog({
   const { mutate: update, isPending } = useUpdateEmployee();
   const { data: departments = [] } = useDepartmentsSimple();
   const { data: empData } = useEmployees({ limit: "200" });
+  const { data: userData } = useUsers({ limit: "200" });
   const managers = (empData?.data ?? []).filter((m) => m._id !== employee._id);
+  const users = userData?.data ?? [];
 
   const { register, handleSubmit, control, reset } = useForm<FormValues>({ defaultValues: defaultsFor(section, employee) });
 
@@ -98,7 +103,20 @@ export function EmployeeSectionDialog({
   }, [open, section, employee, reset]);
 
   const onSubmit = (data: FormValues) => {
-    update({ id: employee._id, data: cleanPayload(data) }, { onSuccess: () => onOpenChange(false) });
+    const payload = cleanPayload(data);
+    // Split the composite "kind:id" reporting-to value into ref + kind.
+    if (section === "employment") {
+      const raw = data.reportingTo as string | undefined;
+      if (raw && raw.includes(":")) {
+        const [kind, id] = raw.split(":");
+        payload.reportingTo = id;
+        payload.reportingToKind = kind;
+      } else {
+        payload.reportingTo = null;
+        delete payload.reportingToKind;
+      }
+    }
+    update({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
   };
 
   return (
@@ -157,7 +175,8 @@ export function EmployeeSectionDialog({
               </div>
               <div className={field}><Label>Reporting to</Label>
                 <SelectCtl control={control} name="reportingTo" placeholder="Select manager">
-                  {managers.map((m) => <SelectItem key={m._id} value={m._id}>{m.name} ({m.employeeCode})</SelectItem>)}
+                  {users.map((u) => <SelectItem key={`u${u._id}`} value={`User:${u._id}`}>{u.name} · user</SelectItem>)}
+                  {managers.map((m) => <SelectItem key={`e${m._id}`} value={`Employee:${m._id}`}>{m.name} ({m.employeeCode})</SelectItem>)}
                 </SelectCtl>
               </div>
               <div className={field}><Label>Joining date</Label><Input type="date" {...register("joiningDate")} /></div>
