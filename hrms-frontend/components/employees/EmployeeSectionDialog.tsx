@@ -15,13 +15,14 @@ import { useUpdateEmployee, useEmployees } from "@/hooks/useEmployees";
 import { useUsers } from "@/hooks/useUsers";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import {
-  BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS,
+  BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS, VISA_TYPES,
   type Employee, type EmployeeStatus, type Gender, type MaritalStatus, type Title,
 } from "@/types";
 
 export type ProfileSection =
   | "personal" | "employment" | "bank" | "education"
-  | "currentAddress" | "permanentAddress" | "emergency";
+  | "currentAddress" | "permanentAddress" | "emergency"
+  | "family" | "passport" | "visa";
 
 const SECTION_TITLES: Record<ProfileSection, string> = {
   personal: "Personal details",
@@ -31,6 +32,9 @@ const SECTION_TITLES: Record<ProfileSection, string> = {
   currentAddress: "Current address",
   permanentAddress: "Permanent address",
   emergency: "Emergency contacts",
+  family: "Family members",
+  passport: "Passport details",
+  visa: "Visa details",
 };
 
 const NONE = "__none__";
@@ -67,6 +71,12 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
       return { permanentAddress: { address: e.permanentAddress?.address ?? "", city: e.permanentAddress?.city ?? "", state: e.permanentAddress?.state ?? "", country: e.permanentAddress?.country ?? "" } };
     case "emergency":
       return { emergencyContacts: e.emergencyContacts?.length ? e.emergencyContacts : [{ name: "", relation: "", phoneNumber: "", email: "", address: "", city: "", state: "", country: "" }] };
+    case "family":
+      return { familyMembers: e.familyMembers?.length ? e.familyMembers.map((f) => ({ ...f, dob: toDateInput(f.dob) })) : [{ name: "", relation: "", dob: "", phone: "" }] };
+    case "passport":
+      return { passport: { passportNumber: e.passport?.passportNumber ?? "", country: e.passport?.country ?? "", issueDate: toDateInput(e.passport?.issueDate), expiryDate: toDateInput(e.passport?.expiryDate) } };
+    case "visa":
+      return { visa: { country: e.visa?.country ?? "", type: e.visa?.type ?? "", issueDate: toDateInput(e.visa?.issueDate), expiryDate: toDateInput(e.visa?.expiryDate) } };
   }
 }
 
@@ -206,6 +216,29 @@ export function EmployeeSectionDialog({
 
           {section === "education" && <EducationRows control={control} register={register} />}
           {section === "emergency" && <EmergencyRows control={control} register={register} />}
+          {section === "family" && <FamilyRows control={control} register={register} />}
+
+          {section === "passport" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className={field}><Label>Passport number</Label><Input {...register("passport.passportNumber")} /></div>
+              <div className={field}><Label>Country</Label><Input {...register("passport.country")} /></div>
+              <div className={field}><Label>Issue date</Label><Input type="date" {...register("passport.issueDate")} /></div>
+              <div className={field}><Label>Expiry date</Label><Input type="date" {...register("passport.expiryDate")} /></div>
+            </div>
+          )}
+
+          {section === "visa" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className={field}><Label>Country</Label><Input {...register("visa.country")} /></div>
+              <div className={field}><Label>Type</Label>
+                <SelectCtl control={control} name="visa.type" placeholder="Select type">
+                  {VISA_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectCtl>
+              </div>
+              <div className={field}><Label>Issue date</Label><Input type="date" {...register("visa.issueDate")} /></div>
+              <div className={field}><Label>Expiry date</Label><Input type="date" {...register("visa.expiryDate")} /></div>
+            </div>
+          )}
 
           <ResponsiveDialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -253,6 +286,29 @@ function EducationRows({ control, register }: { control: Control<FormValues>; re
         </div>
       ))}
       <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => fa.append({ qualification: "", from: "", to: "", institute: "" } as never)}><Plus className="h-3.5 w-3.5" />Add qualification</Button>
+    </div>
+  );
+}
+
+function FamilyRows({ control, register }: { control: Control<FormValues>; register: UseFormRegister<FormValues> }) {
+  const fa = useFieldArray({ control, name: "familyMembers" as never });
+  return (
+    <div className="space-y-3">
+      {fa.fields.map((f, i) => (
+        <div key={f.id} className="rounded-xl border border-border p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Member {i + 1}</span>
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => fa.remove(i)}><Trash2 className="h-4 w-4" /></Button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className={field}><Label>Name</Label><Input {...register(`familyMembers.${i}.name`)} /></div>
+            <div className={field}><Label>Relation</Label><Input {...register(`familyMembers.${i}.relation`)} /></div>
+            <div className={field}><Label>Date of birth</Label><Input type="date" {...register(`familyMembers.${i}.dob`)} /></div>
+            <div className={field}><Label>Phone</Label><Input {...register(`familyMembers.${i}.phone`)} /></div>
+          </div>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => fa.append({ name: "", relation: "", dob: "", phone: "" } as never)}><Plus className="h-3.5 w-3.5" />Add family member</Button>
     </div>
   );
 }

@@ -34,6 +34,24 @@ const bankSchema = z.object({
   bankName: z.string().max(120).optional(),
   nameInBank: z.string().max(120).optional(),
 });
+const familyMemberSchema = z.object({
+  name: z.string().max(100).optional(),
+  relation: z.string().max(60).optional(),
+  dob: z.coerce.date().optional().nullable(),
+  phone: z.string().max(30).optional(),
+});
+const passportSchema = z.object({
+  passportNumber: z.string().max(40).optional(),
+  country: z.string().max(80).optional(),
+  issueDate: z.coerce.date().optional().nullable(),
+  expiryDate: z.coerce.date().optional().nullable(),
+});
+const visaSchema = z.object({
+  country: z.string().max(80).optional(),
+  type: z.string().max(60).optional(),
+  issueDate: z.coerce.date().optional().nullable(),
+  expiryDate: z.coerce.date().optional().nullable(),
+});
 
 // Extended profile fields — all optional, shared by create + update.
 const profileFields = {
@@ -55,6 +73,9 @@ const profileFields = {
   currentAddress: addressSchema.optional(),
   permanentAddress: addressSchema.optional(),
   emergencyContacts: z.array(emergencySchema).optional(),
+  familyMembers: z.array(familyMemberSchema).optional(),
+  passport: passportSchema.optional(),
+  visa: visaSchema.optional(),
 };
 
 export const createEmployeeSchema = z.object({

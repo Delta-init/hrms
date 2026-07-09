@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   User2, Briefcase, Landmark, GraduationCap, MapPin, Home, ShieldAlert,
-  Mail, Phone, CalendarDays, Clock3,
+  Mail, Phone, CalendarDays, Clock3, Users2, BookUser, Plane,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +114,46 @@ export function EmployeeProfileSections({ employee: e, canEdit }: { employee: Em
               ))}
             </div>
           ) : <Empty />}
+        </Section>
+
+        {/* Family */}
+        <Section icon={Users2} title="Family members" action={edit("family")} className="lg:col-span-2">
+          {e.familyMembers?.length ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {e.familyMembers.map((m, i) => (
+                <div key={i} className="rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">{m.name || "—"}</p>
+                    {m.relation && <Badge variant="secondary">{m.relation}</Badge>}
+                  </div>
+                  <div className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+                    {m.dob && <p className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />{fmtDate(m.dob)}</p>}
+                    {m.phone && <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{m.phone}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <Empty />}
+        </Section>
+
+        {/* Passport */}
+        <Section icon={BookUser} title="Passport details" action={edit("passport")}>
+          <Grid>
+            <Item label="Passport number" value={e.passport?.passportNumber ?? "—"} />
+            <Item label="Country" value={e.passport?.country ?? "—"} />
+            <Item label="Issue date" value={fmtDate(e.passport?.issueDate)} icon={CalendarDays} />
+            <Item label="Expiry date" value={fmtDate(e.passport?.expiryDate)} icon={CalendarDays} />
+          </Grid>
+        </Section>
+
+        {/* Visa */}
+        <Section icon={Plane} title="Visa details" action={edit("visa")}>
+          <Grid>
+            <Item label="Country" value={e.visa?.country ?? "—"} icon={MapPin} />
+            <Item label="Type" value={e.visa?.type ?? "—"} />
+            <Item label="Issue date" value={fmtDate(e.visa?.issueDate)} icon={CalendarDays} />
+            <Item label="Expiry date" value={fmtDate(e.visa?.expiryDate)} icon={CalendarDays} />
+          </Grid>
         </Section>
       </motion.div>
 

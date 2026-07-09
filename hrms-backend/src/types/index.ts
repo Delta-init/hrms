@@ -230,6 +230,24 @@ export interface IBankDetails {
   bankName?: string;
   nameInBank?: string;
 }
+export interface IFamilyMember {
+  name?: string;
+  relation?: string;
+  dob?: Date | null;
+  phone?: string;
+}
+export interface IPassport {
+  passportNumber?: string;
+  country?: string;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+}
+export interface IVisa {
+  country?: string;
+  type?: string;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+}
 
 export interface IEmployee extends Document {
   _id: Types.ObjectId;
@@ -273,6 +291,9 @@ export interface IEmployee extends Document {
   currentAddress?: IAddress;
   permanentAddress?: IAddress;
   emergencyContacts?: IEmergencyContact[];
+  familyMembers?: IFamilyMember[];
+  passport?: IPassport;
+  visa?: IVisa;
 
   createdAt: Date;
   updatedAt: Date;

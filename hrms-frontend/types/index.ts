@@ -180,6 +180,27 @@ export interface BankDetails {
   bankName?: string;
   nameInBank?: string;
 }
+export interface FamilyMember {
+  name?: string;
+  relation?: string;
+  dob?: string | null;
+  phone?: string;
+}
+export interface Passport {
+  passportNumber?: string;
+  country?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+}
+export interface Visa {
+  country?: string;
+  type?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+}
+export const VISA_TYPES = [
+  "Employment", "Residence", "Visit", "Tourist", "Business", "Student", "Dependent", "Transit", "Golden", "Other",
+] as const;
 export type EmployeeRef = { _id: string; name: string; employeeCode?: string; designation?: string };
 
 export interface Employee {
@@ -222,6 +243,9 @@ export interface Employee {
   currentAddress?: Address;
   permanentAddress?: Address;
   emergencyContacts?: EmergencyContact[];
+  familyMembers?: FamilyMember[];
+  passport?: Passport;
+  visa?: Visa;
 
   createdAt: string;
   updatedAt: string;

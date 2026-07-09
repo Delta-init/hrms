@@ -45,6 +45,36 @@ const bankSchema = new Schema(
   { _id: false }
 );
 
+const familyMemberSchema = new Schema(
+  {
+    name: { type: String, trim: true, maxlength: 100 },
+    relation: { type: String, trim: true, maxlength: 60 },
+    dob: { type: Date, default: null },
+    phone: { type: String, trim: true, maxlength: 30 },
+  },
+  { _id: false }
+);
+
+const passportSchema = new Schema(
+  {
+    passportNumber: { type: String, trim: true, maxlength: 40 },
+    country: { type: String, trim: true, maxlength: 80 },
+    issueDate: { type: Date, default: null },
+    expiryDate: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
+const visaSchema = new Schema(
+  {
+    country: { type: String, trim: true, maxlength: 80 },
+    type: { type: String, trim: true, maxlength: 60 },
+    issueDate: { type: Date, default: null },
+    expiryDate: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const employeeSchema = new Schema<IEmployee>(
   {
     employeeCode: {
@@ -111,6 +141,9 @@ const employeeSchema = new Schema<IEmployee>(
     currentAddress: { type: addressSchema, default: undefined },
     permanentAddress: { type: addressSchema, default: undefined },
     emergencyContacts: { type: [emergencyContactSchema], default: [] },
+    familyMembers: { type: [familyMemberSchema], default: [] },
+    passport: { type: passportSchema, default: undefined },
+    visa: { type: visaSchema, default: undefined },
   },
   {
     timestamps: true,
