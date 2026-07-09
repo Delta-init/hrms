@@ -12,6 +12,16 @@ const envSchema = z.object({
   SUPER_ADMIN_EMAIL: z.string().email().default("admin@hrms.com"),
   SUPER_ADMIN_PASSWORD: z.string().default("Admin@12345"),
   CLIENT_URL: z.string().default("http://localhost:3000"),
+
+  // SMTP (optional) — when unset, email sending is a logged no-op.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_SECURE: z.string().optional(), // "true" | "false"
+  MAIL_FROM: z.string().optional(),   // e.g. "HRMS <no-reply@company.com>"
+  // Cron expression for the daily birthday check (server local time).
+  BIRTHDAY_CRON: z.string().default("0 8 * * *"),
 });
 
 const parsed = envSchema.safeParse(process.env);

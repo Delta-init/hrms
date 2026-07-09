@@ -7,6 +7,7 @@ import { useMyAttendance } from "@/hooks/useSelfAttendance";
 import { useMyLeaves, useHolidays } from "@/hooks/useLeaves";
 import { ClockCard } from "@/components/dashboard/ClockCard";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
+import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { LEAVE_TYPE_LABELS, type LeaveStatus } from "@/types";
@@ -23,6 +24,16 @@ const leaveStatusStyle: Record<LeaveStatus, string> = {
 };
 
 export default function DashboardPage() {
+  const { user, hasPermission } = useAuth();
+  // HR / managers get the team overview (and no clock-in card); everyone else
+  // gets the personal self-service dashboard.
+  const isManager = hasPermission("leave", "approve") || hasPermission("employees", "view");
+  if (isManager) return <HrDashboard />;
+
+  return <EmployeeDashboard />;
+}
+
+function EmployeeDashboard() {
   const { user } = useAuth();
   const { data: attData } = useMyAttendance({ dateFrom: monthStartISO(), dateTo: todayISO(), limit: "100" });
   const { data: myLeaves } = useMyLeaves({ limit: "5" });

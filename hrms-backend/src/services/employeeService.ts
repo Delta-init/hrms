@@ -67,6 +67,13 @@ export class EmployeeService {
     return record;
   }
 
+  /** Resolve the employee record linked to a login account. */
+  async getByUser(userId: string) {
+    const record = await Employee.findOne({ user: userId }).populate(POP);
+    if (!record) throw Object.assign(new Error("No employee is linked to this user"), { statusCode: 404 });
+    return record;
+  }
+
   async update(id: string, input: UpdateEmployeeInput) {
     const record = await Employee.findById(id);
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });

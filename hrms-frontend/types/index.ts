@@ -451,3 +451,37 @@ export interface DepartmentReport {
   daysInMonth: number;
   members: DepartmentReportMember[];
 }
+
+// ─── Dashboard (HR summary) ───────────────────────────────────────────────────
+export interface BirthdayPerson {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  dob?: string;
+  designation?: string;
+  department?: string | null;
+}
+export interface LeaveLite {
+  _id: string;
+  user?: { _id: string; name: string; designation?: string } | string | null;
+  type: LeaveType;
+  startDate: string;
+  endDate: string;
+  days: number;
+  status: LeaveStatus;
+}
+export interface RegularizationLite {
+  _id: string;
+  user?: { _id: string; name: string; designation?: string } | string | null;
+  type: RegularizationType;
+  date: string;
+  status: RegularizationStatus;
+}
+export interface DashboardSummary {
+  date: string;
+  birthdays: BirthdayPerson[];
+  onLeaveToday: LeaveLite[];
+  pendingLeaves: LeaveLite[];
+  pendingRegularizations: RegularizationLite[];
+  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number };
+}

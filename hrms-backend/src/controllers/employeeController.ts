@@ -28,6 +28,12 @@ export const getEmployeeById = async (req: AuthenticatedRequest, res: Response, 
   } catch (error) { next(error); }
 };
 
+export const getEmployeeByUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Employee retrieved successfully", await service.getByUser(req.params.userId));
+  } catch (error) { next(error); }
+};
+
 export const updateEmployee = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = updateEmployeeSchema.safeParse(req.body);
