@@ -100,9 +100,11 @@ export class DepartmentService {
       .lean();
     const userIds = employees.map((e) => e.user).filter(Boolean);
 
-    const [att, leaves] = await Promise.all([
+    const [att, leaves, monthLeaves] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } }).select("user date status").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: yearEnd }, endDate: { $gte: yearStart } }).select("user days").lean(),
+      // Approved leaves that intersect the report month — used to paint the calendar.
+      LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("user startDate endDate").lean(),
     ]);
 
     const attByUser = new Map<string, Record<string, string>>();
@@ -117,11 +119,30 @@ export class DepartmentService {
       const uid = String(l.user);
       leaveByUser.set(uid, (leaveByUser.get(uid) ?? 0) + (l.days || 0));
     }
+    // Map each user to the set of month days they are on approved leave.
+    const leaveDaysByUser = new Map<string, Set<string>>();
+    for (const l of monthLeaves) {
+      const uid = String(l.user);
+      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Set());
+      const set = leaveDaysByUser.get(uid)!;
+      const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
+      const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
+      for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+        set.add(d.toISOString().slice(0, 10));
+      }
+    }
 
     const countKeys = ["present", "late", "half_day", "absent", "on_leave", "wfh"] as const;
     const members = employees.map((e) => {
       const uid = e.user ? String(e.user) : null;
-      const calendar = uid ? attByUser.get(uid) ?? {} : {};
+      // Start from attendance, then paint approved-leave days that have no
+      // attendance record (an actual attendance status always wins).
+      const calendar: Record<string, string> = uid ? { ...(attByUser.get(uid) ?? {}) } : {};
+      if (uid) {
+        for (const key of leaveDaysByUser.get(uid) ?? []) {
+          if (!calendar[key]) calendar[key] = "on_leave";
+        }
+      }
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, wfh: 0 };
       for (const st of Object.values(calendar)) {
         if ((countKeys as readonly string[]).includes(st)) summary[st]++;

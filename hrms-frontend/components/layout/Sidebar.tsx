@@ -42,7 +42,9 @@ export const navItems: {
   { href: "/attendance", label: "Attendance", icon: CalendarCheck, permModule: "attendance" },
   { href: "/leave", label: "Leave", icon: CalendarClock, permModule: "leave" },
   { href: "/regularization", label: "Regularization", icon: ClipboardCheck, permModule: null },
-  { href: "/payroll", label: "Payroll", icon: Wallet, permModule: "payroll" },
+  // Always reachable: the Payroll page shows admins the full "Payslips" tab
+  // (gated by the payroll permission) and every employee their own "My Payslips".
+  { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

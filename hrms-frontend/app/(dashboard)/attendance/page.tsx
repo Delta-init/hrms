@@ -8,6 +8,7 @@ import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
+import { AttendanceStatsBar } from "@/components/attendance/AttendanceStatsBar";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,9 @@ export default function AttendancePage() {
 
   const query = useTableQuery({ defaultSortBy: "date", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useAttendance(query.params);
+  // Separate snapshot of *today's* records for the animated stats band.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: todayData, isLoading: todayLoading } = useAttendance({ dateFrom: today, dateTo: today, limit: "500" });
   const { data: usersData } = useUsers({ limit: "200" });
   const users = usersData?.data ?? [];
   const { mutate: remove, isPending: deleting } = useDeleteAttendance();
@@ -124,6 +128,8 @@ export default function AttendancePage() {
         icon={CalendarCheck}
         action={canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
       />
+
+      <AttendanceStatsBar records={todayData?.data ?? []} loading={todayLoading} />
 
       <DataTable
         tableId="attendance"

@@ -8,7 +8,13 @@ const service = new LeaveService();
 
 export const createLeave = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const parsed = createLeaveSchema.safeParse(req.body);
+    // Self-service: managers (leave.approve) may file for anyone; everyone else
+    // can only file for themselves. Default the subject to the caller.
+    const canApproveOthers = !!req.user?.role?.permissions?.leave?.approve
+      || req.user?.role?.roleName === "Super Admin";
+    const body = { ...req.body };
+    if (!canApproveOthers || !body.user) body.user = req.user?.userId;
+    const parsed = createLeaveSchema.safeParse(body);
     if (!parsed.success) {
       sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors);
       return;

@@ -27,6 +27,20 @@ export class LeaveService {
       throw Object.assign(new Error("End date cannot be before start date"), { statusCode: 400 });
     }
 
+    // Reject overlaps with an existing pending/approved request for the same user.
+    const clash = await LeaveRequest.findOne({
+      user: input.user,
+      status: { $in: ["pending", "approved"] },
+      startDate: { $lte: input.endDate },
+      endDate: { $gte: input.startDate },
+    }).select("_id");
+    if (clash) {
+      throw Object.assign(
+        new Error("This overlaps an existing leave request for these dates"),
+        { statusCode: 409 }
+      );
+    }
+
     const leave = await LeaveRequest.create({
       user: input.user,
       type: input.type,

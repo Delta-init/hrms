@@ -27,17 +27,21 @@ const hrManagerPermissions: PermissionsMap = {
   departments: { ...fullAccess },
   attendance: { ...fullAccess },
   leave: { ...fullAccess },
+  regularization: { ...fullAccess },
+  workSchedules: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
   roles: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
   settings: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
 };
 
-// Employee: self-service only — view dashboard, view own leave/attendance.
+// Employee: self-service only — clock in/out, apply for leave, file
+// attendance-regularization requests, and view their own records.
 const employeePermissions: PermissionsMap = {
   dashboard: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
   attendance: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   leave: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
+  regularization: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(

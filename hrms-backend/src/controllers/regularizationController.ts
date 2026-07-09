@@ -8,7 +8,13 @@ const service = new RegularizationService();
 
 export const createRegularization = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const parsed = createRegularizationSchema.safeParse(req.body);
+    // Self-service: approvers may file for anyone; everyone else only for
+    // themselves. Default the subject to the caller.
+    const canApproveOthers = !!req.user?.role?.permissions?.regularization?.approve
+      || req.user?.role?.roleName === "Super Admin";
+    const body = { ...req.body };
+    if (!canApproveOthers || !body.user) body.user = req.user?.userId;
+    const parsed = createRegularizationSchema.safeParse(body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const record = await service.create(parsed.data);
     sendSuccess(res, "Regularization request created", record, 201);
