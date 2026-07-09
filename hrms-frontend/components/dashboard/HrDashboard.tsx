@@ -43,7 +43,7 @@ export function HrDashboard() {
         <div className="pointer-events-none absolute -bottom-20 right-24 h-56 w-56 rounded-full bg-white/5" />
         <p className="text-sm text-white/70">{today}</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">Hi, {firstName} 👋</h1>
-        <p className="mt-1 max-w-md text-sm text-white/70">Here's what needs your attention across the team today.</p>
+        <p className="mt-1 max-w-md text-sm text-white/70">Here&apos;s what needs your attention across the team today.</p>
       </motion.div>
 
       {/* Stat tiles */}

@@ -24,9 +24,9 @@ export function AttendanceHistoryChart() {
   const months = useMemo(lastSixMonths, []);
   const fromISO = useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() - 5, 1); return d.toISOString().slice(0, 10); }, []);
   const { data } = useMyAttendance({ dateFrom: fromISO, limit: "500" });
-  const recs = data?.data ?? [];
 
   const bars = useMemo(() => {
+    const recs = data?.data ?? [];
     const map = new Map(months.map((m) => [m.key, 0]));
     for (const r of recs) {
       const key = (r.date ?? "").slice(0, 7);
@@ -35,7 +35,7 @@ export function AttendanceHistoryChart() {
     const vals = months.map((m) => Math.round((map.get(m.key) ?? 0) / 60)); // hours
     const max = Math.max(1, ...vals);
     return months.map((m, i) => ({ ...m, hours: vals[i], pct: Math.max(4, Math.round((vals[i] / max) * 100)) }));
-  }, [months, recs]);
+  }, [months, data]);
 
   const totalH = bars.reduce((a, b) => a + b.hours, 0);
 
