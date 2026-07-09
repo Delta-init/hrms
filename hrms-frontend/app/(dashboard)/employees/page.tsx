@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye } from "lucide-react";
+import Link from "next/link";
+import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound } from "lucide-react";
 import { useEmployees, useDeleteEmployee } from "@/hooks/useEmployees";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useAuth, useImpersonate } from "@/hooks/useAuth";
@@ -59,7 +60,7 @@ export default function EmployeesPage() {
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(e.name)}</div>
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 truncate font-medium">
-              {e.name}
+              <Link href={`/employees/${e._id}`} className="truncate hover:text-primary hover:underline">{e.name}</Link>
               {e.user && <span title="Has login account" className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600"><ShieldCheck className="h-3 w-3" />login</span>}
             </p>
             <p className="truncate text-xs text-muted-foreground">{e.designation || e.email || "—"}</p>
@@ -75,10 +76,11 @@ export default function EmployeesPage() {
     { id: "status", label: "Status", sortKey: "status", render: (e) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span> },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
-      render: (e) => (canEdit || canDelete) ? (
+      render: (e) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild className="cursor-pointer"><Link href={`/employees/${e._id}`}><ContactRound className="mr-2 h-4 w-4" />View profile</Link></DropdownMenuItem>
             {canEdit && <DropdownMenuItem onClick={() => { setSelected(e); setDialogOpen(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
             {canEdit && !e.user && <DropdownMenuItem onClick={() => { setSelected(e); setLoginOpen(true); }} className="cursor-pointer"><KeyRound className="mr-2 h-4 w-4" />Create login</DropdownMenuItem>}
             {canImpersonate && e.user && (
@@ -87,7 +89,7 @@ export default function EmployeesPage() {
             {canDelete && <DropdownMenuItem onClick={() => { setSelected(e); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
-      ) : null,
+      ),
     },
   ];
 

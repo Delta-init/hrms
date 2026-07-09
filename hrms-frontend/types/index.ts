@@ -141,6 +141,45 @@ export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   terminated: "Terminated",
 };
 
+export type Title = "mr" | "mrs" | "ms" | "dr";
+export type Gender = "male" | "female" | "other";
+export type MaritalStatus = "married" | "unmarried";
+
+export const TITLE_LABELS: Record<Title, string> = { mr: "Mr", mrs: "Mrs", ms: "Ms", dr: "Dr" };
+export const GENDER_LABELS: Record<Gender, string> = { male: "Male", female: "Female", other: "Other" };
+export const MARITAL_LABELS: Record<MaritalStatus, string> = { married: "Married", unmarried: "Unmarried" };
+export const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
+
+export interface Education {
+  qualification?: string;
+  from?: string;
+  to?: string;
+  institute?: string;
+}
+export interface Address {
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+export interface EmergencyContact {
+  name?: string;
+  relation?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  phoneNumber?: string;
+  email?: string;
+}
+export interface BankDetails {
+  bankAccountNumber?: string;
+  ibanIfsc?: string;
+  bankName?: string;
+  nameInBank?: string;
+}
+export type EmployeeRef = { _id: string; name: string; employeeCode?: string; designation?: string };
+
 export interface Employee {
   _id: string;
   employeeCode: string;
@@ -157,6 +196,30 @@ export interface Employee {
   location?: string;
   salary?: number;
   currency?: string;
+
+  // Personal
+  title?: Title;
+  gender?: Gender;
+  personalEmail?: string;
+  mobileNumber?: string;
+  dob?: string | null;
+  bloodGroup?: string;
+  nationality?: string;
+  maritalStatus?: MaritalStatus;
+
+  // Employment
+  oldCompanyExperience?: string;
+  confirmationDate?: string | null;
+  probationPeriodDays?: number;
+  reportingTo?: EmployeeRef | string | null;
+
+  // Bank / education / addresses / emergency
+  bank?: BankDetails;
+  education?: Education[];
+  currentAddress?: Address;
+  permanentAddress?: Address;
+  emergencyContacts?: EmergencyContact[];
+
   createdAt: string;
   updatedAt: string;
 }

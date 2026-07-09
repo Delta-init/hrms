@@ -197,6 +197,38 @@ export interface IDepartment extends Document {
 // ─── Employee ───────────────────────────────────────────────────────────────
 export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
 export type EmployeeStatus = "active" | "probation" | "on_leave" | "terminated";
+export type Title = "mr" | "mrs" | "ms" | "dr";
+export type Gender = "male" | "female" | "other";
+export type MaritalStatus = "married" | "unmarried";
+
+export interface IEducation {
+  qualification?: string;
+  from?: string;
+  to?: string;
+  institute?: string;
+}
+export interface IAddress {
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+export interface IEmergencyContact {
+  name?: string;
+  relation?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  phoneNumber?: string;
+  email?: string;
+}
+export interface IBankDetails {
+  bankAccountNumber?: string;
+  ibanIfsc?: string;
+  bankName?: string;
+  nameInBank?: string;
+}
 
 export interface IEmployee extends Document {
   _id: Types.ObjectId;
@@ -216,6 +248,30 @@ export interface IEmployee extends Document {
   /** Monthly base salary (used to prefill payslips). */
   salary?: number;
   currency?: string;
+
+  // ── Personal ──
+  title?: Title;
+  gender?: Gender;
+  personalEmail?: string;
+  mobileNumber?: string;
+  dob?: Date | null;
+  bloodGroup?: string;
+  nationality?: string;
+  maritalStatus?: MaritalStatus;
+
+  // ── Employment ──
+  oldCompanyExperience?: string;
+  confirmationDate?: Date | null;
+  probationPeriodDays?: number;
+  reportingTo?: Types.ObjectId | IEmployee | null;
+
+  // ── Bank / education / addresses / emergency ──
+  bank?: IBankDetails;
+  education?: IEducation[];
+  currentAddress?: IAddress;
+  permanentAddress?: IAddress;
+  emergencyContacts?: IEmergencyContact[];
+
   createdAt: Date;
   updatedAt: Date;
 }

@@ -14,15 +14,17 @@ const POP = [
   { path: "department", select: "name code" },
   { path: "workSchedule", select: "name timeZone loginTime logoutTime" },
   { path: "user", select: "name email" },
+  { path: "reportingTo", select: "name employeeCode designation" },
 ];
 
 /** Normalize optional ref/blank fields for persistence. */
 function clean<T extends Record<string, unknown>>(input: T) {
   const out: Record<string, unknown> = { ...input };
-  for (const k of ["department", "workSchedule", "user"]) {
+  for (const k of ["department", "workSchedule", "user", "reportingTo"]) {
     if (out[k] !== undefined) out[k] = out[k] || null;
   }
   if (out.email === "") out.email = undefined;
+  if (out.personalEmail === "") out.personalEmail = undefined;
   return out;
 }
 

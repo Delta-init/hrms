@@ -18,6 +18,13 @@ export const useEmployees = (params?: Record<string, string>) =>
     },
   });
 
+export const useEmployee = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "detail", id],
+    queryFn: async () => (await api.get<ApiResponse<Employee>>(`/employees/${id}`)).data.data!,
+    enabled: !!id,
+  });
+
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
