@@ -35,7 +35,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* footer */}
-          <div className="flex items-center justify-between text-xs text-neutral-400">
+          <div className="flex flex-col gap-1 text-xs text-neutral-400 sm:flex-row sm:items-center sm:justify-between">
             <span>© {new Date().getFullYear()} Delta Institutions LTD.</span>
             <a href="#" className="transition-colors hover:text-neutral-600">Privacy Policy</a>
           </div>

@@ -87,6 +87,11 @@ export function DataTable<T>({
   const orderedColumns = useMemo(() => order.map((id) => byId[id]).filter(Boolean) as DataTableColumn<T>[], [order, byId]);
   const visibleColumns = orderedColumns.filter((c) => c.alwaysVisible || visible.has(c.id));
 
+  // Mobile card layout: a primary identity column, an actions column, and the rest as label/value pairs.
+  const actionsCol = visibleColumns.find((c) => c.id === "actions");
+  const primaryCol = visibleColumns.find((c) => c.alwaysVisible && c.id !== "actions") ?? visibleColumns[0];
+  const detailCols = visibleColumns.filter((c) => c !== primaryCol && c !== actionsCol);
+
   const persistVisible = (s: Set<string>) => { try { localStorage.setItem(LS_VIS, JSON.stringify(Array.from(s))); } catch { /* ignore */ } };
   const persistOrder = (o: string[]) => { try { localStorage.setItem(LS_ORD, JSON.stringify(o)); } catch { /* ignore */ } };
 
@@ -199,9 +204,9 @@ export function DataTable<T>({
         </AnimatePresence>
       )}
 
-      {/* Table */}
+      {/* Table (md+) */}
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm" style={{ minWidth }}>
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -237,6 +242,35 @@ export function DataTable<T>({
             </tbody>
           </table>
         </div>
+
+        {/* Cards (mobile) */}
+        <div className="divide-y divide-border md:hidden">
+          {loading ? (
+            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : rows.length === 0 ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">{emptyText}</div>
+          ) : (
+            rows.map((row, i) => (
+              <motion.div key={rowKey(row)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  {primaryCol && <div className="min-w-0 flex-1">{primaryCol.render(row)}</div>}
+                  {actionsCol && <div className="shrink-0">{actionsCol.render(row)}</div>}
+                </div>
+                {detailCols.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {detailCols.map((c) => (
+                      <div key={c.id} className="min-w-0">
+                        <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{c.label}</p>
+                        <div className="text-sm">{c.render(row)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            ))
+          )}
+        </div>
+
         <Pagination pagination={pagination} page={query.page} limit={query.limit} onPageChange={query.setPage} onLimitChange={query.setLimit} label={rowLabel} />
       </Card>
     </div>
