@@ -29,6 +29,7 @@ const hrManagerPermissions: PermissionsMap = {
   leave: { ...fullAccess },
   regularization: { ...fullAccess },
   workSchedules: { ...fullAccess },
+  cards: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
   roles: { view: true, create: false, edit: false, delete: false, approve: false, export: false },

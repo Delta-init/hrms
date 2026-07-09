@@ -19,6 +19,7 @@ export const HRMS_MODULES = [
   "regularization",
   "payroll",
   "workSchedules",
+  "cards",
   "users",
   "roles",
   "settings",
@@ -35,6 +36,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   payroll: "Payroll",
   regularization: "Regularization",
   workSchedules: "Work Schedules",
+  cards: "Cards",
   users: "Users",
   roles: "Roles & Permissions",
   settings: "Settings",
@@ -485,4 +487,21 @@ export interface DashboardSummary {
   pendingLeaves: LeaveLite[];
   pendingRegularizations: RegularizationLite[];
   counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number };
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────────────
+export type CardStatus = "active" | "expired";
+export const CARD_STATUS_LABELS: Record<CardStatus, string> = { active: "Active", expired: "Expired" };
+
+export interface Card {
+  _id: string;
+  cardNumber: string;
+  name: string;
+  client?: { _id: string; name: string; email?: string } | string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  notes?: string;
+  status?: CardStatus;
+  createdAt: string;
+  updatedAt: string;
 }

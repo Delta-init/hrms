@@ -24,6 +24,7 @@ export const HRMS_MODULES = [
   "regularization",
   "payroll",
   "workSchedules",
+  "cards",
   "users",
   "roles",
   "settings",
@@ -386,6 +387,24 @@ export interface ILeaveRequest extends Document {
   reviewedBy?: Types.ObjectId | IUser;
   reviewedAt?: Date | null;
   reviewNote?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Card ───────────────────────────────────────────────────────────────────
+export type CardStatus = "active" | "expired";
+
+export interface ICard extends Document {
+  _id: Types.ObjectId;
+  cardNumber: string;
+  name: string;
+  /** The login account this card is issued to. */
+  client: Types.ObjectId | IUser;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+  notes?: string;
+  /** Virtual — "expired" when expiryDate is in the past, else "active". */
+  status?: CardStatus;
   createdAt: Date;
   updatedAt: Date;
 }

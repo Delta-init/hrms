@@ -11,11 +11,13 @@ import employeeRoutes from "./employeeRoutes.js";
 import regularizationRoutes from "./regularizationRoutes.js";
 import payslipRoutes from "./payslipRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
+import cardRoutes from "./cardRoutes.js";
 
 const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/cards", cardRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);
 router.use("/attendance", attendanceRoutes);
