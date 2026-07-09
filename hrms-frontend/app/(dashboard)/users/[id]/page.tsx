@@ -8,8 +8,10 @@ import { useEmployeeByUser } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/shared/Tabs";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
+import { EmployeeDialog } from "@/components/employees/EmployeeDialog";
 import { UserCards } from "@/components/cards/UserCards";
 import { getInitials, cn } from "@/lib/utils";
 
@@ -27,9 +29,11 @@ export default function UserDetailPage() {
   const { data: employee, isLoading: empLoading } = useEmployeeByUser(id);
   const { hasPermission } = useAuth();
   const canEditEmployee = hasPermission("employees", "edit");
+  const canCreateEmployee = hasPermission("employees", "create");
   const canViewCards = hasPermission("cards", "view");
 
   const [tab, setTab] = useState("profile");
+  const [createEmpOpen, setCreateEmpOpen] = useState(false);
 
   if (isLoading || !user) {
     return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -80,13 +84,18 @@ export default function UserDetailPage() {
         ) : (
           <Card className="p-12 text-center">
             <ContactRound className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium">No employee profile linked</p>
-            <p className="mt-1 text-sm text-muted-foreground">This login account isn&apos;t linked to an employee record yet.</p>
+            <p className="text-sm font-medium">No employee profile yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create an employee record for this user to capture their full details.</p>
+            {canCreateEmployee && (
+              <Button className="mt-4" onClick={() => setCreateEmpOpen(true)}><ContactRound className="h-4 w-4" />Create employee profile</Button>
+            )}
           </Card>
         )
       )}
 
       {activeTab === "cards" && canViewCards && <UserCards userId={id} />}
+
+      <EmployeeDialog open={createEmpOpen} onOpenChange={setCreateEmpOpen} defaultName={user.name} defaultUserId={id} />
     </div>
   );
 }

@@ -26,9 +26,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employee?: Employee | null;
+  /** Prefill a new employee's name + linked login when creating from a user. */
+  defaultName?: string;
+  defaultUserId?: string;
 }
 
-export function EmployeeDialog({ open, onOpenChange, employee }: Props) {
+export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defaultUserId }: Props) {
   const isEditing = !!employee;
   const { data: departments = [] } = useDepartmentsSimple();
   const { data: schedules = [] } = useWorkSchedulesSimple();
@@ -67,9 +70,9 @@ export function EmployeeDialog({ open, onOpenChange, employee }: Props) {
         currency: employee.currency ?? "AED",
       });
     } else {
-      reset({ employeeCode: "", name: "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: "", employmentType: "full_time", joiningDate: "", status: "active", location: "", salary: 0, currency: "AED" });
+      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: "", salary: 0, currency: "AED" });
     }
-  }, [open, employee, reset]);
+  }, [open, employee, reset, defaultName, defaultUserId]);
 
   const onSubmit = (data: EmployeeFormValues) => {
     const payload: Record<string, unknown> = {
