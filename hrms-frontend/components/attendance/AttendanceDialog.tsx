@@ -51,7 +51,7 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
     if (!open) return;
     if (attendance) {
       reset({
-        user: typeof attendance.user === "object" ? attendance.user._id : attendance.user,
+        user: attendance.user && typeof attendance.user === "object" ? attendance.user._id : attendance.user,
         date: toDateInput(attendance.date),
         timeZone: attendance.timeZone,
         checkIn: toLocalInput(attendance.checkIn),

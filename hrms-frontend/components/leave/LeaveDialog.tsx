@@ -48,7 +48,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
     if (!open) return;
     if (leave) {
       reset({
-        user: typeof leave.user === "object" ? leave.user._id : leave.user,
+        user: leave.user && typeof leave.user === "object" ? leave.user._id : leave.user,
         type: leave.type,
         startDate: toDateInput(leave.startDate),
         endDate: toDateInput(leave.endDate),

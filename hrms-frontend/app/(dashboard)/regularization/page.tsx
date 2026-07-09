@@ -44,7 +44,7 @@ function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview }: {
           <tbody className="divide-y divide-border">
             {loading ? <tr><td colSpan={6} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
             : rows.length === 0 ? <tr><td colSpan={6} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
-            : rows.map((r) => { const name = typeof r.user === "object" ? r.user.name : "—"; return (
+            : rows.map((r) => { const name = r.user && typeof r.user === "object" ? r.user.name : "—"; return (
               <tr key={r._id} className="hover:bg-muted/30">
                 <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div></td>
                 <td className="px-5 py-3.5 text-muted-foreground">{fmtDate(r.date, r.timeZone)}</td>
@@ -95,7 +95,7 @@ export default function RegularizationPage() {
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? "mine");
 
   const columns: DataTableColumn<Regularization>[] = [
-    { id: "employee", label: "Employee", alwaysVisible: true, render: (r) => { const name = typeof r.user === "object" ? r.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; } },
+    { id: "employee", label: "Employee", alwaysVisible: true, render: (r) => { const name = r.user && typeof r.user === "object" ? r.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; } },
     { id: "date", label: "Date", sortKey: "date", render: (r) => <span className="text-muted-foreground">{fmtDate(r.date, r.timeZone)}</span> },
     { id: "type", label: "Type", sortKey: "type", render: (r) => REGULARIZATION_TYPE_LABELS[r.type] },
     { id: "requested", label: "Requested", render: (r) => <span className="text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></span> },
@@ -145,7 +145,7 @@ export default function RegularizationPage() {
           searchable={false} filters={filters} rowLabel="requests" emptyText="No regularization requests." minWidth={780}
           exportName="regularizations"
           exportMapper={(r) => ({
-            Employee: typeof r.user === "object" ? r.user.name : "",
+            Employee: r.user && typeof r.user === "object" ? r.user.name : "",
             Date: fmtDate(r.date, r.timeZone), Type: REGULARIZATION_TYPE_LABELS[r.type],
             CheckIn: fmtTime(r.requestedCheckIn, r.timeZone), CheckOut: fmtTime(r.requestedCheckOut, r.timeZone),
             Status: r.status,
@@ -167,7 +167,7 @@ export default function RegularizationPage() {
 
       <RegularizationDialog open={applyOpen} onOpenChange={setApplyOpen} lockToUserId={user?._id} />
       <RegularizationDialog open={adminApplyOpen} onOpenChange={setAdminApplyOpen} />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${typeof review.reg.user === "object" ? review.reg.user.name : ""} · ${fmtDate(review.reg.date, review.reg.timeZone)}` : undefined} isPending={reviewing} onConfirm={(note) => review && update({ id: review.reg._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.reg.user && typeof review.reg.user === "object" ? review.reg.user.name : ""} · ${fmtDate(review.reg.date, review.reg.timeZone)}` : undefined} isPending={reviewing} onConfirm={(note) => review && update({ id: review.reg._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
       <ConfirmDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)} title="Delete request" description="This regularization request will be removed." isPending={deleting} onConfirm={() => deleteTarget && remove(deleteTarget._id, { onSuccess: () => setDeleteTarget(null) })} />
     </div>
   );

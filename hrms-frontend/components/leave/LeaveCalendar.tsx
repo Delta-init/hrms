@@ -46,7 +46,7 @@ export function LeaveCalendar({ leaves, holidays }: Props) {
       const s = dayKey(l.startDate);
       const e = dayKey(l.endDate);
       if (key >= s && key <= e && l.status !== "cancelled") {
-        const who = typeof l.user === "object" ? l.user.name.split(" ")[0] : "";
+        const who = l.user && typeof l.user === "object" ? l.user.name.split(" ")[0] : "";
         items.push({
           label: `${who} · ${LEAVE_TYPE_LABELS[l.type]}`,
           kind: l.status === "approved" ? "approved" : l.status === "rejected" ? "rejected" : "pending",

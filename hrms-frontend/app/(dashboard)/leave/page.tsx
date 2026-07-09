@@ -57,7 +57,7 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview }: 
             {loading ? <tr><td colSpan={6} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
             : leaves.length === 0 ? <tr><td colSpan={6} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
             : leaves.map((l) => {
-              const name = typeof l.user === "object" ? l.user.name : "—";
+              const name = l.user && typeof l.user === "object" ? l.user.name : "—";
               return (
                 <tr key={l._id} className="hover:bg-muted/30">
                   <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div></td>
@@ -122,7 +122,7 @@ export default function LeavePage() {
   const columns: DataTableColumn<LeaveRequest>[] = [
     {
       id: "employee", label: "Employee", alwaysVisible: true,
-      render: (l) => { const name = typeof l.user === "object" ? l.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; },
+      render: (l) => { const name = l.user && typeof l.user === "object" ? l.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; },
     },
     { id: "type", label: "Type", sortKey: "type", render: (l) => <>{LEAVE_TYPE_LABELS[l.type]}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}</> },
     { id: "dates", label: "Dates", sortKey: "startDate", render: (l) => <span className="text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</span> },
@@ -185,7 +185,7 @@ export default function LeavePage() {
           searchable={false} filters={filters} rowLabel="requests" emptyText="No leave requests match the filters." minWidth={720}
           exportName="leave-requests"
           exportMapper={(l) => ({
-            Employee: typeof l.user === "object" ? l.user.name : "",
+            Employee: l.user && typeof l.user === "object" ? l.user.name : "",
             Type: LEAVE_TYPE_LABELS[l.type], Start: fmtDate(l.startDate, l.timeZone), End: fmtDate(l.endDate, l.timeZone),
             Days: l.days, HalfDay: l.halfDay ? "Yes" : "No", Status: l.status,
             ReviewedBy: typeof l.reviewedBy === "object" && l.reviewedBy ? l.reviewedBy.name : "",
@@ -230,7 +230,7 @@ export default function LeavePage() {
       <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={user?._id} />
       <HolidayDialog open={holidayDialog} onOpenChange={setHolidayDialog} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete leave request" description="This leave request will be permanently removed." isPending={deleting} onConfirm={() => selected && removeLeave(selected._id, { onSuccess: () => setDeleteOpen(false) })} />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && updateLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && updateLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
     </div>
   );
 }

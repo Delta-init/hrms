@@ -58,7 +58,7 @@ export default function AttendancePage() {
     {
       id: "employee", label: "Employee", alwaysVisible: true,
       render: (r) => {
-        const name = typeof r.user === "object" ? r.user.name : "—";
+        const name = r.user && typeof r.user === "object" ? r.user.name : "—";
         return (
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div>
@@ -146,7 +146,7 @@ export default function AttendancePage() {
         minWidth={820}
         exportName="attendance"
         exportMapper={(r) => ({
-          Employee: typeof r.user === "object" ? r.user.name : "",
+          Employee: r.user && typeof r.user === "object" ? r.user.name : "",
           Date: fmtDate(r.date, r.timeZone), Region: r.timeZone,
           Login: fmtTime(r.checkIn, r.timeZone), Logout: fmtTime(r.checkOut, r.timeZone),
           "Worked (min)": r.workedMinutes, "Late (min)": r.lateMinutes,
