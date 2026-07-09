@@ -30,7 +30,6 @@ import {
   DrawerDescription,
   DrawerFooter,
 } from "@/components/ui/drawer";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
@@ -83,25 +82,20 @@ export function ResponsiveDialogContent({
     return (
       /*
        * DrawerContent renders the drag handle automatically.
-       * We keep it as a flex column and let the inner ScrollArea
-       * manage all scrolling.
+       * A native overflow-y-auto container handles scrolling — vaul detects
+       * the scrollable element and lets touch scroll instead of drag-dismiss.
+       * (A Radix ScrollArea here swallowed the gesture on mobile.)
        */
-      <DrawerContent className="flex flex-col px-0">
-        <ScrollArea
-          className="w-full"
-          style={{
-            // minimum height so short content doesn't look too cramped
-            minHeight: "200px",
-            // grows with content up to the max
-            height: height,
-            // 92dvh minus ~60px for the drag handle + safe area
-            maxHeight: "calc(92dvh - 60px)",
-          }}
+      <DrawerContent className="flex max-h-[92dvh] flex-col px-0">
+        <div
+          data-vaul-no-drag
+          className="w-full flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]"
+          style={{ minHeight: "200px", height }}
         >
           <div className="pb-[env(safe-area-inset-bottom,16px)]">
             {children}
           </div>
-        </ScrollArea>
+        </div>
       </DrawerContent>
     );
   }
