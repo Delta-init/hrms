@@ -29,16 +29,25 @@ function experience(from?: string | null): string {
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } } };
 
-/** The grouped, editable profile sections for an employee (reused across pages). */
-export function EmployeeProfileSections({ employee: e, canEdit }: { employee: Employee; canEdit: boolean }) {
+/**
+ * The grouped, editable profile sections for an employee (reused across pages).
+ * variant: "all" → everything · "core" → all except passport/visa ·
+ * "documents" → only passport + visa.
+ */
+export function EmployeeProfileSections({ employee: e, canEdit, variant = "all" }: {
+  employee: Employee; canEdit: boolean; variant?: "all" | "core" | "documents";
+}) {
   const [section, setSection] = useState<ProfileSection | null>(null);
   const edit = (s: ProfileSection) => (
     canEdit ? <EditButton onClick={() => setSection(s)} /> : null
   );
+  const showProfile = variant !== "documents";
+  const showDocs = variant !== "core";
 
   return (
     <>
       <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {showProfile && <>
         <Section icon={User2} title="Personal details" action={edit("personal")}>
           <Grid>
             <Item label="Gender" value={e.gender ? GENDER_LABELS[e.gender] : "—"} />
@@ -136,6 +145,9 @@ export function EmployeeProfileSections({ employee: e, canEdit }: { employee: Em
           ) : <Empty />}
         </Section>
 
+        </>}
+
+        {showDocs && <>
         {/* Passport */}
         <Section icon={BookUser} title="Passport details" action={edit("passport")}>
           <Grid>
@@ -155,6 +167,7 @@ export function EmployeeProfileSections({ employee: e, canEdit }: { employee: Em
             <Item label="Expiry date" value={fmtDate(e.visa?.expiryDate)} icon={CalendarDays} />
           </Grid>
         </Section>
+        </>}
       </motion.div>
 
       {section && <EmployeeSectionDialog open={!!section} onOpenChange={(o) => !o && setSection(null)} section={section} employee={e} />}

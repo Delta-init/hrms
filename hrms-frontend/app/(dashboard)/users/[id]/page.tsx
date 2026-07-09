@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, ArrowUpRight } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUsers";
 import { useEmployeeByUser } from "@/hooks/useEmployees";
@@ -42,6 +42,7 @@ export default function UserDetailPage() {
   const roleName = typeof user.role === "object" ? user.role.roleName : "—";
   const tabs = [
     { key: "profile", label: "Profile", icon: User2 },
+    { key: "documents", label: "Passport & Visa", icon: BookUser },
     canViewCards && { key: "cards", label: "Cards", icon: CreditCard },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "profile";
@@ -79,7 +80,7 @@ export default function UserDetailPage() {
               <p className="text-sm text-muted-foreground">Linked employee · <span className="font-medium text-foreground">{employee.employeeCode}</span></p>
               <Link href={`/employees/${employee._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Full employee page <ArrowUpRight className="h-3 w-3" /></Link>
             </div>
-            <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} />
+            <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} variant="core" />
           </div>
         ) : (
           <Card className="p-12 text-center">
@@ -89,6 +90,20 @@ export default function UserDetailPage() {
             {canCreateEmployee && (
               <Button className="mt-4" onClick={() => setCreateEmpOpen(true)}><ContactRound className="h-4 w-4" />Create employee profile</Button>
             )}
+          </Card>
+        )
+      )}
+
+      {activeTab === "documents" && (
+        empLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : employee ? (
+          <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} variant="documents" />
+        ) : (
+          <Card className="p-12 text-center">
+            <BookUser className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No employee profile yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create the employee profile first (Profile tab) to add passport &amp; visa details.</p>
           </Card>
         )
       )}
