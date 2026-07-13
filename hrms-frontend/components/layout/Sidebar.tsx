@@ -16,9 +16,11 @@ import {
   Clock,
   ClipboardCheck,
   LogOut,
+  Landmark,
   Settings,
   X,
 } from "lucide-react";
+import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,6 +50,7 @@ export const navItems: {
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
+  { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
   { href: "/settings", label: "Settings", icon: Settings, permModule: null },
@@ -59,6 +62,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
+      {!collapsed && <OrgSwitcher />}
       {navItems.map(({ href, label, icon: Icon, permModule }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         const allowed = permModule === null ? true : hasPermission(permModule, "view");

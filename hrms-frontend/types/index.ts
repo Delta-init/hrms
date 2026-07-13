@@ -21,6 +21,7 @@ export const HRMS_MODULES = [
   "workSchedules",
   "cards",
   "resignations",
+  "organizations",
   "users",
   "roles",
   "settings",
@@ -39,10 +40,34 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   workSchedules: "Work Schedules",
   cards: "Cards",
   resignations: "Resignations",
+  organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
   settings: "Settings",
 };
+
+// ─── Organization (multi-tenancy) ─────────────────────────────────────────────
+export interface OrganizationSettings {
+  currency?: string;
+  timeZone?: string;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpSecure?: boolean;
+  mailFrom?: string;
+}
+export interface Organization {
+  _id: string;
+  name: string;
+  code: string;
+  logo?: string;
+  status: "active" | "inactive";
+  settings: OrganizationSettings;
+  createdAt: string;
+  updatedAt: string;
+}
+export type OrganizationSimple = Pick<Organization, "_id" | "name" | "code" | "logo">;
 
 export type PermissionsMap = Partial<Record<HrmsModule, ModulePermissions>>;
 
@@ -261,6 +286,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: Role;
+  organization?: OrganizationSimple | string | null;
   designation?: string;
   status: "active" | "inactive" | "invited";
   profileCompleted?: boolean;

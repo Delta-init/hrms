@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getSession, signOut } from "next-auth/react";
+import { getActiveOrg } from "@/lib/activeOrg";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
 
@@ -17,6 +18,9 @@ api.interceptors.request.use(
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      // Super Admin's active org (ignored by the backend for regular users).
+      const org = getActiveOrg();
+      if (org) config.headers["X-Org-Id"] = org;
     }
     return config;
   },
