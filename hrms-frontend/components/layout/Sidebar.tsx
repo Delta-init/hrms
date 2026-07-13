@@ -62,7 +62,6 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {!collapsed && <OrgSwitcher />}
       {navItems.map(({ href, label, icon: Icon, permModule }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         const allowed = permModule === null ? true : hasPermission(permModule, "view");
@@ -182,6 +181,11 @@ function DesktopSidebar() {
         className="relative hidden h-full flex-col overflow-hidden rounded-r-3xl bg-sidebar shadow-[2px_0_30px_rgba(0,0,0,0.12)] dark:shadow-[4px_0_32px_rgba(0,0,0,0.45)] md:flex"
       >
         <Logo collapsed={sidebarCollapsed} />
+        {!sidebarCollapsed && (
+          <div className="pt-3">
+            <OrgSwitcher />
+          </div>
+        )}
         <NavLinks collapsed={sidebarCollapsed} />
         <UserProfileSection collapsed={sidebarCollapsed} />
       </motion.aside>
@@ -213,6 +217,9 @@ function MobileDrawer() {
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+        <div className="pt-3">
+          <OrgSwitcher />
         </div>
         <TooltipProvider delayDuration={0}>
           <NavLinks onNavigate={() => setMobileDrawerOpen(false)} />
