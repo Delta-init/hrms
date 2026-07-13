@@ -4,6 +4,7 @@ import type { ILeaveRequest } from "../types/index.js";
 /** Leave calendar — employee leave applications and their approval status. */
 const leaveRequestSchema = new Schema<ILeaveRequest>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",

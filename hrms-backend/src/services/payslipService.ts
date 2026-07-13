@@ -5,6 +5,7 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/payslipValidation.js";
 import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -25,15 +26,16 @@ function monthBounds(month: string) {
 
 export class PayslipService {
   async create(input: CreatePayslipInput, issuerId: string) {
-    const emp = await Employee.findById(input.employee);
+    const emp = await Employee.findOne(scoped({ _id: input.employee }));
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
-    const existing = await Payslip.findOne({ employee: input.employee, month: input.month });
+    const existing = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
     if (existing) throw Object.assign(new Error("A payslip already exists for this employee and month"), { statusCode: 409 });
 
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
       ...input,
+      organization: getOrgId(),
       monthDate: start,
       user: emp.user ?? null,
       currency: input.currency || emp.currency || "AED",
@@ -51,7 +53,7 @@ export class PayslipService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;
     if (query.month) filter.month = query.month;
     if (query.status) filter.status = query.status;
@@ -81,13 +83,13 @@ export class PayslipService {
   }
 
   async getById(id: string) {
-    const record = await Payslip.findById(id).populate(POP);
+    const record = await Payslip.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdatePayslipInput, actorId: string) {
-    const record = await Payslip.findById(id);
+    const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
 
     if (input.month !== undefined) { record.month = input.month; record.monthDate = monthBounds(input.month).start; }
@@ -113,14 +115,14 @@ export class PayslipService {
   }
 
   async remove(id: string) {
-    const record = await Payslip.findByIdAndDelete(id);
+    const record = await Payslip.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
     return { message: "Payslip deleted successfully" };
   }
 
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
   async summary(employeeId: string, month: string) {
-    const emp = await Employee.findById(employeeId).lean<IEmployee & { user?: unknown }>();
+    const emp = await Employee.findOne(scoped({ _id: employeeId })).lean<IEmployee & { user?: unknown }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     const { start, end } = monthBounds(month);
 

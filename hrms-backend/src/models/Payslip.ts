@@ -11,6 +11,7 @@ const lineSchema = new Schema<IPayslipLine>(
 
 const payslipSchema = new Schema<IPayslip>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     employee: { type: Schema.Types.ObjectId, ref: "Employee", required: [true, "Employee is required"] },
     user: { type: Schema.Types.ObjectId, ref: "User", default: null },
     month: { type: String, required: [true, "Month is required"], match: [/^\d{4}-\d{2}$/, "Month must be YYYY-MM"] },

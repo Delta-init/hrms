@@ -3,6 +3,7 @@ import { Role } from "../models/Role.js";
 import type { CreateUserInput, UpdateUserInput } from "../validations/userValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 export class UserService {
   async createUser(input: CreateUserInput) {
@@ -16,7 +17,7 @@ export class UserService {
       throw Object.assign(new Error("Role not found"), { statusCode: 404 });
     }
 
-    const user = await User.create({ ...input, email: input.email.toLowerCase() });
+    const user = await User.create({ ...input, organization: getOrgId(), email: input.email.toLowerCase() });
     return User.findById(user._id)
       .populate("role")
       .populate("workSchedule", "name timeZone loginTime logoutTime workDays graceMinutes");
@@ -27,7 +28,7 @@ export class UserService {
     const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? "10", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) {
       const regex = new RegExp(query.search, "i");
       filter.$or = [{ name: regex }, { email: regex }, { designation: regex }];
@@ -59,7 +60,7 @@ export class UserService {
   }
 
   async getUserById(id: string) {
-    const user = await User.findById(id)
+    const user = await User.findOne(scoped({ _id: id }))
       .populate("role")
       .populate("workSchedule", "name timeZone loginTime logoutTime workDays graceMinutes");
     if (!user) {
@@ -69,7 +70,7 @@ export class UserService {
   }
 
   async updateUser(id: string, input: UpdateUserInput) {
-    const user = await User.findById(id);
+    const user = await User.findOne(scoped({ _id: id }));
     if (!user) {
       throw Object.assign(new Error("User not found"), { statusCode: 404 });
     }
@@ -113,7 +114,7 @@ export class UserService {
       throw Object.assign(new Error("You cannot delete your own account"), { statusCode: 400 });
     }
 
-    const user = await User.findById(id).populate("role");
+    const user = await User.findOne(scoped({ _id: id })).populate("role");
     if (!user) {
       throw Object.assign(new Error("User not found"), { statusCode: 404 });
     }
@@ -123,7 +124,7 @@ export class UserService {
       throw Object.assign(new Error("Super Admin user cannot be deleted"), { statusCode: 403 });
     }
 
-    await User.findByIdAndDelete(id);
+    await User.findOneAndDelete(scoped({ _id: id }));
     return { message: "User deleted successfully" };
   }
 }

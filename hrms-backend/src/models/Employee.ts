@@ -77,10 +77,10 @@ const visaSchema = new Schema(
 
 const employeeSchema = new Schema<IEmployee>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     employeeCode: {
       type: String,
       required: [true, "Employee code is required"],
-      unique: true,
       trim: true,
       uppercase: true,
       maxlength: [20, "Employee code cannot exceed 20 characters"],
@@ -154,5 +154,7 @@ const employeeSchema = new Schema<IEmployee>(
 
 employeeSchema.index({ department: 1 });
 employeeSchema.index({ status: 1 });
+
+employeeSchema.index({ organization: 1, employeeCode: 1 }, { unique: true });
 
 export const Employee = mongoose.model<IEmployee>("Employee", employeeSchema);

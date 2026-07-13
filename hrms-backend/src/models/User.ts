@@ -4,6 +4,7 @@ import type { IUser } from "../types/index.js";
 
 const userSchema = new Schema<IUser>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     name: {
       type: String,
       required: [true, "Name is required"],

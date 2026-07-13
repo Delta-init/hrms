@@ -26,6 +26,7 @@ export const HRMS_MODULES = [
   "workSchedules",
   "cards",
   "resignations",
+  "organizations",
   "users",
   "roles",
   "settings",
@@ -36,6 +37,29 @@ export type HrmsModule = (typeof HRMS_MODULES)[number];
 export type PermissionsMap = {
   [K in HrmsModule]?: ModulePermissions;
 };
+
+// ─── Organization (multi-tenancy) ───────────────────────────────────────────
+export interface IOrganizationSettings {
+  currency?: string;
+  timeZone?: string;
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpSecure?: boolean;
+  mailFrom?: string;
+}
+
+export interface IOrganization extends Document {
+  _id: Types.ObjectId;
+  name: string;
+  code: string;
+  logo?: string;
+  status: "active" | "inactive";
+  settings: IOrganizationSettings;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 // ─── Role ─────────────────────────────────────────────────────────────────────
 export interface IRole extends Document {
@@ -55,6 +79,8 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: Types.ObjectId | IRole;
+  /** Tenant this user belongs to. Null for the global Super Admin. */
+  organization?: Types.ObjectId | IOrganization | null;
   designation?: string;
   /** Assigned work schedule (shift, region, leave calendar). */
   workSchedule?: Types.ObjectId | IWorkSchedule | null;
@@ -130,6 +156,7 @@ export interface IAttendanceSession {
 
 export interface IAttendance extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   user: Types.ObjectId | IUser;
   /** Calendar day this record belongs to (midnight of the local day, stored UTC). */
   date: Date;
@@ -158,6 +185,7 @@ export type HolidayType = "public" | "company" | "optional";
 
 export interface IHoliday extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   name: string;
   /** The holiday date (midnight of the local day, stored UTC). */
   date: Date;
@@ -184,6 +212,7 @@ export interface IDepartmentMember {
 
 export interface IDepartment extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   name: string;
   code?: string;
   description?: string;
@@ -253,6 +282,7 @@ export interface IVisa {
 
 export interface IEmployee extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   employeeCode: string;
   name: string;
   email?: string;
@@ -313,6 +343,7 @@ export type RegularizationStatus = "pending" | "approved" | "rejected" | "cancel
 
 export interface IRegularization extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   user: Types.ObjectId | IUser;
   date: Date;
   timeZone: string;
@@ -338,6 +369,7 @@ export interface IPayslipLine {
 
 export interface IPayslip extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   employee: Types.ObjectId | IEmployee;
   user?: Types.ObjectId | IUser | null;
   /** Pay period, "YYYY-MM". */
@@ -364,6 +396,7 @@ export interface IPayslip extends Document {
 // ─── Work Schedule (shift + region + leave calendar) ────────────────────────
 export interface IWorkSchedule extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   name: string;
   description?: string;
   /** IANA region / time zone, e.g. "Asia/Dubai". */
@@ -397,6 +430,7 @@ export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export interface ILeaveRequest extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   user: Types.ObjectId | IUser;
   type: LeaveType;
   startDate: Date;
@@ -420,6 +454,7 @@ export type CardStatus = "active" | "expired";
 
 export interface ICard extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   cardNumber: string;
   name: string;
   /** The login account this card is issued to. */
@@ -438,6 +473,7 @@ export type ResignationStatus = "pending" | "accepted" | "rejected" | "withdrawn
 
 export interface IResignation extends Document {
   _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
   employee: Types.ObjectId | IEmployee;
   /** Login account of the employee, if any (for convenience). */
   user?: Types.ObjectId | IUser | null;

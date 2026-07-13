@@ -3,6 +3,7 @@ import type { IRegularization } from "../types/index.js";
 
 const regularizationSchema = new Schema<IRegularization>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     user: { type: Schema.Types.ObjectId, ref: "User", required: [true, "User is required"] },
     date: { type: Date, required: [true, "Date is required"] },
     timeZone: { type: String, required: true, default: "Asia/Dubai", trim: true },

@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import type { CreateLeaveInput, UpdateLeaveInput } from "../validations/leaveValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface LeaveQuery extends PaginationQuery {
   user?: string;
@@ -42,6 +43,7 @@ export class LeaveService {
     }
 
     const leave = await LeaveRequest.create({
+      organization: getOrgId(),
       user: input.user,
       type: input.type,
       startDate: input.startDate,
@@ -60,7 +62,7 @@ export class LeaveService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;
@@ -92,7 +94,7 @@ export class LeaveService {
   }
 
   async getById(id: string) {
-    const record = await LeaveRequest.findById(id)
+    const record = await LeaveRequest.findOne(scoped({ _id: id }))
       .populate("user", "name email designation")
       .populate("reviewedBy", "name email");
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
@@ -100,7 +102,7 @@ export class LeaveService {
   }
 
   async update(id: string, input: UpdateLeaveInput, reviewerId: string) {
-    const record = await LeaveRequest.findById(id);
+    const record = await LeaveRequest.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
 
     if (input.type !== undefined) record.type = input.type;
@@ -132,7 +134,7 @@ export class LeaveService {
   }
 
   async remove(id: string) {
-    const record = await LeaveRequest.findByIdAndDelete(id);
+    const record = await LeaveRequest.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
     return { message: "Leave request deleted successfully" };
   }

@@ -4,6 +4,7 @@ import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validation
 import type { PaginationQuery, IWorkSchedule } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule } from "../utils/schedule.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface AttendanceQuery extends PaginationQuery {
   user?: string;
@@ -25,7 +26,7 @@ export class AttendanceService {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
-    const existing = await Attendance.findOne({ user: input.user, date: input.date });
+    const existing = await Attendance.findOne(scoped({ user: input.user, date: input.date }));
     if (existing) {
       throw Object.assign(
         new Error("An attendance record already exists for this user on that date"),
@@ -34,6 +35,7 @@ export class AttendanceService {
     }
 
     const attendance = new Attendance({
+      organization: getOrgId(),
       user: input.user,
       date: input.date,
       timeZone: input.timeZone,
@@ -51,7 +53,7 @@ export class AttendanceService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;
     if (query.status) filter.status = query.status;
     if (query.dateFrom || query.dateTo) {
@@ -79,13 +81,13 @@ export class AttendanceService {
   }
 
   async getById(id: string) {
-    const record = await Attendance.findById(id).populate("user", "name email designation");
+    const record = await Attendance.findOne(scoped({ _id: id })).populate("user", "name email designation");
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdateAttendanceInput) {
-    const record = await Attendance.findById(id);
+    const record = await Attendance.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
 
     if (input.date !== undefined) record.date = input.date;
@@ -106,7 +108,7 @@ export class AttendanceService {
   }
 
   async remove(id: string) {
-    const record = await Attendance.findByIdAndDelete(id);
+    const record = await Attendance.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
     return { message: "Attendance record deleted successfully" };
   }
@@ -171,7 +173,7 @@ export class AttendanceService {
     const status = statusForClockIn(now, shift);
     const lateMinutes = Math.max(0, Math.round((now.getTime() - shift.shiftStart.getTime()) / 60000));
 
-    if (!att) att = new Attendance({ user: userId, date: shift.dateMidnightUtc, timeZone: schedule.timeZone });
+    if (!att) att = new Attendance({ organization: getOrgId(), user: userId, date: shift.dateMidnightUtc, timeZone: schedule.timeZone });
     att.timeZone = schedule.timeZone;
     att.status = status;
     att.lateMinutes = lateMinutes;

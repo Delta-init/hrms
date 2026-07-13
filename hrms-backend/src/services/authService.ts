@@ -3,12 +3,14 @@ import { Employee } from "../models/Employee.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken, signTicket, verifyTicket } from "../utils/jwt.js";
 import type { LoginInput, ChangePasswordInput, SetPasswordInput, CompleteProfileInput } from "../validations/authValidation.js";
 import type { IUser, IRole } from "../types/index.js";
+import { scoped } from "../utils/orgContext.js";
 
 export class AuthService {
   async login(input: LoginInput) {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
-      .populate("role");
+      .populate("role")
+      .populate("organization", "name code logo settings");
 
     if (!user) {
       throw Object.assign(new Error("Invalid email or password"), { statusCode: 401 });
@@ -66,7 +68,7 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    const user = await User.findById(userId).populate("role");
+    const user = await User.findById(userId).populate("role").populate("organization", "name code logo settings");
     if (!user) {
       throw Object.assign(new Error("User not found"), { statusCode: 404 });
     }
@@ -97,7 +99,8 @@ export class AuthService {
   async setPassword(input: SetPasswordInput) {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
-      .populate("role");
+      .populate("role")
+      .populate("organization", "name code logo settings");
 
     if (!user) {
       throw Object.assign(new Error("Invalid email or temporary password"), { statusCode: 401 });
@@ -132,7 +135,7 @@ export class AuthService {
    * no employee to onboard, mark them complete so the gate stops prompting.
    */
   async getMyProfile(userId: string) {
-    const employee = await Employee.findOne({ user: userId })
+    const employee = await Employee.findOne(scoped({ user: userId }))
       .populate("department", "name code")
       .populate("reportingTo", "name employeeCode");
     if (!employee) {
@@ -145,7 +148,7 @@ export class AuthService {
 
   /** Save the mandatory onboarding details onto the caller's own employee. */
   async completeProfile(userId: string, input: CompleteProfileInput) {
-    const employee = await Employee.findOne({ user: userId });
+    const employee = await Employee.findOne(scoped({ user: userId }));
     if (!employee) {
       throw Object.assign(
         new Error("No employee is linked to your account. Please contact your administrator."),

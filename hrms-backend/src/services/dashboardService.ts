@@ -1,14 +1,18 @@
+import mongoose from "mongoose";
 import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
+import { orgFilter, getOrgId } from "../utils/orgContext.js";
 
 /** Employees whose birthday (month + day of dob) falls on the given date. */
-export async function birthdaysOn(date = new Date()) {
+export async function birthdaysOn(date = new Date(), orgId?: string | null) {
   const month = date.getMonth() + 1;
   const day = date.getDate();
+  const match: Record<string, unknown> = { dob: { $ne: null } };
+  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([
-    { $match: { dob: { $ne: null } } },
+    { $match: match },
     { $addFields: { _m: { $month: "$dob" }, _d: { $dayOfMonth: "$dob" } } },
     { $match: { _m: month, _d: day } },
     {
@@ -31,19 +35,20 @@ export class DashboardService {
     const start = new Date(now); start.setHours(0, 0, 0, 0);
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
+    const org = orgFilter();
     const [birthdays, onLeaveToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount] = await Promise.all([
-      birthdaysOn(now),
-      LeaveRequest.find({ status: "approved", startDate: { $lte: end }, endDate: { $gte: start } })
+      birthdaysOn(now, getOrgId()),
+      LeaveRequest.find({ ...org, status: "approved", startDate: { $lte: end }, endDate: { $gte: start } })
         .populate("user", "name email designation").sort({ startDate: 1 }).limit(50).lean(),
-      LeaveRequest.find({ status: "pending" })
+      LeaveRequest.find({ ...org, status: "pending" })
         .populate("user", "name email designation").sort({ createdAt: -1 }).limit(8).lean(),
-      Regularization.find({ status: "pending" })
+      Regularization.find({ ...org, status: "pending" })
         .populate("user", "name email designation").sort({ createdAt: -1 }).limit(8).lean(),
-      LeaveRequest.countDocuments({ status: "pending" }),
-      Regularization.countDocuments({ status: "pending" }),
-      Resignation.find({ status: "accepted" })
+      LeaveRequest.countDocuments({ ...org, status: "pending" }),
+      Regularization.countDocuments({ ...org, status: "pending" }),
+      Resignation.find({ ...org, status: "accepted" })
         .populate("employee", "name employeeCode designation").sort({ lastWorkingDay: 1 }).limit(8).lean(),
-      Resignation.countDocuments({ status: "accepted" }),
+      Resignation.countDocuments({ ...org, status: "accepted" }),
     ]);
 
     return {

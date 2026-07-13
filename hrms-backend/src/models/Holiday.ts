@@ -4,6 +4,7 @@ import type { IHoliday } from "../types/index.js";
 /** Leave calendar — company / public holidays used when computing attendance. */
 const holidaySchema = new Schema<IHoliday>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     name: {
       type: String,
       required: [true, "Holiday name is required"],

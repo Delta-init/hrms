@@ -3,10 +3,10 @@ import type { ICard } from "../types/index.js";
 
 const cardSchema = new Schema<ICard>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     cardNumber: {
       type: String,
       required: [true, "Card number is required"],
-      unique: true,
       trim: true,
       maxlength: [40, "Card number cannot exceed 40 characters"],
     },
@@ -36,5 +36,7 @@ cardSchema.virtual("status").get(function (this: ICard) {
 });
 
 cardSchema.index({ client: 1 });
+
+cardSchema.index({ organization: 1, cardNumber: 1 }, { unique: true });
 
 export const Card = mongoose.model<ICard>("Card", cardSchema);

@@ -5,6 +5,7 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import type { CreateDepartmentInput, UpdateDepartmentInput } from "../validations/departmentValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 const POP = [
   { path: "leader", select: "name email employeeCode" },
@@ -13,10 +14,11 @@ const POP = [
 
 export class DepartmentService {
   async create(input: CreateDepartmentInput) {
-    const existing = await Department.findOne({ name: input.name.trim() });
+    const existing = await Department.findOne(scoped({ name: input.name.trim() }));
     if (existing) throw Object.assign(new Error("A department with this name already exists"), { statusCode: 409 });
     const dep = await Department.create({
       ...input,
+      organization: getOrgId(),
       leader: input.leader || null,
       leaderKind: input.leaderKind ?? "Employee",
       members: input.members ?? [],
@@ -29,7 +31,7 @@ export class DepartmentService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) filter.name = new RegExp(query.search, "i");
     if (query.status) filter.status = query.status;
 
@@ -49,21 +51,21 @@ export class DepartmentService {
   }
 
   async listSimple() {
-    return Department.find({ status: "active" }).select("name code").sort({ name: 1 }).lean();
+    return Department.find(scoped({ status: "active" })).select("name code").sort({ name: 1 }).lean();
   }
 
   async getById(id: string) {
-    const record = await Department.findById(id).populate(POP);
+    const record = await Department.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdateDepartmentInput) {
-    const record = await Department.findById(id);
+    const record = await Department.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
 
     if (input.name && input.name !== record.name) {
-      const dupe = await Department.findOne({ name: input.name.trim(), _id: { $ne: id } });
+      const dupe = await Department.findOne(scoped({ name: input.name.trim(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("A department with this name already exists"), { statusCode: 409 });
     }
 
@@ -83,7 +85,7 @@ export class DepartmentService {
 
   /** Full report for a department: members with leave counts + monthly attendance calendars. */
   async report(id: string, month: string) {
-    const dept = await Department.findById(id).populate("leader", "name employeeCode email");
+    const dept = await Department.findOne(scoped({ _id: id })).populate("leader", "name employeeCode email");
     if (!dept) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
 
     const start = new Date(`${month}-01T00:00:00.000Z`);
@@ -170,7 +172,7 @@ export class DepartmentService {
     if (count > 0) {
       throw Object.assign(new Error(`Cannot delete: ${count} employee(s) belong to this department`), { statusCode: 400 });
     }
-    const record = await Department.findByIdAndDelete(id);
+    const record = await Department.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
     return { message: "Department deleted successfully" };
   }

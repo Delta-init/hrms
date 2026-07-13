@@ -4,6 +4,7 @@ import { Role } from "../models/Role.js";
 import type { CreateEmployeeInput, UpdateEmployeeInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface EmployeeQuery extends PaginationQuery {
   department?: string;
@@ -30,9 +31,9 @@ function clean<T extends Record<string, unknown>>(input: T) {
 
 export class EmployeeService {
   async create(input: CreateEmployeeInput) {
-    const existing = await Employee.findOne({ employeeCode: input.employeeCode.trim().toUpperCase() });
+    const existing = await Employee.findOne(scoped({ employeeCode: input.employeeCode.trim().toUpperCase() }));
     if (existing) throw Object.assign(new Error("Employee code already exists"), { statusCode: 409 });
-    const emp = await Employee.create(clean(input));
+    const emp = await Employee.create({ ...clean(input), organization: getOrgId() });
     return Employee.findById(emp._id).populate(POP);
   }
 
@@ -41,7 +42,7 @@ export class EmployeeService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) {
       const rx = new RegExp(query.search, "i");
       filter.$or = [{ name: rx }, { employeeCode: rx }, { email: rx }, { designation: rx }];
@@ -62,24 +63,24 @@ export class EmployeeService {
   }
 
   async getById(id: string) {
-    const record = await Employee.findById(id).populate(POP);
+    const record = await Employee.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     return record;
   }
 
   /** Resolve the employee record linked to a login account. */
   async getByUser(userId: string) {
-    const record = await Employee.findOne({ user: userId }).populate(POP);
+    const record = await Employee.findOne(scoped({ user: userId })).populate(POP);
     if (!record) throw Object.assign(new Error("No employee is linked to this user"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdateEmployeeInput) {
-    const record = await Employee.findById(id);
+    const record = await Employee.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
     if (input.employeeCode && input.employeeCode.toUpperCase() !== record.employeeCode) {
-      const dupe = await Employee.findOne({ employeeCode: input.employeeCode.trim().toUpperCase(), _id: { $ne: id } });
+      const dupe = await Employee.findOne(scoped({ employeeCode: input.employeeCode.trim().toUpperCase(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("Employee code already exists"), { statusCode: 409 });
     }
 
@@ -89,7 +90,7 @@ export class EmployeeService {
   }
 
   async remove(id: string) {
-    const record = await Employee.findByIdAndDelete(id);
+    const record = await Employee.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     return { message: "Employee deleted successfully" };
   }
@@ -100,7 +101,7 @@ export class EmployeeService {
    * login (via the /auth/set-password activation flow), then links it.
    */
   async createLogin(id: string, input: CreateLoginInput) {
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne(scoped({ _id: id }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     if (employee.user) throw Object.assign(new Error("This employee already has a login account"), { statusCode: 409 });
 
@@ -118,6 +119,7 @@ export class EmployeeService {
       email,
       password: input.temporaryPassword,
       role: input.role,
+      organization: employee.organization ?? getOrgId(),
       designation: employee.designation,
       workSchedule: employee.workSchedule ?? null,
       status: "invited",

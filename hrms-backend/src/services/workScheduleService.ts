@@ -3,12 +3,13 @@ import { User } from "../models/User.js";
 import type { CreateWorkScheduleInput, UpdateWorkScheduleInput } from "../validations/workScheduleValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 export class WorkScheduleService {
   async create(input: CreateWorkScheduleInput) {
-    const existing = await WorkSchedule.findOne({ name: input.name.trim() });
+    const existing = await WorkSchedule.findOne(scoped({ name: input.name.trim() }));
     if (existing) throw Object.assign(new Error("A work schedule with this name already exists"), { statusCode: 409 });
-    return WorkSchedule.create(input);
+    return WorkSchedule.create({ ...input, organization: getOrgId() });
   }
 
   async list(query: PaginationQuery) {
@@ -16,7 +17,7 @@ export class WorkScheduleService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) filter.name = new RegExp(query.search, "i");
     if (query.status) filter.status = query.status;
 
@@ -39,17 +40,17 @@ export class WorkScheduleService {
   }
 
   async getById(id: string) {
-    const record = await WorkSchedule.findById(id);
+    const record = await WorkSchedule.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Work schedule not found"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdateWorkScheduleInput) {
-    const record = await WorkSchedule.findById(id);
+    const record = await WorkSchedule.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Work schedule not found"), { statusCode: 404 });
 
     if (input.name && input.name !== record.name) {
-      const dupe = await WorkSchedule.findOne({ name: input.name.trim(), _id: { $ne: id } });
+      const dupe = await WorkSchedule.findOne(scoped({ name: input.name.trim(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("A work schedule with this name already exists"), { statusCode: 409 });
     }
 
@@ -76,7 +77,7 @@ export class WorkScheduleService {
         { statusCode: 400 }
       );
     }
-    const record = await WorkSchedule.findByIdAndDelete(id);
+    const record = await WorkSchedule.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Work schedule not found"), { statusCode: 404 });
     return { message: "Work schedule deleted successfully" };
   }

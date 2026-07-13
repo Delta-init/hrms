@@ -5,10 +5,10 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const workScheduleSchema = new Schema<IWorkSchedule>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     name: {
       type: String,
       required: [true, "Name is required"],
-      unique: true,
       trim: true,
       maxlength: [80, "Name cannot exceed 80 characters"],
     },
@@ -62,5 +62,7 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
     versionKey: false,
   }
 );
+
+workScheduleSchema.index({ organization: 1, name: 1 }, { unique: true });
 
 export const WorkSchedule = mongoose.model<IWorkSchedule>("WorkSchedule", workScheduleSchema);

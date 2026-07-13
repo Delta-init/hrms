@@ -2,6 +2,7 @@ import { Card } from "../models/Card.js";
 import type { CreateCardInput, UpdateCardInput } from "../validations/cardValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface CardQuery extends PaginationQuery {
   client?: string;
@@ -12,9 +13,9 @@ const POP = { path: "client", select: "name email" };
 
 export class CardService {
   async create(input: CreateCardInput) {
-    const existing = await Card.findOne({ cardNumber: input.cardNumber.trim() });
+    const existing = await Card.findOne(scoped({ cardNumber: input.cardNumber.trim() }));
     if (existing) throw Object.assign(new Error("Card number already exists"), { statusCode: 409 });
-    const card = await Card.create(input);
+    const card = await Card.create({ ...input, organization: getOrgId() });
     return Card.findById(card._id).populate(POP);
   }
 
@@ -23,7 +24,7 @@ export class CardService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) {
       const rx = new RegExp(query.search, "i");
       filter.$or = [{ cardNumber: rx }, { name: rx }];
@@ -44,16 +45,16 @@ export class CardService {
   }
 
   async getById(id: string) {
-    const record = await Card.findById(id).populate(POP);
+    const record = await Card.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Card not found"), { statusCode: 404 });
     return record;
   }
 
   async update(id: string, input: UpdateCardInput) {
-    const record = await Card.findById(id);
+    const record = await Card.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Card not found"), { statusCode: 404 });
     if (input.cardNumber && input.cardNumber.trim() !== record.cardNumber) {
-      const dupe = await Card.findOne({ cardNumber: input.cardNumber.trim(), _id: { $ne: id } });
+      const dupe = await Card.findOne(scoped({ cardNumber: input.cardNumber.trim(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("Card number already exists"), { statusCode: 409 });
     }
     Object.assign(record, input);
@@ -62,7 +63,7 @@ export class CardService {
   }
 
   async remove(id: string) {
-    const record = await Card.findByIdAndDelete(id);
+    const record = await Card.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Card not found"), { statusCode: 404 });
   }
 }

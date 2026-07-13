@@ -11,6 +11,7 @@ const sessionSchema = new Schema<IAttendanceSession>(
 
 const attendanceSchema = new Schema<IAttendance>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",

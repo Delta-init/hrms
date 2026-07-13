@@ -12,10 +12,10 @@ const memberSchema = new Schema<IDepartmentMember>(
 
 const departmentSchema = new Schema<IDepartment>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     name: {
       type: String,
       required: [true, "Name is required"],
-      unique: true,
       trim: true,
       maxlength: [80, "Name cannot exceed 80 characters"],
     },
@@ -56,5 +56,7 @@ const departmentSchema = new Schema<IDepartment>(
     versionKey: false,
   }
 );
+
+departmentSchema.index({ organization: 1, name: 1 }, { unique: true });
 
 export const Department = mongoose.model<IDepartment>("Department", departmentSchema);

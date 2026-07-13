@@ -3,6 +3,7 @@ import { Employee } from "../models/Employee.js";
 import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput } from "../validations/resignationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface ResignationQuery extends PaginationQuery {
   employee?: string;
@@ -22,17 +23,18 @@ const addDays = (d: Date, days: number) => {
 
 export class ResignationService {
   async create(input: CreateResignationInput) {
-    const employee = await Employee.findById(input.employee);
+    const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
     // Only one open (pending/accepted) resignation per employee.
-    const open = await Resignation.findOne({ employee: input.employee, status: { $in: ["pending", "accepted"] } });
+    const open = await Resignation.findOne(scoped({ employee: input.employee, status: { $in: ["pending", "accepted"] } }));
     if (open) throw Object.assign(new Error("This employee already has an active resignation"), { statusCode: 409 });
 
     const noticePeriodDays = input.noticePeriodDays ?? employee.noticePeriodDays ?? 60;
     const lastWorkingDay = input.lastWorkingDay ?? addDays(input.resignationDate, noticePeriodDays);
 
     const doc = await Resignation.create({
+      organization: getOrgId(),
       employee: input.employee,
       user: employee.user ?? null,
       resignationDate: input.resignationDate,
@@ -49,7 +51,7 @@ export class ResignationService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
     if (query.employee) filter.employee = query.employee;
 
@@ -71,7 +73,7 @@ export class ResignationService {
   }
 
   async update(id: string, input: UpdateResignationInput) {
-    const record = await Resignation.findById(id);
+    const record = await Resignation.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
     if (record.status !== "pending") {
       throw Object.assign(new Error("Only a pending resignation can be edited"), { statusCode: 400 });
@@ -87,7 +89,7 @@ export class ResignationService {
 
   /** Accept or reject a pending resignation. Accept puts the employee on notice. */
   async review(id: string, input: ReviewResignationInput, reviewerId: string) {
-    const record = await Resignation.findById(id);
+    const record = await Resignation.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
     if (record.status !== "pending") {
       throw Object.assign(new Error("This resignation has already been reviewed"), { statusCode: 400 });
@@ -110,7 +112,7 @@ export class ResignationService {
 
   /** Withdraw a pending/accepted resignation; revert the employee to active if needed. */
   async withdraw(id: string) {
-    const record = await Resignation.findById(id);
+    const record = await Resignation.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
     if (!["pending", "accepted"].includes(record.status)) {
       throw Object.assign(new Error("Only a pending or accepted resignation can be withdrawn"), { statusCode: 400 });
@@ -124,7 +126,7 @@ export class ResignationService {
 
   /** Relieve an accepted resignation — employee is terminated. */
   async relieve(id: string, reviewerId: string) {
-    const record = await Resignation.findById(id);
+    const record = await Resignation.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
     if (record.status !== "accepted") {
       throw Object.assign(new Error("Only an accepted resignation can be relieved"), { statusCode: 400 });
@@ -138,7 +140,7 @@ export class ResignationService {
   }
 
   async remove(id: string) {
-    const record = await Resignation.findByIdAndDelete(id);
+    const record = await Resignation.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
   }
 

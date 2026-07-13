@@ -4,6 +4,7 @@ import { User } from "../models/User.js";
 import type { CreateRegularizationInput, UpdateRegularizationInput } from "../validations/regularizationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -21,7 +22,7 @@ export class RegularizationService {
   async create(input: CreateRegularizationInput) {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
-    const reg = await Regularization.create({ ...input, status: input.status ?? "pending" });
+    const reg = await Regularization.create({ ...input, organization: getOrgId(), status: input.status ?? "pending" });
     return Regularization.findById(reg._id).populate(POP);
   }
 
@@ -30,7 +31,7 @@ export class RegularizationService {
     const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
     const skip = (page - 1) * limit;
 
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;
@@ -57,7 +58,7 @@ export class RegularizationService {
   }
 
   async getById(id: string) {
-    const record = await Regularization.findById(id).populate(POP);
+    const record = await Regularization.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
     return record;
   }
@@ -79,7 +80,7 @@ export class RegularizationService {
   }
 
   async update(id: string, input: UpdateRegularizationInput, reviewerId: string) {
-    const record = await Regularization.findById(id);
+    const record = await Regularization.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
 
     if (input.date !== undefined) record.date = input.date;
@@ -106,7 +107,7 @@ export class RegularizationService {
   }
 
   async remove(id: string) {
-    const record = await Regularization.findByIdAndDelete(id);
+    const record = await Regularization.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
     return { message: "Regularization deleted successfully" };
   }

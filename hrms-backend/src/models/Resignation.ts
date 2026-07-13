@@ -3,6 +3,7 @@ import type { IResignation } from "../types/index.js";
 
 const resignationSchema = new Schema<IResignation>(
   {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     employee: { type: Schema.Types.ObjectId, ref: "Employee", required: [true, "Employee is required"] },
     user: { type: Schema.Types.ObjectId, ref: "User", default: null },
     resignationDate: { type: Date, required: [true, "Resignation date is required"] },

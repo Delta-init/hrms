@@ -4,6 +4,7 @@ import { verifyAccessToken } from "../utils/jwt.js";
 import { sendError } from "../utils/response.js";
 import { Role } from "../models/Role.js";
 import { User } from "../models/User.js";
+import { runWithOrg } from "../utils/orgContext.js";
 
 export const authenticate = async (
   req: AuthenticatedRequest,
@@ -22,7 +23,7 @@ export const authenticate = async (
     const decoded = verifyAccessToken(token);
 
     // Verify user still exists and is active
-    const user = await User.findById(decoded.userId).select("status");
+    const user = await User.findById(decoded.userId).select("status organization");
     if (!user) {
       sendError(res, "User no longer exists", 401);
       return;
@@ -46,7 +47,14 @@ export const authenticate = async (
       role,
     };
 
-    next();
+    // Resolve the active organization for tenant scoping:
+    //  - Super Admin (global): trust the X-Org-Id header from the switcher.
+    //  - Everyone else: forced to their own org (header ignored — no spoofing).
+    const superAdmin = role.isSystemRole && role.roleName === "Super Admin";
+    const headerOrg = (req.headers["x-org-id"] as string | undefined)?.trim() || null;
+    const orgId = superAdmin ? headerOrg : (user.organization ? String(user.organization) : null);
+
+    runWithOrg({ orgId, isSuperAdmin: superAdmin }, () => next());
   } catch (error: unknown) {
     if (error instanceof Error) {
       if (error.name === "TokenExpiredError") {

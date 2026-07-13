@@ -3,6 +3,16 @@ import mongoose from "mongoose";
 import { Role } from "../models/Role.js";
 import { User } from "../models/User.js";
 import { WorkSchedule } from "../models/WorkSchedule.js";
+import { Organization } from "../models/Organization.js";
+import { Employee } from "../models/Employee.js";
+import { Department } from "../models/Department.js";
+import { Attendance } from "../models/Attendance.js";
+import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Holiday } from "../models/Holiday.js";
+import { Regularization } from "../models/Regularization.js";
+import { Payslip } from "../models/Payslip.js";
+import { Card } from "../models/Card.js";
+import { Resignation } from "../models/Resignation.js";
 import { env } from "../config/env.js";
 import type { PermissionsMap } from "../types/index.js";
 import { HRMS_MODULES } from "../types/index.js";
@@ -128,6 +138,37 @@ async function seed() {
         console.log(`ℹ️  Work schedule already exists: ${s.name}`);
       }
     }
+
+    // ── Multi-tenancy: default organization + backfill ──────────────────────
+    let org = await Organization.findOne({ code: "DELTA" });
+    if (!org) {
+      org = await Organization.create({
+        name: "Delta International",
+        code: "DELTA",
+        settings: { currency: "AED", timeZone: "Asia/Dubai" },
+      });
+      console.log("✅ Default organization created: Delta International (DELTA)");
+    }
+
+    // Drop stale single-field unique indexes so the per-org compound ones apply.
+    for (const [model, index] of [
+      [Employee, "employeeCode_1"], [Card, "cardNumber_1"],
+      [Department, "name_1"], [WorkSchedule, "name_1"],
+    ] as const) {
+      try { await model.collection.dropIndex(index); console.log(`   dropped stale index ${index}`); } catch { /* not present */ }
+    }
+
+    // Backfill every domain record that has no organization into the default org.
+    const scoped = [Employee, Department, Attendance, LeaveRequest, Holiday, WorkSchedule, Regularization, Payslip, Card, Resignation];
+    let total = 0;
+    for (const model of scoped) {
+      const res = await model.updateMany({ organization: null }, { $set: { organization: org._id } });
+      total += res.modifiedCount;
+    }
+    // Users: assign to default org, but keep Super Admins global (null).
+    await User.updateMany({ organization: null, role: { $ne: superAdminRole._id } }, { $set: { organization: org._id } });
+    await User.updateMany({ role: superAdminRole._id }, { $set: { organization: null } });
+    if (total > 0) console.log(`✅ Backfilled ${total} record(s) into the default organization`);
 
     console.log("✅ Seeding complete!");
   } catch (error) {
