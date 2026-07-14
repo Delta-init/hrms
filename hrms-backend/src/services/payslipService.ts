@@ -170,7 +170,7 @@ export class PayslipService {
       .select("name employeeCode salary currency user")
       .sort({ name: 1 });
     const existing = await Payslip.find(scoped({ month })).select("employee status");
-    const existMap = new Map(existing.map((p) => [String(p.employee), p.status]));
+    const existMap = new Map(existing.map((p) => [String(p.employee), { id: String(p._id), status: p.status }]));
 
     const rows = [];
     for (const emp of employees) {
@@ -180,6 +180,7 @@ export class PayslipService {
       const lopAmount = Math.round(perDay * s.lopDays * 100) / 100;
       const loanTotal = Math.round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0) * 100) / 100;
       const totalDeductions = Math.round((lopAmount + loanTotal) * 100) / 100;
+      const existRow = existMap.get(String(emp._id));
       rows.push({
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
         currency: s.currency,
@@ -189,7 +190,8 @@ export class PayslipService {
         loanTotal,
         totalDeductions,
         netPay: Math.round((base - totalDeductions) * 100) / 100,
-        status: existMap.get(String(emp._id)) ?? null, // null → not generated yet
+        payslipId: existRow?.id ?? null,
+        status: existRow?.status ?? null, // null → not generated yet
       });
     }
     return { month, rows };

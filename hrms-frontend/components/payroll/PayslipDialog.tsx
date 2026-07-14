@@ -17,16 +17,26 @@ import { useEmployees } from "@/hooks/useEmployees";
 import { toast } from "@/lib/toast";
 import type { Payslip } from "@/types";
 
+interface Preset {
+  employeeId: string;
+  month: string;
+  currency?: string;
+  earnings: { label: string; amount: number }[];
+  deductions: { label: string; amount: number }[];
+}
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   payslip?: Payslip | null;
+  /** Create a payslip pre-filled from a payroll-run row (employee + month locked). */
+  preset?: Preset | null;
 }
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-export function PayslipDialog({ open, onOpenChange, payslip }: Props) {
+export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   const isEditing = !!payslip;
+  const locked = !!preset;
   const { data: empData } = useEmployees({ limit: "200" });
   const employees = empData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreatePayslip();
@@ -54,10 +64,17 @@ export function PayslipDialog({ open, onOpenChange, payslip }: Props) {
         deductions: payslip.deductions,
         status: payslip.status, notes: payslip.notes ?? "",
       });
+    } else if (preset) {
+      reset({
+        employee: preset.employeeId, month: preset.month, currency: preset.currency ?? "AED",
+        earnings: preset.earnings.length ? preset.earnings : [{ label: "Basic", amount: 0 }],
+        deductions: preset.deductions, status: "draft", notes: "",
+      });
     } else {
       reset({ employee: "", month: thisMonth(), currency: "AED", earnings: [{ label: "Basic", amount: 0 }], deductions: [], status: "draft" });
     }
-  }, [open, payslip, reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, payslip]);
 
   const watchedEarnings = watch("earnings");
   const watchedDeductions = watch("deductions");
@@ -118,7 +135,7 @@ export function PayslipDialog({ open, onOpenChange, payslip }: Props) {
             <div className="col-span-2 space-y-1.5">
               <Label>Employee *</Label>
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isEditing}>
+                <Select value={field.value} onValueChange={field.onChange} disabled={isEditing || locked}>
                   <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
                   <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
                 </Select>
@@ -127,7 +144,7 @@ export function PayslipDialog({ open, onOpenChange, payslip }: Props) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="month">Month *</Label>
-              <Input id="month" type="month" {...register("month")} />
+              <Input id="month" type="month" disabled={locked} {...register("month")} />
               {errors.month && <p className="text-xs text-destructive">{errors.month.message}</p>}
             </div>
             <div className="space-y-1.5">
@@ -136,7 +153,7 @@ export function PayslipDialog({ open, onOpenChange, payslip }: Props) {
             </div>
           </div>
 
-          {!isEditing && (
+          {!isEditing && !locked && (
             <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={prefill}>
               <Wand2 className="h-3.5 w-3.5" />Prefill from attendance {summary && summary.lopDays > 0 ? `(LOP ${summary.lopDays}d)` : ""}
             </Button>

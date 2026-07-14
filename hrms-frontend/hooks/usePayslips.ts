@@ -27,6 +27,13 @@ export const useMyPayslips = (params?: Record<string, string>) =>
     },
   });
 
+export const usePayslip = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "detail", id],
+    queryFn: async () => (await api.get<ApiResponse<Payslip>>(`/payslips/${id}`)).data.data!,
+    enabled: !!id,
+  });
+
 export const usePayslipSummary = (employee?: string, month?: string) =>
   useQuery({
     queryKey: [...KEY, "summary", employee, month],

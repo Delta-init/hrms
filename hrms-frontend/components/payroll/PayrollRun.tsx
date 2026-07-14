@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Play, CalendarDays } from "lucide-react";
-import { usePayrollRun, useGeneratePayroll } from "@/hooks/usePayslips";
+import { Loader2, Play, CalendarDays, Plus, Pencil } from "lucide-react";
+import { usePayrollRun, useGeneratePayroll, usePayslip } from "@/hooks/usePayslips";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PayslipDialog } from "@/components/payroll/PayslipDialog";
 import { getInitials, cn } from "@/lib/utils";
 import { PAYSLIP_STATUS_LABELS, type PayrollRunRow, type PayslipStatus } from "@/types";
 
@@ -21,14 +22,33 @@ const money = (n: number, c: string) => `${c} ${(n ?? 0).toLocaleString(undefine
 export function PayrollRun() {
   const { hasPermission } = useAuth();
   const canGenerate = hasPermission("payroll", "create");
+  const canEdit = hasPermission("payroll", "edit");
   const [month, setMonth] = useState(curMonth());
   const { data, isLoading, isFetching } = usePayrollRun(month);
   const { mutate: generate, isPending: generating } = useGeneratePayroll();
+
+  const [createRow, setCreateRow] = useState<PayrollRunRow | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const { data: editPayslip } = usePayslip(editId ?? undefined);
 
   const rows = data?.rows ?? [];
   const pending = rows.filter((r) => r.status === null).length;
   const totalNet = rows.reduce((a, r) => a + r.netPay, 0);
   const currency = rows[0]?.currency ?? "AED";
+
+  const preset = createRow
+    ? {
+        employeeId: createRow.employee._id,
+        month,
+        currency: createRow.currency,
+        earnings: [{ label: "Basic", amount: createRow.salary }],
+        deductions: [
+          ...(createRow.lopAmount > 0 ? [{ label: `Loss of Pay (${createRow.lopDays}d)`, amount: createRow.lopAmount }] : []),
+          ...(createRow.loanTotal > 0 ? [{ label: "Loan repayment", amount: createRow.loanTotal }] : []),
+        ],
+      }
+    : null;
+  const closeDialog = () => { setCreateRow(null); setEditId(null); };
 
   return (
     <div className="space-y-4">
@@ -67,23 +87,40 @@ export function PayrollRun() {
                 <th className="px-4 py-3 text-right font-medium">Deductions</th>
                 <th className="px-4 py-3 text-right font-medium">Net pay</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {isLoading || isFetching ? (
-                <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                <tr><td colSpan={8} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
-              ) : rows.map((r) => <Row key={r.employee._id} r={r} />)}
+                <tr><td colSpan={8} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
+              ) : rows.map((r) => (
+                <Row
+                  key={r.employee._id}
+                  r={r}
+                  canEdit={canEdit}
+                  canGenerate={canGenerate}
+                  onAdd={() => setCreateRow(r)}
+                  onEdit={() => r.payslipId && setEditId(r.payslipId)}
+                />
+              ))}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <PayslipDialog
+        open={!!createRow || (!!editId && !!editPayslip)}
+        onOpenChange={(o) => { if (!o) closeDialog(); }}
+        payslip={editId ? editPayslip : null}
+        preset={preset}
+      />
     </div>
   );
 }
 
-function Row({ r }: { r: PayrollRunRow }) {
+function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; canEdit: boolean; canGenerate: boolean; onAdd: () => void; onEdit: () => void }) {
   return (
     <tr className="border-b border-border/60 last:border-0 hover:bg-muted/30">
       <td className="px-4 py-3">
@@ -104,6 +141,13 @@ function Row({ r }: { r: PayrollRunRow }) {
           <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>{PAYSLIP_STATUS_LABELS[r.status]}</span>
         ) : (
           <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">Not generated</span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-right">
+        {r.status ? (
+          canEdit && <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="h-3.5 w-3.5" />Edit</Button>
+        ) : (
+          canGenerate && <Button variant="outline" size="sm" onClick={onAdd}><Plus className="h-3.5 w-3.5" />Add</Button>
         )}
       </td>
     </tr>

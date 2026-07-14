@@ -541,6 +541,8 @@ export interface PayrollRunRow {
   loanTotal: number;
   totalDeductions: number;
   netPay: number;
+  /** id of the existing payslip for this month, or null if not generated. */
+  payslipId: string | null;
   /** null → no payslip generated for this month yet. */
   status: PayslipStatus | null;
 }
