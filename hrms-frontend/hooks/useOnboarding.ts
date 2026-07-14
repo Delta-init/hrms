@@ -7,6 +7,7 @@ import type { ApiResponse, Employee } from "@/types";
 interface MyProfile {
   employee: Employee | null;
   profileCompleted: boolean;
+  photoUrl?: string;
 }
 
 export const useMyProfile = () =>

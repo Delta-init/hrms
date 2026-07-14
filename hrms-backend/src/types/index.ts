@@ -232,6 +232,25 @@ export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_perio
 export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
 export type MaritalStatus = "married" | "unmarried";
+export type EmployeeLocation = "india" | "dubai";
+
+/** Document categories collected during onboarding (location-driven). */
+export type DocumentType =
+  | "passport"
+  | "visa_copy"
+  | "aadhaar"
+  | "photo"
+  | "education_certificate"
+  | "experience_certificate";
+
+export interface IEmployeeDocument {
+  type: DocumentType;
+  fileName?: string;
+  fileKey: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt?: Date;
+}
 
 export interface IEducation {
   qualification?: string;
@@ -295,10 +314,14 @@ export interface IEmployee extends Document {
   employmentType: EmploymentType;
   joiningDate?: Date | null;
   status: EmployeeStatus;
-  location?: string;
+  location?: EmployeeLocation;
   /** Monthly base salary (used to prefill payslips). */
   salary?: number;
   currency?: string;
+  /** Profile/portal photo — R2 object key of the uploaded "photo" document. */
+  photo?: string;
+  /** Uploaded onboarding documents (passport, visa, certificates, …). */
+  documents?: IEmployeeDocument[];
 
   // ── Personal ──
   title?: Title;

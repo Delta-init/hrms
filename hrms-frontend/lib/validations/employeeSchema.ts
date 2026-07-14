@@ -12,7 +12,7 @@ export const employeeFormSchema = z.object({
   employmentType: z.enum(["full_time", "part_time", "contract", "intern"]),
   joiningDate: z.string().optional(),
   status: z.enum(["active", "probation", "on_leave", "notice_period", "terminated"]),
-  location: z.string().max(120).optional(),
+  location: z.enum(["india", "dubai"]).optional(),
   salary: z.coerce.number().min(0, "Salary cannot be negative").optional(),
   currency: z.string().max(6).optional(),
 });

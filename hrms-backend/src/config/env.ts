@@ -22,6 +22,14 @@ const envSchema = z.object({
   MAIL_FROM: z.string().optional(),   // e.g. "HRMS <no-reply@company.com>"
   // Cron expression for the daily birthday check (server local time).
   BIRTHDAY_CRON: z.string().default("0 8 * * *"),
+
+  // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
+  // When unset, document upload is disabled (routes return a clear error).
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_PUBLIC_URL: z.string().optional(), // e.g. https://pub-xxxx.r2.dev or a custom domain
 });
 
 const parsed = envSchema.safeParse(process.env);

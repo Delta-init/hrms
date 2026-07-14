@@ -24,6 +24,7 @@ import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useAuth } from "@/hooks/useAuth";
+import { useMyProfile } from "@/hooks/useOnboarding";
 import type { HrmsModule } from "@/types";
 import {
   Tooltip,
@@ -141,6 +142,8 @@ function Logo({ collapsed = false }: { collapsed?: boolean }) {
 
 function UserProfileSection({ collapsed = false }: { collapsed?: boolean }) {
   const { user } = useAuth();
+  const { data: profile } = useMyProfile();
+  const photo = profile?.photoUrl || "";
   const name = user?.name ?? "User";
   const parts = name.trim().split(/\s+/).slice(0, 2);
   const initials = parts.map((p) => p[0]).join("").toUpperCase() || "U";
@@ -150,16 +153,26 @@ function UserProfileSection({ collapsed = false }: { collapsed?: boolean }) {
     <div className="border-t border-sidebar-border p-3 shrink-0">
       {collapsed ? (
         <div className="flex justify-center py-1">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
-            {initials}
-          </div>
+          {photo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={photo} alt={name} className="h-9 w-9 rounded-full object-cover shadow-sm" />
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
+              {initials}
+            </div>
+          )}
         </div>
       ) : (
         <div className="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold shadow-sm">
-              {initials}
-            </div>
+            {photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo} alt={name} className="h-10 w-10 shrink-0 rounded-full object-cover shadow-sm" />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold shadow-sm">
+                {initials}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-tight text-sidebar-foreground">{name}</p>
               <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">{roleName}</p>

@@ -4,6 +4,8 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, signTicket, veri
 import type { LoginInput, ChangePasswordInput, SetPasswordInput, CompleteProfileInput } from "../validations/authValidation.js";
 import type { IUser, IRole } from "../types/index.js";
 import { scoped } from "../utils/orgContext.js";
+import { missingRequiredDocs } from "../config/documentRequirements.js";
+import { publicUrl } from "./uploadService.js";
 
 export class AuthService {
   async login(input: LoginInput) {
@@ -140,10 +142,14 @@ export class AuthService {
       .populate("reportingTo", "name employeeCode");
     if (!employee) {
       await User.findByIdAndUpdate(userId, { profileCompleted: true });
-      return { employee: null, profileCompleted: true };
+      return { employee: null, profileCompleted: true, photoUrl: "" };
     }
     const user = await User.findById(userId).select("profileCompleted");
-    return { employee, profileCompleted: !!user?.profileCompleted };
+    return {
+      employee,
+      profileCompleted: !!user?.profileCompleted,
+      photoUrl: employee.photo ? publicUrl(employee.photo) : "",
+    };
   }
 
   /** Save the mandatory onboarding details onto the caller's own employee. */
@@ -155,6 +161,21 @@ export class AuthService {
         { statusCode: 400 }
       );
     }
+    // Enforce location-driven document collection: onboarding cannot complete
+    // until every required document for the employee's work location is present.
+    if (employee.location) {
+      const missing = missingRequiredDocs(
+        employee.location,
+        employee.documents ?? []
+      );
+      if (missing.length) {
+        throw Object.assign(
+          new Error(`Please upload required documents: ${missing.join(", ")}.`),
+          { statusCode: 400 }
+        );
+      }
+    }
+
     const { education, emergencyContact, ...rest } = input;
     Object.assign(employee, rest, {
       education: [education],

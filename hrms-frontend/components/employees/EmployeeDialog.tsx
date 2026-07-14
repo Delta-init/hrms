@@ -16,7 +16,7 @@ import { useCreateEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { useUsers } from "@/hooks/useUsers";
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, type Employee, type EmploymentType, type EmployeeStatus } from "@/types";
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation } from "@/types";
 
 const NONE = "__none__";
 const idOf = (v: unknown) => (v && typeof v === "object" ? (v as { _id: string })._id : (v as string) || "");
@@ -45,7 +45,7 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
       employeeCode: "", name: "", email: "", phone: "", department: "", designation: "",
-      workSchedule: "", user: "", employmentType: "full_time", joiningDate: "", status: "active", location: "",
+      workSchedule: "", user: "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined,
       salary: 0, currency: "AED",
     },
   });
@@ -65,12 +65,12 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
         employmentType: employee.employmentType,
         joiningDate: toDateInput(employee.joiningDate),
         status: employee.status,
-        location: employee.location ?? "",
+        location: employee.location ?? undefined,
         salary: employee.salary ?? 0,
         currency: employee.currency ?? "AED",
       });
     } else {
-      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: "", salary: 0, currency: "AED" });
+      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, salary: 0, currency: "AED" });
     }
   }, [open, employee, reset, defaultName, defaultUserId]);
 
@@ -137,8 +137,23 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
             <Input id="designation" placeholder="e.g. Engineer" {...register("designation")} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="location">Location</Label>
-            <Input id="location" placeholder="e.g. Dubai HQ" {...register("location")} />
+            <Label>Location</Label>
+            <Controller
+              name="location"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value ?? NONE} onValueChange={(v) => field.onChange(v === NONE ? undefined : v)}>
+                  <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Not set</SelectItem>
+                    {(Object.keys(LOCATION_LABELS) as EmployeeLocation[]).map((l) => (
+                      <SelectItem key={l} value={l}>{LOCATION_LABELS[l]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-[11px] text-muted-foreground">Determines which documents the employee must upload during onboarding.</p>
           </div>
 
           <div className="space-y-1.5">

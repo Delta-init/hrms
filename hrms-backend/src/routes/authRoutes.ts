@@ -9,7 +9,13 @@ import {
   getMyProfile,
   completeProfile,
 } from "../controllers/authController.js";
+import {
+  listDocuments,
+  uploadDocument,
+  deleteDocument,
+} from "../controllers/documentController.js";
 import { authenticate } from "../middleware/auth.js";
+import { uploadSingle } from "../middleware/upload.js";
 
 const router = Router();
 
@@ -26,5 +32,9 @@ router.put("/change-password", authenticate, changePassword);
 // Self-service onboarding (fills the caller's own employee record).
 router.get("/my-profile", authenticate, getMyProfile);
 router.post("/complete-profile", authenticate, completeProfile);
+// Self-service onboarding documents (location-driven).
+router.get("/documents", authenticate, listDocuments);
+router.post("/documents", authenticate, uploadSingle, uploadDocument);
+router.delete("/documents/:type", authenticate, deleteDocument);
 
 export default router;

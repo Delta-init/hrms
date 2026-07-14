@@ -75,6 +75,29 @@ const visaSchema = new Schema(
   { _id: false }
 );
 
+const documentSchema = new Schema(
+  {
+    type: {
+      type: String,
+      required: true,
+      enum: [
+        "passport",
+        "visa_copy",
+        "aadhaar",
+        "photo",
+        "education_certificate",
+        "experience_certificate",
+      ],
+    },
+    fileName: { type: String, trim: true, maxlength: 260 },
+    fileKey: { type: String, required: true, trim: true },
+    mimeType: { type: String, trim: true, maxlength: 100 },
+    size: { type: Number, min: 0 },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const employeeSchema = new Schema<IEmployee>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -113,9 +136,12 @@ const employeeSchema = new Schema<IEmployee>(
       enum: ["active", "probation", "on_leave", "notice_period", "terminated"],
       default: "active",
     },
-    location: { type: String, trim: true, maxlength: [120, "Location cannot exceed 120 characters"] },
+    location: { type: String, enum: ["india", "dubai"], default: undefined },
     salary: { type: Number, default: 0, min: 0 },
     currency: { type: String, trim: true, uppercase: true, default: "AED", maxlength: 6 },
+    // Profile/portal photo (R2 key) + onboarding documents.
+    photo: { type: String, trim: true, default: "" },
+    documents: { type: [documentSchema], default: [] },
 
     // ── Personal ──
     title: { type: String, enum: ["mr", "mrs", "ms", "dr"], default: undefined },

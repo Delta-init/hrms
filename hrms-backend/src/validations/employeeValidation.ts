@@ -5,6 +5,7 @@ const status = z.enum(["active", "probation", "on_leave", "notice_period", "term
 const title = z.enum(["mr", "mrs", "ms", "dr"]);
 const gender = z.enum(["male", "female", "other"]);
 const marital = z.enum(["married", "unmarried"]);
+const location = z.enum(["india", "dubai"]);
 
 const educationSchema = z.object({
   qualification: z.string().max(120).optional(),
@@ -91,7 +92,7 @@ export const createEmployeeSchema = z.object({
   employmentType: employmentType.default("full_time"),
   joiningDate: z.coerce.date().optional().nullable(),
   status: status.default("active"),
-  location: z.string().max(120).optional(),
+  location: location.optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,
@@ -109,7 +110,7 @@ export const updateEmployeeSchema = z.object({
   employmentType: employmentType.optional(),
   joiningDate: z.coerce.date().optional().nullable(),
   status: status.optional(),
-  location: z.string().max(120).optional().nullable(),
+  location: location.optional().nullable(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,

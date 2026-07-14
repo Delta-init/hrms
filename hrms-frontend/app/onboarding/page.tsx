@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   User, Landmark, GraduationCap, MapPin, Home, ShieldAlert, CheckCircle2,
-  ChevronLeft, ChevronRight, Loader2, Sparkles,
+  ChevronLeft, ChevronRight, Loader2, Sparkles, FileText,
 } from "lucide-react";
 import { useMyProfile, useCompleteProfile } from "@/hooks/useOnboarding";
 import { onboardingSchema, STEP_FIELDS, type OnboardingValues } from "@/lib/validations/onboardingSchema";
@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { BLOOD_GROUPS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS, type Employee } from "@/types";
+import { DocumentsStep } from "@/components/onboarding/DocumentsStep";
 
 const SECTIONS = [
   { label: "Personal", icon: User },
@@ -27,8 +28,12 @@ const SECTIONS = [
   { label: "Current address", icon: MapPin },
   { label: "Permanent address", icon: Home },
   { label: "Emergency", icon: ShieldAlert },
+  { label: "Documents", icon: FileText },
   { label: "Review", icon: CheckCircle2 },
 ];
+
+/** Index of the documents step (uploads happen outside react-hook-form). */
+const DOC_STEP = 6;
 
 const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
 
@@ -61,6 +66,7 @@ function Wizard({ employee: e }: { employee: Employee }) {
   const { mutate: complete, isPending } = useCompleteProfile();
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
+  const [docsReady, setDocsReady] = useState(false);
 
   const form = useForm<OnboardingValues>({
     resolver: zodResolver(onboardingSchema),
@@ -86,6 +92,11 @@ function Wizard({ employee: e }: { employee: Employee }) {
   const go = (delta: number) => { setDir(delta); setStep((s) => Math.min(SECTIONS.length - 1, Math.max(0, s + delta))); };
 
   const next = async () => {
+    if (step === DOC_STEP) {
+      if (!docsReady) { toast.error("Please upload all required documents"); return; }
+      go(1);
+      return;
+    }
     const ok = await form.trigger(STEP_FIELDS[step] as never);
     if (!ok) { toast.error("Please complete the required fields"); return; }
     go(1);
@@ -142,7 +153,7 @@ function Wizard({ employee: e }: { employee: Employee }) {
                 exit={{ opacity: 0, x: dir * -40 }}
                 transition={{ duration: 0.25, ease: "easeOut" }}
               >
-                <StepBody step={step} form={form} isReview={isReview} />
+                <StepBody step={step} form={form} isReview={isReview} onDocsReady={setDocsReady} />
               </motion.div>
             </AnimatePresence>
           </div>
@@ -166,8 +177,10 @@ function Wizard({ employee: e }: { employee: Employee }) {
   );
 }
 
-function StepBody({ step, form, isReview }: { step: number; form: UseFormReturn<OnboardingValues>; isReview: boolean }) {
+function StepBody({ step, form, isReview, onDocsReady }: { step: number; form: UseFormReturn<OnboardingValues>; isReview: boolean; onDocsReady: (ready: boolean) => void }) {
   const { register, control, formState: { errors }, getValues } = form;
+
+  if (step === DOC_STEP) return <DocumentsStep onReadyChange={onDocsReady} />;
   const F = (label: string, name: string, err?: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div className="space-y-1.5">
       <Label>{label}</Label>

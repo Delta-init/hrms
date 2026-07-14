@@ -174,6 +174,39 @@ export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
 export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
 export type MaritalStatus = "married" | "unmarried";
+export type EmployeeLocation = "india" | "dubai";
+export const LOCATION_LABELS: Record<EmployeeLocation, string> = { india: "India", dubai: "Dubai" };
+
+// ─── Employee documents (location-driven onboarding) ─────────────────────────
+export type DocumentType =
+  | "passport"
+  | "visa_copy"
+  | "aadhaar"
+  | "photo"
+  | "education_certificate"
+  | "experience_certificate";
+
+export interface DocRequirement {
+  key: string;
+  label: string;
+  required: boolean;
+  isPhoto?: boolean;
+  accepts: DocumentType[];
+}
+export interface EmployeeDocument {
+  type: DocumentType;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt?: string;
+  url: string;
+}
+export interface DocumentsResponse {
+  location: EmployeeLocation | null;
+  requirements: DocRequirement[];
+  documents: EmployeeDocument[];
+  photo: string;
+}
 
 export const TITLE_LABELS: Record<Title, string> = { mr: "Mr", mrs: "Mrs", ms: "Ms", dr: "Dr" };
 export const GENDER_LABELS: Record<Gender, string> = { male: "Male", female: "Female", other: "Other" };
@@ -244,9 +277,11 @@ export interface Employee {
   employmentType: EmploymentType;
   joiningDate?: string | null;
   status: EmployeeStatus;
-  location?: string;
+  location?: EmployeeLocation;
   salary?: number;
   currency?: string;
+  photo?: string;
+  documents?: EmployeeDocument[];
 
   // Personal
   title?: Title;
