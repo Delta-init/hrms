@@ -1,10 +1,13 @@
 "use client";
-import { useState } from "react";
-import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut } from "lucide-react";
-import { useResignations, useReviewResignation, useWithdrawResignation, useRelieveResignation, useDeleteResignation } from "@/hooks/useResignations";
+import { useEffect, useState } from "react";
+import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut, Loader2, DoorOpen } from "lucide-react";
+import { useResignations, useReviewResignation, useWithdrawResignation, useRelieveResignation, useDeleteResignation, useSetExitDetails } from "@/hooks/useResignations";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { ResignationDialog } from "@/components/resignations/ResignationDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -104,6 +107,10 @@ export function EmployeeResignation({ employee }: Props) {
         </Card>
       )}
 
+      {current && ["accepted", "relieved"].includes(current.status) && canEdit && (
+        <ExitDetails resignation={current} />
+      )}
+
       {history.length > 0 && (
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">History</p>
@@ -159,5 +166,72 @@ function Field({ label, value, className }: { label: string; value: string; clas
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-medium">{value}</p>
     </div>
+  );
+}
+
+const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
+
+function ExitDetails({ resignation: r }: { resignation: Resignation }) {
+  const { mutate: save, isPending } = useSetExitDetails();
+  const [leavingDate, setLeavingDate] = useState("");
+  const [finalSettlement, setFinalSettlement] = useState("");
+  const [left, setLeft] = useState(false);
+  const [noticeServed, setNoticeServed] = useState(false);
+
+  useEffect(() => {
+    setLeavingDate(toDateInput(r.leavingDate));
+    setFinalSettlement(r.finalSettlement != null ? String(r.finalSettlement) : "");
+    setLeft(!!r.left);
+    setNoticeServed(!!r.noticePeriodServed);
+  }, [r._id, r.leavingDate, r.finalSettlement, r.left, r.noticePeriodServed]);
+
+  const onSave = () => {
+    save({
+      id: r._id,
+      data: {
+        leavingDate: leavingDate || null,
+        finalSettlement: finalSettlement === "" ? null : Number(finalSettlement),
+        left,
+        noticePeriodServed: noticeServed,
+      },
+    });
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <DoorOpen className="h-4 w-4 text-primary" />
+        <span className="font-semibold">Exit details</span>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="leavingDate">Leaving date</Label>
+          <Input id="leavingDate" type="date" value={leavingDate} onChange={(e) => setLeavingDate(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="finalSettlement">Final settlement</Label>
+          <Input id="finalSettlement" type="number" min="0" step="0.01" placeholder="Amount" value={finalSettlement} onChange={(e) => setFinalSettlement(e.target.value)} />
+        </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        <div className="flex items-center justify-between rounded-xl border border-border p-3">
+          <div>
+            <p className="text-sm font-medium">Notice period served</p>
+            <p className="text-[11px] text-muted-foreground">Did the employee serve their full notice?</p>
+          </div>
+          <Switch checked={noticeServed} onCheckedChange={setNoticeServed} />
+        </div>
+        <div className="flex items-center justify-between rounded-xl border border-border p-3">
+          <div>
+            <p className="text-sm font-medium">Left</p>
+            <p className="text-[11px] text-muted-foreground">Ticking this marks the employee as gone — status set to Terminated.</p>
+          </div>
+          <Switch checked={left} onCheckedChange={setLeft} />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button size="sm" onClick={onSave} disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save exit details</Button>
+      </div>
+    </Card>
   );
 }

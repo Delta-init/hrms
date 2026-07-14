@@ -34,6 +34,14 @@ export const updateResignationSchema = z.object({
   reason: z.string().max(1000).optional().nullable(),
 });
 
+export const exitDetailsSchema = z.object({
+  leavingDate: z.coerce.date().optional().nullable(),
+  finalSettlement: z.coerce.number().min(0).optional().nullable(),
+  left: z.boolean().optional(),
+  noticePeriodServed: z.boolean().optional(),
+});
+
 export type CreateResignationInput = z.infer<typeof createResignationSchema>;
 export type ReviewResignationInput = z.infer<typeof reviewResignationSchema>;
 export type UpdateResignationInput = z.infer<typeof updateResignationSchema>;
+export type ExitDetailsInput = z.infer<typeof exitDetailsSchema>;

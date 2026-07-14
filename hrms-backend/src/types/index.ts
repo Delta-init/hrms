@@ -26,6 +26,7 @@ export const HRMS_MODULES = [
   "workSchedules",
   "cards",
   "resignations",
+  "loans",
   "organizations",
   "users",
   "roles",
@@ -514,9 +515,33 @@ export interface IResignation extends Document {
   lastWorkingDay: Date;
   reason?: string;
   status: ResignationStatus;
+  // ── Exit details ──
+  leavingDate?: Date | null;
+  finalSettlement?: number | null;
+  left?: boolean;
+  noticePeriodServed?: boolean;
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Loan ────────────────────────────────────────────────────────────────────
+export type LoanStatus = "active" | "closed" | "cancelled";
+export interface ILoan extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  amount: number;
+  purpose?: string;
+  disbursedDate?: Date | null;
+  installments: number;
+  monthlyDeduction: number;
+  amountRepaid: number;
+  status: LoanStatus;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { ResignationService } from "../services/resignationService.js";
 import { runResignationRelieve } from "../jobs/resignationJob.js";
-import { createResignationSchema, reviewResignationSchema, updateResignationSchema } from "../validations/resignationValidation.js";
+import { createResignationSchema, reviewResignationSchema, updateResignationSchema, exitDetailsSchema } from "../validations/resignationValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new ResignationService();
@@ -53,6 +53,14 @@ export const withdrawResignation = async (req: AuthenticatedRequest, res: Respon
 export const relieveResignation = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Employee relieved", await service.relieve(req.params.id, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+export const setExitDetails = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = exitDetailsSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Exit details saved", await service.setExitDetails(req.params.id, parsed.data));
   } catch (error) { next(error); }
 };
 

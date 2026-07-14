@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   LogOut,
   Landmark,
+  Banknote,
   Settings,
   X,
 } from "lucide-react";
@@ -51,6 +52,7 @@ export const navItems: {
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
+  { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

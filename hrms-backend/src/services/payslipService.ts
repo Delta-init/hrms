@@ -6,6 +6,7 @@ import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/pays
 import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -32,9 +33,17 @@ export class PayslipService {
     const existing = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
     if (existing) throw Object.assign(new Error("A payslip already exists for this employee and month"), { statusCode: 409 });
 
+    // Auto-apply this month's active-loan instalments as deduction lines. Any
+    // loan lines already present (from the summary prefill) are re-derived here
+    // so the deduction stays authoritative and is never double-counted.
+    const { lines: loanLines, repayments } = await computeLoanDeductions(input.employee);
+    const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
+    const deductions = [...userDeductions, ...loanLines];
+
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
       ...input,
+      deductions,
       organization: getOrgId(),
       monthDate: start,
       user: emp.user ?? null,
@@ -45,6 +54,9 @@ export class PayslipService {
     if (status === "issued" || status === "paid") { doc.issuedBy = issuerId as never; doc.issuedAt = new Date(); }
     if (status === "paid") doc.paidAt = new Date();
     await doc.save();
+
+    // Record the repayments now that the payslip is persisted.
+    if (repayments.length) await recordLoanRepayments(repayments);
     return Payslip.findById(doc._id).populate(POP);
   }
 
@@ -126,7 +138,10 @@ export class PayslipService {
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     const { start, end } = monthBounds(month);
 
-    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary: emp.salary ?? 0, currency: emp.currency ?? "AED" };
+    // Active-loan instalments that will be deducted from this payslip.
+    const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
+
+    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary: emp.salary ?? 0, currency: emp.currency ?? "AED", loanDeductions };
     if (!emp.user) return base;
 
     const [att, unpaid] = await Promise.all([

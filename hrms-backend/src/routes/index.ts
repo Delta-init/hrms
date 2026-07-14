@@ -13,6 +13,7 @@ import payslipRoutes from "./payslipRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
 import cardRoutes from "./cardRoutes.js";
 import resignationRoutes from "./resignationRoutes.js";
+import loanRoutes from "./loanRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -21,6 +22,7 @@ router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cards", cardRoutes);
 router.use("/resignations", resignationRoutes);
+router.use("/loans", loanRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

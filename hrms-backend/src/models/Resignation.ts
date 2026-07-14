@@ -21,6 +21,11 @@ const resignationSchema = new Schema<IResignation>(
       enum: ["pending", "accepted", "rejected", "withdrawn", "relieved"],
       default: "pending",
     },
+    // ── Exit details ──
+    leavingDate: { type: Date, default: null },
+    finalSettlement: { type: Number, min: 0, default: null },
+    left: { type: Boolean, default: false },
+    noticePeriodServed: { type: Boolean, default: false },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

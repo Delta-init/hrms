@@ -62,3 +62,13 @@ export const useDeleteResignation = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to delete")),
   });
 };
+
+export const useSetExitDetails = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.patch<ApiResponse<Resignation>>(`/resignations/${id}/exit`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["employees"] }); toast.success("Exit details saved"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to save exit details")),
+  });
+};

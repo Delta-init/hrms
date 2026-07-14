@@ -21,6 +21,7 @@ export const HRMS_MODULES = [
   "workSchedules",
   "cards",
   "resignations",
+  "loans",
   "organizations",
   "users",
   "roles",
@@ -40,6 +41,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   workSchedules: "Work Schedules",
   cards: "Cards",
   resignations: "Resignations",
+  loans: "Loans",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -634,9 +636,37 @@ export interface Resignation {
   lastWorkingDay: string;
   reason?: string;
   status: ResignationStatus;
+  leavingDate?: string | null;
+  finalSettlement?: number | null;
+  left?: boolean;
+  noticePeriodServed?: boolean;
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Loan ─────────────────────────────────────────────────────────────────────
+export type LoanStatus = "active" | "closed" | "cancelled";
+export const LOAN_STATUS_LABELS: Record<LoanStatus, string> = {
+  active: "Active",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};
+
+export interface Loan {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string; currency?: string } | string | null;
+  user?: { _id: string; name: string; email?: string } | string | null;
+  amount: number;
+  purpose?: string;
+  disbursedDate?: string | null;
+  installments: number;
+  monthlyDeduction: number;
+  amountRepaid: number;
+  status: LoanStatus;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }

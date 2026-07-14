@@ -1,6 +1,6 @@
 import { Resignation } from "../models/Resignation.js";
 import { Employee } from "../models/Employee.js";
-import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput } from "../validations/resignationValidation.js";
+import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput, ExitDetailsInput } from "../validations/resignationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -148,6 +148,36 @@ export class ResignationService {
     record.reviewedAt = new Date();
     await record.save();
     await Employee.findByIdAndUpdate(record.employee, { status: "terminated" });
+    return Resignation.findById(id).populate(POP);
+  }
+
+  /**
+   * Record exit details on an accepted/relieved resignation. Ticking `left`
+   * marks the employee as gone (status → terminated, resignation → relieved);
+   * un-ticking reverts them to serving notice.
+   */
+  async setExitDetails(id: string, input: ExitDetailsInput) {
+    const record = await Resignation.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
+    if (!["accepted", "relieved"].includes(record.status)) {
+      throw Object.assign(new Error("Accept the resignation before recording exit details"), { statusCode: 400 });
+    }
+    if (input.leavingDate !== undefined) record.leavingDate = input.leavingDate;
+    if (input.finalSettlement !== undefined) record.finalSettlement = input.finalSettlement;
+    if (input.noticePeriodServed !== undefined) record.noticePeriodServed = input.noticePeriodServed;
+
+    if (input.left !== undefined) {
+      record.left = input.left;
+      if (input.left) {
+        record.status = "relieved";
+        if (!record.leavingDate) record.leavingDate = record.lastWorkingDay ?? new Date();
+        await Employee.findByIdAndUpdate(record.employee, { status: "terminated" });
+      } else {
+        record.status = "accepted";
+        await Employee.findByIdAndUpdate(record.employee, { status: "notice_period" });
+      }
+    }
+    await record.save();
     return Resignation.findById(id).populate(POP);
   }
 
