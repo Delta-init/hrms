@@ -16,6 +16,11 @@ export class UserService {
     if (!role) {
       throw Object.assign(new Error("Role not found"), { statusCode: 404 });
     }
+    // Guard against privilege escalation: system roles (e.g. Super Admin) are
+    // bootstrapped by the seed only and can never be assigned via the API.
+    if (role.isSystemRole) {
+      throw Object.assign(new Error("This role cannot be assigned"), { statusCode: 403 });
+    }
 
     const user = await User.create({ ...input, organization: getOrgId(), email: input.email.toLowerCase() });
     return User.findById(user._id)
@@ -86,6 +91,9 @@ export class UserService {
       const role = await Role.findById(input.role);
       if (!role) {
         throw Object.assign(new Error("Role not found"), { statusCode: 404 });
+      }
+      if (role.isSystemRole) {
+        throw Object.assign(new Error("This role cannot be assigned"), { statusCode: 403 });
       }
     }
 

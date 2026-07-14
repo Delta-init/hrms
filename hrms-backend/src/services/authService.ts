@@ -205,7 +205,8 @@ export class AuthService {
     }
     const [admin, target] = await Promise.all([
       User.findById(impersonatorId).select("name"),
-      User.findById(targetId).populate("role"),
+      // Scope to the caller's org so an admin can't impersonate another tenant's user.
+      User.findOne(scoped({ _id: targetId })).populate("role"),
     ]);
     if (!target) throw Object.assign(new Error("User not found"), { statusCode: 404 });
     if (target.status === "inactive") {
