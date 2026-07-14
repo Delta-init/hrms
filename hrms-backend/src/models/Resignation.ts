@@ -6,7 +6,13 @@ const resignationSchema = new Schema<IResignation>(
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     employee: { type: Schema.Types.ObjectId, ref: "Employee", required: [true, "Employee is required"] },
     user: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    resignationType: {
+      type: String,
+      enum: ["resignation", "termination", "retirement", "end_of_contract", "absconding"],
+      default: "resignation",
+    },
     resignationDate: { type: Date, required: [true, "Resignation date is required"] },
+    noticeRequired: { type: Boolean, default: true },
     noticePeriodDays: { type: Number, min: 0, default: 60 },
     lastWorkingDay: { type: Date, required: [true, "Last working day is required"] },
     reason: { type: String, trim: true, maxlength: 1000 },

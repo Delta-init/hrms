@@ -1,8 +1,18 @@
 import { z } from "zod";
 
+const resignationType = z.enum([
+  "resignation",
+  "termination",
+  "retirement",
+  "end_of_contract",
+  "absconding",
+]);
+
 export const createResignationSchema = z.object({
   employee: z.string().min(1, "Employee is required"),
+  resignationType: resignationType.optional(),
   resignationDate: z.coerce.date({ errorMap: () => ({ message: "Resignation date is required" }) }),
+  noticeRequired: z.boolean().optional(),
   noticePeriodDays: z.coerce.number().min(0).optional(),
   lastWorkingDay: z.coerce.date().optional().nullable(),
   reason: z.string().max(1000).optional(),
@@ -16,7 +26,9 @@ export const reviewResignationSchema = z.object({
 });
 
 export const updateResignationSchema = z.object({
+  resignationType: resignationType.optional(),
   resignationDate: z.coerce.date().optional(),
+  noticeRequired: z.boolean().optional(),
   noticePeriodDays: z.coerce.number().min(0).optional(),
   lastWorkingDay: z.coerce.date().optional().nullable(),
   reason: z.string().max(1000).optional().nullable(),

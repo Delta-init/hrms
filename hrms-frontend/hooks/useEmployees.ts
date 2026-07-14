@@ -9,13 +9,14 @@ function errMsg(e: unknown, f: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? f;
 }
 
-export const useEmployees = (params?: Record<string, string>) =>
+export const useEmployees = (params?: Record<string, string>, options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Employee[]>>("/employees", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+    enabled: options?.enabled ?? true,
   });
 
 export const useEmployee = (id?: string) =>

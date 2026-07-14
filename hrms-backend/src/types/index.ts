@@ -493,6 +493,12 @@ export interface ICard extends Document {
 
 // ─── Resignation & Notice Period ────────────────────────────────────────────
 export type ResignationStatus = "pending" | "accepted" | "rejected" | "withdrawn" | "relieved";
+export type ResignationType =
+  | "resignation"
+  | "termination"
+  | "retirement"
+  | "end_of_contract"
+  | "absconding";
 
 export interface IResignation extends Document {
   _id: Types.ObjectId;
@@ -500,7 +506,10 @@ export interface IResignation extends Document {
   employee: Types.ObjectId | IEmployee;
   /** Login account of the employee, if any (for convenience). */
   user?: Types.ObjectId | IUser | null;
+  resignationType: ResignationType;
   resignationDate: Date;
+  /** When false, notice is waived — last working day is immediate. */
+  noticeRequired: boolean;
   noticePeriodDays: number;
   lastWorkingDay: Date;
   reason?: string;

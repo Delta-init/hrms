@@ -30,14 +30,22 @@ export class ResignationService {
     const open = await Resignation.findOne(scoped({ employee: input.employee, status: { $in: ["pending", "accepted"] } }));
     if (open) throw Object.assign(new Error("This employee already has an active resignation"), { statusCode: 409 });
 
-    const noticePeriodDays = input.noticePeriodDays ?? employee.noticePeriodDays ?? 60;
-    const lastWorkingDay = input.lastWorkingDay ?? addDays(input.resignationDate, noticePeriodDays);
+    const noticeRequired = input.noticeRequired ?? true;
+    // When notice is waived, the exit is immediate: 0 notice days and LWD = resign date.
+    const noticePeriodDays = !noticeRequired
+      ? 0
+      : input.noticePeriodDays ?? employee.noticePeriodDays ?? 60;
+    const lastWorkingDay =
+      input.lastWorkingDay ??
+      (noticeRequired ? addDays(input.resignationDate, noticePeriodDays) : input.resignationDate);
 
     const doc = await Resignation.create({
       organization: getOrgId(),
       employee: input.employee,
       user: employee.user ?? null,
+      resignationType: input.resignationType ?? "resignation",
       resignationDate: input.resignationDate,
+      noticeRequired,
       noticePeriodDays,
       lastWorkingDay,
       reason: input.reason,
@@ -79,8 +87,12 @@ export class ResignationService {
       throw Object.assign(new Error("Only a pending resignation can be edited"), { statusCode: 400 });
     }
     Object.assign(record, input);
-    // Recompute LWD if notice/date changed and no explicit LWD supplied.
-    if ((input.noticePeriodDays !== undefined || input.resignationDate) && input.lastWorkingDay === undefined) {
+    // Waiving notice makes the exit immediate (0 days, LWD = resign date).
+    if (record.noticeRequired === false) {
+      record.noticePeriodDays = 0;
+      if (input.lastWorkingDay === undefined) record.lastWorkingDay = record.resignationDate;
+    } else if ((input.noticePeriodDays !== undefined || input.resignationDate || input.noticeRequired) && input.lastWorkingDay === undefined) {
+      // Recompute LWD if notice/date/toggle changed and no explicit LWD supplied.
       record.lastWorkingDay = addDays(record.resignationDate, record.noticePeriodDays);
     }
     await record.save();

@@ -614,11 +614,22 @@ export const RESIGNATION_STATUS_LABELS: Record<ResignationStatus, string> = {
   relieved: "Relieved",
 };
 
+export type ResignationType = "resignation" | "termination" | "retirement" | "end_of_contract" | "absconding";
+export const RESIGNATION_TYPE_LABELS: Record<ResignationType, string> = {
+  resignation: "Resignation",
+  termination: "Termination",
+  retirement: "Retirement",
+  end_of_contract: "End of contract",
+  absconding: "Absconding",
+};
+
 export interface Resignation {
   _id: string;
   employee?: { _id: string; name: string; employeeCode?: string; designation?: string; department?: DepartmentSimple | string | null } | string | null;
   user?: { _id: string; name: string; email?: string } | string | null;
+  resignationType: ResignationType;
   resignationDate: string;
+  noticeRequired: boolean;
   noticePeriodDays: number;
   lastWorkingDay: string;
   reason?: string;
