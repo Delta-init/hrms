@@ -39,6 +39,22 @@ export const getPayslipSummary = async (req: AuthenticatedRequest, res: Response
   } catch (error) { next(error); }
 };
 
+export const getPayrollRun = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const month = String(req.query.month ?? "");
+    if (!/^\d{4}-\d{2}$/.test(month)) { sendError(res, "month (YYYY-MM) is required", 400); return; }
+    sendSuccess(res, "Payroll run", await service.runPreview(month));
+  } catch (error) { next(error); }
+};
+
+export const runPayroll = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const month = String(req.body?.month ?? "");
+    if (!/^\d{4}-\d{2}$/.test(month)) { sendError(res, "month (YYYY-MM) is required", 400); return; }
+    sendSuccess(res, "Payroll generated", await service.runGenerate(month, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
 export const getPayslipById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Payslip retrieved successfully", await service.getById(req.params.id));

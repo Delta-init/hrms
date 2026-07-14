@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Payslip, PayslipSummary } from "@/types";
+import type { ApiResponse, Payslip, PayslipSummary, PayrollRun } from "@/types";
 
 const KEY = ["payslips"] as const;
 function errMsg(e: unknown, f: string) {
@@ -34,6 +34,25 @@ export const usePayslipSummary = (employee?: string, month?: string) =>
     enabled: !!employee && !!month,
     staleTime: 60_000,
   });
+
+export const usePayrollRun = (month?: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "run", month],
+    queryFn: async () => (await api.get<ApiResponse<PayrollRun>>("/payslips/run", { params: { month: month! } })).data.data!,
+    enabled: !!month && enabled,
+  });
+
+export const useGeneratePayroll = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (month: string) => (await api.post<ApiResponse<{ created: number; skipped: number; total: number }>>("/payslips/run", { month })).data.data!,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      toast.success(`Generated ${r.created} payslip${r.created === 1 ? "" : "s"}${r.skipped ? ` · ${r.skipped} already existed` : ""}`);
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to generate payroll")),
+  });
+};
 
 export const useCreatePayslip = () => {
   const qc = useQueryClient();

@@ -531,6 +531,24 @@ export interface PayslipSummary {
   unpaidLeaveDays: number; lopDays: number; salary: number; currency: string;
 }
 
+// ─── Monthly payroll run ─────────────────────────────────────────────────────
+export interface PayrollRunRow {
+  employee: { _id: string; name: string; employeeCode?: string };
+  currency: string;
+  salary: number;
+  lopDays: number;
+  lopAmount: number;
+  loanTotal: number;
+  totalDeductions: number;
+  netPay: number;
+  /** null → no payslip generated for this month yet. */
+  status: PayslipStatus | null;
+}
+export interface PayrollRun {
+  month: string;
+  rows: PayrollRunRow[];
+}
+
 // ─── Department report ───────────────────────────────────────────────────────
 export interface DepartmentReportMember {
   employee: { _id: string; name: string; employeeCode: string; designation?: string };

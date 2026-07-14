@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText } from "lucide-react";
+import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange } from "lucide-react";
 import { usePayslips, useMyPayslips, useDeletePayslip } from "@/hooks/usePayslips";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { PayslipDialog } from "@/components/payroll/PayslipDialog";
+import { PayrollRun } from "@/components/payroll/PayrollRun";
 import { printPayslip } from "@/components/payroll/printPayslip";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,7 @@ export default function PayrollPage() {
   const canEdit = hasPermission("payroll", "edit");
   const canDelete = hasPermission("payroll", "delete");
 
-  const [tab, setTab] = useState("payslips");
+  const [tab, setTab] = useState("run");
   const query = useTableQuery({ defaultSortBy: "month", defaultSortOrder: "desc", defaultLimit: 20 });
   const { data, isLoading, isFetching } = usePayslips(canView ? query.params : undefined);
   const { data: mineData, isLoading: mineLoading } = useMyPayslips({ limit: "50" });
@@ -53,6 +54,7 @@ export default function PayrollPage() {
   const [selected, setSelected] = useState<Payslip | null>(null);
 
   const tabs = [
+    canView && { key: "run", label: "Payroll Run", icon: CalendarRange },
     canView && { key: "payslips", label: "Payslips", icon: ListChecks },
     { key: "mine", label: "My Payslips", icon: Send },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
@@ -120,6 +122,8 @@ export default function PayrollPage() {
       />
 
       <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+
+      {activeTab === "run" && canView && <PayrollRun />}
 
       {activeTab === "payslips" && (
         <DataTable

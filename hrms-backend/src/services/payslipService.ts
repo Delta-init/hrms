@@ -158,4 +158,64 @@ export class PayslipService {
     base.lopDays = Math.round((base.absent + base.unpaidLeaveDays + base.half * 0.5) * 100) / 100;
     return base;
   }
+
+  /**
+   * Monthly payroll preview: for every active employee, auto-compute base pay,
+   * attendance-driven Loss of Pay, loan instalments and net — plus whether a
+   * payslip already exists for the month. Uses the same math as a single
+   * payslip (base = salary, LOP per-day = salary/30, loans from active loans).
+   */
+  async runPreview(month: string) {
+    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+      .select("name employeeCode salary currency user")
+      .sort({ name: 1 });
+    const existing = await Payslip.find(scoped({ month })).select("employee status");
+    const existMap = new Map(existing.map((p) => [String(p.employee), p.status]));
+
+    const rows = [];
+    for (const emp of employees) {
+      const s = await this.summary(String(emp._id), month);
+      const base = s.salary || 0;
+      const perDay = Math.round((base / 30) * 100) / 100;
+      const lopAmount = Math.round(perDay * s.lopDays * 100) / 100;
+      const loanTotal = Math.round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0) * 100) / 100;
+      const totalDeductions = Math.round((lopAmount + loanTotal) * 100) / 100;
+      rows.push({
+        employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
+        currency: s.currency,
+        salary: base,
+        lopDays: s.lopDays,
+        lopAmount,
+        loanTotal,
+        totalDeductions,
+        netPay: Math.round((base - totalDeductions) * 100) / 100,
+        status: existMap.get(String(emp._id)) ?? null, // null → not generated yet
+      });
+    }
+    return { month, rows };
+  }
+
+  /** Bulk-create draft payslips for every active employee lacking one this month. */
+  async runGenerate(month: string, issuerId: string) {
+    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } })).select("_id salary");
+    const existing = await Payslip.find(scoped({ month })).select("employee");
+    const existSet = new Set(existing.map((p) => String(p.employee)));
+
+    let created = 0;
+    let skipped = 0;
+    for (const emp of employees) {
+      if (existSet.has(String(emp._id))) { skipped++; continue; }
+      const s = await this.summary(String(emp._id), month);
+      const earnings = [{ label: "Basic", amount: s.salary || 0 }];
+      const deductions: { label: string; amount: number }[] = [];
+      if (s.lopDays > 0 && s.salary > 0) {
+        const perDay = Math.round((s.salary / 30) * 100) / 100;
+        deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: Math.round(perDay * s.lopDays * 100) / 100 });
+      }
+      // Loan instalments are appended + recorded by create().
+      await this.create({ employee: String(emp._id), month, currency: s.currency, earnings, deductions, status: "draft" } as never, issuerId);
+      created++;
+    }
+    return { month, created, skipped, total: employees.length };
+  }
 }
