@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResignationDialog } from "@/components/resignations/ResignationDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { RESIGNATION_STATUS_LABELS, RESIGNATION_TYPE_LABELS, type Resignation, type ResignationStatus } from "@/types";
+import { RESIGNATION_STATUS_LABELS, RESIGNATION_TYPE_LABELS, PAYMENT_TYPE_LABELS, type Resignation, type ResignationStatus, type PaymentType } from "@/types";
 
 const statusStyles: Record<ResignationStatus, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
@@ -177,13 +179,21 @@ function ExitDetails({ resignation: r }: { resignation: Resignation }) {
   const [finalSettlement, setFinalSettlement] = useState("");
   const [left, setLeft] = useState(false);
   const [noticeServed, setNoticeServed] = useState(false);
+  const [leaveSalaryPaid, setLeaveSalaryPaid] = useState(false);
+  const [ticketAllowancePaid, setTicketAllowancePaid] = useState(false);
+  const [paymentType, setPaymentType] = useState<string>("");
+  const [remarks, setRemarks] = useState("");
 
   useEffect(() => {
     setLeavingDate(toDateInput(r.leavingDate));
     setFinalSettlement(r.finalSettlement != null ? String(r.finalSettlement) : "");
     setLeft(!!r.left);
     setNoticeServed(!!r.noticePeriodServed);
-  }, [r._id, r.leavingDate, r.finalSettlement, r.left, r.noticePeriodServed]);
+    setLeaveSalaryPaid(!!r.leaveSalaryPaid);
+    setTicketAllowancePaid(!!r.ticketAllowancePaid);
+    setPaymentType(r.paymentType ?? "");
+    setRemarks(r.remarks ?? "");
+  }, [r._id, r.leavingDate, r.finalSettlement, r.left, r.noticePeriodServed, r.leaveSalaryPaid, r.ticketAllowancePaid, r.paymentType, r.remarks]);
 
   const onSave = () => {
     save({
@@ -193,6 +203,10 @@ function ExitDetails({ resignation: r }: { resignation: Resignation }) {
         finalSettlement: finalSettlement === "" ? null : Number(finalSettlement),
         left,
         noticePeriodServed: noticeServed,
+        leaveSalaryPaid,
+        ticketAllowancePaid,
+        paymentType: paymentType || null,
+        remarks: remarks || null,
       },
     });
   };
@@ -229,6 +243,37 @@ function ExitDetails({ resignation: r }: { resignation: Resignation }) {
           <Switch checked={left} onCheckedChange={setLeft} />
         </div>
       </div>
+
+      {/* Leave settlement */}
+      <div className="mt-5 rounded-xl border border-border p-3">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-primary">Leave settlement</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Leave salary paid</p>
+            <Switch checked={leaveSalaryPaid} onCheckedChange={setLeaveSalaryPaid} />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Ticket allowance paid</p>
+            <Switch checked={ticketAllowancePaid} onCheckedChange={setTicketAllowancePaid} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payment type</Label>
+            <Select value={paymentType || undefined} onValueChange={setPaymentType}>
+              <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PAYMENT_TYPE_LABELS) as PaymentType[]).map((p) => (
+                  <SelectItem key={p} value={p}>{PAYMENT_TYPE_LABELS[p]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="remarks">Remarks</Label>
+            <Textarea id="remarks" rows={2} placeholder="Optional notes about the settlement" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
       <div className="mt-4 flex justify-end">
         <Button size="sm" onClick={onSave} disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save exit details</Button>
       </div>

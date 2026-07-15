@@ -501,6 +501,7 @@ export type ResignationType =
   | "retirement"
   | "end_of_contract"
   | "absconding";
+export type PaymentType = "cash" | "bank_transfer" | "cheque";
 
 export interface IResignation extends Document {
   _id: Types.ObjectId;
@@ -521,6 +522,11 @@ export interface IResignation extends Document {
   finalSettlement?: number | null;
   left?: boolean;
   noticePeriodServed?: boolean;
+  // ── Leave settlement ──
+  leaveSalaryPaid?: boolean;
+  ticketAllowancePaid?: boolean;
+  paymentType?: PaymentType | null;
+  remarks?: string;
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;

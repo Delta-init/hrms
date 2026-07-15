@@ -647,6 +647,13 @@ export const RESIGNATION_TYPE_LABELS: Record<ResignationType, string> = {
   absconding: "Absconding",
 };
 
+export type PaymentType = "cash" | "bank_transfer" | "cheque";
+export const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
+  cash: "Cash",
+  bank_transfer: "Bank transfer",
+  cheque: "Cheque",
+};
+
 export interface Resignation {
   _id: string;
   employee?: { _id: string; name: string; employeeCode?: string; designation?: string; department?: DepartmentSimple | string | null } | string | null;
@@ -662,6 +669,10 @@ export interface Resignation {
   finalSettlement?: number | null;
   left?: boolean;
   noticePeriodServed?: boolean;
+  leaveSalaryPaid?: boolean;
+  ticketAllowancePaid?: boolean;
+  paymentType?: PaymentType | null;
+  remarks?: string;
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;

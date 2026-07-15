@@ -26,6 +26,11 @@ const resignationSchema = new Schema<IResignation>(
     finalSettlement: { type: Number, min: 0, default: null },
     left: { type: Boolean, default: false },
     noticePeriodServed: { type: Boolean, default: false },
+    // ── Leave settlement ──
+    leaveSalaryPaid: { type: Boolean, default: false },
+    ticketAllowancePaid: { type: Boolean, default: false },
+    paymentType: { type: String, enum: ["cash", "bank_transfer", "cheque"], default: undefined },
+    remarks: { type: String, trim: true, maxlength: 1000 },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

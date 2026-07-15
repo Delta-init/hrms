@@ -165,6 +165,10 @@ export class ResignationService {
     if (input.leavingDate !== undefined) record.leavingDate = input.leavingDate;
     if (input.finalSettlement !== undefined) record.finalSettlement = input.finalSettlement;
     if (input.noticePeriodServed !== undefined) record.noticePeriodServed = input.noticePeriodServed;
+    if (input.leaveSalaryPaid !== undefined) record.leaveSalaryPaid = input.leaveSalaryPaid;
+    if (input.ticketAllowancePaid !== undefined) record.ticketAllowancePaid = input.ticketAllowancePaid;
+    if (input.paymentType !== undefined) record.paymentType = input.paymentType ?? undefined;
+    if (input.remarks !== undefined) record.remarks = input.remarks ?? undefined;
 
     if (input.left !== undefined) {
       record.left = input.left;

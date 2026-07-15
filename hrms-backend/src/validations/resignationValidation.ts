@@ -39,6 +39,11 @@ export const exitDetailsSchema = z.object({
   finalSettlement: z.coerce.number().min(0).optional().nullable(),
   left: z.boolean().optional(),
   noticePeriodServed: z.boolean().optional(),
+  // Leave settlement
+  leaveSalaryPaid: z.boolean().optional(),
+  ticketAllowancePaid: z.boolean().optional(),
+  paymentType: z.enum(["cash", "bank_transfer", "cheque"]).optional().nullable(),
+  remarks: z.string().max(1000).optional().nullable(),
 });
 
 export type CreateResignationInput = z.infer<typeof createResignationSchema>;
