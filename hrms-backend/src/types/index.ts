@@ -27,6 +27,7 @@ export const HRMS_MODULES = [
   "cards",
   "resignations",
   "loans",
+  "salaryIncrements",
   "organizations",
   "users",
   "roles",
@@ -542,6 +543,22 @@ export interface ILoan extends Document {
   amountRepaid: number;
   status: LoanStatus;
   notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Salary increment ────────────────────────────────────────────────────────
+export interface ISalaryIncrement extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  previousSalary: number;
+  newSalary: number;
+  /** Payout month the raise takes effect (YYYY-MM). */
+  effectiveMonth: string;
+  reason?: string;
+  createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }

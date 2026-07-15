@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUsers";
 import { useEmployeeByUser } from "@/hooks/useEmployees";
@@ -14,6 +14,7 @@ import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileS
 import { EmployeeDialog } from "@/components/employees/EmployeeDialog";
 import { EmployeeResignation } from "@/components/resignations/EmployeeResignation";
 import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
+import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
 import { getInitials, cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export default function UserDetailPage() {
   const canViewCards = hasPermission("cards", "view");
   const canViewResignations = hasPermission("resignations", "view");
   const canViewLoans = hasPermission("loans", "view");
+  const canViewIncrements = hasPermission("salaryIncrements", "view");
 
   const [tab, setTab] = useState("profile");
   const [createEmpOpen, setCreateEmpOpen] = useState(false);
@@ -49,6 +51,7 @@ export default function UserDetailPage() {
     { key: "documents", label: "Passport & Visa", icon: BookUser },
     canViewResignations && { key: "resignation", label: "Resignation", icon: LogOut },
     canViewLoans && { key: "loans", label: "Loans", icon: Banknote },
+    canViewIncrements && { key: "increments", label: "Increments", icon: TrendingUp },
     canViewCards && { key: "cards", label: "Cards", icon: CreditCard },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "profile";
@@ -138,6 +141,20 @@ export default function UserDetailPage() {
             <Banknote className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">No employee profile yet</p>
             <p className="mt-1 text-sm text-muted-foreground">Create the employee profile first (Profile tab) to record loans.</p>
+          </Card>
+        )
+      )}
+
+      {activeTab === "increments" && canViewIncrements && (
+        empLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : employee ? (
+          <EmployeeIncrements employee={employee} />
+        ) : (
+          <Card className="p-12 text-center">
+            <TrendingUp className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No employee profile yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create the employee profile first (Profile tab) to record increments.</p>
           </Card>
         )
       )}

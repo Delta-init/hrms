@@ -18,6 +18,7 @@ import {
   LogOut,
   Landmark,
   Banknote,
+  TrendingUp,
   Settings,
   X,
 } from "lucide-react";
@@ -53,6 +54,7 @@ export const navItems: {
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
   { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
+  { href: "/salary-increments", label: "Salary Increments", icon: TrendingUp, permModule: "salaryIncrements" },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

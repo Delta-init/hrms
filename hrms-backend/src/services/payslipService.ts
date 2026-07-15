@@ -7,6 +7,7 @@ import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
+import { effectiveSalaryFor } from "./salaryIncrementService.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -140,8 +141,10 @@ export class PayslipService {
 
     // Active-loan instalments that will be deducted from this payslip.
     const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
+    // Salary in force for this month (applies any effective salary increment).
+    const salary = await effectiveSalaryFor(employeeId, emp.salary ?? 0, month);
 
-    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary: emp.salary ?? 0, currency: emp.currency ?? "AED", loanDeductions };
+    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary, currency: emp.currency ?? "AED", loanDeductions };
     if (!emp.user) return base;
 
     const [att, unpaid] = await Promise.all([

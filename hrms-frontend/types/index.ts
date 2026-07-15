@@ -22,6 +22,7 @@ export const HRMS_MODULES = [
   "cards",
   "resignations",
   "loans",
+  "salaryIncrements",
   "organizations",
   "users",
   "roles",
@@ -42,6 +43,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   cards: "Cards",
   resignations: "Resignations",
   loans: "Loans",
+  salaryIncrements: "Salary Increments",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -687,6 +689,19 @@ export interface Loan {
   amountRepaid: number;
   status: LoanStatus;
   notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Salary increment ─────────────────────────────────────────────────────────
+export interface SalaryIncrement {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; currency?: string; salary?: number } | string | null;
+  previousSalary: number;
+  newSalary: number;
+  effectiveMonth: string;
+  reason?: string;
+  createdBy?: { _id: string; name: string } | string | null;
   createdAt: string;
   updatedAt: string;
 }
