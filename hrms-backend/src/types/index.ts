@@ -553,6 +553,17 @@ export interface ILoan extends Document {
   updatedAt: Date;
 }
 
+// ─── Payroll checklist ───────────────────────────────────────────────────────
+export interface IPayrollChecklistItem extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  label: string;
+  link?: string;
+  order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Salary increment ────────────────────────────────────────────────────────
 export interface ISalaryIncrement extends Document {
   _id: Types.ObjectId;

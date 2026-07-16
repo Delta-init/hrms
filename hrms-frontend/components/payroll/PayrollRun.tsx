@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PayslipDialog } from "@/components/payroll/PayslipDialog";
+import { PayrollChecklistDialog } from "@/components/payroll/PayrollChecklistDialog";
 import { getInitials, cn } from "@/lib/utils";
 import { PAYSLIP_STATUS_LABELS, type PayrollRunRow, type PayslipStatus } from "@/types";
 
@@ -27,6 +28,7 @@ export function PayrollRun() {
   const { data, isLoading, isFetching } = usePayrollRun(month);
   const { mutate: generate, isPending: generating } = useGeneratePayroll();
 
+  const [checklistOpen, setChecklistOpen] = useState(false);
   const [createRow, setCreateRow] = useState<PayrollRunRow | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const { data: editPayslip } = usePayslip(editId ?? undefined);
@@ -68,9 +70,8 @@ export function PayrollRun() {
           </div>
         </div>
         {canGenerate && (
-          <Button onClick={() => generate(month)} disabled={generating || pending === 0} className="shadow-sm">
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Generate all ({pending})
+          <Button onClick={() => setChecklistOpen(true)} disabled={pending === 0} className="shadow-sm">
+            <Play className="h-4 w-4" />Process Payroll ({pending})
           </Button>
         )}
       </Card>
@@ -115,6 +116,14 @@ export function PayrollRun() {
         onOpenChange={(o) => { if (!o) closeDialog(); }}
         payslip={editId ? editPayslip : null}
         preset={preset}
+      />
+
+      <PayrollChecklistDialog
+        open={checklistOpen}
+        onOpenChange={setChecklistOpen}
+        pendingCount={pending}
+        processing={generating}
+        onProcess={() => generate(month, { onSuccess: () => setChecklistOpen(false) })}
       />
     </div>
   );

@@ -553,6 +553,15 @@ export interface PayrollRun {
   rows: PayrollRunRow[];
 }
 
+export interface PayrollChecklistItem {
+  _id: string;
+  label: string;
+  link?: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Department report ───────────────────────────────────────────────────────
 export interface DepartmentReportMember {
   employee: { _id: string; name: string; employeeCode: string; designation?: string };

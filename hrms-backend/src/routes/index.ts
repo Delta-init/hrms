@@ -15,6 +15,7 @@ import cardRoutes from "./cardRoutes.js";
 import resignationRoutes from "./resignationRoutes.js";
 import loanRoutes from "./loanRoutes.js";
 import salaryIncrementRoutes from "./salaryIncrementRoutes.js";
+import payrollChecklistRoutes from "./payrollChecklistRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -25,6 +26,7 @@ router.use("/cards", cardRoutes);
 router.use("/resignations", resignationRoutes);
 router.use("/loans", loanRoutes);
 router.use("/salary-increments", salaryIncrementRoutes);
+router.use("/payroll-checklist", payrollChecklistRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);
