@@ -57,7 +57,10 @@ const employeePermissions: PermissionsMap = {
   attendance: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   leave: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   regularization: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
-  reimbursements: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
+  // create only: employees submit their own claims (New Claim) and see them via
+  // My Claims (/mine needs no permission). No `view` — that exposes the org-wide
+  // All Claims tab with every colleague's private expense amounts.
+  reimbursements: { view: false, create: true, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(
