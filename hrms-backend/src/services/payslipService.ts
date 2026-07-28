@@ -9,6 +9,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
 import { computeReimbursements, markReimbursementsPaid } from "./reimbursementService.js";
+import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
@@ -54,7 +55,9 @@ export class PayslipService {
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
     // Approved expense reimbursements paid out this month (earnings).
     const reimb = await computeReimbursements(input.employee, input.month);
-    const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings];
+    // Overtime worked, paid out this month (earnings).
+    const ot = await computeOvertime(input.employee, input.month);
+    const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
     const deductions = [...userDeductions, ...loanLines, ...oneTime.deductions];
 
     const { start } = monthBounds(input.month);
@@ -77,6 +80,7 @@ export class PayslipService {
     if (repayments.length) await recordLoanRepayments(repayments);
     if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(doc._id));
     if (reimb.ids.length) await markReimbursementsPaid(reimb.ids, String(doc._id));
+    if (ot.ids.length) await markOvertimeApplied(ot.ids, String(doc._id));
     return Payslip.findById(doc._id).populate(POP);
   }
 
@@ -241,6 +245,8 @@ export class PayslipService {
       const oneTimeDeductions = round(oneTime.deductions.reduce((a, l) => a + l.amount, 0));
       const reimb = await computeReimbursements(String(emp._id), month);
       const reimbursements = round(reimb.earnings.reduce((a, l) => a + l.amount, 0));
+      const ot = await computeOvertime(String(emp._id), month);
+      const overtime = round(ot.earnings.reduce((a, l) => a + l.amount, 0));
       const totalDeductions = round(lopAmount + loanTotal + structureDeductions + oneTimeDeductions);
       const existRow = existMap.get(String(emp._id));
       rows.push({
@@ -256,8 +262,9 @@ export class PayslipService {
         oneTimePayments,
         oneTimeDeductions,
         reimbursements,
+        overtime,
         totalDeductions,
-        netPay: round(base + oneTimePayments + reimbursements - totalDeductions),
+        netPay: round(base + oneTimePayments + reimbursements + overtime - totalDeductions),
         payslipId: existRow?.id ?? null,
         status: existRow?.status ?? null, // null → not generated yet
       });
@@ -283,8 +290,9 @@ export class PayslipService {
       const s = await this.summary(String(emp._id), month);
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
       const reimb = await computeReimbursements(String(emp._id), month);
+      const ot = await computeOvertime(String(emp._id), month);
 
-      const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings];
+      const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
       if (s.lopDays > 0 && s.salary > 0) deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: round((s.salary / 30) * s.lopDays) });
       for (const l of s.loanDeductions ?? []) deductions.push(l);

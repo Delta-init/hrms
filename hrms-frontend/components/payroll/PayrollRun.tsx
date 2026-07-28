@@ -153,7 +153,8 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
         {r.oneTimePayments > 0 && r.oneTimeDeductions > 0 && <span className="text-muted-foreground"> / </span>}
         {r.oneTimeDeductions > 0 && <span className="text-red-500">-{money(r.oneTimeDeductions, r.currency)}</span>}
         {r.reimbursements > 0 && <div className="text-emerald-600" title="Approved reimbursements">+{money(r.reimbursements, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">reimb</span></div>}
-        {r.oneTimePayments === 0 && r.oneTimeDeductions === 0 && r.reimbursements === 0 && <span className="text-muted-foreground">—</span>}
+        {r.overtime > 0 && <div className="text-emerald-600" title="Overtime">+{money(r.overtime, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">OT</span></div>}
+        {r.oneTimePayments === 0 && r.oneTimeDeductions === 0 && r.reimbursements === 0 && r.overtime === 0 && <span className="text-muted-foreground">—</span>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.totalDeductions > 0 ? `-${money(r.totalDeductions, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
       <td className="px-4 py-3 text-right font-semibold tabular-nums text-primary">{money(r.netPay, r.currency)}</td>

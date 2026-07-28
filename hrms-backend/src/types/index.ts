@@ -666,6 +666,29 @@ export interface IReimbursement extends Document {
   updatedAt: Date;
 }
 
+// ─── Overtime ────────────────────────────────────────────────────────────────
+export interface IOvertime extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  /** Date the overtime was worked. */
+  date: Date;
+  hours: number;
+  hourlyRate: number;
+  multiplier: number;
+  /** hours × hourlyRate × multiplier (computed on save). */
+  amount: number;
+  /** Payout month (YYYY-MM). */
+  month: string;
+  notes?: string;
+  applied: boolean;
+  payslip?: Types.ObjectId | null;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Payroll checklist ───────────────────────────────────────────────────────
 export interface IPayrollChecklistItem extends Document {
   _id: Types.ObjectId;

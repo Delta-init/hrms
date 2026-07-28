@@ -19,6 +19,7 @@ import payrollChecklistRoutes from "./payrollChecklistRoutes.js";
 import oneTimeAdjustmentRoutes from "./oneTimeAdjustmentRoutes.js";
 import salaryStructureRoutes from "./salaryStructureRoutes.js";
 import reimbursementRoutes from "./reimbursementRoutes.js";
+import overtimeRoutes from "./overtimeRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -33,6 +34,7 @@ router.use("/payroll-checklist", payrollChecklistRoutes);
 router.use("/one-time-adjustments", oneTimeAdjustmentRoutes);
 router.use("/salary-structures", salaryStructureRoutes);
 router.use("/reimbursements", reimbursementRoutes);
+router.use("/overtime", overtimeRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

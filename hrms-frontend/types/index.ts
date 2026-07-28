@@ -558,6 +558,8 @@ export interface PayrollRunRow {
   oneTimeDeductions: number;
   /** Approved expense reimbursements paid out this month (earnings). */
   reimbursements: number;
+  /** Overtime paid out this month (earnings). */
+  overtime: number;
   totalDeductions: number;
   netPay: number;
   /** id of the existing payslip for this month, or null if not generated. */
@@ -639,6 +641,22 @@ export interface Reimbursement {
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string;
   reviewNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Overtime ─────────────────────────────────────────────────────────────────
+export interface Overtime {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; currency?: string } | string | null;
+  date: string;
+  hours: number;
+  hourlyRate: number;
+  multiplier: number;
+  amount: number;
+  month: string;
+  notes?: string;
+  applied: boolean;
   createdAt: string;
   updatedAt: string;
 }
