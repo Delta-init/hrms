@@ -528,11 +528,37 @@ export interface IResignation extends Document {
   ticketAllowancePaid?: boolean;
   paymentType?: PaymentType | null;
   remarks?: string;
+  // ── Full & final settlement ──
+  settlement?: IFinalSettlement | null;
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ISettlementLine {
+  label: string;
+  amount: number;
+}
+export interface IFinalSettlement {
+  computedAt?: Date;
+  /** Monthly Basic used as the settlement base (from the salary structure/salary). */
+  basic: number;
+  dayRate: number;
+  tenureYears: number;
+  gratuity: number;
+  leaveEncashmentDays: number;
+  noticeShortfallDays: number;
+  earnings: ISettlementLine[];
+  deductions: ISettlementLine[];
+  totalEarnings: number;
+  totalDeductions: number;
+  netPayable: number;
+  currency: string;
+  settled: boolean;
+  settledAt?: Date | null;
+  notes?: string;
 }
 
 // ─── Loan ────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut, Loader2, DoorOpen } from "lucide-react";
+import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut, Loader2, DoorOpen, Calculator, Lock } from "lucide-react";
 import { useResignations, useReviewResignation, useWithdrawResignation, useRelieveResignation, useDeleteResignation, useSetExitDetails } from "@/hooks/useResignations";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResignationDialog } from "@/components/resignations/ResignationDialog";
+import { SettlementDialog } from "@/components/resignations/SettlementDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,7 @@ const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().
 
 function ExitDetails({ resignation: r }: { resignation: Resignation }) {
   const { mutate: save, isPending } = useSetExitDetails();
+  const [settlementOpen, setSettlementOpen] = useState(false);
   const [leavingDate, setLeavingDate] = useState("");
   const [finalSettlement, setFinalSettlement] = useState("");
   const [left, setLeft] = useState(false);
@@ -224,9 +226,34 @@ function ExitDetails({ resignation: r }: { resignation: Resignation }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="finalSettlement">Final settlement</Label>
-          <Input id="finalSettlement" type="number" min="0" step="0.01" placeholder="Amount" value={finalSettlement} onChange={(e) => setFinalSettlement(e.target.value)} />
+          <Input id="finalSettlement" type="number" min="0" step="0.01" placeholder="Amount" value={finalSettlement} onChange={(e) => setFinalSettlement(e.target.value)} disabled={!!r.settlement?.settled} />
         </div>
       </div>
+
+      {/* Full & final settlement */}
+      <button
+        type="button"
+        onClick={() => setSettlementOpen(true)}
+        className="mt-4 flex w-full items-center justify-between rounded-xl border border-border p-3 text-left transition hover:bg-muted/40"
+      >
+        <div className="flex items-center gap-2">
+          <Calculator className="h-4 w-4 text-primary" />
+          <div>
+            <p className="text-sm font-medium">Full &amp; final settlement</p>
+            <p className="text-[11px] text-muted-foreground">Auto-compute gratuity, leave encashment, loans, reimbursements &amp; dues</p>
+          </div>
+        </div>
+        {r.settlement?.settled ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600"><Lock className="h-3 w-3" />Settled · {r.settlement.currency} {Number(r.settlement.netPayable).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        ) : r.settlement ? (
+          <span className="text-xs text-muted-foreground">Draft · {r.settlement.currency} {Number(r.settlement.netPayable).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        ) : (
+          <span className="text-xs font-medium text-primary">Compute →</span>
+        )}
+      </button>
+
+      <SettlementDialog open={settlementOpen} onOpenChange={setSettlementOpen} resignation={r} />
+
       <div className="mt-4 space-y-3">
         <div className="flex items-center justify-between rounded-xl border border-border p-3">
           <div>

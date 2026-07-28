@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createResignation, getResignations, getResignationById, updateResignation,
   reviewResignation, withdrawResignation, relieveResignation, deleteResignation, runRelieveDue,
-  setExitDetails,
+  setExitDetails, previewSettlement, saveSettlement, finaliseSettlement,
 } from "../controllers/resignationController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -20,6 +20,10 @@ router.patch("/:id/review", checkPermission("resignations", "approve"), reviewRe
 router.patch("/:id/withdraw", checkPermission("resignations", "edit"), withdrawResignation);
 router.patch("/:id/relieve", checkPermission("resignations", "approve"), relieveResignation);
 router.patch("/:id/exit", checkPermission("resignations", "edit"), setExitDetails);
+// Full & final settlement.
+router.post("/:id/settlement/preview", checkPermission("resignations", "view"), previewSettlement);
+router.put("/:id/settlement", checkPermission("resignations", "edit"), saveSettlement);
+router.post("/:id/settlement/settle", checkPermission("resignations", "approve"), finaliseSettlement);
 router.delete("/:id", checkPermission("resignations", "delete"), deleteResignation);
 
 export default router;

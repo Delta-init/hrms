@@ -1,11 +1,13 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { ResignationService } from "../services/resignationService.js";
+import { SettlementService } from "../services/settlementService.js";
 import { runResignationRelieve } from "../jobs/resignationJob.js";
-import { createResignationSchema, reviewResignationSchema, updateResignationSchema, exitDetailsSchema } from "../validations/resignationValidation.js";
+import { createResignationSchema, reviewResignationSchema, updateResignationSchema, exitDetailsSchema, settlementInputSchema } from "../validations/resignationValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new ResignationService();
+const settlementService = new SettlementService();
 
 export const createResignation = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -76,5 +78,28 @@ export const runRelieveDue = async (_req: AuthenticatedRequest, res: Response, n
   try {
     const relieved = await runResignationRelieve();
     sendSuccess(res, "Relieve pass executed", { relieved });
+  } catch (error) { next(error); }
+};
+
+// ── Full & final settlement ──
+export const previewSettlement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = settlementInputSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Settlement computed", await settlementService.preview(req.params.id, parsed.data));
+  } catch (error) { next(error); }
+};
+
+export const saveSettlement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = settlementInputSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Settlement saved", await settlementService.save(req.params.id, parsed.data));
+  } catch (error) { next(error); }
+};
+
+export const finaliseSettlement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Settlement finalised", await settlementService.settle(req.params.id));
   } catch (error) { next(error); }
 };

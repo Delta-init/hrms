@@ -46,6 +46,23 @@ export const exitDetailsSchema = z.object({
   remarks: z.string().max(1000).optional().nullable(),
 });
 
+const settlementLineSchema = z.object({
+  label: z.string().min(1).max(120),
+  amount: z.coerce.number(),
+});
+
+/** Manual inputs that steer the settlement computation; auto lines (gratuity,
+ *  loans, reimbursements, one-time) are derived server-side. */
+export const settlementInputSchema = z.object({
+  leaveEncashmentDays: z.coerce.number().min(0).optional(),
+  noticeShortfallDays: z.coerce.number().min(0).optional(),
+  gratuityOverride: z.coerce.number().min(0).optional().nullable(),
+  extraEarnings: z.array(settlementLineSchema).optional(),
+  extraDeductions: z.array(settlementLineSchema).optional(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
+export type SettlementInput = z.infer<typeof settlementInputSchema>;
 export type CreateResignationInput = z.infer<typeof createResignationSchema>;
 export type ReviewResignationInput = z.infer<typeof reviewResignationSchema>;
 export type UpdateResignationInput = z.infer<typeof updateResignationSchema>;

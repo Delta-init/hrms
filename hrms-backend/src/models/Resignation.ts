@@ -1,6 +1,34 @@
 import mongoose, { Schema } from "mongoose";
 import type { IResignation } from "../types/index.js";
 
+const settlementLineSchema = new Schema(
+  { label: { type: String, required: true, trim: true, maxlength: 120 }, amount: { type: Number, required: true } },
+  { _id: false }
+);
+
+/** Computed full-&-final settlement snapshot for an exit. */
+const settlementSchema = new Schema(
+  {
+    computedAt: { type: Date, default: null },
+    basic: { type: Number, default: 0 },
+    dayRate: { type: Number, default: 0 },
+    tenureYears: { type: Number, default: 0 },
+    gratuity: { type: Number, default: 0 },
+    leaveEncashmentDays: { type: Number, default: 0, min: 0 },
+    noticeShortfallDays: { type: Number, default: 0, min: 0 },
+    earnings: { type: [settlementLineSchema], default: [] },
+    deductions: { type: [settlementLineSchema], default: [] },
+    totalEarnings: { type: Number, default: 0 },
+    totalDeductions: { type: Number, default: 0 },
+    netPayable: { type: Number, default: 0 },
+    currency: { type: String, default: "AED" },
+    settled: { type: Boolean, default: false },
+    settledAt: { type: Date, default: null },
+    notes: { type: String, trim: true, maxlength: 1000 },
+  },
+  { _id: false }
+);
+
 const resignationSchema = new Schema<IResignation>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -31,6 +59,7 @@ const resignationSchema = new Schema<IResignation>(
     ticketAllowancePaid: { type: Boolean, default: false },
     paymentType: { type: String, enum: ["cash", "bank_transfer", "cheque"], default: undefined },
     remarks: { type: String, trim: true, maxlength: 1000 },
+    settlement: { type: settlementSchema, default: null },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

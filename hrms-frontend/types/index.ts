@@ -804,11 +804,43 @@ export interface Resignation {
   ticketAllowancePaid?: boolean;
   paymentType?: PaymentType | null;
   remarks?: string;
+  settlement?: FinalSettlement | null;
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SettlementLine {
+  label: string;
+  amount: number;
+}
+export interface FinalSettlement {
+  computedAt?: string;
+  basic: number;
+  dayRate: number;
+  tenureYears: number;
+  gratuity: number;
+  leaveEncashmentDays: number;
+  noticeShortfallDays: number;
+  earnings: SettlementLine[];
+  deductions: SettlementLine[];
+  totalEarnings: number;
+  totalDeductions: number;
+  netPayable: number;
+  currency: string;
+  settled: boolean;
+  settledAt?: string | null;
+  notes?: string;
+}
+export interface SettlementInput {
+  leaveEncashmentDays?: number;
+  noticeShortfallDays?: number;
+  gratuityOverride?: number | null;
+  extraEarnings?: SettlementLine[];
+  extraDeductions?: SettlementLine[];
+  notes?: string;
 }
 
 // ─── Loan ─────────────────────────────────────────────────────────────────────

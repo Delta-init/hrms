@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Resignation } from "@/types";
+import type { ApiResponse, Resignation, FinalSettlement } from "@/types";
 
 const KEY = ["resignations"] as const;
 function errMsg(e: unknown, f: string) {
@@ -70,5 +70,39 @@ export const useSetExitDetails = () => {
       (await api.patch<ApiResponse<Resignation>>(`/resignations/${id}/exit`, data)).data.data!,
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["employees"] }); toast.success("Exit details saved"); },
     onError: (e) => toast.error(errMsg(e, "Failed to save exit details")),
+  });
+};
+
+// ── Full & final settlement ──
+export const usePreviewSettlement = () =>
+  useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.post<ApiResponse<FinalSettlement>>(`/resignations/${id}/settlement/preview`, data)).data.data!,
+    onError: (e) => toast.error(errMsg(e, "Failed to compute settlement")),
+  });
+
+export const useSaveSettlement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.put<ApiResponse<FinalSettlement>>(`/resignations/${id}/settlement`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Settlement saved"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to save settlement")),
+  });
+};
+
+export const useFinaliseSettlement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<ApiResponse<FinalSettlement>>(`/resignations/${id}/settlement/settle`, {})).data.data!,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      qc.invalidateQueries({ queryKey: ["reimbursements"] });
+      qc.invalidateQueries({ queryKey: ["payslips"] });
+      toast.success("Settlement finalised");
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to finalise settlement")),
   });
 };
