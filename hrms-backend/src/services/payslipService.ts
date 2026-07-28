@@ -7,6 +7,7 @@ import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
+import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
 
@@ -47,11 +48,15 @@ export class PayslipService {
     // so the deduction stays authoritative and is never double-counted.
     const { lines: loanLines, repayments } = await computeLoanDeductions(input.employee);
     const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
-    const deductions = [...userDeductions, ...loanLines];
+    // One-time payments (earnings) and deductions registered for this month.
+    const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
+    const earnings = [...(input.earnings ?? []), ...oneTime.earnings];
+    const deductions = [...userDeductions, ...loanLines, ...oneTime.deductions];
 
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
       ...input,
+      earnings,
       deductions,
       organization: getOrgId(),
       monthDate: start,
@@ -64,8 +69,9 @@ export class PayslipService {
     if (status === "paid") doc.paidAt = new Date();
     await doc.save();
 
-    // Record the repayments now that the payslip is persisted.
+    // Record loan repayments + mark one-time adjustments applied now the slip exists.
     if (repayments.length) await recordLoanRepayments(repayments);
+    if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(doc._id));
     return Payslip.findById(doc._id).populate(POP);
   }
 
@@ -206,14 +212,18 @@ export class PayslipService {
     const existing = await Payslip.find(scoped({ month })).select("employee status");
     const existMap = new Map(existing.map((p) => [String(p.employee), { id: String(p._id), status: p.status }]));
 
+    const round = (n: number) => Math.round(n * 100) / 100;
     const rows = [];
     for (const emp of employees) {
       const s = await this.summary(String(emp._id), month);
       const base = s.salary || 0;
-      const perDay = Math.round((base / 30) * 100) / 100;
-      const lopAmount = Math.round(perDay * s.lopDays * 100) / 100;
-      const loanTotal = Math.round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0) * 100) / 100;
-      const totalDeductions = Math.round((lopAmount + loanTotal) * 100) / 100;
+      const perDay = round(base / 30);
+      const lopAmount = round(perDay * s.lopDays);
+      const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
+      const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
+      const oneTimePayments = round(oneTime.earnings.reduce((a, l) => a + l.amount, 0));
+      const oneTimeDeductions = round(oneTime.deductions.reduce((a, l) => a + l.amount, 0));
+      const totalDeductions = round(lopAmount + loanTotal + oneTimeDeductions);
       const existRow = existMap.get(String(emp._id));
       rows.push({
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
@@ -222,8 +232,10 @@ export class PayslipService {
         lopDays: s.lopDays,
         lopAmount,
         loanTotal,
+        oneTimePayments,
+        oneTimeDeductions,
         totalDeductions,
-        netPay: Math.round((base - totalDeductions) * 100) / 100,
+        netPay: round(base + oneTimePayments - totalDeductions),
         payslipId: existRow?.id ?? null,
         status: existRow?.status ?? null, // null → not generated yet
       });

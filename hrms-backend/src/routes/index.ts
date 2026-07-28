@@ -16,6 +16,7 @@ import resignationRoutes from "./resignationRoutes.js";
 import loanRoutes from "./loanRoutes.js";
 import salaryIncrementRoutes from "./salaryIncrementRoutes.js";
 import payrollChecklistRoutes from "./payrollChecklistRoutes.js";
+import oneTimeAdjustmentRoutes from "./oneTimeAdjustmentRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -27,6 +28,7 @@ router.use("/resignations", resignationRoutes);
 router.use("/loans", loanRoutes);
 router.use("/salary-increments", salaryIncrementRoutes);
 router.use("/payroll-checklist", payrollChecklistRoutes);
+router.use("/one-time-adjustments", oneTimeAdjustmentRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

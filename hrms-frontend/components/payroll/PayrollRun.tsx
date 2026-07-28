@@ -85,6 +85,7 @@ export function PayrollRun() {
                 <th className="px-4 py-3 text-right font-medium">Base salary</th>
                 <th className="px-4 py-3 text-right font-medium">LOP</th>
                 <th className="px-4 py-3 text-right font-medium">Loan</th>
+                <th className="px-4 py-3 text-right font-medium">1-time</th>
                 <th className="px-4 py-3 text-right font-medium">Deductions</th>
                 <th className="px-4 py-3 text-right font-medium">Net pay</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -93,9 +94,9 @@ export function PayrollRun() {
             </thead>
             <tbody>
               {isLoading || isFetching ? (
-                <tr><td colSpan={8} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                <tr><td colSpan={9} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
+                <tr><td colSpan={9} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
               ) : rows.map((r) => (
                 <Row
                   key={r.employee._id}
@@ -143,6 +144,12 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
         {r.lopAmount > 0 ? <>-{money(r.lopAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.lopDays}d)</span></> : <span className="text-muted-foreground">—</span>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.loanTotal > 0 ? `-${money(r.loanTotal, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
+      <td className="px-4 py-3 text-right tabular-nums">
+        {r.oneTimePayments > 0 && <span className="text-emerald-600">+{money(r.oneTimePayments, r.currency)}</span>}
+        {r.oneTimePayments > 0 && r.oneTimeDeductions > 0 && <span className="text-muted-foreground"> / </span>}
+        {r.oneTimeDeductions > 0 && <span className="text-red-500">-{money(r.oneTimeDeductions, r.currency)}</span>}
+        {r.oneTimePayments === 0 && r.oneTimeDeductions === 0 && <span className="text-muted-foreground">—</span>}
+      </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.totalDeductions > 0 ? `-${money(r.totalDeductions, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
       <td className="px-4 py-3 text-right font-semibold tabular-nums text-primary">{money(r.netPay, r.currency)}</td>
       <td className="px-4 py-3">

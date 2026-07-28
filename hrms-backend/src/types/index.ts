@@ -553,6 +553,26 @@ export interface ILoan extends Document {
   updatedAt: Date;
 }
 
+// ─── One-time payment / deduction ────────────────────────────────────────────
+export type OneTimeKind = "payment" | "deduction";
+export interface IOneTimeAdjustment extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  kind: OneTimeKind;
+  label: string;
+  amount: number;
+  /** Payout month (YYYY-MM). */
+  month: string;
+  notes?: string;
+  applied: boolean;
+  payslip?: Types.ObjectId | null;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Payroll checklist ───────────────────────────────────────────────────────
 export interface IPayrollChecklistItem extends Document {
   _id: Types.ObjectId;

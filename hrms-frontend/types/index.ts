@@ -541,6 +541,8 @@ export interface PayrollRunRow {
   lopDays: number;
   lopAmount: number;
   loanTotal: number;
+  oneTimePayments: number;
+  oneTimeDeductions: number;
   totalDeductions: number;
   netPay: number;
   /** id of the existing payslip for this month, or null if not generated. */
@@ -558,6 +560,22 @@ export interface PayrollChecklistItem {
   label: string;
   link?: string;
   order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── One-time payment / deduction ─────────────────────────────────────────────
+export type OneTimeKind = "payment" | "deduction";
+export const ONE_TIME_KIND_LABELS: Record<OneTimeKind, string> = { payment: "Payment", deduction: "Deduction" };
+export interface OneTimeAdjustment {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; currency?: string } | string | null;
+  kind: OneTimeKind;
+  label: string;
+  amount: number;
+  month: string;
+  notes?: string;
+  applied: boolean;
   createdAt: string;
   updatedAt: string;
 }
