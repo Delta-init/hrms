@@ -1,5 +1,6 @@
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { User } from "../models/User.js";
+import { Holiday } from "../models/Holiday.js";
 import type { CreateLeaveInput, UpdateLeaveInput } from "../validations/leaveValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -12,12 +13,9 @@ interface LeaveQuery extends PaginationQuery {
   dateTo?: string;
 }
 
-/** Inclusive whole-day count between two dates; halfDay overrides to 0.5. */
-function countDays(start: Date, end: Date, halfDay: boolean): number {
-  if (halfDay) return 0.5;
-  const ms = new Date(end).setHours(0, 0, 0, 0) - new Date(start).setHours(0, 0, 0, 0);
-  return Math.floor(ms / 86400000) + 1;
-}
+const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]; // Mon–Fri (0=Sun)
+const workDaysOf = (user: { workSchedule?: { workDays?: number[] } | unknown } | null): number[] =>
+  (user?.workSchedule as { workDays?: number[] } | undefined)?.workDays ?? DEFAULT_WORK_DAYS;
 
 /** A half-day leave must fall on a single date. */
 function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
@@ -27,9 +25,24 @@ function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
 }
 
 export class LeaveService {
+  /** Working days in [start,end], excluding non-work-days (weekends) and org holidays. */
+  private async countWorkingDays(start: Date, end: Date, workDays: number[]): Promise<number> {
+    const su = new Date(Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth(), new Date(start).getUTCDate()));
+    const eu = new Date(Date.UTC(new Date(end).getUTCFullYear(), new Date(end).getUTCMonth(), new Date(end).getUTCDate()));
+    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu } })).select("date").lean();
+    const holSet = new Set(holidays.map((h) => new Date(h.date).toISOString().slice(0, 10)));
+    let count = 0;
+    const cur = new Date(su);
+    while (cur <= eu) {
+      if (workDays.includes(cur.getUTCDay()) && !holSet.has(cur.toISOString().slice(0, 10))) count++;
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return count;
+  }
+
   async create(input: CreateLeaveInput) {
     // Scope the user to the caller's org so a request can't reference another tenant's user.
-    const user = await User.findOne(scoped({ _id: input.user }));
+    const user = await User.findOne(scoped({ _id: input.user })).populate("workSchedule", "workDays");
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
     if (input.endDate < input.startDate) {
@@ -58,7 +71,7 @@ export class LeaveService {
       startDate: input.startDate,
       endDate: input.endDate,
       halfDay: input.halfDay,
-      days: countDays(input.startDate, input.endDate, input.halfDay),
+      days: input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(user)),
       timeZone: input.timeZone,
       reason: input.reason,
       status: input.status ?? "pending",
@@ -138,7 +151,8 @@ export class LeaveService {
       })).select("_id");
       if (clash) throw Object.assign(new Error("This overlaps an existing leave request for these dates"), { statusCode: 409 });
     }
-    record.days = countDays(record.startDate, record.endDate, record.halfDay);
+    const subject = await User.findById(record.user).populate("workSchedule", "workDays");
+    record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(subject));
 
     // Status change = a review action.
     if (input.status !== undefined && input.status !== record.status) {
