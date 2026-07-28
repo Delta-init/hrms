@@ -9,6 +9,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
+import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -161,10 +162,20 @@ export class PayslipService {
 
     // Active-loan instalments that will be deducted from this payslip.
     const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
-    // Salary in force for this month (applies any effective salary increment).
-    const salary = await effectiveSalaryFor(employeeId, emp.salary ?? 0, month);
+    // Salary breakup in force: a structure assignment if one exists, else a
+    // single Basic = the salary from any effective-dated increment. `salary`
+    // (the gross of all earnings) is the LOP base.
+    const fallbackSalary = await effectiveSalaryFor(employeeId, emp.salary ?? 0, month);
+    const breakup = await resolveSalaryBreakup(employeeId, month, fallbackSalary);
 
-    const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary, currency: emp.currency ?? "AED", loanDeductions };
+    const base = {
+      present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0,
+      salary: breakup.gross,
+      earnings: breakup.earnings,
+      structureDeductions: breakup.deductions,
+      structureName: breakup.structureName,
+      currency: emp.currency ?? "AED", loanDeductions,
+    };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
 
@@ -220,15 +231,19 @@ export class PayslipService {
       const perDay = round(base / 30);
       const lopAmount = round(perDay * s.lopDays);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
+      const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
       const oneTimePayments = round(oneTime.earnings.reduce((a, l) => a + l.amount, 0));
       const oneTimeDeductions = round(oneTime.deductions.reduce((a, l) => a + l.amount, 0));
-      const totalDeductions = round(lopAmount + loanTotal + oneTimeDeductions);
+      const totalDeductions = round(lopAmount + loanTotal + structureDeductions + oneTimeDeductions);
       const existRow = existMap.get(String(emp._id));
       rows.push({
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
         currency: s.currency,
         salary: base,
+        earnings: s.earnings ?? [{ label: "Basic", amount: base }],
+        structureName: s.structureName ?? null,
+        structureDeductions: s.structureDeductions ?? [],
         lopDays: s.lopDays,
         lopAmount,
         loanTotal,
@@ -254,8 +269,10 @@ export class PayslipService {
     for (const emp of employees) {
       if (existSet.has(String(emp._id))) { skipped++; continue; }
       const s = await this.summary(String(emp._id), month);
-      const earnings = [{ label: "Basic", amount: s.salary || 0 }];
-      const deductions: { label: string; amount: number }[] = [];
+      // Earnings from the salary structure (Basic + allowances), else a single Basic.
+      const earnings = s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }];
+      // Recurring structure deductions; LOP/loans/one-time appended below + in create().
+      const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
       if (s.lopDays > 0 && s.salary > 0) {
         const perDay = Math.round((s.salary / 30) * 100) / 100;
         deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: Math.round(perDay * s.lopDays * 100) / 100 });

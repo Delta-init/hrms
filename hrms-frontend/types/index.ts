@@ -534,10 +534,21 @@ export interface PayslipSummary {
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────
+export interface PayComponentLine {
+  label: string;
+  amount: number;
+}
 export interface PayrollRunRow {
   employee: { _id: string; name: string; employeeCode?: string };
   currency: string;
+  /** Gross of all earnings (Basic + allowances). */
   salary: number;
+  /** Earning lines from the salary structure (Basic first), else a single Basic. */
+  earnings: PayComponentLine[];
+  /** Name of the salary structure in force, or null when on plain salary. */
+  structureName: string | null;
+  /** Recurring deduction lines from the salary structure. */
+  structureDeductions: PayComponentLine[];
   lopDays: number;
   lopAmount: number;
   loanTotal: number;
@@ -578,6 +589,43 @@ export interface OneTimeAdjustment {
   applied: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Salary structure ────────────────────────────────────────────────────────
+export type SalaryComponentType = "earning" | "deduction";
+export type SalaryComponentCalc = "fixed" | "percent";
+export const SALARY_COMPONENT_TYPE_LABELS: Record<SalaryComponentType, string> = { earning: "Earning", deduction: "Deduction" };
+export const SALARY_COMPONENT_CALC_LABELS: Record<SalaryComponentCalc, string> = { fixed: "Fixed", percent: "% of Basic" };
+export interface SalaryComponent {
+  name: string;
+  type: SalaryComponentType;
+  calc: SalaryComponentCalc;
+  value: number;
+}
+export interface SalaryStructure {
+  _id: string;
+  name: string;
+  description?: string;
+  components: SalaryComponent[];
+  status: "active" | "inactive";
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SalaryStructureAssignment {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; currency?: string } | string | null;
+  structure?: { _id: string; name: string; components?: SalaryComponent[] } | string | null;
+  basicAmount: number;
+  effectiveMonth: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SalaryBreakup {
+  earnings: PayComponentLine[];
+  deductions: PayComponentLine[];
+  gross: number;
+  structureName: string | null;
 }
 
 // ─── Attendance calendar ─────────────────────────────────────────────────────

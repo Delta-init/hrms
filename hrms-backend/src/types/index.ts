@@ -573,6 +573,43 @@ export interface IOneTimeAdjustment extends Document {
   updatedAt: Date;
 }
 
+// ─── Salary structure (reusable template + effective-dated assignment) ───────
+export type SalaryComponentType = "earning" | "deduction";
+export type SalaryComponentCalc = "fixed" | "percent";
+export interface ISalaryComponent {
+  name: string;
+  type: SalaryComponentType;
+  calc: SalaryComponentCalc;
+  /** Fixed amount when calc="fixed"; percentage of Basic when calc="percent". */
+  value: number;
+}
+export interface ISalaryStructure extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  description?: string;
+  components: ISalaryComponent[];
+  status: "active" | "inactive";
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+export interface ISalaryStructureAssignment extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  structure: Types.ObjectId | ISalaryStructure;
+  /** The employee's Basic pay; percent components are computed off this. */
+  basicAmount: number;
+  /** Month this structure takes effect (YYYY-MM). */
+  effectiveMonth: string;
+  notes?: string;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Payroll checklist ───────────────────────────────────────────────────────
 export interface IPayrollChecklistItem extends Document {
   _id: Types.ObjectId;

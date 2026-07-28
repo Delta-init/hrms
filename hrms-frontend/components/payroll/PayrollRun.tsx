@@ -43,8 +43,9 @@ export function PayrollRun() {
         employeeId: createRow.employee._id,
         month,
         currency: createRow.currency,
-        earnings: [{ label: "Basic", amount: createRow.salary }],
+        earnings: createRow.earnings?.length ? createRow.earnings : [{ label: "Basic", amount: createRow.salary }],
         deductions: [
+          ...(createRow.structureDeductions ?? []),
           ...(createRow.lopAmount > 0 ? [{ label: `Loss of Pay (${createRow.lopDays}d)`, amount: createRow.lopAmount }] : []),
           ...(createRow.loanTotal > 0 ? [{ label: "Loan repayment", amount: createRow.loanTotal }] : []),
         ],
@@ -139,7 +140,10 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
           <div className="min-w-0"><p className="truncate font-medium">{r.employee.name}</p><p className="truncate text-xs text-muted-foreground">{r.employee.employeeCode}</p></div>
         </div>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{money(r.salary, r.currency)}</td>
+      <td className="px-4 py-3 text-right tabular-nums">
+        {money(r.salary, r.currency)}
+        {r.structureName && <p className="text-[11px] font-normal text-muted-foreground" title="Salary structure in force">{r.structureName}</p>}
+      </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
         {r.lopAmount > 0 ? <>-{money(r.lopAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.lopDays}d)</span></> : <span className="text-muted-foreground">—</span>}
       </td>
