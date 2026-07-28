@@ -750,6 +750,14 @@ export interface NoticeLite {
   lastWorkingDay: string;
   noticePeriodDays: number;
 }
+export interface ExpiringDocument {
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  type: "passport" | "visa";
+  label: string;
+  expiryDate: string;
+  daysLeft: number;
+  expired: boolean;
+}
 export interface DashboardSummary {
   date: string;
   birthdays: BirthdayPerson[];
@@ -757,7 +765,8 @@ export interface DashboardSummary {
   pendingLeaves: LeaveLite[];
   pendingRegularizations: RegularizationLite[];
   servingNotice: NoticeLite[];
-  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number };
+  expiringDocuments: ExpiringDocument[];
+  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────

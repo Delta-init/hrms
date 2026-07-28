@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut,
+  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,13 +24,14 @@ export function HrDashboard() {
   const { data, isLoading } = useDashboardSummary();
   const firstName = user?.name?.split(" ")[0] ?? "there";
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
-  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0 };
+  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
 
   const stats = [
     { label: "Birthdays today", value: c.birthdays, icon: Cake, tint: "text-pink-600 bg-pink-500/10", href: undefined },
     { label: "On leave today", value: c.onLeaveToday, icon: Plane, tint: "text-violet-600 bg-violet-500/10", href: "/leave" },
     { label: "Pending leave", value: c.pendingLeaves, icon: CalendarClock, tint: "text-amber-600 bg-amber-500/10", href: "/leave" },
     { label: "Pending regularizations", value: c.pendingRegularizations, icon: ClipboardCheck, tint: "text-sky-600 bg-sky-500/10", href: "/regularization" },
+    { label: "Docs expiring", value: c.expiringDocuments, icon: FileWarning, tint: "text-rose-600 bg-rose-500/10", href: "/employees" },
     { label: "Serving notice", value: c.servingNotice, icon: LogOut, tint: "text-orange-600 bg-orange-500/10", href: "/resignations" },
   ];
 
@@ -47,7 +48,7 @@ export function HrDashboard() {
       </motion.div>
 
       {/* Stat tiles */}
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map((s) => {
           const body = (
             <Card className={cn("group p-5 transition-shadow", s.href && "cursor-pointer hover:shadow-lg")}>
@@ -105,6 +106,24 @@ export function HrDashboard() {
               <PersonRow key={r._id} name={nameOf(r.user)} sub={`${REGULARIZATION_TYPE_LABELS[r.type]} · ${fmtDate(r.date)}`} tint="bg-sky-500/10 text-sky-600" icon={ClipboardCheck} badge="pending" />
             ))}</div>
           ) : <Empty text="No corrections awaiting review." />}
+        </Panel>
+
+        {/* Document expiry */}
+        <Panel icon={FileWarning} title="Document expiry" tint="text-rose-600" href="/employees">
+          {data?.expiringDocuments?.length ? (
+            <div className="space-y-2">{data.expiringDocuments.map((d, i) => (
+              <div key={`${d.employee._id}-${d.type}-${i}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", d.expired ? "bg-red-500/10 text-red-600" : "bg-rose-500/10 text-rose-600")}><FileWarning className="h-4 w-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <Link href={`/employees/${d.employee._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{d.employee.name}</Link>
+                  <p className="truncate text-xs text-muted-foreground">{d.label} · {fmtDate(d.expiryDate)}</p>
+                </div>
+                <Badge variant="secondary" className={cn("capitalize", d.expired ? "bg-red-500/10 text-red-600" : d.daysLeft <= 30 ? "bg-amber-500/10 text-amber-600" : "")}>
+                  {d.expired ? `expired ${Math.abs(d.daysLeft)}d` : `${d.daysLeft}d left`}
+                </Badge>
+              </div>
+            ))}</div>
+          ) : <Empty text="No documents expiring soon." />}
         </Panel>
 
         {/* Serving notice */}

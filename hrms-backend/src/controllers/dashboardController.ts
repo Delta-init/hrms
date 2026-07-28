@@ -15,6 +15,13 @@ export const getDashboardSummary = async (_req: AuthenticatedRequest, res: Respo
   }
 };
 
+export const getDocumentExpiry = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const days = Math.min(365, Math.max(1, parseInt(String(req.query.days ?? "90"), 10) || 90));
+    sendSuccess(res, "Document expiry retrieved", await service.documentExpiry(days));
+  } catch (error) { next(error); }
+};
+
 /** Manually trigger the birthday check (email HR). Handy for testing SMTP. */
 export const triggerBirthdayCheck = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
