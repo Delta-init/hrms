@@ -5,6 +5,7 @@ import type { CreateRegularizationInput, UpdateRegularizationInput } from "../va
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { zonedTimeToUtc } from "../utils/schedule.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -65,9 +66,15 @@ export class RegularizationService {
 
   /** On approval, apply the corrected times to the Attendance record for user+date. */
   private async applyToAttendance(reg: { user: unknown; date: Date; timeZone: string; requestedCheckIn?: Date | null; requestedCheckOut?: Date | null }) {
-    let att = await Attendance.findOne({ user: reg.user, date: reg.date });
+    // Normalize to the local-midnight-UTC convention self-service uses, and match
+    // the whole day, so we update the existing record instead of creating a
+    // duplicate. Stamp the org so the row is never invisible to scoped reports.
+    const dayStr = new Date(reg.date).toISOString().slice(0, 10);
+    const dayStart = zonedTimeToUtc(dayStr, "00:00", reg.timeZone);
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    let att = await Attendance.findOne(scoped({ user: reg.user, date: { $gte: dayStart, $lt: dayEnd } }));
     if (!att) {
-      att = new Attendance({ user: reg.user, date: reg.date, timeZone: reg.timeZone, status: "present" });
+      att = new Attendance({ organization: getOrgId(), user: reg.user, date: dayStart, timeZone: reg.timeZone, status: "present" });
     }
     att.timeZone = reg.timeZone;
     if (reg.requestedCheckIn) {

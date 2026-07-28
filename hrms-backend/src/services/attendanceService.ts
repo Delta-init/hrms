@@ -26,7 +26,8 @@ export class AttendanceService {
   }
 
   async create(input: CreateAttendanceInput) {
-    const user = await User.findById(input.user);
+    // Scope the user to the caller's org so a record can't reference another tenant's user.
+    const user = await User.findOne(scoped({ _id: input.user }));
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
     const existing = await Attendance.findOne(scoped({ user: input.user, date: input.date }));
@@ -186,16 +187,17 @@ export class AttendanceService {
   }
 
   async clockOut(userId: string) {
-    const schedule = await this.scheduleFor(userId);
-    const shift = resolveShift(schedule, new Date());
     const now = new Date();
 
-    const att = await Attendance.findOne({ user: userId, date: shift.dateMidnightUtc });
-    if (!att || !att.checkIn) {
-      throw Object.assign(new Error("You haven't clocked in today"), { statusCode: 400 });
-    }
-    if (att.checkOut) {
-      throw Object.assign(new Error("You have already clocked out today"), { statusCode: 409 });
+    // Close the latest still-open session (checked in, not yet out) rather than
+    // only "today" — an overnight shift clocks out on the next calendar day.
+    // Bounded to the last 2 days so a forgotten open day isn't closed here.
+    const cutoff = new Date(now.getTime() - 2 * 86_400_000);
+    const att = await Attendance.findOne({
+      user: userId, checkIn: { $ne: null }, checkOut: null, date: { $gte: cutoff },
+    }).sort({ date: -1 });
+    if (!att) {
+      throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
     }
 
     if (att.sessions.length > 0) att.sessions[att.sessions.length - 1].checkOut = now;

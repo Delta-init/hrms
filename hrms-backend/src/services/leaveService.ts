@@ -19,14 +19,23 @@ function countDays(start: Date, end: Date, halfDay: boolean): number {
   return Math.floor(ms / 86400000) + 1;
 }
 
+/** A half-day leave must fall on a single date. */
+function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
+  if (halfDay && new Date(start).setHours(0, 0, 0, 0) !== new Date(end).setHours(0, 0, 0, 0)) {
+    throw Object.assign(new Error("A half-day leave must be a single date"), { statusCode: 400 });
+  }
+}
+
 export class LeaveService {
   async create(input: CreateLeaveInput) {
-    const user = await User.findById(input.user);
+    // Scope the user to the caller's org so a request can't reference another tenant's user.
+    const user = await User.findOne(scoped({ _id: input.user }));
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
     if (input.endDate < input.startDate) {
       throw Object.assign(new Error("End date cannot be before start date"), { statusCode: 400 });
     }
+    assertHalfDayIsSingleDay(input.halfDay, input.startDate, input.endDate);
 
     // Reject overlaps with an existing pending/approved request for the same user.
     const clash = await LeaveRequest.findOne({
@@ -115,6 +124,19 @@ export class LeaveService {
 
     if (record.endDate < record.startDate) {
       throw Object.assign(new Error("End date cannot be before start date"), { statusCode: 400 });
+    }
+    assertHalfDayIsSingleDay(record.halfDay, record.startDate, record.endDate);
+
+    // Re-check overlap when the dates changed (create guards this; update must too).
+    if (input.startDate !== undefined || input.endDate !== undefined) {
+      const clash = await LeaveRequest.findOne(scoped({
+        _id: { $ne: record._id },
+        user: record.user,
+        status: { $in: ["pending", "approved"] },
+        startDate: { $lte: record.endDate },
+        endDate: { $gte: record.startDate },
+      })).select("_id");
+      if (clash) throw Object.assign(new Error("This overlaps an existing leave request for these dates"), { statusCode: 409 });
     }
     record.days = countDays(record.startDate, record.endDate, record.halfDay);
 
