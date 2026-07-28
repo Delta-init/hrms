@@ -5,7 +5,7 @@ import {
   CalendarClock, Plus, Pencil, Trash2, Loader2, Check, X,
   CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send,
 } from "lucide-react";
-import { useLeaves, useMyLeaves, useUpdateLeave, useDeleteLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
+import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -80,7 +80,8 @@ export default function LeavePage() {
   const { user, hasPermission } = useAuth();
   const canView = hasPermission("leave", "view");
   const canCreate = hasPermission("leave", "create");
-  const canApprove = hasPermission("leave", "edit");
+  const canApprove = hasPermission("leave", "approve");
+  const canEdit = hasPermission("leave", "edit");
   const canDelete = hasPermission("leave", "delete");
 
   const [tab, setTab] = useState("requests");
@@ -94,7 +95,7 @@ export default function LeavePage() {
   const { data: mineData, isLoading: mineLoading } = useMyLeaves({ limit: "200" });
   const { data: holidayData } = useHolidays({ limit: "200" });
 
-  const { mutate: updateLeave, isPending: reviewing } = useUpdateLeave();
+  const { mutate: reviewLeave, isPending: reviewing } = useReviewLeave();
   const { mutate: removeLeave, isPending: deleting } = useDeleteLeave();
   const { mutate: removeHoliday } = useDeleteHoliday();
 
@@ -137,11 +138,11 @@ export default function LeavePage() {
             <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReview({ leave: l, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
             <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReview({ leave: l, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>
           </>}
-          {(canApprove || canDelete) && (
+          {(canEdit || canDelete) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><Pencil className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {canApprove && <DropdownMenuItem onClick={() => { setSelected(l); setLeaveDialog(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
+                {canEdit && <DropdownMenuItem onClick={() => { setSelected(l); setLeaveDialog(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
                 {canDelete && <DropdownMenuItem onClick={() => { setSelected(l); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -230,7 +231,7 @@ export default function LeavePage() {
       <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={user?._id} />
       <HolidayDialog open={holidayDialog} onOpenChange={setHolidayDialog} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete leave request" description="This leave request will be permanently removed." isPending={deleting} onConfirm={() => selected && removeLeave(selected._id, { onSuccess: () => setDeleteOpen(false) })} />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && updateLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && reviewLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
     </div>
   );
 }

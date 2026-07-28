@@ -56,6 +56,18 @@ export const useUpdateLeave = () => {
   });
 };
 
+export const useReviewLeave = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await api.patch<ApiResponse<LeaveRequest>>(`/leaves/${id}/review`, data);
+      return res.data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: LEAVE_KEY }); toast.success("Leave reviewed"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to review leave request")),
+  });
+};
+
 export const useDeleteLeave = () => {
   const qc = useQueryClient();
   return useMutation({

@@ -25,5 +25,11 @@ export const updateLeaveSchema = z.object({
   reviewNote: z.string().max(500).optional().nullable(),
 });
 
+export const reviewLeaveSchema = z.object({
+  status: z.enum(["approved", "rejected"]),
+  reviewNote: z.string().max(500).optional().nullable(),
+});
+
 export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
+export type ReviewLeaveInput = z.infer<typeof reviewLeaveSchema>;
