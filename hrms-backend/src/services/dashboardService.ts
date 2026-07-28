@@ -7,8 +7,9 @@ import { orgFilter, getOrgId } from "../utils/orgContext.js";
 
 /** Employees whose birthday (month + day of dob) falls on the given date. */
 export async function birthdaysOn(date = new Date(), orgId?: string | null) {
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
+  // Use UTC to match the aggregation's UTC $month / $dayOfMonth extraction.
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
   const match: Record<string, unknown> = { dob: { $ne: null } };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([

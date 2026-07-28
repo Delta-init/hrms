@@ -8,6 +8,7 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
+import { zonedTimeToUtc } from "../utils/schedule.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -24,6 +25,13 @@ function monthBounds(month: string) {
   const end = new Date(start);
   end.setUTCMonth(end.getUTCMonth() + 1);
   return { start, end };
+}
+
+/** Month bounds as local-midnight-UTC in the given timezone. */
+function monthBoundsTz(month: string, tz: string) {
+  const [y, m] = month.split("-").map(Number);
+  const nm = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+  return { start: zonedTimeToUtc(`${month}-01`, "00:00", tz), end: zonedTimeToUtc(`${nm}-01`, "00:00", tz) };
 }
 
 export class PayslipService {
@@ -135,9 +143,15 @@ export class PayslipService {
 
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
   async summary(employeeId: string, month: string) {
-    const emp = await Employee.findOne(scoped({ _id: employeeId })).lean<IEmployee & { user?: unknown }>();
+    const emp = await Employee.findOne(scoped({ _id: employeeId }))
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone" } })
+      .lean<IEmployee & { user?: { _id?: unknown; workSchedule?: { timeZone?: string } } | null }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
-    const { start, end } = monthBounds(month);
+
+    // Bound the month in the employee's timezone so local days at the month
+    // edges bucket correctly (attendance is stored as local-midnight-UTC).
+    const tz = emp.user?.workSchedule?.timeZone || "Asia/Dubai";
+    const { start, end } = monthBoundsTz(month, tz);
 
     // Active-loan instalments that will be deducted from this payslip.
     const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
@@ -145,20 +159,37 @@ export class PayslipService {
     const salary = await effectiveSalaryFor(employeeId, emp.salary ?? 0, month);
 
     const base = { present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, salary, currency: emp.currency ?? "AED", loanDeductions };
-    if (!emp.user) return base;
+    const userId = emp.user?._id ?? null;
+    if (!userId) return base;
 
     const [att, unpaid] = await Promise.all([
-      Attendance.find({ user: emp.user, date: { $gte: start, $lt: end } }).select("status").lean(),
-      LeaveRequest.find({ user: emp.user, type: "unpaid", status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("days").lean(),
+      Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
+      LeaveRequest.find({ user: userId, type: "unpaid", status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("days startDate endDate").lean(),
     ]);
+
+    // Build day-level sets so a day that is both absent and on unpaid leave
+    // counts once (LOP is not double-counted).
+    const lopFull = new Set<string>();
+    const halfSet = new Set<string>();
     for (const a of att) {
+      // Local calendar day of the record, aligned with leave's YYYY-MM-DD.
+      const key = new Intl.DateTimeFormat("en-CA", { timeZone: a.timeZone || tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(a.date));
       if (a.status === "present") base.present++;
       else if (a.status === "late") base.late++;
-      else if (a.status === "half_day") base.half++;
-      else if (a.status === "absent") base.absent++;
+      else if (a.status === "half_day") { base.half++; halfSet.add(key); }
+      else if (a.status === "absent") { base.absent++; lopFull.add(key); }
+    }
+    for (const l of unpaid) {
+      const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
+      const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
+      const cur = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+      const toU = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
+      while (cur <= toU) { lopFull.add(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 1); }
     }
     base.unpaidLeaveDays = unpaid.reduce((s, l) => s + (l.days || 0), 0);
-    base.lopDays = Math.round((base.absent + base.unpaidLeaveDays + base.half * 0.5) * 100) / 100;
+    let halfCount = 0;
+    for (const k of halfSet) if (!lopFull.has(k)) halfCount++;
+    base.lopDays = Math.round((lopFull.size + halfCount * 0.5) * 100) / 100;
     return base;
   }
 

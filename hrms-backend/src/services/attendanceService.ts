@@ -175,7 +175,8 @@ export class AttendanceService {
     }
 
     const status = statusForClockIn(now, shift);
-    const lateMinutes = Math.max(0, Math.round((now.getTime() - shift.shiftStart.getTime()) / 60000));
+    // On-time within grace = not late; only count minutes when actually late.
+    const lateMinutes = status === "present" ? 0 : Math.max(0, Math.round((now.getTime() - shift.shiftStart.getTime()) / 60000));
 
     if (!att) att = new Attendance({ organization: getOrgId(), user: userId, date: shift.dateMidnightUtc, timeZone: schedule.timeZone });
     att.timeZone = schedule.timeZone;
