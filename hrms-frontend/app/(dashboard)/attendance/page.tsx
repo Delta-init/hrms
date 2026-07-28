@@ -1,13 +1,15 @@
 "use client";
 import { useState } from "react";
-import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut } from "lucide-react";
+import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange } from "lucide-react";
 import { useAttendance, useDeleteAttendance } from "@/hooks/useAttendance";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
+import { AttendanceCalendar } from "@/components/attendance/AttendanceCalendar";
 import { AttendanceStatsBar } from "@/components/attendance/AttendanceStatsBar";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,11 @@ export default function AttendancePage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Attendance | null>(null);
+  const [tab, setTab] = useState("records");
+  const tabs = [
+    { key: "records", label: "Records", icon: ListChecks },
+    { key: "calendar", label: "Calendar", icon: CalendarRange },
+  ];
 
   const columns: DataTableColumn<Attendance>[] = [
     {
@@ -126,33 +133,41 @@ export default function AttendancePage() {
         title="Attendance"
         description="Record and manage employee check-in / check-out per day."
         icon={CalendarCheck}
-        action={canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
+        action={canCreate && tab === "records" && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
       />
 
-      <AttendanceStatsBar records={todayData?.data ?? []} loading={todayLoading} />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
-      <DataTable
-        tableId="attendance"
-        columns={columns}
-        rows={data?.data ?? []}
-        rowKey={(r) => r._id}
-        loading={isLoading || isFetching}
-        pagination={data?.pagination}
-        query={query}
-        searchable={false}
-        filters={filters}
-        rowLabel="records"
-        emptyText="No attendance records yet."
-        minWidth={820}
-        exportName="attendance"
-        exportMapper={(r) => ({
-          Employee: r.user && typeof r.user === "object" ? r.user.name : "",
-          Date: fmtDate(r.date, r.timeZone), Region: r.timeZone,
-          Login: fmtTime(r.checkIn, r.timeZone), Logout: fmtTime(r.checkOut, r.timeZone),
-          "Worked (min)": r.workedMinutes, "Late (min)": r.lateMinutes,
-          Status: ATTENDANCE_STATUS_LABELS[r.status],
-        })}
-      />
+      {tab === "calendar" ? (
+        <AttendanceCalendar />
+      ) : (
+        <>
+          <AttendanceStatsBar records={todayData?.data ?? []} loading={todayLoading} />
+
+          <DataTable
+            tableId="attendance"
+            columns={columns}
+            rows={data?.data ?? []}
+            rowKey={(r) => r._id}
+            loading={isLoading || isFetching}
+            pagination={data?.pagination}
+            query={query}
+            searchable={false}
+            filters={filters}
+            rowLabel="records"
+            emptyText="No attendance records yet."
+            minWidth={820}
+            exportName="attendance"
+            exportMapper={(r) => ({
+              Employee: r.user && typeof r.user === "object" ? r.user.name : "",
+              Date: fmtDate(r.date, r.timeZone), Region: r.timeZone,
+              Login: fmtTime(r.checkIn, r.timeZone), Logout: fmtTime(r.checkOut, r.timeZone),
+              "Worked (min)": r.workedMinutes, "Late (min)": r.lateMinutes,
+              Status: ATTENDANCE_STATUS_LABELS[r.status],
+            })}
+          />
+        </>
+      )}
 
       <AttendanceDialog open={dialogOpen} onOpenChange={setDialogOpen} attendance={selected} />
       <ConfirmDialog

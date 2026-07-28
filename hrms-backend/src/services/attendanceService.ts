@@ -1,5 +1,8 @@
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
+import { Employee } from "../models/Employee.js";
+import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Holiday } from "../models/Holiday.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery, IWorkSchedule } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -199,5 +202,101 @@ export class AttendanceService {
     else att.sessions = [{ checkIn: att.checkIn!, checkOut: now }] as never;
     await att.save();
     return Attendance.findById(att._id).populate("user", "name email designation");
+  }
+
+  /**
+   * Month attendance calendar for one employee or the whole org. Returns a
+   * compact per-employee day-map (status + times), overlaying approved leave,
+   * holidays, weekends (from the work schedule) and absent (past working days
+   * with no record). One record per employee-day drives the calendar UI.
+   */
+  async calendar(month: string, employeeId?: string) {
+    const start = new Date(`${month}-01T00:00:00.000Z`);
+    const end = new Date(start);
+    end.setUTCMonth(end.getUTCMonth() + 1);
+    const year = start.getUTCFullYear();
+    const monthIndex = start.getUTCMonth();
+    const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const todayKey = new Date().toISOString().slice(0, 10);
+
+    const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
+    if (employeeId) empFilter._id = employeeId;
+    const employees = await Employee.find(empFilter)
+      .select("name employeeCode designation user")
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays" } })
+      .sort({ name: 1 })
+      .lean();
+
+    const userIds = employees.map((e) => (e.user as { _id?: unknown } | null)?._id).filter(Boolean);
+
+    const [att, monthLeaves, holidays] = await Promise.all([
+      Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } })
+        .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
+      LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
+        .select("user startDate endDate").lean(),
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
+    ]);
+
+    type DayEntry = { status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null; lateMinutes?: number; note?: string; timeZone?: string | null };
+    const attByUser = new Map<string, Record<string, DayEntry>>();
+    for (const a of att) {
+      const uid = String(a.user);
+      const key = new Date(a.date).toISOString().slice(0, 10);
+      if (!attByUser.has(uid)) attByUser.set(uid, {});
+      attByUser.get(uid)![key] = {
+        status: a.status as string, workedMinutes: a.workedMinutes ?? 0,
+        checkIn: a.checkIn ?? null, checkOut: a.checkOut ?? null,
+        lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
+      };
+    }
+    const leaveDaysByUser = new Map<string, Set<string>>();
+    for (const l of monthLeaves) {
+      const uid = String(l.user);
+      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Set());
+      const set = leaveDaysByUser.get(uid)!;
+      const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
+      const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
+      for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) set.add(d.toISOString().slice(0, 10));
+    }
+    const holidayMap = new Map<string, string>();
+    for (const h of holidays) holidayMap.set(new Date(h.date).toISOString().slice(0, 10), h.name);
+
+    const countable = new Set(["present", "late", "half_day", "absent", "on_leave", "holiday", "weekend", "wfh"]);
+    const employeesOut = employees.map((e) => {
+      const uid = (e.user as { _id?: unknown } | null)?._id ? String((e.user as { _id: unknown })._id) : "";
+      const workDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? [1, 2, 3, 4, 5];
+      const recs = attByUser.get(uid) ?? {};
+      const leaveSet = leaveDaysByUser.get(uid) ?? new Set<string>();
+
+      const days: Record<string, DayEntry> = {};
+      const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
+      let workedTotal = 0, workedDays = 0;
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = `${month}-${String(d).padStart(2, "0")}`;
+        const dow = new Date(Date.UTC(year, monthIndex, d)).getUTCDay();
+        let entry: DayEntry | null;
+        if (recs[key]) {
+          entry = recs[key];
+          if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
+        } else if (leaveSet.has(key)) entry = { status: "on_leave" };
+        else if (holidayMap.has(key)) entry = { status: "holiday", note: holidayMap.get(key) };
+        else if (!workDays.includes(dow)) entry = { status: "weekend" };
+        else if (key < todayKey) entry = { status: "absent" };
+        else entry = null;
+        if (!entry) continue;
+        days[key] = entry;
+        if (countable.has(entry.status)) summary[entry.status]++;
+      }
+      summary.avgWorkedMinutes = workedDays ? Math.round(workedTotal / workedDays) : 0;
+
+      return {
+        employee: { _id: e._id, name: e.name, employeeCode: e.employeeCode, designation: e.designation },
+        days,
+        summary,
+      };
+    });
+
+    return { month, year, daysInMonth, employees: employeesOut };
   }
 }

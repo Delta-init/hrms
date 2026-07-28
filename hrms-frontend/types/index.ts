@@ -562,6 +562,28 @@ export interface PayrollChecklistItem {
   updatedAt: string;
 }
 
+// ─── Attendance calendar ─────────────────────────────────────────────────────
+export interface AttendanceCalendarDay {
+  status: AttendanceStatus;
+  workedMinutes?: number;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  lateMinutes?: number;
+  note?: string;
+  timeZone?: string | null;
+}
+export interface AttendanceCalendarEmployee {
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  days: Record<string, AttendanceCalendarDay>;
+  summary: Record<string, number>;
+}
+export interface AttendanceCalendarData {
+  month: string;
+  year: number;
+  daysInMonth: number;
+  employees: AttendanceCalendarEmployee[];
+}
+
 // ─── Department report ───────────────────────────────────────────────────────
 export interface DepartmentReportMember {
   employee: { _id: string; name: string; employeeCode: string; designation?: string };

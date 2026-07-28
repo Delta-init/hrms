@@ -30,6 +30,15 @@ export const getAttendance = async (req: AuthenticatedRequest, res: Response, ne
   }
 };
 
+export const getAttendanceCalendar = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const month = String(req.query.month ?? "");
+    if (!/^\d{4}-\d{2}$/.test(month)) { sendError(res, "month (YYYY-MM) is required", 400); return; }
+    const employee = req.query.employee ? String(req.query.employee) : undefined;
+    sendSuccess(res, "Attendance calendar", await service.calendar(month, employee));
+  } catch (error) { next(error); }
+};
+
 export const getAttendanceById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const record = await service.getById(req.params.id);

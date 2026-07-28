@@ -2,13 +2,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Attendance } from "@/types";
+import type { ApiResponse, Attendance, AttendanceCalendarData } from "@/types";
 
 const KEY = ["attendance"] as const;
 
 function errMsg(error: unknown, fallback: string) {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 }
+
+export const useAttendanceCalendar = (month: string, employee?: string) =>
+  useQuery({
+    queryKey: [...KEY, "calendar", month, employee ?? "all"],
+    queryFn: async () => (await api.get<ApiResponse<AttendanceCalendarData>>("/attendance/calendar", { params: { month, ...(employee ? { employee } : {}) } })).data.data!,
+    enabled: !!month,
+  });
 
 export const useAttendance = (params?: Record<string, string>) => {
   return useQuery({

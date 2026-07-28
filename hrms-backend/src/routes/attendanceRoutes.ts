@@ -7,6 +7,7 @@ import {
   deleteAttendance,
   getTodayAttendance,
   getMyAttendance,
+  getAttendanceCalendar,
   clockIn,
   clockOut,
 } from "../controllers/attendanceController.js";
@@ -24,6 +25,7 @@ router.post("/clock-in", clockIn);
 router.post("/clock-out", clockOut);
 
 router.get("/", checkPermission("attendance", "view"), getAttendance);
+router.get("/calendar", checkPermission("attendance", "view"), getAttendanceCalendar);
 router.post("/", checkPermission("attendance", "create"), createAttendance);
 router.get("/:id", checkPermission("attendance", "view"), getAttendanceById);
 router.put("/:id", checkPermission("attendance", "edit"), updateAttendance);
