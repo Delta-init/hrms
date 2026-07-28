@@ -570,6 +570,24 @@ export interface PayrollRun {
   rows: PayrollRunRow[];
 }
 
+export interface SalaryRegisterRow {
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  currency: string;
+  bank: { iban: string; accountNumber: string; bankName: string; nameInBank: string };
+  earnings: PayComponentLine[];
+  deductions: PayComponentLine[];
+  structureName: string | null;
+  gross: number;
+  totalDeductions: number;
+  net: number;
+}
+export interface SalaryRegister {
+  month: string;
+  currency: string;
+  rows: SalaryRegisterRow[];
+  totals: { gross: number; deductions: number; net: number; count: number };
+}
+
 export interface PayrollChecklistItem {
   _id: string;
   label: string;

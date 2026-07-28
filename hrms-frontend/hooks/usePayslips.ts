@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Payslip, PayslipSummary, PayrollRun } from "@/types";
+import type { ApiResponse, Payslip, PayslipSummary, PayrollRun, SalaryRegister } from "@/types";
 
 const KEY = ["payslips"] as const;
 function errMsg(e: unknown, f: string) {
@@ -46,6 +46,13 @@ export const usePayrollRun = (month?: string, enabled = true) =>
   useQuery({
     queryKey: [...KEY, "run", month],
     queryFn: async () => (await api.get<ApiResponse<PayrollRun>>("/payslips/run", { params: { month: month! } })).data.data!,
+    enabled: !!month && enabled,
+  });
+
+export const useSalaryRegister = (month?: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "register", month],
+    queryFn: async () => (await api.get<ApiResponse<SalaryRegister>>("/payslips/register", { params: { month: month! } })).data.data!,
     enabled: !!month && enabled,
   });
 

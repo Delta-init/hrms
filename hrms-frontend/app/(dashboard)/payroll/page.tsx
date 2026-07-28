@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers } from "lucide-react";
+import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark } from "lucide-react";
 import { usePayslips, useMyPayslips, useDeletePayslip } from "@/hooks/usePayslips";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +12,7 @@ import { PayslipDialog } from "@/components/payroll/PayslipDialog";
 import { PayrollRun } from "@/components/payroll/PayrollRun";
 import { OneTimeAdjustments } from "@/components/payroll/OneTimeAdjustments";
 import { SalaryStructures } from "@/components/payroll/SalaryStructures";
+import { SalaryRegister } from "@/components/payroll/SalaryRegister";
 import { printPayslip } from "@/components/payroll/printPayslip";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export default function PayrollPage() {
     canView && { key: "run", label: "Payroll Run", icon: CalendarRange },
     canView && { key: "onetime", label: "One-time", icon: Coins },
     canView && { key: "structures", label: "Structures", icon: Layers },
+    canView && { key: "register", label: "Register", icon: Landmark },
     canView && { key: "payslips", label: "Payslips", icon: ListChecks },
     { key: "mine", label: "My Payslips", icon: Send },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
@@ -132,6 +134,8 @@ export default function PayrollPage() {
       {activeTab === "onetime" && canView && <OneTimeAdjustments />}
 
       {activeTab === "structures" && canView && <SalaryStructures />}
+
+      {activeTab === "register" && canView && <SalaryRegister />}
 
       {activeTab === "payslips" && (
         <DataTable

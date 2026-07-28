@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createPayslip, getPayslips, getMyPayslips, getPayslipSummary,
-  getPayrollRun, runPayroll, getPayslipById, updatePayslip, deletePayslip,
+  getPayrollRun, getSalaryRegister, runPayroll, getPayslipById, updatePayslip, deletePayslip,
 } from "../controllers/payslipController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -15,6 +15,7 @@ router.get("/mine", getMyPayslips);
 router.get("/summary", checkPermission("payroll", "view"), getPayslipSummary);
 // Monthly payroll run (must precede "/:id").
 router.get("/run", checkPermission("payroll", "view"), getPayrollRun);
+router.get("/register", checkPermission("payroll", "view"), getSalaryRegister);
 router.post("/run", checkPermission("payroll", "create"), runPayroll);
 router.get("/", checkPermission("payroll", "view"), getPayslips);
 router.post("/", checkPermission("payroll", "create"), createPayslip);

@@ -47,6 +47,14 @@ export const getPayrollRun = async (req: AuthenticatedRequest, res: Response, ne
   } catch (error) { next(error); }
 };
 
+export const getSalaryRegister = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const month = String(req.query.month ?? "");
+    if (!/^\d{4}-\d{2}$/.test(month)) { sendError(res, "month (YYYY-MM) is required", 400); return; }
+    sendSuccess(res, "Salary register", await service.salaryRegister(month));
+  } catch (error) { next(error); }
+};
+
 export const runPayroll = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const month = String(req.body?.month ?? "");

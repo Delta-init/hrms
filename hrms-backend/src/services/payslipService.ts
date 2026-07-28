@@ -265,6 +265,62 @@ export class PayslipService {
     return { month, rows };
   }
 
+  /**
+   * Salary register for a month: every active employee's fully itemised pay
+   * (earnings + deductions + gross/net) plus bank details, and org-level totals.
+   * The basis for the register report + a WPS-style bank-transfer file.
+   */
+  async salaryRegister(month: string) {
+    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+      .select("name employeeCode designation salary currency user bank")
+      .sort({ name: 1 })
+      .lean();
+    const round = (n: number) => Math.round(n * 100) / 100;
+
+    const rows = [];
+    let tGross = 0, tDed = 0, tNet = 0;
+    for (const emp of employees) {
+      const s = await this.summary(String(emp._id), month);
+      const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
+      const reimb = await computeReimbursements(String(emp._id), month);
+
+      const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings];
+      const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
+      if (s.lopDays > 0 && s.salary > 0) deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: round((s.salary / 30) * s.lopDays) });
+      for (const l of s.loanDeductions ?? []) deductions.push(l);
+      deductions.push(...oneTime.deductions);
+
+      const gross = round(earnings.reduce((a, e) => a + e.amount, 0));
+      const totalDeductions = round(deductions.reduce((a, d) => a + d.amount, 0));
+      const net = round(gross - totalDeductions);
+      tGross += gross; tDed += totalDeductions; tNet += net;
+
+      const bank = (emp as { bank?: { ibanIfsc?: string; bankName?: string; nameInBank?: string; bankAccountNumber?: string } }).bank;
+      rows.push({
+        employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, designation: emp.designation },
+        currency: s.currency,
+        bank: {
+          iban: bank?.ibanIfsc ?? "",
+          accountNumber: bank?.bankAccountNumber ?? "",
+          bankName: bank?.bankName ?? "",
+          nameInBank: bank?.nameInBank ?? "",
+        },
+        earnings,
+        deductions,
+        structureName: s.structureName ?? null,
+        gross,
+        totalDeductions,
+        net,
+      });
+    }
+    return {
+      month,
+      currency: rows[0]?.currency ?? "AED",
+      rows,
+      totals: { gross: round(tGross), deductions: round(tDed), net: round(tNet), count: rows.length },
+    };
+  }
+
   /** Bulk-create draft payslips for every active employee lacking one this month. */
   async runGenerate(month: string, issuerId: string) {
     const employees = await Employee.find(scoped({ status: { $ne: "terminated" } })).select("_id salary");
