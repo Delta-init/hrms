@@ -23,9 +23,11 @@ function toLocalInput(iso?: string | null): string {
   const off = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - off).toISOString().slice(0, 16);
 }
-function toDateInput(iso?: string | null): string {
+/** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
+ *  what the list shows (avoids a silent off-by-one for zones ahead of UTC). */
+function toDateInput(iso?: string | null, tz?: string): string {
   if (!iso) return "";
-  return new Date(iso).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 }
 
 interface Props {
@@ -52,7 +54,7 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
     if (attendance) {
       reset({
         user: attendance.user && typeof attendance.user === "object" ? attendance.user._id : attendance.user,
-        date: toDateInput(attendance.date),
+        date: toDateInput(attendance.date, attendance.timeZone),
         timeZone: attendance.timeZone,
         checkIn: toLocalInput(attendance.checkIn),
         checkOut: toLocalInput(attendance.checkOut),

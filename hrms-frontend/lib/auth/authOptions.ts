@@ -10,6 +10,40 @@ export interface ImpersonatedBy {
   restoreTicket: string;
 }
 
+/** Millisecond expiry from a JWT's `exp` claim (unverified decode). */
+function jwtExpiryMs(t?: string): number {
+  try {
+    const part = (t ?? "").split(".")[1];
+    if (!part) return 0;
+    const payload = JSON.parse(Buffer.from(part, "base64").toString("utf8"));
+    return typeof payload.exp === "number" ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Rotate the access token using the stored refresh token. */
+async function refreshAccessToken(token: import("next-auth/jwt").JWT): Promise<import("next-auth/jwt").JWT> {
+  try {
+    const res = await fetch(`${API_URL}/auth/refresh-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: token.refreshToken }),
+    });
+    const json = (await res.json()) as ApiResponse<{ accessToken: string; refreshToken: string }>;
+    if (!res.ok || !json.success || !json.data) throw new Error(json.message ?? "refresh failed");
+    return {
+      ...token,
+      accessToken: json.data.accessToken,
+      refreshToken: json.data.refreshToken ?? token.refreshToken,
+      accessTokenExpires: jwtExpiryMs(json.data.accessToken),
+      error: undefined,
+    };
+  } catch {
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+}
+
 /**
  * Auth model: Express verifies credentials + issues the JWT; NextAuth owns the
  * browser session. Two providers:
@@ -67,7 +101,6 @@ export const authOptions: NextAuthOptions = {
         const json = (await res.json()) as ApiResponse<
           LoginResponse & { impersonatedBy?: ImpersonatedBy }
         >;
-         console.log(json,`${API_URL}/auth/exchange`)
         if (!res.ok || !json.success || !json.data) {
           throw new Error(json.message ?? "Session exchange failed");
         }
@@ -91,16 +124,24 @@ export const authOptions: NextAuthOptions = {
         };
         token.accessToken = u.accessToken;
         token.refreshToken = u.refreshToken;
+        token.accessTokenExpires = jwtExpiryMs(u.accessToken);
         token.appUser = u.appUser;
         // Set/clear impersonation on every (re)auth so restore wipes it.
         token.impersonatedBy = u.impersonatedBy ?? undefined;
+        token.error = undefined;
+        return token;
       }
       // Session update (e.g. after onboarding) — patch the cached appUser so the
       // gate stops redirecting without a full re-login.
       if (trigger === "update" && session?.appUser) {
         token.appUser = { ...(token.appUser as AuthUser), ...(session.appUser as Partial<AuthUser>) };
+        return token;
       }
-      return token;
+      // Access token still valid (60s buffer) → reuse; else rotate via refresh token.
+      if (token.accessTokenExpires && Date.now() < token.accessTokenExpires - 60_000) {
+        return token;
+      }
+      return refreshAccessToken(token);
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;

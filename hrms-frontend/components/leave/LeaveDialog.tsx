@@ -18,8 +18,10 @@ import { useCreateLeave, useUpdateLeave } from "@/hooks/useLeaves";
 import { useUsers } from "@/hooks/useUsers";
 import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
-function toDateInput(iso?: string | null): string {
-  return iso ? new Date(iso).toISOString().slice(0, 10) : "";
+/** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
+ *  the list display (avoids a silent off-by-one for zones ahead of UTC). */
+function toDateInput(iso?: string | null, tz?: string): string {
+  return iso ? new Intl.DateTimeFormat("en-CA", { timeZone: tz || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso)) : "";
 }
 
 interface Props {
@@ -50,8 +52,8 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
       reset({
         user: leave.user && typeof leave.user === "object" ? leave.user._id : leave.user,
         type: leave.type,
-        startDate: toDateInput(leave.startDate),
-        endDate: toDateInput(leave.endDate),
+        startDate: toDateInput(leave.startDate, leave.timeZone),
+        endDate: toDateInput(leave.endDate, leave.timeZone),
         halfDay: leave.halfDay,
         timeZone: leave.timeZone,
         reason: leave.reason ?? "",
