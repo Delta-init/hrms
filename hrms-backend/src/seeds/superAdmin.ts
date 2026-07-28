@@ -43,6 +43,7 @@ const hrManagerPermissions: PermissionsMap = {
   resignations: { ...fullAccess },
   loans: { ...fullAccess },
   salaryIncrements: { ...fullAccess },
+  reimbursements: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
   roles: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
@@ -56,6 +57,7 @@ const employeePermissions: PermissionsMap = {
   attendance: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   leave: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   regularization: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
+  reimbursements: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(

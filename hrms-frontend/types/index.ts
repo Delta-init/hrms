@@ -23,6 +23,7 @@ export const HRMS_MODULES = [
   "resignations",
   "loans",
   "salaryIncrements",
+  "reimbursements",
   "organizations",
   "users",
   "roles",
@@ -44,6 +45,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   resignations: "Resignations",
   loans: "Loans",
   salaryIncrements: "Salary Increments",
+  reimbursements: "Reimbursements",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -554,6 +556,8 @@ export interface PayrollRunRow {
   loanTotal: number;
   oneTimePayments: number;
   oneTimeDeductions: number;
+  /** Approved expense reimbursements paid out this month (earnings). */
+  reimbursements: number;
   totalDeductions: number;
   netPay: number;
   /** id of the existing payslip for this month, or null if not generated. */
@@ -587,6 +591,36 @@ export interface OneTimeAdjustment {
   month: string;
   notes?: string;
   applied: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Reimbursement claim ──────────────────────────────────────────────────────
+export type ReimbursementCategory =
+  | "travel" | "food" | "accommodation" | "medical" | "communication" | "fuel" | "supplies" | "other";
+export type ReimbursementStatus = "pending" | "approved" | "rejected" | "paid";
+export const REIMBURSEMENT_CATEGORY_LABELS: Record<ReimbursementCategory, string> = {
+  travel: "Travel", food: "Food", accommodation: "Accommodation", medical: "Medical",
+  communication: "Communication", fuel: "Fuel", supplies: "Supplies", other: "Other",
+};
+export const REIMBURSEMENT_STATUS_LABELS: Record<ReimbursementStatus, string> = {
+  pending: "Pending", approved: "Approved", rejected: "Rejected", paid: "Paid",
+};
+export interface Reimbursement {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; currency?: string } | string | null;
+  user?: string | null;
+  category: ReimbursementCategory;
+  title: string;
+  amount: number;
+  expenseDate: string;
+  month: string;
+  description?: string;
+  receiptUrl?: string;
+  status: ReimbursementStatus;
+  reviewedBy?: { _id: string; name: string } | string | null;
+  reviewedAt?: string;
+  reviewNote?: string;
   createdAt: string;
   updatedAt: string;
 }

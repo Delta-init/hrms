@@ -19,6 +19,7 @@ import {
   Landmark,
   Banknote,
   TrendingUp,
+  Receipt,
   Settings,
   X,
 } from "lucide-react";
@@ -55,6 +56,8 @@ export const navItems: {
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
   { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
   { href: "/salary-increments", label: "Salary Increments", icon: TrendingUp, permModule: "salaryIncrements" },
+  // Self-service "My Claims" for everyone; the review/all tabs are gated inside the page.
+  { href: "/reimbursements", label: "Reimbursements", icon: Receipt, permModule: null },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

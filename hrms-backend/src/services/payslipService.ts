@@ -8,6 +8,7 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
+import { computeReimbursements, markReimbursementsPaid } from "./reimbursementService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
@@ -51,7 +52,9 @@ export class PayslipService {
     const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
     // One-time payments (earnings) and deductions registered for this month.
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
-    const earnings = [...(input.earnings ?? []), ...oneTime.earnings];
+    // Approved expense reimbursements paid out this month (earnings).
+    const reimb = await computeReimbursements(input.employee, input.month);
+    const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings];
     const deductions = [...userDeductions, ...loanLines, ...oneTime.deductions];
 
     const { start } = monthBounds(input.month);
@@ -73,6 +76,7 @@ export class PayslipService {
     // Record loan repayments + mark one-time adjustments applied now the slip exists.
     if (repayments.length) await recordLoanRepayments(repayments);
     if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(doc._id));
+    if (reimb.ids.length) await markReimbursementsPaid(reimb.ids, String(doc._id));
     return Payslip.findById(doc._id).populate(POP);
   }
 
@@ -235,6 +239,8 @@ export class PayslipService {
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
       const oneTimePayments = round(oneTime.earnings.reduce((a, l) => a + l.amount, 0));
       const oneTimeDeductions = round(oneTime.deductions.reduce((a, l) => a + l.amount, 0));
+      const reimb = await computeReimbursements(String(emp._id), month);
+      const reimbursements = round(reimb.earnings.reduce((a, l) => a + l.amount, 0));
       const totalDeductions = round(lopAmount + loanTotal + structureDeductions + oneTimeDeductions);
       const existRow = existMap.get(String(emp._id));
       rows.push({
@@ -249,8 +255,9 @@ export class PayslipService {
         loanTotal,
         oneTimePayments,
         oneTimeDeductions,
+        reimbursements,
         totalDeductions,
-        netPay: round(base + oneTimePayments - totalDeductions),
+        netPay: round(base + oneTimePayments + reimbursements - totalDeductions),
         payslipId: existRow?.id ?? null,
         status: existRow?.status ?? null, // null → not generated yet
       });

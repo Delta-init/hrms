@@ -86,7 +86,7 @@ export function PayrollRun() {
                 <th className="px-4 py-3 text-right font-medium">Base salary</th>
                 <th className="px-4 py-3 text-right font-medium">LOP</th>
                 <th className="px-4 py-3 text-right font-medium">Loan</th>
-                <th className="px-4 py-3 text-right font-medium">1-time</th>
+                <th className="px-4 py-3 text-right font-medium">Add-ons</th>
                 <th className="px-4 py-3 text-right font-medium">Deductions</th>
                 <th className="px-4 py-3 text-right font-medium">Net pay</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -152,7 +152,8 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
         {r.oneTimePayments > 0 && <span className="text-emerald-600">+{money(r.oneTimePayments, r.currency)}</span>}
         {r.oneTimePayments > 0 && r.oneTimeDeductions > 0 && <span className="text-muted-foreground"> / </span>}
         {r.oneTimeDeductions > 0 && <span className="text-red-500">-{money(r.oneTimeDeductions, r.currency)}</span>}
-        {r.oneTimePayments === 0 && r.oneTimeDeductions === 0 && <span className="text-muted-foreground">—</span>}
+        {r.reimbursements > 0 && <div className="text-emerald-600" title="Approved reimbursements">+{money(r.reimbursements, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">reimb</span></div>}
+        {r.oneTimePayments === 0 && r.oneTimeDeductions === 0 && r.reimbursements === 0 && <span className="text-muted-foreground">—</span>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.totalDeductions > 0 ? `-${money(r.totalDeductions, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
       <td className="px-4 py-3 text-right font-semibold tabular-nums text-primary">{money(r.netPay, r.currency)}</td>

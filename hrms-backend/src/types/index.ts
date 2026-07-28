@@ -28,6 +28,7 @@ export const HRMS_MODULES = [
   "resignations",
   "loans",
   "salaryIncrements",
+  "reimbursements",
   "organizations",
   "users",
   "roles",
@@ -605,6 +606,35 @@ export interface ISalaryStructureAssignment extends Document {
   /** Month this structure takes effect (YYYY-MM). */
   effectiveMonth: string;
   notes?: string;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Reimbursement claim ─────────────────────────────────────────────────────
+export type ReimbursementCategory =
+  | "travel" | "food" | "accommodation" | "medical" | "communication" | "fuel" | "supplies" | "other";
+export type ReimbursementStatus = "pending" | "approved" | "rejected" | "paid";
+export interface IReimbursement extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  category: ReimbursementCategory;
+  title: string;
+  amount: number;
+  /** Date the expense was incurred. */
+  expenseDate: Date;
+  /** Payout month the reimbursement should be paid in (YYYY-MM). */
+  month: string;
+  description?: string;
+  receiptUrl?: string;
+  status: ReimbursementStatus;
+  reviewedBy?: Types.ObjectId | IUser | null;
+  reviewedAt?: Date;
+  reviewNote?: string;
+  /** Set when the approved claim has been paid out through a payslip. */
+  payslip?: Types.ObjectId | null;
   createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
