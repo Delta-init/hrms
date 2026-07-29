@@ -776,6 +776,18 @@ export interface ExpiringDocument {
   daysLeft: number;
   expired: boolean;
 }
+export interface OrgNode {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  department: string | null;
+  children: OrgNode[];
+}
+export interface OrgChart {
+  roots: OrgNode[];
+  total: number;
+}
 export interface DashboardSummary {
   date: string;
   birthdays: BirthdayPerson[];

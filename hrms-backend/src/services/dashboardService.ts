@@ -3,7 +3,7 @@ import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
-import { orgFilter, getOrgId } from "../utils/orgContext.js";
+import { orgFilter, getOrgId, scoped } from "../utils/orgContext.js";
 
 /** Employees whose birthday (month + day of dob) falls on the given date. */
 export async function birthdaysOn(date = new Date(), orgId?: string | null) {
@@ -77,10 +77,79 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
   return items;
 }
 
+interface OrgNode {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  department: string | null;
+  children: OrgNode[];
+}
+
 export class DashboardService {
   /** Full list of expiring passports/visas within the window (default 90 days). */
   async documentExpiry(withinDays = 90) {
     return expiringDocuments(withinDays, getOrgId());
+  }
+
+  /**
+   * Reporting-line org chart: a cycle-safe nested tree of employees. A manager
+   * (reportingTo) may be an Employee or a login User; User references are mapped
+   * back to the matching employee so the whole tree is employee-to-employee.
+   */
+  async orgChart() {
+    const emps = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+      .select("name employeeCode designation department reportingTo reportingToKind user")
+      .populate("department", "name")
+      .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; department?: { name?: string } | null; reportingTo?: unknown; reportingToKind?: string; user?: unknown }>>();
+
+    const idOf = (v: unknown) => (v ? String(v) : "");
+    const byId = new Map(emps.map((e) => [idOf(e._id), e]));
+    const userToEmp = new Map<string, string>();
+    for (const e of emps) if (e.user) userToEmp.set(idOf(e.user), idOf(e._id));
+
+    // Resolve each employee's parent employee id (or null).
+    const parentOf = new Map<string, string | null>();
+    for (const e of emps) {
+      const id = idOf(e._id);
+      let parentId: string | null = null;
+      if (e.reportingTo) {
+        parentId = e.reportingToKind === "User" ? userToEmp.get(idOf(e.reportingTo)) ?? null
+          : byId.has(idOf(e.reportingTo)) ? idOf(e.reportingTo) : null;
+      }
+      parentOf.set(id, parentId && parentId !== id ? parentId : null);
+    }
+
+    // Would attaching `id` under `parentId` create a cycle?
+    const wouldCycle = (id: string, parentId: string) => {
+      let cur: string | null = parentId;
+      const seen = new Set<string>();
+      while (cur) {
+        if (cur === id) return true;
+        if (seen.has(cur)) return true;
+        seen.add(cur);
+        cur = parentOf.get(cur) ?? null;
+      }
+      return false;
+    };
+
+    const nodes = new Map<string, OrgNode>();
+    for (const e of emps) nodes.set(idOf(e._id), {
+      _id: idOf(e._id), name: e.name, employeeCode: e.employeeCode, designation: e.designation,
+      department: e.department?.name ?? null, children: [],
+    });
+
+    const roots: OrgNode[] = [];
+    for (const e of emps) {
+      const id = idOf(e._id);
+      const parentId = parentOf.get(id);
+      if (parentId && nodes.has(parentId) && !wouldCycle(id, parentId)) nodes.get(parentId)!.children.push(nodes.get(id)!);
+      else roots.push(nodes.get(id)!);
+    }
+    // Stable ordering by name at each level.
+    const sortRec = (list: OrgNode[]) => { list.sort((a, b) => a.name.localeCompare(b.name)); list.forEach((n) => sortRec(n.children)); };
+    sortRec(roots);
+    return { roots, total: emps.length };
   }
 
   /** Aggregated HR snapshot: birthdays, who's out today, and pending approvals. */

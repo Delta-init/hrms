@@ -22,6 +22,12 @@ export const getDocumentExpiry = async (req: AuthenticatedRequest, res: Response
   } catch (error) { next(error); }
 };
 
+export const getOrgChart = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Org chart retrieved", await service.orgChart());
+  } catch (error) { next(error); }
+};
+
 /** Manually trigger the birthday check (email HR). Handy for testing SMTP. */
 export const triggerBirthdayCheck = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
