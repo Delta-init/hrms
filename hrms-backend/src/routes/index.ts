@@ -21,6 +21,7 @@ import salaryStructureRoutes from "./salaryStructureRoutes.js";
 import reimbursementRoutes from "./reimbursementRoutes.js";
 import overtimeRoutes from "./overtimeRoutes.js";
 import assetRoutes from "./assetRoutes.js";
+import leaveBalanceRoutes from "./leaveBalanceRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -42,6 +43,7 @@ router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);
 router.use("/attendance", attendanceRoutes);
 router.use("/leaves", leaveRoutes);
+router.use("/leave-balances", leaveBalanceRoutes);
 router.use("/holidays", holidayRoutes);
 router.use("/work-schedules", workScheduleRoutes);
 router.use("/departments", departmentRoutes);

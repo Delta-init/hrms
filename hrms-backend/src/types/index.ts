@@ -476,6 +476,33 @@ export interface ILeaveRequest extends Document {
   updatedAt: Date;
 }
 
+// ─── Leave policy (balances & accrual) ────────────────────────────────────────
+export interface ILeavePolicy extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  type: LeaveType;
+  /** Full-year entitlement in days. */
+  annualDays: number;
+  /** Days off track are pro-rated monthly through the year; if false, the
+   *  full annualDays is available from the start (subject to joining date). */
+  accrueMonthly: boolean;
+  /** Max unused days that carry into the next year (0 = no carry-forward). */
+  carryForwardLimit: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Computed — not persisted. One employee's balance for one leave type/year. */
+export interface ILeaveBalance {
+  type: LeaveType;
+  year: number;
+  annualDays: number;
+  accrued: number;
+  carriedForward: number;
+  used: number;
+  balance: number;
+}
+
 // ─── Card ───────────────────────────────────────────────────────────────────
 export type CardStatus = "active" | "expired";
 

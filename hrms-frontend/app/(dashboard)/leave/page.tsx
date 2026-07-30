@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarClock, Plus, Pencil, Trash2, Loader2, Check, X,
-  CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send,
+  CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send, Wallet,
 } from "lucide-react";
 import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
 import { useUsers } from "@/hooks/useUsers";
@@ -15,6 +15,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { LeaveDialog } from "@/components/leave/LeaveDialog";
 import { HolidayDialog } from "@/components/leave/HolidayDialog";
 import { LeaveCalendar } from "@/components/leave/LeaveCalendar";
+import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { Button } from "@/components/ui/button";
@@ -116,6 +117,7 @@ export default function LeavePage() {
     canView && { key: "calendar", label: "Calendar", icon: CalendarRange },
     canApprove && { key: "approvals", label: "Approvals", icon: Inbox, count: pending.length },
     { key: "apply", label: "Apply", icon: Send },
+    { key: "balances", label: "Balances", icon: Wallet },
     canView && { key: "holidays", label: "Holidays", icon: CalendarDays },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? "apply");
@@ -207,6 +209,8 @@ export default function LeavePage() {
           <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">My Requests</h4><SimpleLeaveTable leaves={mine} loading={mineLoading} emptyText="You haven't applied for any leave yet." /></div>
         </div>
       )}
+
+      {activeTab === "balances" && <LeaveBalances canManage={canEdit} />}
 
       {activeTab === "holidays" && (
         <Card className="p-5">

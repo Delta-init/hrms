@@ -442,6 +442,26 @@ export interface Holiday {
   updatedAt: string;
 }
 
+// ─── Leave policy (balances & accrual) ─────────────────────────────────────────
+export interface LeavePolicy {
+  _id: string;
+  type: LeaveType;
+  annualDays: number;
+  accrueMonthly: boolean;
+  carryForwardLimit: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface LeaveBalance {
+  type: LeaveType;
+  year: number;
+  annualDays: number;
+  accrued: number;
+  carriedForward: number;
+  used: number;
+  balance: number;
+}
+
 // Common IANA time zones for the pickers.
 export const TIME_ZONES = [
   "Asia/Dubai",
