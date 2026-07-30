@@ -20,6 +20,7 @@ import oneTimeAdjustmentRoutes from "./oneTimeAdjustmentRoutes.js";
 import salaryStructureRoutes from "./salaryStructureRoutes.js";
 import reimbursementRoutes from "./reimbursementRoutes.js";
 import overtimeRoutes from "./overtimeRoutes.js";
+import assetRoutes from "./assetRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 
 const router = Router();
@@ -35,6 +36,7 @@ router.use("/one-time-adjustments", oneTimeAdjustmentRoutes);
 router.use("/salary-structures", salaryStructureRoutes);
 router.use("/reimbursements", reimbursementRoutes);
 router.use("/overtime", overtimeRoutes);
+router.use("/assets", assetRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

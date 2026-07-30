@@ -24,6 +24,7 @@ export const HRMS_MODULES = [
   "loans",
   "salaryIncrements",
   "reimbursements",
+  "assets",
   "organizations",
   "users",
   "roles",
@@ -46,6 +47,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   loans: "Loans",
   salaryIncrements: "Salary Increments",
   reimbursements: "Reimbursements",
+  assets: "Assets",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -657,6 +659,45 @@ export interface Overtime {
   month: string;
   notes?: string;
   applied: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Asset ────────────────────────────────────────────────────────────────────
+export type AssetCategory = "laptop" | "phone" | "monitor" | "furniture" | "vehicle" | "sim_card" | "other";
+export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
+export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
+export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
+  laptop: "Laptop", phone: "Phone", monitor: "Monitor", furniture: "Furniture",
+  vehicle: "Vehicle", sim_card: "SIM Card", other: "Other",
+};
+export const ASSET_CONDITION_LABELS: Record<AssetCondition, string> = {
+  new: "New", good: "Good", fair: "Fair", poor: "Poor", damaged: "Damaged",
+};
+export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
+  available: "Available", assigned: "Assigned", maintenance: "Maintenance", retired: "Retired",
+};
+export interface AssetHistoryEntry {
+  action: "issued" | "returned" | "sent_to_maintenance" | "retired";
+  employee?: { _id: string; name: string; employeeCode?: string } | string | null;
+  date: string;
+  condition?: AssetCondition;
+  notes?: string;
+}
+export interface Asset {
+  _id: string;
+  name: string;
+  category: AssetCategory;
+  assetTag: string;
+  serialNumber?: string;
+  purchaseDate?: string | null;
+  purchaseCost?: number;
+  condition: AssetCondition;
+  status: AssetStatus;
+  assignedTo?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  assignedDate?: string | null;
+  notes?: string;
+  history: AssetHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }

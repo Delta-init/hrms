@@ -29,6 +29,7 @@ export const HRMS_MODULES = [
   "loans",
   "salaryIncrements",
   "reimbursements",
+  "assets",
   "organizations",
   "users",
   "roles",
@@ -490,6 +491,41 @@ export interface ICard extends Document {
   notes?: string;
   /** Virtual — "expired" when expiryDate is in the past, else "active". */
   status?: CardStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Asset ───────────────────────────────────────────────────────────────────
+export type AssetCategory = "laptop" | "phone" | "monitor" | "furniture" | "vehicle" | "sim_card" | "other";
+export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
+export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
+
+export interface IAssetHistoryEntry {
+  action: "issued" | "returned" | "sent_to_maintenance" | "retired";
+  employee?: Types.ObjectId | IEmployee | null;
+  date: Date;
+  condition?: AssetCondition;
+  notes?: string;
+  by?: Types.ObjectId | IUser | null;
+}
+
+export interface IAsset extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  category: AssetCategory;
+  assetTag: string;
+  serialNumber?: string;
+  purchaseDate?: Date | null;
+  purchaseCost?: number;
+  condition: AssetCondition;
+  status: AssetStatus;
+  /** Currently-holding employee, if assigned. */
+  assignedTo?: Types.ObjectId | IEmployee | null;
+  assignedDate?: Date | null;
+  notes?: string;
+  history: IAssetHistoryEntry[];
+  createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }
