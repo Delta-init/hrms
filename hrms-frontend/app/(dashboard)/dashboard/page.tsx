@@ -1,14 +1,16 @@
 "use client";
 import { motion } from "framer-motion";
-import { CalendarCheck, Clock3, AlertTriangle, Timer, PartyPopper, CalendarClock, ArrowUpRight } from "lucide-react";
+import { CalendarCheck, Clock3, AlertTriangle, Timer, PartyPopper, CalendarClock, ArrowUpRight, ClipboardList, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyAttendance } from "@/hooks/useSelfAttendance";
 import { useMyLeaves, useHolidays } from "@/hooks/useLeaves";
+import { useMyOnboardingChecklist, useSetMyOnboardingTaskStatus } from "@/hooks/useOnboardingChecklists";
 import { ClockCard } from "@/components/dashboard/ClockCard";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { LEAVE_TYPE_LABELS, type LeaveStatus } from "@/types";
 
@@ -84,6 +86,9 @@ function EmployeeDashboard() {
           ))}
         </motion.div>
 
+        {/* My onboarding tasks (new hires only — hidden once nothing is assigned to them) */}
+        <MyOnboardingTasksCard />
+
         {/* Chart + Upcoming holidays (right of chart) */}
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="xl:col-span-2"><AttendanceHistoryChart /></div>
@@ -135,5 +140,40 @@ function EmployeeDashboard() {
         <ClockCard />
       </div>
     </div>
+  );
+}
+
+function MyOnboardingTasksCard() {
+  const { data: checklist, isLoading } = useMyOnboardingChecklist();
+  const { mutate: setStatus, isPending } = useSetMyOnboardingTaskStatus();
+
+  const myTasks = (checklist?.tasks ?? []).filter((t) => t.assigneeRole === "employee");
+  if (isLoading || myTasks.length === 0) return null;
+  const done = myTasks.filter((t) => t.status === "completed").length;
+
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">My Onboarding Tasks</h3></div>
+        <span className="text-xs font-medium text-muted-foreground">{done}/{myTasks.length} done</span>
+      </div>
+      <div className="space-y-2">
+        {myTasks.map((t) => (
+          <div key={t._id} className={cn("flex items-start gap-3 rounded-lg border border-border p-2.5", t.status === "completed" && "bg-muted/30")}>
+            <Checkbox
+              checked={t.status === "completed"}
+              disabled={isPending}
+              onCheckedChange={(checked) => setStatus({ taskId: t._id, status: checked ? "completed" : "pending" })}
+              className="mt-0.5"
+            />
+            <div className="min-w-0 flex-1">
+              <p className={cn("text-sm font-medium", t.status === "completed" && "text-muted-foreground line-through")}>{t.title}</p>
+              {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
+            </div>
+            {isPending && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

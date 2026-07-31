@@ -23,6 +23,7 @@ import overtimeRoutes from "./overtimeRoutes.js";
 import assetRoutes from "./assetRoutes.js";
 import leaveBalanceRoutes from "./leaveBalanceRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
+import onboardingRoutes from "./onboardingRoutes.js";
 
 const router = Router();
 
@@ -38,6 +39,7 @@ router.use("/salary-structures", salaryStructureRoutes);
 router.use("/reimbursements", reimbursementRoutes);
 router.use("/overtime", overtimeRoutes);
 router.use("/assets", assetRoutes);
+router.use("/onboarding", onboardingRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

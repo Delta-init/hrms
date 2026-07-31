@@ -22,6 +22,7 @@ import {
   TrendingUp,
   Receipt,
   Boxes,
+  ClipboardList,
   Settings,
   X,
 } from "lucide-react";
@@ -62,6 +63,7 @@ export const navItems: {
   // Self-service "My Claims" for everyone; the review/all tabs are gated inside the page.
   { href: "/reimbursements", label: "Reimbursements", icon: Receipt, permModule: null },
   { href: "/assets", label: "Assets", icon: Boxes, permModule: "assets" },
+  { href: "/onboarding-tasks", label: "Onboarding Tasks", icon: ClipboardList, permModule: "onboardingTasks" },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

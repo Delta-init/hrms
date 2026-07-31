@@ -25,6 +25,7 @@ export const HRMS_MODULES = [
   "salaryIncrements",
   "reimbursements",
   "assets",
+  "onboardingTasks",
   "organizations",
   "users",
   "roles",
@@ -48,6 +49,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   salaryIncrements: "Salary Increments",
   reimbursements: "Reimbursements",
   assets: "Assets",
+  onboardingTasks: "Onboarding Tasks",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -995,6 +997,55 @@ export interface SalaryIncrement {
   effectiveMonth: string;
   reason?: string;
   createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Onboarding task checklists ────────────────────────────────────────────────
+export type OnboardingTaskCategory = "documentation" | "it_setup" | "hr" | "facilities" | "training";
+export type OnboardingAssigneeRole = "hr" | "it" | "manager" | "employee";
+export type OnboardingTaskStatus = "pending" | "completed";
+
+export const ONBOARDING_CATEGORY_LABELS: Record<OnboardingTaskCategory, string> = {
+  documentation: "Documentation", it_setup: "IT Setup", hr: "HR", facilities: "Facilities", training: "Training",
+};
+export const ONBOARDING_ASSIGNEE_LABELS: Record<OnboardingAssigneeRole, string> = {
+  hr: "HR", it: "IT", manager: "Manager", employee: "Employee",
+};
+
+export interface OnboardingTemplateTask {
+  _id: string;
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigneeRole: OnboardingAssigneeRole;
+  dueDayOffset: number;
+}
+export interface OnboardingTemplate {
+  _id: string;
+  name: string;
+  description?: string;
+  tasks: OnboardingTemplateTask[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OnboardingChecklistTask {
+  _id: string;
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigneeRole: OnboardingAssigneeRole;
+  dueDate?: string | null;
+  status: OnboardingTaskStatus;
+  completedAt?: string | null;
+  completedBy?: { _id: string; name: string } | string | null;
+}
+export interface OnboardingChecklist {
+  _id: string;
+  employee: { _id: string; name: string; employeeCode: string; designation?: string; department?: string; joiningDate?: string | null } | string;
+  templateName: string;
+  tasks: OnboardingChecklistTask[];
   createdAt: string;
   updatedAt: string;
 }

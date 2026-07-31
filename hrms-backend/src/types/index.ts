@@ -30,6 +30,7 @@ export const HRMS_MODULES = [
   "salaryIncrements",
   "reimbursements",
   "assets",
+  "onboardingTasks",
   "organizations",
   "users",
   "roles",
@@ -759,6 +760,55 @@ export interface IPayrollChecklistItem extends Document {
   label: string;
   link?: string;
   order: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Onboarding task checklists ──────────────────────────────────────────────
+export type OnboardingTaskCategory = "documentation" | "it_setup" | "hr" | "facilities" | "training";
+export type OnboardingAssigneeRole = "hr" | "it" | "manager" | "employee";
+export type OnboardingTaskStatus = "pending" | "completed";
+
+export interface IOnboardingTemplateTask {
+  _id: Types.ObjectId;
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigneeRole: OnboardingAssigneeRole;
+  /** Days from the employee's joining date this task is due (may be negative — before joining). */
+  dueDayOffset: number;
+}
+
+export interface IOnboardingTemplate extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  description?: string;
+  tasks: IOnboardingTemplateTask[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IOnboardingChecklistTask {
+  _id: Types.ObjectId;
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigneeRole: OnboardingAssigneeRole;
+  dueDate?: Date | null;
+  status: OnboardingTaskStatus;
+  completedAt?: Date | null;
+  completedBy?: Types.ObjectId | IUser | null;
+}
+
+export interface IOnboardingChecklist extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  /** Name of the template this checklist was generated from (denormalized). */
+  templateName: string;
+  tasks: Types.DocumentArray<IOnboardingChecklistTask & Document>;
+  createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }
