@@ -26,6 +26,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "letters",
   "organizations",
   "users",
   "roles",
@@ -50,6 +51,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   reimbursements: "Reimbursements",
   assets: "Assets",
   onboardingTasks: "Onboarding Tasks",
+  letters: "Letters",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -1061,6 +1063,40 @@ export interface OnboardingChecklist {
   employee: { _id: string; name: string; employeeCode: string; designation?: string; department?: string; joiningDate?: string | null } | string;
   templateName: string;
   tasks: OnboardingChecklistTask[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Letters & templates engine ────────────────────────────────────────────────
+export type LetterCategory = "offer" | "appointment" | "confirmation" | "experience" | "relieving" | "warning" | "other";
+
+export const LETTER_CATEGORY_LABELS: Record<LetterCategory, string> = {
+  offer: "Offer", appointment: "Appointment", confirmation: "Confirmation",
+  experience: "Experience", relieving: "Relieving", warning: "Warning", other: "Other",
+};
+
+export interface LetterTemplate {
+  _id: string;
+  name: string;
+  category: LetterCategory;
+  subject?: string;
+  body: string;
+  status: "active" | "inactive";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GeneratedLetter {
+  _id: string;
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } | string;
+  template?: { _id: string; name: string } | string | null;
+  templateName: string;
+  category: LetterCategory;
+  subject: string;
+  content: string;
+  issuedBy?: { _id: string; name: string } | string | null;
+  issuedAt: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }

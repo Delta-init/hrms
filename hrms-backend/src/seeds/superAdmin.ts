@@ -46,6 +46,7 @@ const hrManagerPermissions: PermissionsMap = {
   reimbursements: { ...fullAccess },
   assets: { ...fullAccess },
   onboardingTasks: { ...fullAccess },
+  letters: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
   roles: { view: true, create: false, edit: false, delete: false, approve: false, export: false },

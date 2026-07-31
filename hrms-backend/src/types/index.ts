@@ -31,6 +31,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "letters",
   "organizations",
   "users",
   "roles",
@@ -846,6 +847,44 @@ export interface ISalaryIncrement extends Document {
   effectiveMonth: string;
   reason?: string;
   createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Letters & templates engine ──────────────────────────────────────────────
+export type LetterCategory = "offer" | "appointment" | "confirmation" | "experience" | "relieving" | "warning" | "other";
+
+/** A reusable letter body with {{merge.token}} placeholders, e.g.
+ *  "Dear {{employee.name}}, ... your designation is {{employee.designation}}." */
+export interface ILetterTemplate extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  category: LetterCategory;
+  subject?: string;
+  body: string;
+  status: "active" | "inactive";
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A letter issued to an employee — a merge-resolved snapshot of a template
+ *  at issuance time, so later template edits never change a letter already sent. */
+export interface IGeneratedLetter extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  template?: Types.ObjectId | ILetterTemplate | null;
+  /** Snapshot of the source template's name/category/subject at issuance time. */
+  templateName: string;
+  category: LetterCategory;
+  subject: string;
+  /** Fully merge-resolved letter body — the immutable record of what was issued. */
+  content: string;
+  issuedBy?: Types.ObjectId | IUser | null;
+  issuedAt: Date;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
 }
