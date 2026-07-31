@@ -106,7 +106,7 @@ export class DepartmentService {
       Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } }).select("user date status").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: yearEnd }, endDate: { $gte: yearStart } }).select("user days").lean(),
       // Approved leaves that intersect the report month — used to paint the calendar.
-      LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("user startDate endDate").lean(),
+      LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("user startDate endDate type").lean(),
     ]);
 
     const attByUser = new Map<string, Record<string, string>>();
@@ -121,16 +121,17 @@ export class DepartmentService {
       const uid = String(l.user);
       leaveByUser.set(uid, (leaveByUser.get(uid) ?? 0) + (l.days || 0));
     }
-    // Map each user to the set of month days they are on approved leave.
-    const leaveDaysByUser = new Map<string, Set<string>>();
+    // Map each user to the leave type in force on each month day they are on
+    // approved leave — "wfh" paints the calendar distinctly from actual leave.
+    const leaveDaysByUser = new Map<string, Map<string, string>>();
     for (const l of monthLeaves) {
       const uid = String(l.user);
-      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Set());
-      const set = leaveDaysByUser.get(uid)!;
+      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Map());
+      const map = leaveDaysByUser.get(uid)!;
       const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
       const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
       for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
-        set.add(d.toISOString().slice(0, 10));
+        map.set(d.toISOString().slice(0, 10), l.type as string);
       }
     }
 
@@ -141,8 +142,8 @@ export class DepartmentService {
       // attendance record (an actual attendance status always wins).
       const calendar: Record<string, string> = uid ? { ...(attByUser.get(uid) ?? {}) } : {};
       if (uid) {
-        for (const key of leaveDaysByUser.get(uid) ?? []) {
-          if (!calendar[key]) calendar[key] = "on_leave";
+        for (const [key, type] of leaveDaysByUser.get(uid) ?? []) {
+          if (!calendar[key]) calendar[key] = type === "wfh" ? "wfh" : "on_leave";
         }
       }
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, wfh: 0 };

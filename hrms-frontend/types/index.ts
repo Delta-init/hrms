@@ -853,11 +853,12 @@ export interface DashboardSummary {
   date: string;
   birthdays: BirthdayPerson[];
   onLeaveToday: LeaveLite[];
+  workingFromHomeToday: LeaveLite[];
   pendingLeaves: LeaveLite[];
   pendingRegularizations: RegularizationLite[];
   servingNotice: NoticeLite[];
   expiringDocuments: ExpiringDocument[];
-  counts: { birthdays: number; onLeaveToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
+  counts: { birthdays: number; onLeaveToday: number; workingFromHomeToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────

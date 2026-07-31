@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning,
+  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning, Home,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,11 +24,12 @@ export function HrDashboard() {
   const { data, isLoading } = useDashboardSummary();
   const firstName = user?.name?.split(" ")[0] ?? "there";
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
-  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
+  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, workingFromHomeToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
 
   const stats = [
     { label: "Birthdays today", value: c.birthdays, icon: Cake, tint: "text-pink-600 bg-pink-500/10", href: undefined },
     { label: "On leave today", value: c.onLeaveToday, icon: Plane, tint: "text-violet-600 bg-violet-500/10", href: "/leave" },
+    { label: "Working from home", value: c.workingFromHomeToday, icon: Home, tint: "text-teal-600 bg-teal-500/10", href: "/attendance" },
     { label: "Pending leave", value: c.pendingLeaves, icon: CalendarClock, tint: "text-amber-600 bg-amber-500/10", href: "/leave" },
     { label: "Pending regularizations", value: c.pendingRegularizations, icon: ClipboardCheck, tint: "text-sky-600 bg-sky-500/10", href: "/regularization" },
     { label: "Docs expiring", value: c.expiringDocuments, icon: FileWarning, tint: "text-rose-600 bg-rose-500/10", href: "/employees" },
@@ -48,7 +49,7 @@ export function HrDashboard() {
       </motion.div>
 
       {/* Stat tiles */}
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-7">
         {stats.map((s) => {
           const body = (
             <Card className={cn("group p-5 transition-shadow", s.href && "cursor-pointer hover:shadow-lg")}>
@@ -88,6 +89,13 @@ export function HrDashboard() {
           {data?.onLeaveToday.length ? (
             <div className="space-y-2">{data.onLeaveToday.map((l) => <PersonRow key={l._id} name={nameOf(l.user)} sub={`${LEAVE_TYPE_LABELS[l.type]} · until ${fmtDate(l.endDate)}`} tint="bg-violet-500/10 text-violet-600" icon={Plane} />)}</div>
           ) : <Empty text="Everyone's in today." />}
+        </Panel>
+
+        {/* Working from home today */}
+        <Panel icon={Home} title="Working from home" tint="text-teal-600" href="/attendance">
+          {data?.workingFromHomeToday.length ? (
+            <div className="space-y-2">{data.workingFromHomeToday.map((l) => <PersonRow key={l._id} name={nameOf(l.user)} sub={`Until ${fmtDate(l.endDate)}`} tint="bg-teal-500/10 text-teal-600" icon={Home} />)}</div>
+          ) : <Empty text="Nobody is working from home today." />}
         </Panel>
 
         {/* Pending leave approvals */}

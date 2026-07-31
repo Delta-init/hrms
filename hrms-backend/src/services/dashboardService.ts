@@ -159,9 +159,13 @@ export class DashboardService {
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
     const org = orgFilter();
-    const [birthdays, onLeaveToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs] = await Promise.all([
+    const [birthdays, onLeaveToday, workingFromHomeToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs] = await Promise.all([
       birthdaysOn(now, getOrgId()),
-      LeaveRequest.find({ ...org, status: "approved", startDate: { $lte: end }, endDate: { $gte: start } })
+      // Working-from-home is not "away" — exclude it so this reflects who's
+      // actually unavailable today.
+      LeaveRequest.find({ ...org, status: "approved", type: { $ne: "wfh" }, startDate: { $lte: end }, endDate: { $gte: start } })
+        .populate("user", "name email designation").sort({ startDate: 1 }).limit(50).lean(),
+      LeaveRequest.find({ ...org, status: "approved", type: "wfh", startDate: { $lte: end }, endDate: { $gte: start } })
         .populate("user", "name email designation").sort({ startDate: 1 }).limit(50).lean(),
       LeaveRequest.find({ ...org, status: "pending" })
         .populate("user", "name email designation").sort({ createdAt: -1 }).limit(8).lean(),
@@ -179,6 +183,7 @@ export class DashboardService {
       date: start.toISOString().slice(0, 10),
       birthdays,
       onLeaveToday,
+      workingFromHomeToday,
       pendingLeaves,
       pendingRegularizations: pendingRegs,
       servingNotice,
@@ -186,6 +191,7 @@ export class DashboardService {
       counts: {
         birthdays: birthdays.length,
         onLeaveToday: onLeaveToday.length,
+        workingFromHomeToday: workingFromHomeToday.length,
         pendingLeaves: pendingLeaveCount,
         pendingRegularizations: pendingRegCount,
         servingNotice: servingNoticeCount,

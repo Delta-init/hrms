@@ -236,7 +236,7 @@ export class AttendanceService {
       Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } })
         .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
-        .select("user startDate endDate").lean(),
+        .select("user startDate endDate type").lean(),
       Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
     ]);
 
@@ -252,14 +252,16 @@ export class AttendanceService {
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
       };
     }
-    const leaveDaysByUser = new Map<string, Set<string>>();
+    // Per user, the leave type in force on each day — "wfh" paints the
+    // calendar distinctly from actual leave (on_leave).
+    const leaveDaysByUser = new Map<string, Map<string, string>>();
     for (const l of monthLeaves) {
       const uid = String(l.user);
-      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Set());
-      const set = leaveDaysByUser.get(uid)!;
+      if (!leaveDaysByUser.has(uid)) leaveDaysByUser.set(uid, new Map());
+      const map = leaveDaysByUser.get(uid)!;
       const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
       const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
-      for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) set.add(d.toISOString().slice(0, 10));
+      for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) map.set(d.toISOString().slice(0, 10), l.type as string);
     }
     const holidayMap = new Map<string, string>();
     for (const h of holidays) holidayMap.set(new Date(h.date).toISOString().slice(0, 10), h.name);
@@ -269,7 +271,7 @@ export class AttendanceService {
       const uid = (e.user as { _id?: unknown } | null)?._id ? String((e.user as { _id: unknown })._id) : "";
       const workDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? [1, 2, 3, 4, 5];
       const recs = attByUser.get(uid) ?? {};
-      const leaveSet = leaveDaysByUser.get(uid) ?? new Set<string>();
+      const leaveMap = leaveDaysByUser.get(uid) ?? new Map<string, string>();
 
       const days: Record<string, DayEntry> = {};
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
@@ -282,7 +284,7 @@ export class AttendanceService {
         if (recs[key]) {
           entry = recs[key];
           if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
-        } else if (leaveSet.has(key)) entry = { status: "on_leave" };
+        } else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
         else if (holidayMap.has(key)) entry = { status: "holiday", note: holidayMap.get(key) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
         else if (key < todayKey) entry = { status: "absent" };
