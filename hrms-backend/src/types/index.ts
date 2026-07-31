@@ -444,6 +444,27 @@ export interface IWorkSchedule extends Document {
   updatedAt: Date;
 }
 
+// ─── Shift roster assignment (dated WorkSchedule assignment) ────────────────
+/** Assigns a work schedule (shift) to an employee for a date range — the
+ *  building block for shift rotation. The assignment in force on a given
+ *  date is the one with the latest effectiveFrom on or before it whose
+ *  effectiveTo (if set) is on or after it. */
+export interface IRosterAssignment extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  /** Login account of the employee, if any — the field attendance actually resolves against. */
+  user?: Types.ObjectId | IUser | null;
+  workSchedule: Types.ObjectId | IWorkSchedule;
+  effectiveFrom: Date;
+  /** Null = open-ended (still in force). */
+  effectiveTo?: Date | null;
+  notes?: string;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Leave Calendar: Leave Requests ─────────────────────────────────────────
 export type LeaveType =
   | "annual"

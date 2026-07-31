@@ -2,6 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { WorkScheduleService } from "../services/workScheduleService.js";
 import { createWorkScheduleSchema, updateWorkScheduleSchema } from "../validations/workScheduleValidation.js";
+import { createRosterAssignmentSchema, updateRosterAssignmentSchema } from "../validations/rosterValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new WorkScheduleService();
@@ -68,4 +69,34 @@ export const deleteWorkSchedule = async (req: AuthenticatedRequest, res: Respons
   } catch (error) {
     next(error);
   }
+};
+
+// ── Shift roster assignments ─────────────────────────────────────────────
+export const assignRoster = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = createRosterAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Shift assigned", await service.assignRoster(parsed.data, req.user!.userId), 201);
+  } catch (error) { next(error); }
+};
+
+export const getRosterAssignments = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { records, pagination } = await service.listRosterAssignments(req.query as Record<string, string>);
+    sendSuccess(res, "Roster assignments retrieved", records, 200, pagination);
+  } catch (error) { next(error); }
+};
+
+export const updateRosterAssignment = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = updateRosterAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Assignment updated", await service.updateRosterAssignment(req.params.id, parsed.data));
+  } catch (error) { next(error); }
+};
+
+export const deleteRosterAssignment = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Assignment removed", await service.removeRosterAssignment(req.params.id));
+  } catch (error) { next(error); }
 };

@@ -131,6 +131,21 @@ export type WorkScheduleSimple = Pick<
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
+/** A dated assignment of a work schedule (shift) to an employee — the
+ *  building block for shift rotation; attendance resolves the assignment
+ *  in force for a given date instead of one static schedule per employee. */
+export interface RosterAssignment {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  workSchedule?: WorkScheduleSimple | string | null;
+  effectiveFrom: string;
+  /** Null/absent = open-ended (still in force). */
+  effectiveTo?: string | null;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Department ──────────────────────────────────────────────────────────────
 export type PersonKind = "Employee" | "User";
 

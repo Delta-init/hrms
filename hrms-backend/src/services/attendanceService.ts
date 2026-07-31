@@ -4,9 +4,10 @@ import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Holiday } from "../models/Holiday.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
-import type { PaginationQuery, IWorkSchedule } from "../types/index.js";
+import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule } from "../utils/schedule.js";
+import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
 interface AttendanceQuery extends PaginationQuery {
@@ -120,8 +121,7 @@ export class AttendanceService {
   // ── Self-service clock-in / clock-out ──────────────────────────────────────
 
   private async scheduleFor(userId: string): Promise<ShiftSchedule> {
-    const user = await User.findById(userId).populate("workSchedule");
-    const ws = user?.workSchedule as IWorkSchedule | null | undefined;
+    const ws = await resolveWorkScheduleForUser(userId, new Date());
     if (ws && ws.timeZone) {
       return { timeZone: ws.timeZone, loginTime: ws.loginTime, logoutTime: ws.logoutTime, graceMinutes: ws.graceMinutes ?? 15 };
     }
@@ -232,12 +232,13 @@ export class AttendanceService {
 
     const userIds = employees.map((e) => (e.user as { _id?: unknown } | null)?._id).filter(Boolean);
 
-    const [att, monthLeaves, holidays] = await Promise.all([
+    const [att, monthLeaves, holidays, rosterMap] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } })
         .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
         .select("user startDate endDate type").lean(),
       Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
+      rosterWorkDaysByUser(userIds.map((id) => String(id)), start, end),
     ]);
 
     type DayEntry = { status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null; lateMinutes?: number; note?: string; timeZone?: string | null };
@@ -269,7 +270,9 @@ export class AttendanceService {
     const countable = new Set(["present", "late", "half_day", "absent", "on_leave", "holiday", "weekend", "wfh"]);
     const employeesOut = employees.map((e) => {
       const uid = (e.user as { _id?: unknown } | null)?._id ? String((e.user as { _id: unknown })._id) : "";
-      const workDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? [1, 2, 3, 4, 5];
+      // Static fallback for employees with no roster assignment covering a given day.
+      const staticWorkDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? [1, 2, 3, 4, 5];
+      const rosterWindows = rosterMap.get(uid);
       const recs = attByUser.get(uid) ?? {};
       const leaveMap = leaveDaysByUser.get(uid) ?? new Map<string, string>();
 
@@ -279,7 +282,9 @@ export class AttendanceService {
 
       for (let d = 1; d <= daysInMonth; d++) {
         const key = `${month}-${String(d).padStart(2, "0")}`;
-        const dow = new Date(Date.UTC(year, monthIndex, d)).getUTCDay();
+        const dayDate = new Date(Date.UTC(year, monthIndex, d));
+        const dow = dayDate.getUTCDay();
+        const workDays = workDaysForDate(rosterWindows, dayDate) ?? staticWorkDays;
         let entry: DayEntry | null;
         if (recs[key]) {
           entry = recs[key];
