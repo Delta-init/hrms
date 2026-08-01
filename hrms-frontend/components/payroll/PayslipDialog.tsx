@@ -95,6 +95,11 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
       const lop = Math.round(perDay * summary.lopDays * 100) / 100;
       deductions.append({ label: `Loss of Pay (${summary.lopDays}d)`, amount: lop });
     }
+    if (summary.latePenaltyDays > 0 && summary.salary > 0) {
+      const perDay = Math.round((summary.salary / 30) * 100) / 100;
+      const penalty = Math.round(perDay * summary.latePenaltyDays * 100) / 100;
+      deductions.append({ label: `Late Penalty (${summary.latePenaltyDays}d)`, amount: penalty });
+    }
     toast.success("Prefilled from attendance");
   };
 
@@ -155,7 +160,7 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
           {!isEditing && !locked && (
             <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={prefill}>
-              <Wand2 className="h-3.5 w-3.5" />Prefill from attendance {summary && summary.lopDays > 0 ? `(LOP ${summary.lopDays}d)` : ""}
+              <Wand2 className="h-3.5 w-3.5" />Prefill from attendance {summary && summary.lopDays > 0 ? `(LOP ${summary.lopDays}d)` : ""}{summary && summary.latePenaltyDays > 0 ? ` (Penalty ${summary.latePenaltyDays}d)` : ""}
             </Button>
           )}
 

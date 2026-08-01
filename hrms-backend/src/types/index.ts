@@ -466,6 +466,20 @@ export interface IRosterAssignment extends Document {
   updatedAt: Date;
 }
 
+// ─── Attendance penalty policy (late-arrival deductions) ────────────────────
+/** Per-org rule converting repeated lateness into a payroll deduction: the
+ *  first `graceLates` late arrivals in a month are free, then every further
+ *  `lateBlockSize` late arrivals count as one half-day Loss-of-Pay. */
+export interface IAttendancePenaltyPolicy extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  enabled: boolean;
+  graceLates: number;
+  lateBlockSize: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Leave Calendar: Leave Requests ─────────────────────────────────────────
 export type LeaveType =
   | "annual"

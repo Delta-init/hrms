@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, Plus, Pencil, Trash2, Loader2, Globe, CalendarDays, ListChecks, CalendarRange } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, Loader2, Globe, CalendarDays, ListChecks, CalendarRange, ShieldAlert } from "lucide-react";
 import { useWorkSchedules, useDeleteWorkSchedule } from "@/hooks/useWorkSchedules";
 import { useRosterAssignments, useDeleteRosterAssignment } from "@/hooks/useRosterAssignments";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { WorkScheduleDialog } from "@/components/work-schedules/WorkScheduleDialog";
 import { AssignRosterDialog } from "@/components/work-schedules/AssignRosterDialog";
+import { AttendancePenaltyCard } from "@/components/work-schedules/AttendancePenaltyCard";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +57,7 @@ export default function WorkSchedulesPage() {
   const tabs = [
     { key: "schedules", label: "Schedules", icon: ListChecks },
     { key: "roster", label: "Roster", icon: CalendarRange },
+    { key: "penalty", label: "Penalty Rules", icon: ShieldAlert },
   ];
 
   return (
@@ -67,7 +69,9 @@ export default function WorkSchedulesPage() {
         action={
           tab === "schedules"
             ? canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Schedule</Button>
-            : canCreate && <Button onClick={() => { setEditRoster(null); setRosterDialog(true); }} className="shadow-sm" disabled={schedules.length === 0}><Plus className="h-4 w-4" />Assign Shift</Button>
+            : tab === "roster"
+            ? canCreate && <Button onClick={() => { setEditRoster(null); setRosterDialog(true); }} className="shadow-sm" disabled={schedules.length === 0}><Plus className="h-4 w-4" />Assign Shift</Button>
+            : null
         }
       />
 
@@ -205,6 +209,8 @@ export default function WorkSchedulesPage() {
           </div>
         </Card>
       )}
+
+      {tab === "penalty" && <AttendancePenaltyCard canEdit={canEdit} />}
 
       <WorkScheduleDialog open={dialogOpen} onOpenChange={setDialogOpen} schedule={selected} />
       <ConfirmDialog

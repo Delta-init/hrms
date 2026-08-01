@@ -47,6 +47,7 @@ export function PayrollRun() {
         deductions: [
           ...(createRow.structureDeductions ?? []),
           ...(createRow.lopAmount > 0 ? [{ label: `Loss of Pay (${createRow.lopDays}d)`, amount: createRow.lopAmount }] : []),
+          ...(createRow.latePenaltyAmount > 0 ? [{ label: `Late Penalty (${createRow.latePenaltyDays}d)`, amount: createRow.latePenaltyAmount }] : []),
           ...(createRow.loanTotal > 0 ? [{ label: "Loan repayment", amount: createRow.loanTotal }] : []),
         ],
       }
@@ -145,7 +146,9 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
         {r.structureName && <p className="text-[11px] font-normal text-muted-foreground" title="Salary structure in force">{r.structureName}</p>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
-        {r.lopAmount > 0 ? <>-{money(r.lopAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.lopDays}d)</span></> : <span className="text-muted-foreground">—</span>}
+        {r.lopAmount > 0 && <div>-{money(r.lopAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.lopDays}d LOP)</span></div>}
+        {r.latePenaltyAmount > 0 && <div title="Late-arrival penalty">-{money(r.latePenaltyAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.latePenaltyDays}d late)</span></div>}
+        {r.lopAmount === 0 && r.latePenaltyAmount === 0 && <span className="text-muted-foreground">—</span>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.loanTotal > 0 ? `-${money(r.loanTotal, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
       <td className="px-4 py-3 text-right tabular-nums">

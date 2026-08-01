@@ -12,6 +12,7 @@ import { computeReimbursements, markReimbursementsPaid } from "./reimbursementSe
 import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
 import { effectiveSalaryFor } from "./salaryIncrementService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
+import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -177,7 +178,7 @@ export class PayslipService {
     const breakup = await resolveSalaryBreakup(employeeId, month, fallbackSalary);
 
     const base = {
-      present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0,
+      present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
       salary: breakup.gross,
       earnings: breakup.earnings,
       structureDeductions: breakup.deductions,
@@ -215,6 +216,11 @@ export class PayslipService {
     let halfCount = 0;
     for (const k of halfSet) if (!lopFull.has(k)) halfCount++;
     base.lopDays = Math.round((lopFull.size + halfCount * 0.5) * 100) / 100;
+
+    // Repeated lateness beyond the org's configured grace converts into a
+    // separate half-day-equivalent deduction (kept apart from absence-driven LOP).
+    const penaltyPolicy = await getAttendancePenaltyPolicy();
+    base.latePenaltyDays = computeLatePenaltyDays(base.late, penaltyPolicy);
     return base;
   }
 
@@ -238,6 +244,7 @@ export class PayslipService {
       const base = s.salary || 0;
       const perDay = round(base / 30);
       const lopAmount = round(perDay * s.lopDays);
+      const latePenaltyAmount = round(perDay * s.latePenaltyDays);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
@@ -247,7 +254,7 @@ export class PayslipService {
       const reimbursements = round(reimb.earnings.reduce((a, l) => a + l.amount, 0));
       const ot = await computeOvertime(String(emp._id), month);
       const overtime = round(ot.earnings.reduce((a, l) => a + l.amount, 0));
-      const totalDeductions = round(lopAmount + loanTotal + structureDeductions + oneTimeDeductions);
+      const totalDeductions = round(lopAmount + latePenaltyAmount + loanTotal + structureDeductions + oneTimeDeductions);
       const existRow = existMap.get(String(emp._id));
       rows.push({
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
@@ -258,6 +265,8 @@ export class PayslipService {
         structureDeductions: s.structureDeductions ?? [],
         lopDays: s.lopDays,
         lopAmount,
+        latePenaltyDays: s.latePenaltyDays,
+        latePenaltyAmount,
         loanTotal,
         oneTimePayments,
         oneTimeDeductions,
@@ -295,6 +304,7 @@ export class PayslipService {
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
       if (s.lopDays > 0 && s.salary > 0) deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: round((s.salary / 30) * s.lopDays) });
+      if (s.latePenaltyDays > 0 && s.salary > 0) deductions.push({ label: `Late Penalty (${s.latePenaltyDays}d)`, amount: round((s.salary / 30) * s.latePenaltyDays) });
       for (const l of s.loanDeductions ?? []) deductions.push(l);
       deductions.push(...oneTime.deductions);
 
@@ -347,6 +357,10 @@ export class PayslipService {
       if (s.lopDays > 0 && s.salary > 0) {
         const perDay = Math.round((s.salary / 30) * 100) / 100;
         deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: Math.round(perDay * s.lopDays * 100) / 100 });
+      }
+      if (s.latePenaltyDays > 0 && s.salary > 0) {
+        const perDay = Math.round((s.salary / 30) * 100) / 100;
+        deductions.push({ label: `Late Penalty (${s.latePenaltyDays}d)`, amount: Math.round(perDay * s.latePenaltyDays * 100) / 100 });
       }
       // Loan instalments are appended + recorded by create().
       await this.create({ employee: String(emp._id), month, currency: s.currency, earnings, deductions, status: "draft" } as never, issuerId);

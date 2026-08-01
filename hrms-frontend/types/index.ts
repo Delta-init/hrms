@@ -148,6 +148,15 @@ export interface RosterAssignment {
   updatedAt: string;
 }
 
+/** Per-org rule converting repeated lateness into a payroll deduction: the
+ *  first `graceLates` late arrivals in a month are free, then every further
+ *  `lateBlockSize` late arrivals count as one half-day Loss-of-Pay. */
+export interface AttendancePenaltyPolicy {
+  enabled: boolean;
+  graceLates: number;
+  lateBlockSize: number;
+}
+
 // ─── Department ──────────────────────────────────────────────────────────────
 export type PersonKind = "Employee" | "User";
 
@@ -578,7 +587,7 @@ export interface Payslip {
 
 export interface PayslipSummary {
   present: number; late: number; half: number; absent: number;
-  unpaidLeaveDays: number; lopDays: number; salary: number; currency: string;
+  unpaidLeaveDays: number; lopDays: number; latePenaltyDays: number; salary: number; currency: string;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────
@@ -599,6 +608,8 @@ export interface PayrollRunRow {
   structureDeductions: PayComponentLine[];
   lopDays: number;
   lopAmount: number;
+  latePenaltyDays: number;
+  latePenaltyAmount: number;
   loanTotal: number;
   oneTimePayments: number;
   oneTimeDeductions: number;
