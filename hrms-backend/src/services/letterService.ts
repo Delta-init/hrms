@@ -112,6 +112,13 @@ export class LetterService {
     return GeneratedLetter.findById(doc._id).populate(LETTER_POP);
   }
 
+  /** Self-service — letters generated for the caller. */
+  async listMyGeneratedLetters(userId: string) {
+    const employee = await Employee.findOne(scoped({ user: userId })).select("_id");
+    if (!employee) return [];
+    return this.listGeneratedLetters({ employee: String(employee._id) });
+  }
+
   async listGeneratedLetters(query: GeneratedLetterQuery) {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;

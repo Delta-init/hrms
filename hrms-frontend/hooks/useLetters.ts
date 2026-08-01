@@ -52,6 +52,13 @@ export const useGeneratedLetters = (params?: Record<string, string>) =>
     queryFn: async () => (await api.get<ApiResponse<GeneratedLetter[]>>("/letters/generated", { params })).data.data ?? [],
   });
 
+/** Self-service — letters generated for the caller. */
+export const useMyGeneratedLetters = () =>
+  useQuery({
+    queryKey: [...GENERATED_KEY, "mine"],
+    queryFn: async () => (await api.get<ApiResponse<GeneratedLetter[]>>("/letters/generated/mine")).data.data ?? [],
+  });
+
 export const useGenerateLetter = () => {
   const qc = useQueryClient();
   return useMutation({

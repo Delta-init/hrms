@@ -1,13 +1,16 @@
 import { Router } from "express";
 import {
   createLetterTemplate, getLetterTemplates, getLetterTemplateById, updateLetterTemplate, deleteLetterTemplate,
-  generateLetter, getGeneratedLetters, getGeneratedLetterById, updateGeneratedLetter, deleteGeneratedLetter,
+  generateLetter, getGeneratedLetters, getMyGeneratedLetters, getGeneratedLetterById, updateGeneratedLetter, deleteGeneratedLetter,
 } from "../controllers/letterController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 
 const router = Router();
 router.use(authenticate);
+
+// Self-service — own generated letters, no module permission required (must precede "/generated/:id").
+router.get("/generated/mine", getMyGeneratedLetters);
 
 // Generated letters (declared before "/templates/:id"-style dynamic routes so they aren't shadowed).
 router.get("/generated", checkPermission("letters", "view"), getGeneratedLetters);

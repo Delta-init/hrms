@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createAsset, getAssets, getAssetById, updateAsset, deleteAsset,
+  createAsset, getAssets, getMyAssets, getAssetById, updateAsset, deleteAsset,
   issueAsset, returnAsset, markAssetAvailable, retireAsset,
 } from "../controllers/assetController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -8,6 +8,9 @@ import { checkPermission } from "../middleware/permissions.js";
 
 const router = Router();
 router.use(authenticate);
+
+// Self-service — own assigned assets, no module permission required.
+router.get("/mine", getMyAssets);
 
 router.get("/", checkPermission("assets", "view"), getAssets);
 router.post("/", checkPermission("assets", "create"), createAsset);

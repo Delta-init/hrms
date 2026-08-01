@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks,
 } from "lucide-react";
-import { useAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
+import { useAssets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,7 @@ export default function AssetsPage() {
 
   const { data, isLoading, isFetching } = useAssets(canView ? params : undefined);
   const rows = data?.data ?? [];
+  const { data: mine, isLoading: mineLoading } = useMyAssets();
   const { mutate: remove, isPending: deleting } = useDeleteAsset();
   const { mutate: markAvailable, isPending: markingAvailable } = useMarkAssetAvailable();
   const { mutate: retire, isPending: retiring } = useRetireAsset();
@@ -67,16 +69,61 @@ export default function AssetsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [retireTarget, setRetireTarget] = useState<Asset | null>(null);
 
+  const [tab, setTab] = useState("mine");
+  const tabs = [
+    { key: "mine", label: "My Assets", icon: Boxes },
+    canView && { key: "all", label: "All Assets", icon: ListChecks },
+  ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
+
   return (
     <div>
       <PageHeader
         title="Assets"
         description="Track company equipment from purchase through issue, return and retirement."
         icon={Boxes}
-        action={canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>}
+        action={activeTab === "all" && canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>}
       />
 
-      {!canView ? (
+      <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+
+      {activeTab === "mine" && (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3 font-medium">Asset</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Condition</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mineLoading ? (
+                  <tr><td colSpan={4} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                ) : !mine?.length ? (
+                  <tr><td colSpan={4} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets currently assigned to you.</td></tr>
+                ) : mine.map((a) => (
+                  <tr key={a._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{a.name}</p>
+                      <p className="text-xs text-muted-foreground">{a.assetTag}{a.serialNumber ? ` · SN ${a.serialNumber}` : ""}</p>
+                    </td>
+                    <td className="px-4 py-3">{ASSET_CATEGORY_LABELS[a.category]}</td>
+                    <td className={cn("px-4 py-3 font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[a.status])}>{ASSET_STATUS_LABELS[a.status]}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === "all" && (!canView ? (
         <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to assets.</Card>
       ) : (
         <div className="space-y-4">
@@ -167,7 +214,7 @@ export default function AssetsPage() {
             </div>
           </Card>
         </div>
-      )}
+      ))}
 
       <AssetDialog open={dialogOpen} onOpenChange={setDialogOpen} asset={selected} />
       <IssueAssetDialog open={!!issueTarget} onOpenChange={(o) => !o && setIssueTarget(null)} asset={issueTarget} />

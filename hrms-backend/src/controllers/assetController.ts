@@ -16,6 +16,13 @@ export const createAsset = async (req: AuthenticatedRequest, res: Response, next
   } catch (error) { next(error); }
 };
 
+export const getMyAssets = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { records, pagination } = await service.listMine(req.user!.userId, req.query as Record<string, string>);
+    sendSuccess(res, "Your assets retrieved successfully", records, 200, pagination);
+  } catch (error) { next(error); }
+};
+
 export const getAssets = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { records, pagination } = await service.list(req.query as Record<string, string>);

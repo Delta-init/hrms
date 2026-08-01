@@ -41,6 +41,13 @@ export const useEmployeeByUser = (userId?: string) =>
     retry: false,
   });
 
+/** Self-service — the caller's own employee record. */
+export const useMyEmployeeProfile = () =>
+  useQuery({
+    queryKey: [...KEY, "me"],
+    queryFn: async () => (await api.get<ApiResponse<Employee>>("/employees/me")).data.data!,
+  });
+
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({

@@ -34,6 +34,13 @@ export const getEmployeeByUser = async (req: AuthenticatedRequest, res: Response
   } catch (error) { next(error); }
 };
 
+/** Self-service — the caller's own employee record, no module permission required. */
+export const getMyEmployeeProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Your profile retrieved successfully", await service.getByUser(req.user!.userId));
+  } catch (error) { next(error); }
+};
+
 export const updateEmployee = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = updateEmployeeSchema.safeParse(req.body);

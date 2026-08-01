@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import { FileText, Plus, Pencil, Trash2, Loader2, Eye, Printer, Layers, ScrollText } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, Loader2, Eye, Printer, Layers, ScrollText, Inbox } from "lucide-react";
 import {
-  useGeneratedLetters, useDeleteGeneratedLetter,
+  useGeneratedLetters, useMyGeneratedLetters, useDeleteGeneratedLetter,
   useLetterTemplates, useDeleteLetterTemplate,
 } from "@/hooks/useLetters";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,7 +29,8 @@ export default function LettersPage() {
   const canEdit = hasPermission("letters", "edit");
   const canDelete = hasPermission("letters", "delete");
 
-  const [tab, setTab] = useState("generated");
+  const [tab, setTab] = useState("mine");
+  const { data: myLetters, isLoading: myLettersLoading } = useMyGeneratedLetters();
   const { data: letters, isLoading: lettersLoading } = useGeneratedLetters();
   const { data: templates, isLoading: templatesLoading } = useLetterTemplates();
   const { mutate: removeLetter, isPending: deletingLetter } = useDeleteGeneratedLetter();
@@ -43,9 +44,11 @@ export default function LettersPage() {
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<LetterTemplate | null>(null);
 
   const tabs = [
-    { key: "generated", label: "Generated", icon: ScrollText },
-    { key: "templates", label: "Templates", icon: Layers },
-  ];
+    { key: "mine", label: "My Letters", icon: Inbox },
+    canView && { key: "generated", label: "Generated", icon: ScrollText },
+    canView && { key: "templates", label: "Templates", icon: Layers },
+  ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
+  const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
 
   return (
     <div>
@@ -55,20 +58,59 @@ export default function LettersPage() {
         icon={FileText}
         action={
           canCreate && (
-            tab === "generated"
+            activeTab === "generated"
               ? <Button onClick={() => setGenerateDialog(true)} className="shadow-sm" disabled={!templates?.length}><Plus className="h-4 w-4" />Generate Letter</Button>
-              : <Button onClick={() => { setSelectedTemplate(null); setTemplateDialog(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Template</Button>
+              : activeTab === "templates"
+              ? <Button onClick={() => { setSelectedTemplate(null); setTemplateDialog(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Template</Button>
+              : null
           )
         }
       />
 
-      {!canView ? (
-        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to letters.</Card>
-      ) : (
-      <>
-      <Tabs tabs={tabs} value={tab} onChange={setTab} />
+      <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
 
-      {tab === "generated" && (
+      {activeTab === "mine" && (
+        myLettersLoading ? (
+          <div className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : !myLetters?.length ? (
+          <Card className="p-16 text-center text-muted-foreground">
+            <Inbox className="mx-auto mb-2 h-7 w-7" />
+            No letters have been issued to you yet.
+          </Card>
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Subject</th>
+                    <th className="px-4 py-3 font-medium">Category</th>
+                    <th className="px-4 py-3 font-medium">Issued</th>
+                    <th className="px-4 py-3 text-right font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myLetters.map((l) => (
+                    <tr key={l._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
+                      <td className="px-4 py-3 max-w-[280px] truncate">{l.subject}</td>
+                      <td className="px-4 py-3"><Badge variant="secondary" className="capitalize">{LETTER_CATEGORY_LABELS[l.category]}</Badge></td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{fmtDate(l.issuedAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8" title="View" onClick={() => setViewLetter(l)}><Eye className="h-4 w-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" title="Print / PDF" onClick={() => printLetter(l)}><Printer className="h-4 w-4" /></Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )
+      )}
+
+      {activeTab === "generated" && (
         lettersLoading ? (
           <div className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : !letters?.length ? (
@@ -120,7 +162,7 @@ export default function LettersPage() {
         )
       )}
 
-      {tab === "templates" && (
+      {activeTab === "templates" && (
         templatesLoading ? (
           <div className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : !templates?.length ? (
@@ -152,8 +194,6 @@ export default function LettersPage() {
             ))}
           </div>
         )
-      )}
-      </>
       )}
 
       <GenerateLetterDialog open={generateDialog} onOpenChange={setGenerateDialog} onGenerated={(letter) => setViewLetter(letter)} />

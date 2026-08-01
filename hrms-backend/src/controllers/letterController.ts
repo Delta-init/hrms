@@ -50,6 +50,11 @@ export const getGeneratedLetters = async (req: AuthenticatedRequest, res: Respon
   try { sendSuccess(res, "Letters retrieved", await service.listGeneratedLetters(req.query as Record<string, string>)); } catch (error) { next(error); }
 };
 
+/** Self-service — letters generated for the caller, no module permission required. */
+export const getMyGeneratedLetters = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Your letters retrieved", await service.listMyGeneratedLetters(req.user!.userId)); } catch (error) { next(error); }
+};
+
 export const getGeneratedLetterById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Letter retrieved", await service.getGeneratedLetterById(req.params.id)); } catch (error) { next(error); }
 };

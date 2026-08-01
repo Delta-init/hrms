@@ -19,6 +19,13 @@ export const useAssets = (params?: Record<string, string>) =>
     },
   });
 
+/** Self-service — assets currently assigned to the caller. */
+export const useMyAssets = () =>
+  useQuery({
+    queryKey: [...KEY, "mine"],
+    queryFn: async () => (await api.get<ApiResponse<Asset[]>>("/assets/mine")).data.data ?? [],
+  });
+
 export const useAsset = (id?: string) =>
   useQuery({
     queryKey: [...KEY, id],

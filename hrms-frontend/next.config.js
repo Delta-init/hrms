@@ -1,3 +1,13 @@
+const withPWA = require("@ducanh2912/next-pwa").default({
+  dest: "public",
+  disable: process.env.NODE_ENV === "development",
+  register: true,
+  workboxOptions: {
+    // Never cache the API — attendance/leave/payroll data must always be fresh.
+    runtimeCaching: [],
+  },
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Disabled: React Strict Mode's dev double-mount makes framer-motion skip
@@ -5,4 +15,4 @@ const nextConfig = {
   reactStrictMode: false,
 };
 
-module.exports = nextConfig;
+module.exports = withPWA(nextConfig);

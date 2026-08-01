@@ -1,6 +1,6 @@
 "use client";
 import { LogOut, User, Menu, ChevronRight } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import { navItems } from "@/components/layout/Sidebar";
 export function Header() {
   const { user } = useAuth();
   const logout = useLogout();
+  const router = useRouter();
   const { toggleMobileDrawer, toggleSidebarCollapsed } = useUiStore();
   const pathname = usePathname();
 
@@ -77,7 +78,7 @@ export function Header() {
               <p className="mt-0.5 text-xs font-normal text-muted-foreground">{user?.email}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="cursor-pointer" disabled>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => router.push("/profile")}>
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
