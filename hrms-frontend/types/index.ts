@@ -31,6 +31,7 @@ export const HRMS_MODULES = [
   "surveys",
   "approvalWorkflows",
   "helpdesk",
+  "reports",
   "organizations",
   "users",
   "roles",
@@ -60,6 +61,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   surveys: "Surveys",
   approvalWorkflows: "Approval Workflows",
   helpdesk: "Helpdesk",
+  reports: "Reports",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -1070,6 +1072,40 @@ export interface HelpdeskTicket {
   resolvedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Reports / MIS builder ──────────────────────────────────────────────────
+export type ReportSourceKey = "employees" | "attendance" | "leave" | "reimbursements" | "payslips";
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+}
+export interface ReportFilterOption {
+  value: string;
+  label: string;
+}
+export interface ReportFilter {
+  key: string;
+  label: string;
+  type: "date" | "select";
+  options?: ReportFilterOption[];
+}
+export interface ReportSource {
+  key: ReportSourceKey;
+  label: string;
+  columns: ReportColumn[];
+  filters: ReportFilter[];
+}
+export type ReportRow = Record<string, string | number | null>;
+export interface ReportRunResult {
+  rows: ReportRow[];
+}
+export interface ReportFilterValues {
+  status?: string;
+  department?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────

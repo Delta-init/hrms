@@ -36,6 +36,7 @@ export const HRMS_MODULES = [
   "surveys",
   "approvalWorkflows",
   "helpdesk",
+  "reports",
   "organizations",
   "users",
   "roles",

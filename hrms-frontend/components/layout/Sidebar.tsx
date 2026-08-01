@@ -27,6 +27,7 @@ import {
   Megaphone,
   ListChecks,
   LifeBuoy,
+  FileBarChart,
   GitBranch,
   Settings,
   X,
@@ -75,6 +76,7 @@ export const navItems: {
   { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
   // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.
   { href: "/helpdesk", label: "Helpdesk", icon: LifeBuoy, permModule: null },
+  { href: "/reports", label: "Reports", icon: FileBarChart, permModule: "reports" },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
