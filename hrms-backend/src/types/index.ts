@@ -33,6 +33,7 @@ export const HRMS_MODULES = [
   "onboardingTasks",
   "letters",
   "announcements",
+  "surveys",
   "approvalWorkflows",
   "organizations",
   "users",
@@ -221,6 +222,49 @@ export interface IAnnouncement extends Document {
   /** Pinned announcements sort above everything else. */
   pinned: boolean;
   createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Surveys (engagement polls) ─────────────────────────────────────────────
+export type SurveyQuestionType = "text" | "single_choice" | "rating";
+export type SurveyStatus = "draft" | "active" | "closed";
+
+export interface ISurveyQuestion {
+  _id: Types.ObjectId;
+  text: string;
+  type: SurveyQuestionType;
+  /** Required for "single_choice"; ignored otherwise. */
+  options: string[];
+  required: boolean;
+}
+
+export interface ISurvey extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  title: string;
+  description?: string;
+  questions: ISurveyQuestion[];
+  status: SurveyStatus;
+  closesAt?: Date | null;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ISurveyAnswer {
+  question: Types.ObjectId;
+  /** String for text/single_choice, number for rating. */
+  value: string | number;
+}
+
+export interface ISurveyResponse extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  survey: Types.ObjectId | ISurvey;
+  user: Types.ObjectId | IUser;
+  answers: ISurveyAnswer[];
+  submittedAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }

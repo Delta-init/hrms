@@ -28,6 +28,7 @@ import letterRoutes from "./letterRoutes.js";
 import compOffRoutes from "./compOffRoutes.js";
 import approvalWorkflowRoutes from "./approvalWorkflowRoutes.js";
 import announcementRoutes from "./announcementRoutes.js";
+import surveyRoutes from "./surveyRoutes.js";
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.use("/letters", letterRoutes);
 router.use("/comp-off", compOffRoutes);
 router.use("/approval-workflows", approvalWorkflowRoutes);
 router.use("/announcements", announcementRoutes);
+router.use("/surveys", surveyRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

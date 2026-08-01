@@ -48,6 +48,7 @@ const hrManagerPermissions: PermissionsMap = {
   onboardingTasks: { ...fullAccess },
   letters: { ...fullAccess },
   announcements: { ...fullAccess },
+  surveys: { ...fullAccess },
   approvalWorkflows: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
@@ -67,6 +68,9 @@ const employeePermissions: PermissionsMap = {
   // All Claims tab with every colleague's private expense amounts.
   reimbursements: { view: false, create: true, edit: false, delete: false, approve: false, export: false },
   announcements: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
+  // view only: /surveys/mine and submitting a response are self-service, ungated
+  // routes (scoped to the caller server-side) — `view` just controls nav visibility.
+  surveys: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(

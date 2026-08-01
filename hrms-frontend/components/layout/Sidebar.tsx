@@ -25,6 +25,7 @@ import {
   ClipboardList,
   FileText,
   Megaphone,
+  ListChecks,
   GitBranch,
   Settings,
   X,
@@ -69,6 +70,8 @@ export const navItems: {
   { href: "/onboarding-tasks", label: "Onboarding Tasks", icon: ClipboardList, permModule: "onboardingTasks" },
   { href: "/letters", label: "Letters", icon: FileText, permModule: "letters" },
   { href: "/announcements", label: "Announcements", icon: Megaphone, permModule: "announcements" },
+  // Always reachable: everyone can see/respond to Open Surveys; the Manage tab is gated inside the page.
+  { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

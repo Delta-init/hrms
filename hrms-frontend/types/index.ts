@@ -28,6 +28,7 @@ export const HRMS_MODULES = [
   "onboardingTasks",
   "letters",
   "announcements",
+  "surveys",
   "approvalWorkflows",
   "organizations",
   "users",
@@ -55,6 +56,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   onboardingTasks: "Onboarding Tasks",
   letters: "Letters",
   announcements: "Announcements",
+  surveys: "Surveys",
   approvalWorkflows: "Approval Workflows",
   organizations: "Organizations",
   users: "Users",
@@ -967,6 +969,70 @@ export interface Announcement {
   createdBy?: { _id: string; name: string } | string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Surveys ──────────────────────────────────────────────────────────────────
+export type SurveyQuestionType = "text" | "single_choice" | "rating";
+export const SURVEY_QUESTION_TYPE_LABELS: Record<SurveyQuestionType, string> = {
+  text: "Free text", single_choice: "Single choice", rating: "Rating (1–5)",
+};
+export type SurveyStatus = "draft" | "active" | "closed";
+export const SURVEY_STATUS_LABELS: Record<SurveyStatus, string> = {
+  draft: "Draft", active: "Active", closed: "Closed",
+};
+
+export interface SurveyQuestion {
+  _id: string;
+  text: string;
+  type: SurveyQuestionType;
+  options: string[];
+  required: boolean;
+}
+
+export interface Survey {
+  _id: string;
+  title: string;
+  description?: string;
+  questions: SurveyQuestion[];
+  status: SurveyStatus;
+  closesAt?: string | null;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Present on the admin list — count of submitted responses. */
+  responseCount?: number;
+  /** Present on GET /surveys/mine — whether the caller already responded. */
+  hasResponded?: boolean;
+}
+
+export interface SurveyAnswer {
+  question: string;
+  value: string | number;
+}
+
+export interface SurveyResponse {
+  _id: string;
+  survey: string;
+  user: string;
+  answers: SurveyAnswer[];
+  submittedAt: string;
+}
+
+export interface SurveyResultQuestion {
+  questionId: string;
+  text: string;
+  type: SurveyQuestionType;
+  responseCount: number;
+  average?: number;
+  distribution?: Record<number, number>;
+  counts?: Record<string, number>;
+  textAnswers?: string[];
+}
+
+export interface SurveyResults {
+  survey: Survey;
+  totalResponses: number;
+  questions: SurveyResultQuestion[];
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
