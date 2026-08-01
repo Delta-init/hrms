@@ -35,6 +35,7 @@ export const HRMS_MODULES = [
   "announcements",
   "surveys",
   "approvalWorkflows",
+  "helpdesk",
   "organizations",
   "users",
   "roles",
@@ -265,6 +266,33 @@ export interface ISurveyResponse extends Document {
   user: Types.ObjectId | IUser;
   answers: ISurveyAnswer[];
   submittedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Helpdesk (employee support tickets) ────────────────────────────────────
+export type HelpdeskCategory = "it" | "hr" | "payroll" | "facilities" | "other";
+export type HelpdeskPriority = "low" | "medium" | "high";
+export type HelpdeskStatus = "open" | "in_progress" | "resolved" | "closed";
+
+export interface IHelpdeskComment {
+  author: Types.ObjectId | IUser;
+  body: string;
+  at: Date;
+}
+
+export interface IHelpdeskTicket extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  subject: string;
+  description: string;
+  category: HelpdeskCategory;
+  priority: HelpdeskPriority;
+  status: HelpdeskStatus;
+  createdBy: Types.ObjectId | IUser;
+  assignedTo?: Types.ObjectId | IUser | null;
+  comments: IHelpdeskComment[];
+  resolvedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

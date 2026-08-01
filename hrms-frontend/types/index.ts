@@ -30,6 +30,7 @@ export const HRMS_MODULES = [
   "announcements",
   "surveys",
   "approvalWorkflows",
+  "helpdesk",
   "organizations",
   "users",
   "roles",
@@ -58,6 +59,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   announcements: "Announcements",
   surveys: "Surveys",
   approvalWorkflows: "Approval Workflows",
+  helpdesk: "Helpdesk",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -1033,6 +1035,41 @@ export interface SurveyResults {
   survey: Survey;
   totalResponses: number;
   questions: SurveyResultQuestion[];
+}
+
+// ─── Helpdesk ─────────────────────────────────────────────────────────────────
+export type HelpdeskCategory = "it" | "hr" | "payroll" | "facilities" | "other";
+export const HELPDESK_CATEGORY_LABELS: Record<HelpdeskCategory, string> = {
+  it: "IT", hr: "HR", payroll: "Payroll", facilities: "Facilities", other: "Other",
+};
+export type HelpdeskPriority = "low" | "medium" | "high";
+export const HELPDESK_PRIORITY_LABELS: Record<HelpdeskPriority, string> = {
+  low: "Low", medium: "Medium", high: "High",
+};
+export type HelpdeskStatus = "open" | "in_progress" | "resolved" | "closed";
+export const HELPDESK_STATUS_LABELS: Record<HelpdeskStatus, string> = {
+  open: "Open", in_progress: "In Progress", resolved: "Resolved", closed: "Closed",
+};
+
+export interface HelpdeskComment {
+  author?: { _id: string; name: string } | string | null;
+  body: string;
+  at: string;
+}
+
+export interface HelpdeskTicket {
+  _id: string;
+  subject: string;
+  description: string;
+  category: HelpdeskCategory;
+  priority: HelpdeskPriority;
+  status: HelpdeskStatus;
+  createdBy?: { _id: string; name: string; email?: string } | string | null;
+  assignedTo?: { _id: string; name: string; email?: string } | string | null;
+  comments: HelpdeskComment[];
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────

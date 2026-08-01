@@ -26,6 +26,7 @@ import {
   FileText,
   Megaphone,
   ListChecks,
+  LifeBuoy,
   GitBranch,
   Settings,
   X,
@@ -72,6 +73,8 @@ export const navItems: {
   { href: "/announcements", label: "Announcements", icon: Megaphone, permModule: "announcements" },
   // Always reachable: everyone can see/respond to Open Surveys; the Manage tab is gated inside the page.
   { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
+  // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.
+  { href: "/helpdesk", label: "Helpdesk", icon: LifeBuoy, permModule: null },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
