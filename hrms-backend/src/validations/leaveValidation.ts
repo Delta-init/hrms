@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const typeEnum = z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"]);
+const typeEnum = z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]);
 const statusEnum = z.enum(["pending", "approved", "rejected", "cancelled"]);
 
 export const createLeaveSchema = z.object({

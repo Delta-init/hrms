@@ -474,7 +474,8 @@ export type LeaveType =
   | "unpaid"
   | "maternity"
   | "paternity"
-  | "wfh";
+  | "wfh"
+  | "comp_off";
 
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
@@ -885,6 +886,28 @@ export interface IGeneratedLetter extends Document {
   issuedBy?: Types.ObjectId | IUser | null;
   issuedAt: Date;
   notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Comp-off (compensatory time off) ────────────────────────────────────────
+/** One "earn" event: the employee worked a weekend/holiday and was credited a
+ *  day (or half-day) of comp-off. Balance is computed on the fly as the sum
+ *  of available credits minus days used by approved type="comp_off" leave —
+ *  there's no separate redemption/consumption step to keep in sync. */
+export interface ICompOffCredit extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user?: Types.ObjectId | IUser | null;
+  /** The off-day the employee worked to earn this credit. */
+  date: Date;
+  /** Days of comp-off earned (e.g. 0.5 or 1). */
+  amount: number;
+  reason?: string;
+  status: "available" | "revoked";
+  sourceAttendance?: Types.ObjectId | IAttendance | null;
+  createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -13,14 +13,14 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { leavePolicyFormSchema, type LeavePolicyFormValues } from "@/lib/validations/leavePolicySchema";
 import { useCreateLeavePolicy, useUpdateLeavePolicy } from "@/hooks/useLeaveBalances";
-import { LEAVE_TYPE_LABELS, type LeavePolicy, type LeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   policy?: LeavePolicy | null;
   /** Leave types with no policy yet — only these are offered when creating. */
-  availableTypes: LeaveType[];
+  availableTypes: PolicyLeaveType[];
 }
 
 const EMPTY: LeavePolicyFormValues = { type: "annual", annualDays: 0, accrueMonthly: true, carryForwardLimit: 0 };

@@ -3,7 +3,7 @@ import { z } from "zod";
 export const leaveFormSchema = z
   .object({
     user: z.string().min(1, "Employee is required"),
-    type: z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"]),
+    type: z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     halfDay: z.boolean().default(false),

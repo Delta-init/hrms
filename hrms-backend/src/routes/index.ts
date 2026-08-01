@@ -25,6 +25,7 @@ import leaveBalanceRoutes from "./leaveBalanceRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 import onboardingRoutes from "./onboardingRoutes.js";
 import letterRoutes from "./letterRoutes.js";
+import compOffRoutes from "./compOffRoutes.js";
 
 const router = Router();
 
@@ -42,6 +43,7 @@ router.use("/overtime", overtimeRoutes);
 router.use("/assets", assetRoutes);
 router.use("/onboarding", onboardingRoutes);
 router.use("/letters", letterRoutes);
+router.use("/comp-off", compOffRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

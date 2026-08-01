@@ -12,7 +12,7 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
     },
     type: {
       type: String,
-      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"],
+      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"],
       required: [true, "Leave type is required"],
     },
     startDate: {

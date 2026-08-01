@@ -5,6 +5,7 @@ import type { CreateLeaveInput, UpdateLeaveInput } from "../validations/leaveVal
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { compOffBalanceFor } from "./compOffService.js";
 
 interface LeaveQuery extends PaginationQuery {
   user?: string;
@@ -64,6 +65,18 @@ export class LeaveService {
       );
     }
 
+    const days = input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(user));
+
+    if (input.type === "comp_off") {
+      const balance = await compOffBalanceFor(input.user);
+      if (days > balance) {
+        throw Object.assign(
+          new Error(`Insufficient comp-off balance (${balance} day${balance === 1 ? "" : "s"} available, ${days} requested)`),
+          { statusCode: 400 }
+        );
+      }
+    }
+
     const leave = await LeaveRequest.create({
       organization: getOrgId(),
       user: input.user,
@@ -71,7 +84,7 @@ export class LeaveService {
       startDate: input.startDate,
       endDate: input.endDate,
       halfDay: input.halfDay,
-      days: input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(user)),
+      days,
       timeZone: input.timeZone,
       reason: input.reason,
       status: input.status ?? "pending",

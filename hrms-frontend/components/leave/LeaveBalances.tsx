@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { LeavePolicyDialog } from "@/components/leave/LeavePolicyDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, type LeavePolicy, type LeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType } from "@/types";
 
-const ALL_TYPES: LeaveType[] = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"];
+const ALL_TYPES: PolicyLeaveType[] = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"];
 
 interface Props {
   /** Whether the caller can manage policies (leave.edit / leave.create). */

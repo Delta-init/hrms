@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   CalendarClock, Plus, Pencil, Trash2, Loader2, Check, X,
-  CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send, Wallet,
+  CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send, Wallet, CalendarPlus,
 } from "lucide-react";
 import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
 import { useUsers } from "@/hooks/useUsers";
@@ -16,6 +16,7 @@ import { LeaveDialog } from "@/components/leave/LeaveDialog";
 import { HolidayDialog } from "@/components/leave/HolidayDialog";
 import { LeaveCalendar } from "@/components/leave/LeaveCalendar";
 import { LeaveBalances } from "@/components/leave/LeaveBalances";
+import { CompOffLedger } from "@/components/leave/CompOffLedger";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,7 @@ export default function LeavePage() {
     canApprove && { key: "approvals", label: "Approvals", icon: Inbox, count: pending.length },
     { key: "apply", label: "Apply", icon: Send },
     { key: "balances", label: "Balances", icon: Wallet },
+    { key: "comp-off", label: "Comp-Off", icon: CalendarPlus },
     canView && { key: "holidays", label: "Holidays", icon: CalendarDays },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? "apply");
@@ -211,6 +213,8 @@ export default function LeavePage() {
       )}
 
       {activeTab === "balances" && <LeaveBalances canManage={canEdit} />}
+
+      {activeTab === "comp-off" && <CompOffLedger canManage={canApprove} />}
 
       {activeTab === "holidays" && (
         <Card className="p-5">

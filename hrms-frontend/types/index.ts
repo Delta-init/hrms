@@ -414,7 +414,7 @@ export interface Attendance {
 }
 
 // ─── Leave ──────────────────────────────────────────────────────────────────
-export type LeaveType = "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh";
+export type LeaveType = "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off";
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -425,6 +425,7 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   maternity: "Maternity",
   paternity: "Paternity",
   wfh: "Work From Home",
+  comp_off: "Comp-Off",
 };
 
 export interface LeaveRequest {
@@ -462,9 +463,13 @@ export interface Holiday {
 }
 
 // ─── Leave policy (balances & accrual) ─────────────────────────────────────────
+// comp_off is earned per off-day-worked event, not an annual accrual — it never
+// gets a LeavePolicy row, so policy/balance types exclude it deliberately.
+export type PolicyLeaveType = Exclude<LeaveType, "comp_off">;
+
 export interface LeavePolicy {
   _id: string;
-  type: LeaveType;
+  type: PolicyLeaveType;
   annualDays: number;
   accrueMonthly: boolean;
   carryForwardLimit: number;
@@ -472,7 +477,7 @@ export interface LeavePolicy {
   updatedAt: string;
 }
 export interface LeaveBalance {
-  type: LeaveType;
+  type: PolicyLeaveType;
   year: number;
   annualDays: number;
   accrued: number;
@@ -1099,4 +1104,25 @@ export interface GeneratedLetter {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Comp-off (compensatory time off) ──────────────────────────────────────────
+export interface CompOffCredit {
+  _id: string;
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } | string;
+  date: string;
+  amount: number;
+  reason?: string;
+  status: "available" | "revoked";
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompOffSuggestion {
+  employee: { _id: string; name: string; employeeCode?: string };
+  user: string;
+  date: string;
+  reason: "holiday" | "weekend";
+  workedMinutes: number;
 }
