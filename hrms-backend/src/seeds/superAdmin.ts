@@ -52,6 +52,7 @@ const hrManagerPermissions: PermissionsMap = {
   approvalWorkflows: { ...fullAccess },
   helpdesk: { ...fullAccess },
   reports: { ...fullAccess },
+  performance: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
   roles: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
@@ -76,6 +77,9 @@ const employeePermissions: PermissionsMap = {
   // create only: employees raise their own tickets (My Tickets is /helpdesk/mine,
   // ungated). No `view` — that exposes the org-wide ticket queue.
   helpdesk: { view: false, create: true, edit: false, delete: false, approve: false, export: false },
+  // view only: /performance/mine (own appraisals, goal-setting, self-review
+  // submission) is self-service and ungated — `view` just controls nav visibility.
+  performance: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(

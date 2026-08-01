@@ -32,6 +32,7 @@ export const HRMS_MODULES = [
   "approvalWorkflows",
   "helpdesk",
   "reports",
+  "performance",
   "organizations",
   "users",
   "roles",
@@ -62,6 +63,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   approvalWorkflows: "Approval Workflows",
   helpdesk: "Helpdesk",
   reports: "Reports",
+  performance: "Performance",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -1106,6 +1108,51 @@ export interface ReportFilterValues {
   department?: string;
   dateFrom?: string;
   dateTo?: string;
+}
+
+// ─── Performance management ─────────────────────────────────────────────────
+export type PerformanceCycleStatus = "draft" | "active" | "closed";
+export const PERFORMANCE_CYCLE_STATUS_LABELS: Record<PerformanceCycleStatus, string> = {
+  draft: "Draft", active: "Active", closed: "Closed",
+};
+export type AppraisalStatus = "draft" | "submitted" | "completed";
+export const APPRAISAL_STATUS_LABELS: Record<AppraisalStatus, string> = {
+  draft: "Draft", submitted: "Awaiting review", completed: "Completed",
+};
+
+export interface PerformanceCycle {
+  _id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  status: PerformanceCycleStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppraisalGoal {
+  _id: string;
+  title: string;
+  description?: string;
+  weight: number;
+  selfRating?: number | null;
+  managerRating?: number | null;
+}
+
+export interface Appraisal {
+  _id: string;
+  cycle: { _id: string; title: string; startDate: string; endDate: string; status: PerformanceCycleStatus } | string;
+  employee?: { _id: string; name: string; employeeCode: string; designation?: string } | string | null;
+  goals: AppraisalGoal[];
+  selfComment?: string;
+  managerComment?: string;
+  status: AppraisalStatus;
+  overallRating?: number | null;
+  submittedAt?: string | null;
+  completedAt?: string | null;
+  reviewedBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ export const HRMS_MODULES = [
   "approvalWorkflows",
   "helpdesk",
   "reports",
+  "performance",
   "organizations",
   "users",
   "roles",
@@ -294,6 +295,49 @@ export interface IHelpdeskTicket extends Document {
   assignedTo?: Types.ObjectId | IUser | null;
   comments: IHelpdeskComment[];
   resolvedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Performance management (goals + appraisal cycles) ─────────────────────
+export type PerformanceCycleStatus = "draft" | "active" | "closed";
+export type AppraisalStatus = "draft" | "submitted" | "completed";
+
+export interface IPerformanceCycle extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  title: string;
+  startDate: Date;
+  endDate: Date;
+  status: PerformanceCycleStatus;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IAppraisalGoal {
+  _id: Types.ObjectId;
+  title: string;
+  description?: string;
+  weight: number;
+  selfRating?: number | null;
+  managerRating?: number | null;
+}
+
+export interface IAppraisal extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  cycle: Types.ObjectId | IPerformanceCycle;
+  employee: Types.ObjectId | IEmployee;
+  user: Types.ObjectId | IUser;
+  goals: IAppraisalGoal[];
+  selfComment?: string;
+  managerComment?: string;
+  status: AppraisalStatus;
+  overallRating?: number | null;
+  submittedAt?: Date | null;
+  completedAt?: Date | null;
+  reviewedBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }

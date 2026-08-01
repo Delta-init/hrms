@@ -28,6 +28,7 @@ import {
   ListChecks,
   LifeBuoy,
   FileBarChart,
+  Target,
   GitBranch,
   Settings,
   X,
@@ -77,6 +78,8 @@ export const navItems: {
   // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.
   { href: "/helpdesk", label: "Helpdesk", icon: LifeBuoy, permModule: null },
   { href: "/reports", label: "Reports", icon: FileBarChart, permModule: "reports" },
+  // Always reachable: everyone can view/manage their own appraisal; the Manage tab is gated inside the page.
+  { href: "/performance", label: "Performance", icon: Target, permModule: null },
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },

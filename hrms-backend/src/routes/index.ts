@@ -31,6 +31,7 @@ import announcementRoutes from "./announcementRoutes.js";
 import surveyRoutes from "./surveyRoutes.js";
 import helpdeskRoutes from "./helpdeskRoutes.js";
 import reportRoutes from "./reportRoutes.js";
+import performanceRoutes from "./performanceRoutes.js";
 
 const router = Router();
 
@@ -54,6 +55,7 @@ router.use("/announcements", announcementRoutes);
 router.use("/surveys", surveyRoutes);
 router.use("/helpdesk", helpdeskRoutes);
 router.use("/reports", reportRoutes);
+router.use("/performance", performanceRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);
