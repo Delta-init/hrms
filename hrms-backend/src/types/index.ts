@@ -32,6 +32,7 @@ export const HRMS_MODULES = [
   "assets",
   "onboardingTasks",
   "letters",
+  "approvalWorkflows",
   "organizations",
   "users",
   "roles",
@@ -384,6 +385,10 @@ export interface IRegularization extends Document {
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: IApprovalStepSnapshot[];
+  approvalTrail?: IApprovalTrailEntry[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -493,6 +498,46 @@ export type LeaveType =
 
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
+// ─── Approval workflow (configurable multi-step approval chains) ────────────
+/** Approvable modules that can have a configurable multi-step chain — the
+ *  ones sharing the same pending → approved/rejected + reviewedBy shape. */
+export type ApprovableModule = "leave" | "regularization" | "reimbursements";
+
+export interface IApprovalStep {
+  order: number;
+  role: Types.ObjectId | IRole;
+  label?: string;
+}
+
+export interface IApprovalWorkflow extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  module: ApprovableModule;
+  enabled: boolean;
+  steps: IApprovalStep[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A step snapshotted onto an approvable record when it's created, so a later
+ *  edit to the org's workflow config never changes an in-flight request. */
+export interface IApprovalStepSnapshot {
+  order: number;
+  role: Types.ObjectId;
+  roleName: string;
+  label?: string;
+}
+
+/** One completed action in a record's approval chain. */
+export interface IApprovalTrailEntry {
+  step: number;
+  roleName?: string;
+  by: Types.ObjectId | IUser;
+  action: "approved" | "rejected";
+  note?: string;
+  at: Date;
+}
+
 export interface ILeaveRequest extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
@@ -510,6 +555,11 @@ export interface ILeaveRequest extends Document {
   reviewedBy?: Types.ObjectId | IUser;
   reviewedAt?: Date | null;
   reviewNote?: string;
+  /** Current pending step (1-indexed) in a configured approval chain; null = single-step (no workflow configured). */
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: IApprovalStepSnapshot[];
+  approvalTrail?: IApprovalTrailEntry[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -760,6 +810,10 @@ export interface IReimbursement extends Document {
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date;
   reviewNote?: string;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: IApprovalStepSnapshot[];
+  approvalTrail?: IApprovalTrailEntry[];
   /** Set when the approved claim has been paid out through a payslip. */
   payslip?: Types.ObjectId | null;
   createdBy?: Types.ObjectId | IUser | null;

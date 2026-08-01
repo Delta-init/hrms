@@ -27,6 +27,7 @@ export const HRMS_MODULES = [
   "assets",
   "onboardingTasks",
   "letters",
+  "approvalWorkflows",
   "organizations",
   "users",
   "roles",
@@ -52,6 +53,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   assets: "Assets",
   onboardingTasks: "Onboarding Tasks",
   letters: "Letters",
+  approvalWorkflows: "Approval Workflows",
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
@@ -437,7 +439,46 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   comp_off: "Comp-Off",
 };
 
-export interface LeaveRequest {
+// ─── Approval workflow (configurable multi-step approval chains) ────────────
+export type ApprovableModule = "leave" | "regularization" | "reimbursements";
+
+export interface ApprovalWorkflowStep {
+  order: number;
+  role: { _id: string; roleName: string } | string;
+  label?: string;
+}
+export interface ApprovalWorkflow {
+  _id: string;
+  module: ApprovableModule;
+  enabled: boolean;
+  steps: ApprovalWorkflowStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+/** Snapshotted onto a record at creation — later workflow edits don't retroactively change it. */
+export interface ApprovalStepSnapshot {
+  order: number;
+  role: string;
+  roleName: string;
+  label?: string;
+}
+export interface ApprovalTrailEntry {
+  step: number;
+  roleName?: string;
+  by: { _id: string; name: string } | string;
+  action: "approved" | "rejected";
+  note?: string;
+  at: string;
+}
+/** Shared workflow-state fields mixed into every approvable record. */
+export interface WorkflowState {
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: ApprovalStepSnapshot[];
+  approvalTrail?: ApprovalTrailEntry[];
+}
+
+export interface LeaveRequest extends WorkflowState {
   _id: string;
   user: Pick<User, "_id" | "name" | "email" | "designation"> | string;
   type: LeaveType;
@@ -517,7 +558,7 @@ export const REGULARIZATION_TYPE_LABELS: Record<RegularizationType, string> = {
   absent_correction: "Absent Correction",
 };
 
-export interface Regularization {
+export interface Regularization extends WorkflowState {
   _id: string;
   user: { _id: string; name: string; email?: string; designation?: string } | string;
   date: string;
@@ -683,7 +724,7 @@ export const REIMBURSEMENT_CATEGORY_LABELS: Record<ReimbursementCategory, string
 export const REIMBURSEMENT_STATUS_LABELS: Record<ReimbursementStatus, string> = {
   pending: "Pending", approved: "Approved", rejected: "Rejected", paid: "Paid",
 };
-export interface Reimbursement {
+export interface Reimbursement extends WorkflowState {
   _id: string;
   employee?: { _id: string; name: string; employeeCode?: string; currency?: string } | string | null;
   user?: string | null;

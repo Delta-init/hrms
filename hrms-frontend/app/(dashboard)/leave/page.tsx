@@ -28,6 +28,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
+import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
 import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus, type LeaveType } from "@/types";
 
 const ALL = "__all__";
@@ -40,9 +41,10 @@ const statusStyles: Record<LeaveStatus, string> = {
 const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(new Date(iso));
 
 // Simple table for Approvals / My tabs (bounded lists).
-function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview }: {
+function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin }: {
   leaves: LeaveRequest[]; loading?: boolean; emptyText: string; canApprove?: boolean;
   onReview?: (l: LeaveRequest, a: "approved" | "rejected") => void;
+  reviewerRoleId?: string; isSuperAdmin?: boolean;
 }) {
   return (
     <Card className="overflow-hidden">
@@ -66,8 +68,11 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview }: 
                   <td className="px-5 py-3.5">{LEAVE_TYPE_LABELS[l.type]}</td>
                   <td className="px-5 py-3.5 text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</td>
                   <td className="px-5 py-3.5 font-medium">{l.days}</td>
-                  <td className="px-5 py-3.5"><span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[l.status])}>{l.status}</span></td>
-                  {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{l.status === "pending" && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(l, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
+                  <td className="px-5 py-3.5">
+                    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[l.status])}>{l.status}</span>
+                    {workflowStepLabel(l) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(l)}</span>}
+                  </td>
+                  {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(l, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
                 </tr>
               );
             })}
@@ -85,6 +90,8 @@ export default function LeavePage() {
   const canApprove = hasPermission("leave", "approve");
   const canEdit = hasPermission("leave", "edit");
   const canDelete = hasPermission("leave", "delete");
+  const reviewerRoleId = user?.role?._id;
+  const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
 
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
@@ -132,13 +139,21 @@ export default function LeavePage() {
     { id: "type", label: "Type", sortKey: "type", render: (l) => <>{LEAVE_TYPE_LABELS[l.type]}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}</> },
     { id: "dates", label: "Dates", sortKey: "startDate", render: (l) => <span className="text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</span> },
     { id: "days", label: "Days", sortKey: "days", render: (l) => <span className="font-medium">{l.days}</span> },
-    { id: "status", label: "Status", sortKey: "status", render: (l) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[l.status])}>{l.status}</span> },
+    {
+      id: "status", label: "Status", sortKey: "status",
+      render: (l) => (
+        <>
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[l.status])}>{l.status}</span>
+          {workflowStepLabel(l) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(l)}</span>}
+        </>
+      ),
+    },
     { id: "reviewedBy", label: "Reviewed by", defaultVisible: false, render: (l) => <span className="text-muted-foreground">{typeof l.reviewedBy === "object" && l.reviewedBy ? l.reviewedBy.name : "—"}</span> },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
       render: (l) => (
         <div className="flex items-center justify-end gap-1">
-          {canApprove && l.status === "pending" && <>
+          {canApprove && l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <>
             <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReview({ leave: l, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
             <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReview({ leave: l, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>
           </>}
@@ -200,7 +215,7 @@ export default function LeavePage() {
 
       {activeTab === "calendar" && <Card className="p-5"><LeaveCalendar leaves={calendarLeaves} holidays={holidays} /></Card>}
 
-      {activeTab === "approvals" && <SimpleLeaveTable leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} />}
+      {activeTab === "approvals" && <SimpleLeaveTable leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} />}
 
       {activeTab === "apply" && (
         <div className="space-y-4">

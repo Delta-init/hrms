@@ -14,6 +14,7 @@ import { ReimbursementDialog } from "@/components/reimbursements/ReimbursementDi
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getInitials, cn } from "@/lib/utils";
+import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
 import { REIMBURSEMENT_CATEGORY_LABELS, REIMBURSEMENT_STATUS_LABELS, type Reimbursement, type ReimbursementStatus } from "@/types";
 
 const ALL = "__all__";
@@ -32,12 +33,14 @@ function StatusBadge({ status }: { status: ReimbursementStatus }) {
 }
 
 export default function ReimbursementsPage() {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
   const canView = hasPermission("reimbursements", "view");
   const canCreate = hasPermission("reimbursements", "create");
   const canApprove = hasPermission("reimbursements", "approve");
   const canEdit = hasPermission("reimbursements", "edit");
   const canDelete = hasPermission("reimbursements", "delete");
+  const reviewerRoleId = user?.role?._id;
+  const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
 
   const [tab, setTab] = useState("mine");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -113,10 +116,13 @@ export default function ReimbursementsPage() {
                   <td className="px-4 py-3">{fmtDate(r.expenseDate)}</td>
                   <td className="px-4 py-3">{r.month}</td>
                   <td className="px-4 py-3 text-right font-medium tabular-nums">{money(r.amount, e?.currency)}</td>
-                  <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={r.status} />
+                    {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {opts.showReview && r.status === "pending" && (
+                      {opts.showReview && r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && (
                         <>
                           <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReviewTarget({ claim: r, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
                           <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReviewTarget({ claim: r, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>

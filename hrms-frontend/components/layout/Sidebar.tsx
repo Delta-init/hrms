@@ -24,6 +24,7 @@ import {
   Boxes,
   ClipboardList,
   FileText,
+  GitBranch,
   Settings,
   X,
 } from "lucide-react";
@@ -69,6 +70,7 @@ export const navItems: {
   { href: "/organizations", label: "Organizations", icon: Landmark, permModule: "organizations" },
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
+  { href: "/approval-workflows", label: "Approval Workflows", icon: GitBranch, permModule: "approvalWorkflows" },
   { href: "/settings", label: "Settings", icon: Settings, permModule: null },
 ];
 

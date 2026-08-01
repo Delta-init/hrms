@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import type { IReimbursement } from "../types/index.js";
+import { workflowStateFields } from "./approvalWorkflowFields.js";
 
 /** An employee expense-reimbursement claim. Submitted by the employee, reviewed
  *  by HR/a manager, and — once approved — paid out through a payslip, at which
@@ -25,6 +26,7 @@ const reimbursementSchema = new Schema<IReimbursement>(
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },
+    ...workflowStateFields,
     payslip: { type: Schema.Types.ObjectId, ref: "Payslip", default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

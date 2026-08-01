@@ -45,7 +45,8 @@ export const updateRegularization = async (req: AuthenticatedRequest, res: Respo
   try {
     const parsed = updateRegularizationSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    const record = await service.update(req.params.id, parsed.data, req.user!.userId);
+    const role = req.user!.role!;
+    const record = await service.update(req.params.id, parsed.data, req.user!.userId, { _id: String(role._id), roleName: role.roleName, isSystemRole: role.isSystemRole });
     sendSuccess(res, "Regularization updated successfully", record);
   } catch (error) { next(error); }
 };

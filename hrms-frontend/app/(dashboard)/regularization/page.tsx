@@ -17,6 +17,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getInitials, cn } from "@/lib/utils";
+import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
 import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType } from "@/types";
 
 const ALL = "__all__";
@@ -30,9 +31,10 @@ const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", {
 const fmtTime = (iso?: string | null, tz?: string) => (iso ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(iso)) : "—");
 
 // Simple table for Approvals / My tabs.
-function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview }: {
+function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin }: {
   rows: Regularization[]; loading?: boolean; emptyText: string; canApprove?: boolean;
   onReview?: (r: Regularization, a: "approved" | "rejected") => void;
+  reviewerRoleId?: string; isSuperAdmin?: boolean;
 }) {
   return (
     <Card className="overflow-hidden">
@@ -50,8 +52,11 @@ function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview }: {
                 <td className="px-5 py-3.5 text-muted-foreground">{fmtDate(r.date, r.timeZone)}</td>
                 <td className="px-5 py-3.5">{REGULARIZATION_TYPE_LABELS[r.type]}</td>
                 <td className="px-5 py-3.5 text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></td>
-                <td className="px-5 py-3.5"><span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span></td>
-                {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{r.status === "pending" && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(r, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(r, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
+                <td className="px-5 py-3.5">
+                  <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span>
+                  {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+                </td>
+                {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(r, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(r, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
               </tr>
             ); })}
           </tbody>
@@ -66,6 +71,8 @@ export default function RegularizationPage() {
   const canView = hasPermission("regularization", "view");
   const canApprove = hasPermission("regularization", "edit");
   const canDelete = hasPermission("regularization", "delete");
+  const reviewerRoleId = user?.role?._id;
+  const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
 
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
@@ -99,10 +106,18 @@ export default function RegularizationPage() {
     { id: "date", label: "Date", sortKey: "date", render: (r) => <span className="text-muted-foreground">{fmtDate(r.date, r.timeZone)}</span> },
     { id: "type", label: "Type", sortKey: "type", render: (r) => REGULARIZATION_TYPE_LABELS[r.type] },
     { id: "requested", label: "Requested", render: (r) => <span className="text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></span> },
-    { id: "status", label: "Status", sortKey: "status", render: (r) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span> },
+    {
+      id: "status", label: "Status", sortKey: "status",
+      render: (r) => (
+        <>
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span>
+          {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+        </>
+      ),
+    },
     { id: "actions", label: "", alwaysVisible: true, align: "right", render: (r) => (
       <div className="flex items-center justify-end gap-1">
-        {canApprove && r.status === "pending" && <>
+        {canApprove && r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && <>
           <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReview({ reg: r, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
           <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReview({ reg: r, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>
         </>}
@@ -153,7 +168,7 @@ export default function RegularizationPage() {
         />
       )}
 
-      {activeTab === "approvals" && <SimpleRegTable rows={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(r, a) => setReview({ reg: r, action: a })} />}
+      {activeTab === "approvals" && <SimpleRegTable rows={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(r, a) => setReview({ reg: r, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} />}
 
       {activeTab === "mine" && (
         <div className="space-y-4">

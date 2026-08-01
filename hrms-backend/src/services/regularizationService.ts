@@ -6,6 +6,8 @@ import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
+import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
+import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -23,7 +25,8 @@ export class RegularizationService {
   async create(input: CreateRegularizationInput) {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
-    const reg = await Regularization.create({ ...input, organization: getOrgId(), status: input.status ?? "pending" });
+    const workflow = await beginWorkflowState("regularization");
+    const reg = await Regularization.create({ ...input, organization: getOrgId(), status: input.status ?? "pending", ...workflow });
     return Regularization.findById(reg._id).populate(POP);
   }
 
@@ -86,7 +89,7 @@ export class RegularizationService {
     await att.save();
   }
 
-  async update(id: string, input: UpdateRegularizationInput, reviewerId: string) {
+  async update(id: string, input: UpdateRegularizationInput, reviewerId: string, reviewerRole: ReviewerRole) {
     const record = await Regularization.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
 
@@ -99,13 +102,21 @@ export class RegularizationService {
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
 
     if (input.status !== undefined && input.status !== record.status) {
-      record.status = input.status;
       if (input.status === "approved" || input.status === "rejected") {
-        record.reviewedBy = reviewerId as never;
-        record.reviewedAt = new Date();
-      }
-      if (input.status === "approved") {
-        await this.applyToAttendance(record);
+        const outcome = resolveReviewOutcome(
+          record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+        );
+        record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+        if (outcome.advance) {
+          record.workflowStep = (record.workflowStep ?? 1) + 1;
+        } else {
+          record.status = input.status;
+          record.reviewedBy = reviewerId as never;
+          record.reviewedAt = new Date();
+          if (input.status === "approved") await this.applyToAttendance(record);
+        }
+      } else {
+        record.status = input.status;
       }
     }
 

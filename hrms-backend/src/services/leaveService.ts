@@ -6,6 +6,8 @@ import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
+import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
+import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 interface LeaveQuery extends PaginationQuery {
   user?: string;
@@ -77,6 +79,7 @@ export class LeaveService {
       }
     }
 
+    const workflow = await beginWorkflowState("leave");
     const leave = await LeaveRequest.create({
       organization: getOrgId(),
       user: input.user,
@@ -88,6 +91,7 @@ export class LeaveService {
       timeZone: input.timeZone,
       reason: input.reason,
       status: input.status ?? "pending",
+      ...workflow,
     });
     return LeaveRequest.findById(leave._id).populate("user", "name email designation");
   }
@@ -136,7 +140,7 @@ export class LeaveService {
     return record;
   }
 
-  async update(id: string, input: UpdateLeaveInput, reviewerId: string) {
+  async update(id: string, input: UpdateLeaveInput, reviewerId: string, reviewerRole: ReviewerRole) {
     const record = await LeaveRequest.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
 
@@ -169,10 +173,21 @@ export class LeaveService {
 
     // Status change = a review action.
     if (input.status !== undefined && input.status !== record.status) {
-      record.status = input.status;
       if (input.status === "approved" || input.status === "rejected") {
-        record.reviewedBy = reviewerId as never;
-        record.reviewedAt = new Date();
+        const outcome = resolveReviewOutcome(
+          record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+        );
+        record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+        if (outcome.advance) {
+          record.workflowStep = (record.workflowStep ?? 1) + 1;
+          // Still pending — waiting on the next step.
+        } else {
+          record.status = input.status;
+          record.reviewedBy = reviewerId as never;
+          record.reviewedAt = new Date();
+        }
+      } else {
+        record.status = input.status;
       }
     }
 

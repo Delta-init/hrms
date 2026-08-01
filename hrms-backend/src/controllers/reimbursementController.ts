@@ -56,7 +56,9 @@ export const reviewReimbursement = async (req: AuthenticatedRequest, res: Respon
   try {
     const parsed = reviewReimbursementSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    sendSuccess(res, "Reimbursement reviewed", await service.review(req.params.id, parsed.data, req.user!.userId));
+    const role = req.user!.role!;
+    const record = await service.review(req.params.id, parsed.data, req.user!.userId, { _id: String(role._id), roleName: role.roleName, isSystemRole: role.isSystemRole });
+    sendSuccess(res, "Reimbursement reviewed", record);
   } catch (error) { next(error); }
 };
 

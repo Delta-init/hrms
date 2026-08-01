@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import type { ILeaveRequest } from "../types/index.js";
+import { workflowStateFields } from "./approvalWorkflowFields.js";
 
 /** Leave calendar — employee leave applications and their approval status. */
 const leaveRequestSchema = new Schema<ILeaveRequest>(
@@ -62,6 +63,7 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
       trim: true,
       maxlength: [500, "Review note cannot exceed 500 characters"],
     },
+    ...workflowStateFields,
   },
   {
     timestamps: true,

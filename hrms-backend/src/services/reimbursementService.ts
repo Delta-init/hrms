@@ -6,6 +6,8 @@ import type {
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
+import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 interface ReimbursementQuery extends PaginationQuery {
   employee?: string;
@@ -42,6 +44,7 @@ export class ReimbursementService {
     }
     if (!employee) throw Object.assign(new Error("Employee profile not found for this claim"), { statusCode: 404 });
 
+    const workflow = await beginWorkflowState("reimbursements");
     const doc = await Reimbursement.create({
       organization: getOrgId(),
       employee: employee._id,
@@ -55,6 +58,7 @@ export class ReimbursementService {
       receiptUrl: input.receiptUrl,
       status: "pending",
       createdBy: opts.createdBy,
+      ...workflow,
     });
     return Reimbursement.findById(doc._id).populate(POP);
   }
@@ -105,15 +109,24 @@ export class ReimbursementService {
   }
 
   /** Approve or reject a pending claim. */
-  async review(id: string, input: ReviewReimbursementInput, reviewerId: string) {
+  async review(id: string, input: ReviewReimbursementInput, reviewerId: string, reviewerRole: ReviewerRole) {
     const record = await Reimbursement.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Reimbursement not found"), { statusCode: 404 });
     if (record.status === "paid")
       throw Object.assign(new Error("This claim has already been paid out"), { statusCode: 400 });
-    record.status = input.status;
-    record.reviewedBy = reviewerId as never;
-    record.reviewedAt = new Date();
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
+
+    const outcome = resolveReviewOutcome(
+      record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+    );
+    record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+    if (outcome.advance) {
+      record.workflowStep = (record.workflowStep ?? 1) + 1;
+    } else {
+      record.status = input.status;
+      record.reviewedBy = reviewerId as never;
+      record.reviewedAt = new Date();
+    }
     await record.save();
     return Reimbursement.findById(id).populate(POP);
   }

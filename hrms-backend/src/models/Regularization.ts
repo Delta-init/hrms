@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import type { IRegularization } from "../types/index.js";
+import { workflowStateFields } from "./approvalWorkflowFields.js";
 
 const regularizationSchema = new Schema<IRegularization>(
   {
@@ -23,6 +24,7 @@ const regularizationSchema = new Schema<IRegularization>(
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: [500, "Review note cannot exceed 500 characters"] },
+    ...workflowStateFields,
   },
   { timestamps: true, versionKey: false }
 );
