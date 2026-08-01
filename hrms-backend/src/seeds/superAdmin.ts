@@ -47,6 +47,7 @@ const hrManagerPermissions: PermissionsMap = {
   assets: { ...fullAccess },
   onboardingTasks: { ...fullAccess },
   letters: { ...fullAccess },
+  announcements: { ...fullAccess },
   approvalWorkflows: { ...fullAccess },
   payroll: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
   users: { view: true, create: true, edit: true, delete: false, approve: false, export: false },
@@ -65,6 +66,7 @@ const employeePermissions: PermissionsMap = {
   // My Claims (/mine needs no permission). No `view` — that exposes the org-wide
   // All Claims tab with every colleague's private expense amounts.
   reimbursements: { view: false, create: true, edit: false, delete: false, approve: false, export: false },
+  announcements: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
 };
 
 async function upsertRole(

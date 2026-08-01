@@ -2,15 +2,16 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning, Home,
+  Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning, Home, Award, Megaphone, Pin,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, cn } from "@/lib/utils";
 import {
-  LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS,
+  LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS,
   type LeaveLite, type RegularizationLite,
 } from "@/types";
 
@@ -22,9 +23,11 @@ const nameOf = (u?: { name: string } | string | null) => (u && typeof u === "obj
 export function HrDashboard() {
   const { user } = useAuth();
   const { data, isLoading } = useDashboardSummary();
+  const { data: announcementsData } = useAnnouncements({ limit: "5" });
+  const announcements = announcementsData?.data ?? [];
   const firstName = user?.name?.split(" ")[0] ?? "there";
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
-  const c = data?.counts ?? { birthdays: 0, onLeaveToday: 0, workingFromHomeToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
+  const c = data?.counts ?? { birthdays: 0, anniversaries: 0, onLeaveToday: 0, workingFromHomeToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
 
   const stats = [
     { label: "Birthdays today", value: c.birthdays, icon: Cake, tint: "text-pink-600 bg-pink-500/10", href: undefined },
@@ -82,6 +85,24 @@ export function HrDashboard() {
               ))}
             </div>
           ) : <Empty text="No birthdays today." />}
+        </Panel>
+
+        {/* Work anniversaries */}
+        <Panel icon={Award} title="Work anniversaries" tint="text-amber-600">
+          {data?.anniversaries.length ? (
+            <div className="space-y-2">
+              {data.anniversaries.map((a) => (
+                <div key={a._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-600"><Award className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/employees/${a._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{a.name}</Link>
+                    <p className="truncate text-xs text-muted-foreground">{[a.designation, a.department].filter(Boolean).join(" · ") || a.employeeCode}</p>
+                  </div>
+                  <Badge variant="secondary">{a.years} {a.years === 1 ? "year" : "years"}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : <Empty text="No work anniversaries today." />}
         </Panel>
 
         {/* On leave today */}
@@ -143,6 +164,26 @@ export function HrDashboard() {
             })}</div>
           ) : <Empty text="Nobody is serving notice." />}
         </Panel>
+
+        {/* Announcements — full width */}
+        <div className="lg:col-span-2">
+          <Panel icon={Megaphone} title="Announcements" tint="text-indigo-600" href="/announcements">
+            {announcements.length ? (
+              <div className="space-y-2">
+                {announcements.map((a) => (
+                  <div key={a._id} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-2">
+                      {a.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" />}
+                      <p className="truncate text-sm font-medium">{a.title}</p>
+                      <Badge variant="secondary" className="ml-auto shrink-0 capitalize">{ANNOUNCEMENT_CATEGORY_LABELS[a.category]}</Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
+                  </div>
+                ))}
+              </div>
+            ) : <Empty text="No announcements yet." />}
+          </Panel>
+        </div>
       </div>
     </div>
   );

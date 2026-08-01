@@ -27,6 +27,7 @@ import onboardingRoutes from "./onboardingRoutes.js";
 import letterRoutes from "./letterRoutes.js";
 import compOffRoutes from "./compOffRoutes.js";
 import approvalWorkflowRoutes from "./approvalWorkflowRoutes.js";
+import announcementRoutes from "./announcementRoutes.js";
 
 const router = Router();
 
@@ -46,6 +47,7 @@ router.use("/onboarding", onboardingRoutes);
 router.use("/letters", letterRoutes);
 router.use("/comp-off", compOffRoutes);
 router.use("/approval-workflows", approvalWorkflowRoutes);
+router.use("/announcements", announcementRoutes);
 router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);

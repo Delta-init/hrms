@@ -29,6 +29,33 @@ export async function birthdaysOn(date = new Date(), orgId?: string | null) {
   ]);
 }
 
+/** Employees whose work anniversary (month + day of joiningDate) falls on the
+ *  given date, excluding anyone who joined this exact calendar year (0 years
+ *  isn't an anniversary yet). Includes `years` completed. */
+export async function anniversariesOn(date = new Date(), orgId?: string | null) {
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  const match: Record<string, unknown> = { joiningDate: { $ne: null } };
+  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
+  return Employee.aggregate([
+    { $match: match },
+    { $addFields: { _m: { $month: "$joiningDate" }, _d: { $dayOfMonth: "$joiningDate" }, _y: { $year: "$joiningDate" } } },
+    { $match: { _m: month, _d: day, _y: { $lt: year } } },
+    { $addFields: { years: { $subtract: [year, "$_y"] } } },
+    {
+      $lookup: { from: "departments", localField: "department", foreignField: "_id", as: "dept" },
+    },
+    {
+      $project: {
+        name: 1, employeeCode: 1, joiningDate: 1, designation: 1, email: 1, years: 1,
+        department: { $ifNull: [{ $arrayElemAt: ["$dept.name", 0] }, null] },
+      },
+    },
+    { $sort: { name: 1 } },
+  ]);
+}
+
 interface ExpiringDoc {
   employee: { _id: unknown; name: string; employeeCode?: string; designation?: string };
   type: "passport" | "visa";
@@ -159,8 +186,9 @@ export class DashboardService {
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
     const org = orgFilter();
-    const [birthdays, onLeaveToday, workingFromHomeToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs] = await Promise.all([
+    const [birthdays, anniversaries, onLeaveToday, workingFromHomeToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs] = await Promise.all([
       birthdaysOn(now, getOrgId()),
+      anniversariesOn(now, getOrgId()),
       // Working-from-home is not "away" — exclude it so this reflects who's
       // actually unavailable today.
       LeaveRequest.find({ ...org, status: "approved", type: { $ne: "wfh" }, startDate: { $lte: end }, endDate: { $gte: start } })
@@ -182,6 +210,7 @@ export class DashboardService {
     return {
       date: start.toISOString().slice(0, 10),
       birthdays,
+      anniversaries,
       onLeaveToday,
       workingFromHomeToday,
       pendingLeaves,
@@ -190,6 +219,7 @@ export class DashboardService {
       expiringDocuments: expiringDocs.slice(0, 8),
       counts: {
         birthdays: birthdays.length,
+        anniversaries: anniversaries.length,
         onLeaveToday: onLeaveToday.length,
         workingFromHomeToday: workingFromHomeToday.length,
         pendingLeaves: pendingLeaveCount,
@@ -198,5 +228,15 @@ export class DashboardService {
         expiringDocuments: expiringDocs.length,
       },
     };
+  }
+
+  /** Today's birthdays + work anniversaries — safe for every employee to see (self-service, no HR-sensitive data). */
+  async wishesToday() {
+    const now = new Date();
+    const [birthdays, anniversaries] = await Promise.all([
+      birthdaysOn(now, getOrgId()),
+      anniversariesOn(now, getOrgId()),
+    ]);
+    return { birthdays, anniversaries };
   }
 }

@@ -32,6 +32,7 @@ export const HRMS_MODULES = [
   "assets",
   "onboardingTasks",
   "letters",
+  "announcements",
   "approvalWorkflows",
   "organizations",
   "users",
@@ -204,6 +205,22 @@ export interface IHoliday extends Document {
   /** Optional tag — the work schedule this holiday belongs to (its leave calendar). Null = global. */
   workSchedule?: Types.ObjectId | IWorkSchedule | null;
   description?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Announcements (org-wide engagement feed) ────────────────────────────────
+export type AnnouncementCategory = "general" | "policy" | "event" | "celebration";
+
+export interface IAnnouncement extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  /** Pinned announcements sort above everything else. */
+  pinned: boolean;
+  createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
 }

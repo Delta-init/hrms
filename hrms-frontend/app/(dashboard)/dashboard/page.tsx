@@ -1,18 +1,21 @@
 "use client";
 import { motion } from "framer-motion";
-import { CalendarCheck, Clock3, AlertTriangle, Timer, PartyPopper, CalendarClock, ArrowUpRight, ClipboardList, Loader2 } from "lucide-react";
+import { CalendarCheck, Clock3, AlertTriangle, Timer, PartyPopper, CalendarClock, ArrowUpRight, ClipboardList, Loader2, Cake, Award, Megaphone, Pin } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyAttendance } from "@/hooks/useSelfAttendance";
 import { useMyLeaves, useHolidays } from "@/hooks/useLeaves";
 import { useMyOnboardingChecklist, useSetMyOnboardingTaskStatus } from "@/hooks/useOnboardingChecklists";
+import { useDashboardWishes } from "@/hooks/useDashboard";
+import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { ClockCard } from "@/components/dashboard/ClockCard";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, type LeaveStatus } from "@/types";
+import { LEAVE_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS, type LeaveStatus } from "@/types";
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } } };
@@ -40,6 +43,10 @@ function EmployeeDashboard() {
   const { data: attData } = useMyAttendance({ dateFrom: monthStartISO(), dateTo: todayISO(), limit: "100" });
   const { data: myLeaves } = useMyLeaves({ limit: "5" });
   const { data: holidayData } = useHolidays({ dateFrom: todayISO(), limit: "6" });
+  const { data: wishes } = useDashboardWishes();
+  const { data: announcementsData } = useAnnouncements({ limit: "3" });
+  const announcements = announcementsData?.data ?? [];
+  const wishCount = (wishes?.birthdays.length ?? 0) + (wishes?.anniversaries.length ?? 0);
 
   const recs = attData?.data ?? [];
   const present = recs.filter((r) => r.status === "present").length;
@@ -85,6 +92,51 @@ function EmployeeDashboard() {
             </motion.div>
           ))}
         </motion.div>
+
+        {/* Team wishes — today's birthdays & work anniversaries (hidden when there's nothing to celebrate) */}
+        {wishCount > 0 && (
+          <Card className="p-5">
+            <div className="mb-3 flex items-center gap-2"><PartyPopper className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Today&apos;s Wishes</h3></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {wishes?.birthdays.map((b) => (
+                <div key={`bday-${b._id}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pink-500/10 text-pink-600"><Cake className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{b.name}</p><p className="truncate text-xs text-muted-foreground">Birthday today 🎂</p></div>
+                </div>
+              ))}
+              {wishes?.anniversaries.map((a) => (
+                <div key={`anniv-${a._id}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-600"><Award className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{a.name}</p><p className="truncate text-xs text-muted-foreground">{a.years} {a.years === 1 ? "year" : "years"} today 🎉</p></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Announcements */}
+        <Card className="p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2"><Megaphone className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Announcements</h3></div>
+            <Link href="/announcements" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View all <ArrowUpRight className="h-3 w-3" /></Link>
+          </div>
+          {announcements.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No announcements yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {announcements.map((a) => (
+                <div key={a._id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-center gap-2">
+                    {a.pinned && <Pin className="h-3 w-3 shrink-0 text-primary" />}
+                    <p className="truncate text-sm font-medium">{a.title}</p>
+                    <Badge variant="secondary" className="ml-auto shrink-0 capitalize">{ANNOUNCEMENT_CATEGORY_LABELS[a.category]}</Badge>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
 
         {/* My onboarding tasks (new hires only — hidden once nothing is assigned to them) */}
         <MyOnboardingTasksCard />

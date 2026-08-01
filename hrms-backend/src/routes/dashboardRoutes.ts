@@ -1,10 +1,13 @@
 import { Router } from "express";
-import { getDashboardSummary, getDocumentExpiry, getOrgChart, triggerBirthdayCheck } from "../controllers/dashboardController.js";
+import { getDashboardSummary, getWishesToday, getDocumentExpiry, getOrgChart, triggerBirthdayCheck } from "../controllers/dashboardController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 
 const router = Router();
 router.use(authenticate);
+
+// Self-service — today's birthdays/anniversaries, no module permission required.
+router.get("/wishes", getWishesToday);
 
 // HR snapshot — available to anyone who can view employees (HR Manager, Super Admin).
 router.get("/summary", checkPermission("employees", "view"), getDashboardSummary);

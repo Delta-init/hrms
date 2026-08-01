@@ -15,6 +15,13 @@ export const getDashboardSummary = async (_req: AuthenticatedRequest, res: Respo
   }
 };
 
+/** Self-service — today's birthdays/anniversaries, visible to every employee. */
+export const getWishesToday = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Today's wishes retrieved", await service.wishesToday());
+  } catch (error) { next(error); }
+};
+
 export const getDocumentExpiry = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const days = Math.min(365, Math.max(1, parseInt(String(req.query.days ?? "90"), 10) || 90));

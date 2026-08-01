@@ -27,6 +27,7 @@ export const HRMS_MODULES = [
   "assets",
   "onboardingTasks",
   "letters",
+  "announcements",
   "approvalWorkflows",
   "organizations",
   "users",
@@ -53,6 +54,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   assets: "Assets",
   onboardingTasks: "Onboarding Tasks",
   letters: "Letters",
+  announcements: "Announcements",
   approvalWorkflows: "Approval Workflows",
   organizations: "Organizations",
   users: "Users",
@@ -882,6 +884,19 @@ export interface BirthdayPerson {
   designation?: string;
   department?: string | null;
 }
+export interface AnniversaryPerson {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  joiningDate?: string;
+  designation?: string;
+  department?: string | null;
+  years: number;
+}
+export interface DashboardWishes {
+  birthdays: BirthdayPerson[];
+  anniversaries: AnniversaryPerson[];
+}
 export interface LeaveLite {
   _id: string;
   user?: { _id: string; name: string; designation?: string } | string | null;
@@ -928,13 +943,30 @@ export interface OrgChart {
 export interface DashboardSummary {
   date: string;
   birthdays: BirthdayPerson[];
+  anniversaries: AnniversaryPerson[];
   onLeaveToday: LeaveLite[];
   workingFromHomeToday: LeaveLite[];
   pendingLeaves: LeaveLite[];
   pendingRegularizations: RegularizationLite[];
   servingNotice: NoticeLite[];
   expiringDocuments: ExpiringDocument[];
-  counts: { birthdays: number; onLeaveToday: number; workingFromHomeToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
+  counts: { birthdays: number; anniversaries: number; onLeaveToday: number; workingFromHomeToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
+}
+
+// ─── Announcements ────────────────────────────────────────────────────────────
+export type AnnouncementCategory = "general" | "policy" | "event" | "celebration";
+export const ANNOUNCEMENT_CATEGORY_LABELS: Record<AnnouncementCategory, string> = {
+  general: "General", policy: "Policy", event: "Event", celebration: "Celebration",
+};
+export interface Announcement {
+  _id: string;
+  title: string;
+  body: string;
+  category: AnnouncementCategory;
+  pinned: boolean;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
