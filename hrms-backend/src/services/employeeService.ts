@@ -1,6 +1,7 @@
 import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
+import { Resignation } from "../models/Resignation.js";
 import type { CreateEmployeeInput, UpdateEmployeeInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -92,6 +93,8 @@ export class EmployeeService {
   async remove(id: string) {
     const record = await Employee.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    // Otherwise left as a dangling reference — the Resignations list would show a blank row.
+    await Resignation.deleteMany({ employee: record._id });
     return { message: "Employee deleted successfully" };
   }
 

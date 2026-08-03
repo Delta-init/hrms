@@ -14,6 +14,7 @@
 
 import * as React from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -101,8 +102,11 @@ export function ResponsiveDialogContent({
   }
 
   return (
+    // A baseline max-height + scroll is always merged in (twMerge lets a more
+    // specific value in desktopClassName override it) so a dialog can never
+    // render taller than the viewport with no way to reach its footer.
     <DialogContent
-      className={[desktopClassName ?? "max-w-lg", className].filter(Boolean).join(" ")}
+      className={cn("max-w-lg max-h-[90vh] overflow-y-auto", desktopClassName, className)}
       {...(props as React.ComponentPropsWithoutRef<typeof DialogContent>)}
     >
       {children}

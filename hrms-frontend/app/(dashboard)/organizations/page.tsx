@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { OrganizationDialog } from "@/components/organizations/OrganizationDialog";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogDescription, ResponsiveDialogFooter,
@@ -25,17 +26,27 @@ const statusStyles: Record<string, string> = {
 
 export default function OrganizationsPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("organizations", "view");
   const canCreate = hasPermission("organizations", "create");
   const canEdit = hasPermission("organizations", "edit");
   const canDelete = hasPermission("organizations", "delete");
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
-  const { data, isLoading, isFetching } = useOrganizations(query.params);
+  const { data, isLoading, isFetching } = useOrganizations(query.params, { enabled: canView });
   const { mutate: remove, isPending: deleting } = useDeleteOrganization();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Organization | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Organizations" description="Manage tenants, their credentials and default settings." icon={Landmark} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to organizations.</Card>
+      </div>
+    );
+  }
 
   const columns: DataTableColumn<Organization>[] = [
     {

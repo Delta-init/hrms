@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Sun, Moon, Monitor } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,8 +19,14 @@ const icons = {
 
 export function ThemeToggle() {
   const { theme, setTheme, resolvedTheme } = useTheme();
+  // resolvedTheme is undefined on the server and on the client's very first
+  // render (before this effect runs) — always resolving to the light icon
+  // until mounted keeps that first client render identical to the server's,
+  // avoiding a hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  const currentIcon = resolvedTheme === "dark" ? icons.dark : icons.light;
+  const currentIcon = mounted && resolvedTheme === "dark" ? icons.dark : icons.light;
 
   return (
     <DropdownMenu>

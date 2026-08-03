@@ -69,7 +69,7 @@ export function AttendanceCalendar() {
       {isLoading || isFetching ? (
         <Card className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>
       ) : mode === "single" ? (
-        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} />
+        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={!!employeeId} />
       ) : (
         <AllView data={data} month={month} />
       )}
@@ -89,12 +89,20 @@ function Legend() {
   );
 }
 
-function SingleView({ data, y, monthIndex, month }: { data?: { daysInMonth: number; employees: { employee: { name: string }; days: Record<string, AttendanceCalendarDay>; summary: Record<string, number> }[] }; y: number; monthIndex: number; month: string }) {
+function SingleView({ data, y, monthIndex, month, employeeSelected }: { data?: { daysInMonth: number; employees: { employee: { name: string }; days: Record<string, AttendanceCalendarDay>; summary: Record<string, number> }[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean }) {
   const emp = data?.employees?.[0];
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => { setSelected(null); }, [month, emp?.employee.name]);
 
-  if (!emp) return <Card className="py-16 text-center text-sm text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No employee selected.</Card>;
+  if (!emp) {
+    // The calendar is keyed off the employee's linked login (User account) —
+    // an employee without one can be picked but never has data, which reads
+    // as "nothing happened" unless called out explicitly.
+    const message = employeeSelected
+      ? "This employee has no linked login, so attendance can't be tracked for them."
+      : "No employee selected.";
+    return <Card className="py-16 text-center text-sm text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />{message}</Card>;
+  }
 
   const days = emp.days;
   const firstDay = new Date(y, monthIndex, 1).getDay();

@@ -9,13 +9,14 @@ function errMsg(e: unknown, f: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? f;
 }
 
-export const useOrganizations = (params?: Record<string, string>) =>
+export const useOrganizations = (params?: Record<string, string>, options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Organization[]>>("/organizations", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+    enabled: options?.enabled ?? true,
   });
 
 /** Lightweight list for the switcher. */

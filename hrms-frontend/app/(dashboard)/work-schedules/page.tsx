@@ -217,7 +217,7 @@ export default function WorkSchedulesPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete work schedule"
-        description="Employees assigned to it must be reassigned first."
+        description="This work schedule will be permanently removed. If any employees are still assigned to it, reassign them first."
         isPending={deleting}
         onConfirm={() => selected && remove(selected._id, { onSuccess: () => setDeleteOpen(false) })}
       />

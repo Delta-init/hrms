@@ -85,7 +85,11 @@ export const useSubmitSurveyResponse = () => {
   return useMutation({
     mutationFn: async ({ id, answers }: { id: string; answers: SurveyAnswer[] }) =>
       (await api.post<ApiResponse<SurveyResponse>>(`/surveys/${id}/responses`, { answers })).data.data!,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: MINE_KEY }); toast.success("Response submitted — thank you!"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: MINE_KEY });
+      qc.invalidateQueries({ queryKey: KEY });
+      toast.success("Response submitted — thank you!");
+    },
     onError: (e) => toast.error(errMsg(e, "Failed to submit response")),
   });
 };

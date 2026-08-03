@@ -97,8 +97,8 @@ export default function OnboardingTasksPage() {
                       </div>
                       {(canEdit || canDelete) && (
                         <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                          {canEdit && <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setSelectedTemplate(t); setTemplateDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>}
-                          {canDelete && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => setDeleteTemplateTarget(t)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                          {canEdit && <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Edit template" onClick={() => { setSelectedTemplate(t); setTemplateDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>}
+                          {canDelete && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" aria-label="Delete template" onClick={() => setDeleteTemplateTarget(t)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                         </div>
                       )}
                     </div>

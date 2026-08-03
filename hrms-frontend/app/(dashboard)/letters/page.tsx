@@ -149,7 +149,7 @@ export default function LettersPage() {
                           <div className="flex items-center justify-end gap-1">
                             <Button size="icon" variant="ghost" className="h-8 w-8" title="View" onClick={() => setViewLetter(l)}><Eye className="h-4 w-4" /></Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" title="Print / PDF" onClick={() => printLetter(l)}><Printer className="h-4 w-4" /></Button>
-                            {canDelete && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteLetterTarget(l)}><Trash2 className="h-4 w-4" /></Button>}
+                            {canDelete && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" aria-label="Delete letter" onClick={() => setDeleteLetterTarget(l)}><Trash2 className="h-4 w-4" /></Button>}
                           </div>
                         </td>
                       </tr>
@@ -184,8 +184,8 @@ export default function LettersPage() {
                   </div>
                   {(canEdit || canDelete) && (
                     <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      {canEdit && <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setSelectedTemplate(t); setTemplateDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>}
-                      {canDelete && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => setDeleteTemplateTarget(t)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                      {canEdit && <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Edit template" onClick={() => { setSelectedTemplate(t); setTemplateDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>}
+                      {canDelete && <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" aria-label="Delete template" onClick={() => setDeleteTemplateTarget(t)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                     </div>
                   )}
                 </div>

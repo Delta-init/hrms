@@ -15,6 +15,12 @@ import { downloadCsv } from "@/lib/csv";
 import type { ReportSourceKey, ReportRow } from "@/types";
 
 const ALL = "__all__";
+const isIsoDateTime = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
+const displayCell = (v: string | number | null) => {
+  if (v == null || v === "") return "—";
+  if (isIsoDateTime(v)) return new Date(v).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return v;
+};
 
 export default function ReportsPage() {
   const { hasPermission } = useAuth();
@@ -22,7 +28,7 @@ export default function ReportsPage() {
 
   const { data: sources, isLoading: sourcesLoading } = useReportSources();
   const { data: departments } = useDepartmentsSimple();
-  const { mutate: run, isPending: running, data: result } = useRunReport();
+  const { mutate: run, isPending: running, data: result, reset: resetResult } = useRunReport();
 
   const [sourceKey, setSourceKey] = useState<ReportSourceKey | "">("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -35,7 +41,9 @@ export default function ReportsPage() {
   }, [sources, sourceKey]);
 
   useEffect(() => {
-    if (source) { setSelectedColumns(source.columns.map((c) => c.key)); setFilters({}); }
+    // Clear any previously run results on source switch — they're for a different
+    // report and showing them next to the new source's columns would be misleading.
+    if (source) { setSelectedColumns(source.columns.map((c) => c.key)); setFilters({}); resetResult(); }
   }, [source?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows: ReportRow[] = useMemo(() => result?.rows ?? [], [result]);
@@ -53,7 +61,7 @@ export default function ReportsPage() {
     if (!source || !rows.length) return;
     const cols = source.columns.filter((c) => selectedColumns.includes(c.key));
     const header = cols.map((c) => c.label);
-    const body = rows.map((r) => cols.map((c) => r[c.key]));
+    const body = rows.map((r) => cols.map((c) => displayCell(r[c.key])));
     downloadCsv(`${source.key}-report.csv`, [header, ...body]);
   };
 
@@ -124,7 +132,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={runReport} disabled={running || selectedColumns.length === 0}>
+              <Button onClick={runReport} disabled={!source || running || selectedColumns.length === 0}>
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Run Report
               </Button>
             </div>
@@ -152,7 +160,7 @@ export default function ReportsPage() {
                       {rows.map((r, i) => (
                         <tr key={i} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                           {source.columns.filter((c) => selectedColumns.includes(c.key)).map((c) => (
-                            <td key={c.key} className="whitespace-nowrap px-4 py-3">{r[c.key] ?? "—"}</td>
+                            <td key={c.key} className="whitespace-nowrap px-4 py-3">{displayCell(r[c.key])}</td>
                           ))}
                         </tr>
                       ))}

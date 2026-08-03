@@ -53,6 +53,7 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all" 
             <Item label="Gender" value={e.gender ? GENDER_LABELS[e.gender] : "—"} />
             <Item label="Marital status" value={e.maritalStatus ? MARITAL_LABELS[e.maritalStatus] : "—"} />
             <Item label="Work email" value={e.email ?? "—"} icon={Mail} />
+            <Item label="Phone" value={e.phone ?? "—"} icon={Phone} />
             <Item label="Personal email" value={e.personalEmail ?? "—"} icon={Mail} />
             <Item label="Mobile" value={e.mobileNumber ?? "—"} icon={Phone} />
             <Item label="Date of birth" value={fmtDate(e.dob)} icon={CalendarDays} />

@@ -127,7 +127,7 @@ export default function DepartmentsPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete department"
-        description="Employees in it must be reassigned first."
+        description="This department will be permanently removed. If any employees are still assigned to it, reassign them first."
         isPending={deleting}
         onConfirm={() => selected && remove(selected._id, { onSuccess: () => setDeleteOpen(false) })}
       />
