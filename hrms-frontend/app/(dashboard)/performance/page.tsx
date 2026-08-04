@@ -34,14 +34,13 @@ const fmtDate = (iso: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digi
 
 export default function PerformancePage() {
   const { hasPermission } = useAuth();
-  const canView = hasPermission("performance", "view");
   const canCreate = hasPermission("performance", "create");
   const canEdit = hasPermission("performance", "edit");
   const canDelete = hasPermission("performance", "delete");
 
   const { data: mine, isLoading: mineLoading } = useMyAppraisals();
-  const { data: cycles, isLoading: cyclesLoading } = useCycles({ enabled: canView });
-  const { data: appraisals, isLoading: appraisalsLoading } = useAppraisals({ limit: "200" }, { enabled: canView });
+  const { data: cycles, isLoading: cyclesLoading } = useCycles({ enabled: canEdit });
+  const { data: appraisals, isLoading: appraisalsLoading } = useAppraisals({ limit: "200" }, { enabled: canEdit });
   const { mutate: setCycleStatus, isPending: settingStatus } = useSetCycleStatus();
   const { mutate: removeCycle, isPending: deletingCycle } = useDeleteCycle();
 
@@ -58,7 +57,7 @@ export default function PerformancePage() {
   const [tab, setTab] = useState("mine");
   const tabs = [
     { key: "mine", label: "My Appraisal", icon: Target },
-    canView && { key: "manage", label: "Manage", icon: ClipboardList },
+    canEdit && { key: "manage", label: "Manage", icon: ClipboardList },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
 
@@ -100,7 +99,7 @@ export default function PerformancePage() {
         )
       )}
 
-      {activeTab === "manage" && (!canView ? (
+      {activeTab === "manage" && (!canEdit ? (
         <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to performance management.</Card>
       ) : (
         <div className="space-y-6">

@@ -42,7 +42,10 @@ export const completeProfileSchema = z.object({
   name: req("Name is required", 100),
   gender: z.enum(["male", "female", "other"], { errorMap: () => ({ message: "Gender is required" }) }),
   email: z.string().email("Valid email is required"),
-  personalEmail: z.string().email("Valid personal email is required"),
+  // Optional, like the equivalent field in employeeValidation.ts — a personal
+  // email isn't every employee's to give, and the onboarding UI never marks
+  // this field as required.
+  personalEmail: z.string().email("Enter a valid personal email").optional().or(z.literal("")),
   mobileNumber: req("Mobile number is required", 30),
   dob: z.coerce.date({ errorMap: () => ({ message: "Date of birth is required" }) }),
   bloodGroup: req("Blood group is required", 8),

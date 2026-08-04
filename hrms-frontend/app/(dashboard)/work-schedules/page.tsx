@@ -32,17 +32,18 @@ const isCurrent = (a: RosterAssignment) => {
 
 export default function WorkSchedulesPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("workSchedules", "view");
   const canCreate = hasPermission("workSchedules", "create");
   const canEdit = hasPermission("workSchedules", "edit");
   const canDelete = hasPermission("workSchedules", "delete");
 
   const [tab, setTab] = useState("schedules");
   const query = useTableQuery({ defaultSortBy: "name", defaultSortOrder: "asc", defaultLimit: 12 });
-  const { data, isLoading } = useWorkSchedules(query.params);
+  const { data, isLoading } = useWorkSchedules(query.params, { enabled: canView });
   const { mutate: remove, isPending: deleting } = useDeleteWorkSchedule();
   const schedules = data?.data ?? [];
 
-  const { data: rosterData, isLoading: rosterLoading } = useRosterAssignments({ limit: "200" });
+  const { data: rosterData, isLoading: rosterLoading } = useRosterAssignments({ limit: "200" }, { enabled: canView });
   const roster = rosterData?.data ?? [];
   const { mutate: removeRoster, isPending: deletingRoster } = useDeleteRosterAssignment();
 
@@ -59,6 +60,15 @@ export default function WorkSchedulesPage() {
     { key: "roster", label: "Roster", icon: CalendarRange },
     { key: "penalty", label: "Penalty Rules", icon: ShieldAlert },
   ];
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Work Schedules" description="Define shift times and region, then assign employees to a shift for a date range — including rotations." icon={Clock} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to work schedules.</Card>
+      </div>
+    );
+  }
 
   return (
     <div>

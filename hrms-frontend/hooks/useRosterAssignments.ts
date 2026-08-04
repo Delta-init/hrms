@@ -9,13 +9,14 @@ function errMsg(e: unknown, f: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? f;
 }
 
-export const useRosterAssignments = (params?: Record<string, string>) =>
+export const useRosterAssignments = (params?: Record<string, string>, options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
       const res = await api.get<ApiResponse<RosterAssignment[]>>("/work-schedules/roster", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+    enabled: options?.enabled ?? true,
   });
 
 export const useCreateRosterAssignment = () => {

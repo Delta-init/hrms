@@ -3,8 +3,14 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { AttendanceService } from "../services/attendanceService.js";
 import { createAttendanceSchema, updateAttendanceSchema } from "../validations/attendanceValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { Employee } from "../models/Employee.js";
+import { scoped } from "../utils/orgContext.js";
 
 const service = new AttendanceService();
+
+function canManage(req: AuthenticatedRequest): boolean {
+  return !!req.user?.role?.permissions?.attendance?.edit || req.user?.role?.roleName === "Super Admin";
+}
 
 
 export const createAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -23,7 +29,13 @@ export const createAttendance = async (req: AuthenticatedRequest, res: Response,
 
 export const getAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { records, pagination } = await service.list(req.query as Record<string, string>);
+    // `attendance.view` also drives self-service nav visibility, so plain
+    // Employees hold it too — without this, the unscoped list would leak
+    // every employee's check-in/out times to them. Only managers/Super Admin
+    // get the org-wide view; everyone else is pinned to their own records.
+    const query = { ...(req.query as Record<string, string>) };
+    if (!canManage(req)) query.user = req.user!.userId;
+    const { records, pagination } = await service.list(query);
     sendSuccess(res, "Attendance retrieved successfully", records, 200, pagination);
   } catch (error) {
     next(error);
@@ -34,7 +46,15 @@ export const getAttendanceCalendar = async (req: AuthenticatedRequest, res: Resp
   try {
     const month = String(req.query.month ?? "");
     if (!/^\d{4}-\d{2}$/.test(month)) { sendError(res, "month (YYYY-MM) is required", 400); return; }
-    const employee = req.query.employee ? String(req.query.employee) : undefined;
+
+    let employee = req.query.employee ? String(req.query.employee) : undefined;
+    if (!canManage(req)) {
+      const own = await Employee.findOne(scoped({ user: req.user!.userId })).select("_id");
+      // No linked Employee record → an id that can never match, so the
+      // calendar comes back empty instead of silently falling through to
+      // the unscoped (whole-org) query.
+      employee = own ? String(own._id) : "000000000000000000000000";
+    }
     sendSuccess(res, "Attendance calendar", await service.calendar(month, employee));
   } catch (error) { next(error); }
 };

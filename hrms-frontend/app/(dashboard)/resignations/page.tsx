@@ -11,6 +11,7 @@ import { ResignationDialog } from "@/components/resignations/ResignationDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -36,6 +37,7 @@ const TABS = [
 
 export default function ResignationsPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("resignations", "view");
   const canCreate = hasPermission("resignations", "create");
   const canApprove = hasPermission("resignations", "approve");
   const canEdit = hasPermission("resignations", "edit");
@@ -45,7 +47,7 @@ export default function ResignationsPage() {
   const active = TABS.find((t) => t.key === tab) ?? TABS[0];
   const query = useTableQuery({ defaultSortBy: "lastWorkingDay", defaultSortOrder: "asc", defaultLimit: 20 });
   const params = { ...query.params, status: active.status };
-  const { data, isLoading, isFetching } = useResignations(params);
+  const { data, isLoading, isFetching } = useResignations(params, { enabled: canView });
 
   const { mutate: review, isPending: reviewing } = useReviewResignation();
   const { mutate: withdraw, isPending: withdrawing } = useWithdrawResignation();
@@ -57,6 +59,15 @@ export default function ResignationsPage() {
   const [relieveTarget, setRelieveTarget] = useState<Resignation | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<Resignation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Resignation | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Resignations" description="Record resignations and track employees serving their notice period." icon={LogOut} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to resignations.</Card>
+      </div>
+    );
+  }
 
   const employeeCol: DataTableColumn<Resignation> = {
     id: "employee", label: "Employee", alwaysVisible: true,

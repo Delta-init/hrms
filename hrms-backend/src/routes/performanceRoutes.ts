@@ -15,13 +15,16 @@ router.get("/mine", getMyAppraisals);
 router.put("/mine/:id/goals", setMyGoals);
 router.post("/mine/:id/submit", submitMySelfReview);
 
-router.get("/cycles", checkPermission("performance", "view"), getCycles);
+// `performance.view` also drives self-service nav visibility for /performance/mine,
+// so it's held by plain Employees too — cycle/appraisal administration must gate on
+// `edit` instead, or that same flag would leak every employee's appraisal data to them.
+router.get("/cycles", checkPermission("performance", "edit"), getCycles);
 router.post("/cycles", checkPermission("performance", "create"), createCycle);
 router.patch("/cycles/:id/status", checkPermission("performance", "edit"), setCycleStatus);
 router.delete("/cycles/:id", checkPermission("performance", "delete"), deleteCycle);
 
-router.get("/appraisals", checkPermission("performance", "view"), getAppraisals);
-router.get("/appraisals/:id", checkPermission("performance", "view"), getAppraisalById);
+router.get("/appraisals", checkPermission("performance", "edit"), getAppraisals);
+router.get("/appraisals/:id", checkPermission("performance", "edit"), getAppraisalById);
 router.patch("/appraisals/:id/review", checkPermission("performance", "edit"), reviewAppraisal);
 
 export default router;

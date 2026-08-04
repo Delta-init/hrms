@@ -24,18 +24,28 @@ const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transiti
 
 export default function DepartmentsPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("departments", "view");
   const canCreate = hasPermission("departments", "create");
   const canEdit = hasPermission("departments", "edit");
   const canDelete = hasPermission("departments", "delete");
 
   const query = useTableQuery({ defaultSortBy: "name", defaultSortOrder: "asc", defaultLimit: 12 });
-  const { data, isLoading } = useDepartments(query.params);
+  const { data, isLoading } = useDepartments(query.params, { enabled: canView });
   const { mutate: remove, isPending: deleting } = useDeleteDepartment();
   const departments = data?.data ?? [];
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Department | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Departments" description="Organise your company into departments." icon={Building2} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to departments.</Card>
+      </div>
+    );
+  }
 
   return (
     <div>

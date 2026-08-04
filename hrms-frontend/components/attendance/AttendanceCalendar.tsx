@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, User2, Users, CalendarDays } from "lucide-react";
 import { useAttendanceCalendar } from "@/hooks/useAttendance";
 import { useEmployees } from "@/hooks/useEmployees";
+import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,16 +33,22 @@ const STATUS: Record<AttendanceStatus, { label: string; cell: string; letter: st
 };
 
 export function AttendanceCalendar() {
+  const { hasPermission } = useAuth();
+  // Browsing other employees' calendars (single or "All" grid) is a manager
+  // action; a plain Employee always sees their own month (enforced server-side
+  // regardless of what's requested here — this just keeps the UI honest).
+  const canManage = hasPermission("attendance", "edit");
   const [month, setMonth] = useState(curMonth());
   const [mode, setMode] = useState<"single" | "all">("single");
   const [employeeId, setEmployeeId] = useState<string>("");
 
-  const { data: empData } = useEmployees({ limit: "200" });
+  const { data: empData } = useEmployees({ limit: "200" }, { enabled: canManage });
   const employees = useMemo(() => empData?.data ?? [], [empData]);
-  useEffect(() => { if (!employeeId && employees.length) setEmployeeId(employees[0]._id); }, [employees, employeeId]);
+  useEffect(() => { if (canManage && !employeeId && employees.length) setEmployeeId(employees[0]._id); }, [canManage, employees, employeeId]);
 
-  const { data, isLoading, isFetching } = useAttendanceCalendar(month, mode === "single" ? employeeId || undefined : undefined);
+  const { data, isLoading, isFetching } = useAttendanceCalendar(month, canManage ? (mode === "single" ? employeeId || undefined : undefined) : undefined);
   const [y, mm] = month.split("-").map(Number);
+  const effectiveMode = canManage ? mode : "single";
 
   return (
     <div className="space-y-4">
@@ -52,24 +59,26 @@ export function AttendanceCalendar() {
           <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setMonth((m) => shiftMonth(m, 1))}><ChevronRight className="h-4 w-4" /></Button>
           <Button variant="ghost" size="sm" onClick={() => setMonth(curMonth())}>Today</Button>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-border p-0.5">
-            <button onClick={() => setMode("single")} className={cn("inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium", mode === "single" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}><User2 className="h-4 w-4" />Employee</button>
-            <button onClick={() => setMode("all")} className={cn("inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium", mode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}><Users className="h-4 w-4" />All</button>
+        {canManage && (
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border p-0.5">
+              <button onClick={() => setMode("single")} className={cn("inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium", mode === "single" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}><User2 className="h-4 w-4" />Employee</button>
+              <button onClick={() => setMode("all")} className={cn("inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium", mode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}><Users className="h-4 w-4" />All</button>
+            </div>
+            {mode === "single" && (
+              <Select value={employeeId} onValueChange={setEmployeeId}>
+                <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Select employee" /></SelectTrigger>
+                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
           </div>
-          {mode === "single" && (
-            <Select value={employeeId} onValueChange={setEmployeeId}>
-              <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Select employee" /></SelectTrigger>
-              <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>)}</SelectContent>
-            </Select>
-          )}
-        </div>
+        )}
       </Card>
 
       {isLoading || isFetching ? (
         <Card className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>
-      ) : mode === "single" ? (
-        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={!!employeeId} />
+      ) : effectiveMode === "single" ? (
+        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={canManage ? !!employeeId : true} />
       ) : (
         <AllView data={data} month={month} />
       )}

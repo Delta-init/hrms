@@ -68,7 +68,6 @@ function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview, review
 
 export default function RegularizationPage() {
   const { user, hasPermission } = useAuth();
-  const canView = hasPermission("regularization", "view");
   const canApprove = hasPermission("regularization", "edit");
   const canDelete = hasPermission("regularization", "delete");
   const reviewerRoleId = user?.role?._id;
@@ -77,10 +76,10 @@ export default function RegularizationPage() {
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
 
-  const { data: allData, isLoading: allLoading, isFetching } = useRegularizations(canView ? query.params : undefined);
+  const { data: allData, isLoading: allLoading, isFetching } = useRegularizations(canApprove ? query.params : undefined);
   const { data: pendingData } = useRegularizations(canApprove ? { status: "pending", limit: "200" } : undefined);
   const { data: mineData, isLoading: mineLoading } = useMyRegularizations({ limit: "200" });
-  const { data: usersData } = useUsers(canView ? { limit: "200" } : undefined);
+  const { data: usersData } = useUsers(canApprove ? { limit: "200" } : undefined);
   const users = usersData?.data ?? [];
 
   const { mutate: update, isPending: reviewing } = useUpdateRegularization();
@@ -95,7 +94,7 @@ export default function RegularizationPage() {
   const [deleteTarget, setDeleteTarget] = useState<Regularization | null>(null);
 
   const tabs = [
-    canView && { key: "requests", label: "Requests", icon: ListChecks },
+    canApprove && { key: "requests", label: "Requests", icon: ListChecks },
     canApprove && { key: "approvals", label: "Approvals", icon: Inbox, count: pending.length },
     { key: "mine", label: "My Requests", icon: Send },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
@@ -148,7 +147,7 @@ export default function RegularizationPage() {
         title="Regularization"
         description="Correct missed check-ins / check-outs. Approvals update attendance automatically."
         icon={ClipboardCheck}
-        action={canView && activeTab === "requests" && <Button onClick={() => setAdminApplyOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />New Request</Button>}
+        action={canApprove && activeTab === "requests" && <Button onClick={() => setAdminApplyOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />New Request</Button>}
       />
 
       <Tabs tabs={tabs} value={activeTab} onChange={setTab} />

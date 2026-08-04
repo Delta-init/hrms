@@ -34,13 +34,23 @@ export default function RolesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Role | null>(null);
 
+  const canView = hasPermission("roles", "view");
   const query = useTableQuery({ defaultSortBy: "roleName", defaultSortOrder: "asc", defaultLimit: 12 });
-  const { data, isLoading } = useRoles(query.params);
+  const { data, isLoading } = useRoles(query.params, { enabled: canView });
   const roles = data?.data ?? [];
 
   const canCreate = hasPermission("roles", "create");
   const canEdit = hasPermission("roles", "edit");
   const canDelete = hasPermission("roles", "delete");
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Roles & Permissions" description="Define roles and control access to each module." icon={Shield} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to roles &amp; permissions.</Card>
+      </div>
+    );
+  }
 
   const openCreate = () => {
     setSelected(null);

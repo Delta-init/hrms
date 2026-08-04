@@ -141,10 +141,14 @@ function EmployeeDashboard() {
         {/* My onboarding tasks (new hires only — hidden once nothing is assigned to them) */}
         <MyOnboardingTasksCard />
 
-        {/* Chart + Upcoming holidays (right of chart) */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="xl:col-span-2"><AttendanceHistoryChart /></div>
-          <Card className="p-5">
+        {/* Chart + Upcoming holidays (right of chart). Flex-wrap based on the
+            row's own available width, not the viewport — this row lives inside
+            an already-narrowed lg:col-span-2 column, so a viewport breakpoint
+            (e.g. xl:grid-cols-3) fires "wide enough" way before this row
+            actually has room, squeezing the holidays card down to a sliver. */}
+        <div className="flex flex-wrap gap-6">
+          <div className="min-w-[260px] flex-[2_1_320px]"><AttendanceHistoryChart /></div>
+          <Card className="min-w-[260px] flex-[1_1_260px] p-5">
             <div className="mb-3 flex items-center gap-2"><PartyPopper className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Upcoming Holidays</h3></div>
             {holidays.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">No upcoming holidays.</p>

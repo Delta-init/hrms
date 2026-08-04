@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { LoanDialog } from "@/components/loans/LoanDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -28,17 +29,27 @@ const money = (n: number, cur?: string) => `${cur ? cur + " " : ""}${(n ?? 0).to
 
 export default function LoansPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("loans", "view");
   const canCreate = hasPermission("loans", "create");
   const canEdit = hasPermission("loans", "edit");
   const canDelete = hasPermission("loans", "delete");
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
-  const { data, isLoading, isFetching } = useLoans(query.params);
+  const { data, isLoading, isFetching } = useLoans(query.params, { enabled: canView });
   const { mutate: remove, isPending: deleting } = useDeleteLoan();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Loan | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Loans" description="Employee loans & advances, repaid via monthly salary deductions." icon={Banknote} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to loans.</Card>
+      </div>
+    );
+  }
 
   const columns: DataTableColumn<Loan>[] = [
     {

@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/validations/regularizationSchema";
 import { useCreateRegularization } from "@/hooks/useRegularizations";
 import { useUsers } from "@/hooks/useUsers";
+import { zonedInputToUtcIso } from "@/lib/timezone";
 import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType } from "@/types";
 
 interface Props {
@@ -44,8 +45,8 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
       date: data.date,
       timeZone: data.timeZone,
       type: data.type,
-      requestedCheckIn: data.requestedCheckIn ? new Date(data.requestedCheckIn).toISOString() : null,
-      requestedCheckOut: data.requestedCheckOut ? new Date(data.requestedCheckOut).toISOString() : null,
+      requestedCheckIn: zonedInputToUtcIso(data.requestedCheckIn, data.timeZone),
+      requestedCheckOut: zonedInputToUtcIso(data.requestedCheckOut, data.timeZone),
       reason: data.reason || undefined,
     };
     create(payload, { onSuccess: () => onOpenChange(false) });

@@ -10,13 +10,14 @@ function errMsg(error: unknown, fallback: string) {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 }
 
-export const useWorkSchedules = (params?: Record<string, string>) => {
+export const useWorkSchedules = (params?: Record<string, string>, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
       const res = await api.get<ApiResponse<WorkSchedule[]>>("/work-schedules", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+    enabled: options?.enabled ?? true,
   });
 };
 

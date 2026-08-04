@@ -39,7 +39,10 @@ const fmtWorked = (m: number) => (m > 0 ? `${Math.floor(m / 60)}h ${m % 60}m` : 
 
 export default function AttendancePage() {
   const { hasPermission } = useAuth();
-  const canCreate = hasPermission("attendance", "create");
+  // `edit` is the manager-level flag: recording attendance for someone else,
+  // and browsing/filtering by employee, are admin actions. Plain Employees
+  // only ever see their own records (enforced server-side too).
+  const canManage = hasPermission("attendance", "edit");
   const canEdit = hasPermission("attendance", "edit");
   const canDelete = hasPermission("attendance", "delete");
 
@@ -48,7 +51,7 @@ export default function AttendancePage() {
   // Separate snapshot of *today's* records for the animated stats band.
   const today = new Date().toISOString().slice(0, 10);
   const { data: todayData, isLoading: todayLoading } = useAttendance({ dateFrom: today, dateTo: today, limit: "500" });
-  const { data: usersData } = useUsers({ limit: "200" });
+  const { data: usersData } = useUsers({ limit: "200" }, { enabled: canManage });
   const users = usersData?.data ?? [];
   const { mutate: remove, isPending: deleting } = useDeleteAttendance();
 
@@ -96,16 +99,18 @@ export default function AttendancePage() {
 
   const filters = (
     <>
-      <div className="space-y-1.5">
-        <Label className="text-xs text-muted-foreground">Employee</Label>
-        <Select value={query.filters.user ?? ALL} onValueChange={(v) => query.setFilter("user", v)}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="All employees" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All employees</SelectItem>
-            {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      {canManage && (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Employee</Label>
+          <Select value={query.filters.user ?? ALL} onValueChange={(v) => query.setFilter("user", v)}>
+            <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="All employees" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All employees</SelectItem>
+              {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}>
@@ -133,7 +138,7 @@ export default function AttendancePage() {
         title="Attendance"
         description="Record and manage employee check-in / check-out per day."
         icon={CalendarCheck}
-        action={canCreate && tab === "records" && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
+        action={canManage && tab === "records" && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
       />
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />

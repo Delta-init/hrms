@@ -28,7 +28,14 @@ export const createLeave = async (req: AuthenticatedRequest, res: Response, next
 
 export const getLeaves = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { records, pagination } = await service.list(req.query as Record<string, string>);
+    // The `leave.view` permission also drives self-service nav visibility, so it's
+    // held by plain Employees too — without this, the org-wide list would leak
+    // every employee's leave requests to them. Only approvers/Super Admin get
+    // the unscoped view; everyone else is pinned to their own requests.
+    const canViewAll = !!req.user?.role?.permissions?.leave?.approve || req.user?.role?.roleName === "Super Admin";
+    const query = { ...(req.query as Record<string, string>) };
+    if (!canViewAll) query.user = req.user!.userId;
+    const { records, pagination } = await service.list(query);
     sendSuccess(res, "Leave requests retrieved successfully", records, 200, pagination);
   } catch (error) {
     next(error);

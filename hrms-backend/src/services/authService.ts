@@ -177,6 +177,7 @@ export class AuthService {
     }
 
     const { education, emergencyContact, ...rest } = input;
+    if (rest.personalEmail === "") rest.personalEmail = undefined;
     Object.assign(employee, rest, {
       education: [education],
       emergencyContacts: [emergencyContact],

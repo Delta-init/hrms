@@ -23,7 +23,14 @@ export const createRegularization = async (req: AuthenticatedRequest, res: Respo
 
 export const getRegularizations = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { records, pagination } = await service.list(req.query as Record<string, string>);
+    // Same reasoning as leave.view: `regularization.view` is also granted to plain
+    // Employees for self-service nav visibility, so it can't be trusted to gate the
+    // org-wide list. Only reviewers (regularization.edit) or Super Admin get the
+    // unscoped view; everyone else is pinned to their own requests.
+    const canViewAll = !!req.user?.role?.permissions?.regularization?.edit || req.user?.role?.roleName === "Super Admin";
+    const query = { ...(req.query as Record<string, string>) };
+    if (!canViewAll) query.user = req.user!.userId;
+    const { records, pagination } = await service.list(query);
     sendSuccess(res, "Regularizations retrieved successfully", records, 200, pagination);
   } catch (error) { next(error); }
 };

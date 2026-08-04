@@ -13,6 +13,7 @@ import { UserDialog } from "@/components/users/UserDialog";
 import { DeleteUserDialog } from "@/components/users/DeleteUserDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -30,6 +31,7 @@ const statusStyles: Record<string, string> = {
 
 export default function UsersPage() {
   const { user: me, hasPermission } = useAuth();
+  const canView = hasPermission("users", "view");
   const canCreate = hasPermission("users", "create");
   const canEdit = hasPermission("users", "edit");
   const canDelete = hasPermission("users", "delete");
@@ -41,12 +43,21 @@ export default function UsersPage() {
   };
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
-  const { data, isLoading, isFetching } = useUsers(query.params);
+  const { data, isLoading, isFetching } = useUsers(query.params, { enabled: canView });
   const { data: roles = [] } = useRolesSimple();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Users" description="Create staff accounts and manage their roles & access." icon={Users} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to users.</Card>
+      </div>
+    );
+  }
 
   const columns: DataTableColumn<User>[] = [
     {

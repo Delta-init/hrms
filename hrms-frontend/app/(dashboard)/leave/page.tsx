@@ -96,10 +96,10 @@ export default function LeavePage() {
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
 
-  const { data: usersData } = useUsers(canView ? { limit: "200" } : undefined);
+  const { data: usersData } = useUsers(canApprove ? { limit: "200" } : undefined);
   const users = usersData?.data ?? [];
-  const { data: reqData, isLoading: reqLoading, isFetching } = useLeaves(canView ? query.params : undefined);
-  const { data: allData } = useLeaves(canView ? { limit: "500" } : undefined);
+  const { data: reqData, isLoading: reqLoading, isFetching } = useLeaves(canApprove ? query.params : undefined);
+  const { data: allData } = useLeaves(canApprove ? { limit: "500" } : undefined);
   const { data: pendingData } = useLeaves(canApprove ? { status: "pending", limit: "200" } : undefined);
   const { data: mineData, isLoading: mineLoading } = useMyLeaves({ limit: "200" });
   const { data: holidayData } = useHolidays({ limit: "200" });
@@ -121,7 +121,7 @@ export default function LeavePage() {
   const [review, setReview] = useState<{ leave: LeaveRequest; action: "approved" | "rejected" } | null>(null);
 
   const tabs = [
-    canView && { key: "requests", label: "Requests", icon: ListChecks },
+    canApprove && { key: "requests", label: "Requests", icon: ListChecks },
     canView && { key: "calendar", label: "Calendar", icon: CalendarRange },
     canApprove && { key: "approvals", label: "Approvals", icon: Inbox, count: pending.length },
     { key: "apply", label: "Apply", icon: Send },

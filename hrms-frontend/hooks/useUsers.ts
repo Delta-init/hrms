@@ -13,13 +13,14 @@ function errMsg(error: unknown, fallback: string) {
   );
 }
 
-export const useUsers = (params?: Record<string, string>) => {
+export const useUsers = (params?: Record<string, string>, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: [...USERS_KEY, params],
     queryFn: async () => {
       const response = await api.get<ApiResponse<User[]>>("/users", { params });
       return { data: response.data.data ?? [], pagination: response.data.pagination };
     },
+    enabled: options?.enabled ?? true,
   });
 };
 

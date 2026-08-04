@@ -35,7 +35,7 @@ interface Props {
 export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) {
   const isEditing = !!leave;
   const selfMode = !!lockToUserId && !isEditing;
-  const { data: usersData } = useUsers(selfMode ? undefined : { limit: "100" });
+  const { data: usersData } = useUsers({ limit: "100" }, { enabled: !selfMode });
   const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateLeave();
   const { mutate: update, isPending: updating } = useUpdateLeave();
@@ -88,32 +88,34 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4 px-4 sm:px-0">
-          <div className={`col-span-2 space-y-1.5 ${selfMode ? "hidden" : ""}`}>
-            <Label>Employee *</Label>
-            <Controller
-              name="user"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value}
-                  onValueChange={(v) => {
-                    field.onChange(v);
-                    const u = users.find((x) => x._id === v);
-                    if (u && typeof u.workSchedule === "object" && u.workSchedule?.timeZone) {
-                      setValue("timeZone", u.workSchedule.timeZone);
-                    }
-                  }}
-                  disabled={isEditing}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.user && <p className="text-xs text-destructive">{errors.user.message}</p>}
-          </div>
+          {!selfMode && (
+            <div className="col-span-2 space-y-1.5">
+              <Label>Employee *</Label>
+              <Controller
+                name="user"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => {
+                      field.onChange(v);
+                      const u = users.find((x) => x._id === v);
+                      if (u && typeof u.workSchedule === "object" && u.workSchedule?.timeZone) {
+                        setValue("timeZone", u.workSchedule.timeZone);
+                      }
+                    }}
+                    disabled={isEditing}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                    <SelectContent>
+                      {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.user && <p className="text-xs text-destructive">{errors.user.message}</p>}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Leave Type</Label>

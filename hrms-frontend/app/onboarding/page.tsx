@@ -144,7 +144,14 @@ function Wizard({ employee: e }: { employee: Employee }) {
         {/* Card */}
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <AnimatePresence mode="wait" custom={dir}>
+            {/* mode="popLayout" so the next step mounts immediately on click —
+                "wait" held the incoming step off-DOM until the outgoing one's
+                exit animation resolved, and that resolution can lag well past
+                its nominal 250ms (e.g. a backgrounded/unfocused tab throttles
+                rAF), leaving the wizard looking frozen on the old step for
+                seconds at a time. popLayout still animates the old step out,
+                just without blocking the new one on it. */}
+            <AnimatePresence mode="popLayout" custom={dir}>
               <motion.div
                 key={step}
                 custom={dir}

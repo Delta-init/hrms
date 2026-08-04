@@ -47,9 +47,9 @@ export default function PayrollPage() {
 
   const [tab, setTab] = useState("run");
   const query = useTableQuery({ defaultSortBy: "month", defaultSortOrder: "desc", defaultLimit: 20 });
-  const { data, isLoading, isFetching } = usePayslips(canView ? query.params : undefined);
+  const { data, isLoading, isFetching } = usePayslips(query.params, { enabled: canView });
   const { data: mineData, isLoading: mineLoading } = useMyPayslips({ limit: "50" });
-  const { data: empData } = useEmployees(canView ? { limit: "200" } : undefined);
+  const { data: empData } = useEmployees({ limit: "200" }, { enabled: canView });
   const employees = empData?.data ?? [];
   const { mutate: remove, isPending: deleting } = useDeletePayslip();
 

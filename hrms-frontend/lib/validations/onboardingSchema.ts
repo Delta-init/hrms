@@ -14,7 +14,9 @@ export const onboardingSchema = z.object({
   name: req("Name is required"),
   gender: z.enum(["male", "female", "other"], { errorMap: () => ({ message: "Select a gender" }) }),
   email: z.string().email("Enter a valid email"),
-  personalEmail: z.string().email("Enter a valid personal email"),
+  // Optional — not every employee has a personal email to give, and the form
+  // never marks this field as required.
+  personalEmail: z.string().email("Enter a valid personal email").optional().or(z.literal("")),
   mobileNumber: req("Mobile number is required"),
   dob: req("Date of birth is required"),
   bloodGroup: req("Blood group is required"),

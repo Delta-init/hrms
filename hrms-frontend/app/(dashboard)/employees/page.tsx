@@ -13,6 +13,7 @@ import { EmployeeDialog } from "@/components/employees/EmployeeDialog";
 import { CreateLoginDialog } from "@/components/employees/CreateLoginDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -32,6 +33,7 @@ const statusStyles: Record<EmployeeStatus, string> = {
 
 export default function EmployeesPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("employees", "view");
   const canCreate = hasPermission("employees", "create");
   const canEdit = hasPermission("employees", "edit");
   const canDelete = hasPermission("employees", "delete");
@@ -44,7 +46,7 @@ export default function EmployeesPage() {
   };
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
-  const { data, isLoading, isFetching } = useEmployees(query.params);
+  const { data, isLoading, isFetching } = useEmployees(query.params, { enabled: canView });
   const { data: departments = [] } = useDepartmentsSimple();
   const { mutate: remove, isPending: deleting } = useDeleteEmployee();
 
@@ -52,6 +54,15 @@ export default function EmployeesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [selected, setSelected] = useState<Employee | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Employees" description="Manage employee records, departments and schedules." icon={UserRound} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to employees.</Card>
+      </div>
+    );
+  }
 
   const columns: DataTableColumn<Employee>[] = [
     {

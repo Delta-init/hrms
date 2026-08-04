@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { SalaryIncrementDialog } from "@/components/salary/SalaryIncrementDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -22,17 +23,27 @@ const money = (n: number, c?: string) => `${c ? c + " " : ""}${(n ?? 0).toLocale
 
 export default function SalaryIncrementsPage() {
   const { hasPermission } = useAuth();
+  const canView = hasPermission("salaryIncrements", "view");
   const canCreate = hasPermission("salaryIncrements", "create");
   const canEdit = hasPermission("salaryIncrements", "edit");
   const canDelete = hasPermission("salaryIncrements", "delete");
 
   const query = useTableQuery({ defaultSortBy: "effectiveMonth", defaultSortOrder: "desc" });
-  const { data, isLoading, isFetching } = useSalaryIncrements(query.params);
+  const { data, isLoading, isFetching } = useSalaryIncrements(query.params, { enabled: canView });
   const { mutate: remove, isPending: deleting } = useDeleteSalaryIncrement();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<SalaryIncrement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SalaryIncrement | null>(null);
+
+  if (!canView) {
+    return (
+      <div>
+        <PageHeader title="Salary Increments" description="Record raises with an effective month; payroll applies them automatically." icon={TrendingUp} />
+        <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to salary increments.</Card>
+      </div>
+    );
+  }
 
   const columns: DataTableColumn<SalaryIncrement>[] = [
     {

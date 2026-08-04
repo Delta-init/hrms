@@ -27,13 +27,16 @@ const statusStyles: Record<SurveyStatus, string> = {
 
 export default function SurveysPage() {
   const { hasPermission } = useAuth();
-  const canView = hasPermission("surveys", "view");
   const canCreate = hasPermission("surveys", "create");
   const canEdit = hasPermission("surveys", "edit");
   const canDelete = hasPermission("surveys", "delete");
+  // `edit` gates the admin "Manage" tab — `view` also covers self-service nav
+  // visibility (Employees hold it too, for "Open Surveys"/mine) and no longer
+  // unlocks the org-wide listing/results endpoints server-side.
+  const canManage = canEdit;
 
   const { data: mine, isLoading: mineLoading } = useMySurveys();
-  const { data: all, isLoading: allLoading } = useSurveys({ enabled: canView });
+  const { data: all, isLoading: allLoading } = useSurveys({ enabled: canManage });
   const { mutate: remove, isPending: deleting } = useDeleteSurvey();
   const { mutate: setStatus, isPending: settingStatus } = useSetSurveyStatus();
 
@@ -46,7 +49,7 @@ export default function SurveysPage() {
   const [tab, setTab] = useState("open");
   const tabs = [
     { key: "open", label: "Open Surveys", icon: ListChecks },
-    canView && { key: "manage", label: "Manage", icon: BarChart3 },
+    canManage && { key: "manage", label: "Manage", icon: BarChart3 },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "open";
 
@@ -89,7 +92,7 @@ export default function SurveysPage() {
         )
       )}
 
-      {activeTab === "manage" && (!canView ? (
+      {activeTab === "manage" && (!canManage ? (
         <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to surveys.</Card>
       ) : allLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
