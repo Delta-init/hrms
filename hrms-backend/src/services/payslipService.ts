@@ -10,7 +10,6 @@ import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } fr
 import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
 import { computeReimbursements, markReimbursementsPaid } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
-import { effectiveSalaryFor } from "./salaryIncrementService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
@@ -172,10 +171,11 @@ export class PayslipService {
     // Active-loan instalments that will be deducted from this payslip.
     const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
     // Salary breakup in force: a structure assignment if one exists, else a
-    // single Basic = the salary from any effective-dated increment. `salary`
-    // (the gross of all earnings) is the LOP base.
-    const fallbackSalary = await effectiveSalaryFor(employeeId, emp.salary ?? 0, month);
-    const breakup = await resolveSalaryBreakup(employeeId, month, fallbackSalary);
+    // single Basic = the salary from any effective-dated increment (resolved
+    // internally by resolveSalaryBreakup, which also lets a later increment
+    // override an assignment's frozen Basic). `salary` (the gross of all
+    // earnings) is the LOP base.
+    const breakup = await resolveSalaryBreakup(employeeId, month, emp.salary ?? 0);
 
     const base = {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
@@ -284,7 +284,9 @@ export class PayslipService {
   /**
    * Salary register for a month: every active employee's fully itemised pay
    * (earnings + deductions + gross/net) plus bank details, and org-level totals.
-   * The basis for the register report + a WPS-style bank-transfer file.
+   * The basis for the register report + a generic bank-transfer CSV. Not a
+   * substitute for the UAE Central Bank / MoHRE Salary Information File (SIF)
+   * format WPS actually requires — see SalaryRegister.tsx.
    */
   async salaryRegister(month: string) {
     const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))

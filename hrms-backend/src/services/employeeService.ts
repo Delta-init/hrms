@@ -2,10 +2,12 @@ import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
 import { Resignation } from "../models/Resignation.js";
-import type { CreateEmployeeInput, UpdateEmployeeInput, CreateLoginInput } from "../validations/employeeValidation.js";
+import type { CreateEmployeeInput, UpdateEmployeeInput, UpdateMyProfileInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 
 interface EmployeeQuery extends PaginationQuery {
   department?: string;
@@ -28,6 +30,19 @@ function clean<T extends Record<string, unknown>>(input: T) {
   if (out.email === "") out.email = undefined;
   if (out.personalEmail === "") out.personalEmail = undefined;
   return out;
+}
+
+function inviteEmailHtml(name: string, email: string, temporaryPassword: string, activateUrl: string) {
+  return `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">
+    <h2 style="color:#4f46e5">Welcome to Delta HRMS</h2>
+    <p style="color:#555">Hi ${name}, an account has been created for you. Use these details to sign in for the first time:</p>
+    <table style="border-collapse:collapse;margin:16px 0;font-size:14px">
+      <tr><td style="padding:4px 12px 4px 0;color:#888">Email</td><td style="padding:4px 0;font-weight:600">${email}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#888">Temporary password</td><td style="padding:4px 0;font-weight:600;font-family:monospace">${temporaryPassword}</td></tr>
+    </table>
+    <p><a href="${activateUrl}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Activate your account</a></p>
+    <p style="color:#999;font-size:12px;margin-top:20px">You'll be asked to set your own password on first sign-in. Sent automatically by Delta HRMS.</p>
+  </div>`;
 }
 
 export class EmployeeService {
@@ -86,8 +101,20 @@ export class EmployeeService {
     }
 
     Object.assign(record, clean(input));
+    // Some legacy records have location stored as "" from before its enum
+    // validator existed; that now fails full-document validation on every
+    // save, even one that never touches location. Self-heal it on next touch
+    // instead of leaving the record permanently unsavable.
+    if ((record.location as unknown as string) === "") record.location = undefined;
     await record.save();
     return Employee.findById(id).populate(POP);
+  }
+
+  /** Self-service — the caller edits their own personal-information sections only. */
+  async updateMyProfile(userId: string, input: UpdateMyProfileInput) {
+    const employee = await Employee.findOne(scoped({ user: userId }));
+    if (!employee) throw Object.assign(new Error("No employee is linked to your account"), { statusCode: 404 });
+    return this.update(String(employee._id), input as UpdateEmployeeInput);
   }
 
   async remove(id: string) {
@@ -132,8 +159,16 @@ export class EmployeeService {
     employee.user = user._id;
     await employee.save();
 
+    const activateUrl = `${env.CLIENT_URL}/set-password?email=${encodeURIComponent(email)}`;
+    await sendMail({
+      to: email,
+      subject: "Welcome to Delta HRMS — activate your account",
+      html: inviteEmailHtml(employee.name, email, input.temporaryPassword, activateUrl),
+      text: `Welcome to Delta HRMS. Sign in with ${email} / temporary password ${input.temporaryPassword}, then set your own password at ${activateUrl}`,
+    });
+
     return {
-      message: "Login created. Share the temporary password — the employee sets their own on first sign-in.",
+      message: "Login created and an activation email was sent to the employee.",
       employee: await Employee.findById(id).populate(POP),
       loginEmail: email,
     };

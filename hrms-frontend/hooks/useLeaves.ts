@@ -77,6 +77,19 @@ export const useDeleteLeave = () => {
   });
 };
 
+/** Self-service — withdraw one's own still-pending request. */
+export const useWithdrawLeave = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await api.patch<ApiResponse<LeaveRequest>>(`/leaves/${id}/withdraw`);
+      return res.data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: LEAVE_KEY }); toast.success("Leave request withdrawn"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to withdraw leave request")),
+  });
+};
+
 // ── Holidays (leave calendar) ──
 export const useHolidays = (params?: Record<string, string>) => {
   return useQuery({

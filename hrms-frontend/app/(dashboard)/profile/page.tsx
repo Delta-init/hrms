@@ -45,7 +45,7 @@ export default function MyProfilePage() {
         </div>
       </Card>
 
-      <EmployeeProfileSections employee={e} canEdit={false} />
+      <EmployeeProfileSections employee={e} canEdit selfService />
     </div>
   );
 }

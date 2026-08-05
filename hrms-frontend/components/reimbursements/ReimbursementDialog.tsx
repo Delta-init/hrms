@@ -1,8 +1,8 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload, FileText, ExternalLink, Trash2 } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { reimbursementFormSchema, type ReimbursementFormValues } from "@/lib/validations/reimbursementSchema";
-import { useCreateReimbursement, useUpdateReimbursement } from "@/hooks/useReimbursements";
+import { useCreateReimbursement, useUpdateReimbursement, useUploadReceipt } from "@/hooks/useReimbursements";
 import { useEmployees } from "@/hooks/useEmployees";
 import { REIMBURSEMENT_CATEGORY_LABELS, type Reimbursement, type ReimbursementCategory } from "@/types";
 
@@ -38,7 +38,7 @@ export function ReimbursementDialog({ open, onOpenChange, claim, canFileForOther
   const { mutate: update, isPending: updating } = useUpdateReimbursement();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<ReimbursementFormValues>({
+  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm<ReimbursementFormValues>({
     resolver: zodResolver(reimbursementFormSchema),
     defaultValues: { employee: "", category: "travel", title: "", amount: 0, expenseDate: today(), month: defaultMonth || thisMonth(), description: "", receiptUrl: "" },
   });
@@ -131,8 +131,8 @@ export function ReimbursementDialog({ open, onOpenChange, claim, canFileForOther
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="receiptUrl">Receipt link</Label>
-            <Input id="receiptUrl" placeholder="https://… (optional)" {...register("receiptUrl")} />
+            <Label>Receipt</Label>
+            <ReceiptUpload value={watch("receiptUrl")} onChange={(url) => setValue("receiptUrl", url, { shouldDirty: true })} />
           </div>
 
           <div className="space-y-1.5">
@@ -147,5 +147,44 @@ export function ReimbursementDialog({ open, onOpenChange, claim, canFileForOther
         </form>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+function ReceiptUpload({ value, onChange }: { value?: string; onChange: (url: string) => void }) {
+  const { mutate: upload, isPending } = useUploadReceipt();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pick = () => inputRef.current?.click();
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) upload(file, { onSuccess: (d) => onChange(d.url) });
+    e.target.value = "";
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={onFile} />
+      {value ? (
+        <>
+          <a
+            href={value} target="_blank" rel="noopener noreferrer"
+            className="inline-flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-primary hover:underline"
+          >
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Receipt attached</span>
+            <ExternalLink className="h-3 w-3 shrink-0" />
+          </a>
+          <Button type="button" variant="outline" size="sm" onClick={pick} disabled={isPending}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Replace"}
+          </Button>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive" onClick={() => onChange("")}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={pick} disabled={isPending}>
+          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="h-4 w-4" />Upload receipt</>}
+        </Button>
+      )}
+    </div>
   );
 }

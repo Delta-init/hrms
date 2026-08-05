@@ -98,3 +98,13 @@ export const deleteLeave = async (req: AuthenticatedRequest, res: Response, next
     next(error);
   }
 };
+
+/** Self-service — the requester withdraws their own still-pending request. */
+export const withdrawLeave = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const record = await service.withdraw(req.params.id, req.user!.userId);
+    sendSuccess(res, "Leave request withdrawn", record);
+  } catch (error) {
+    next(error);
+  }
+};

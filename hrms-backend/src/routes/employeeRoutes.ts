@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createEmployee, getEmployees, getEmployeeById, getEmployeeByUser, getMyEmployeeProfile, updateEmployee, deleteEmployee, createEmployeeLogin,
+  createEmployee, getEmployees, getEmployeeById, getEmployeeByUser, getMyEmployeeProfile, updateMyProfile, updateEmployee, deleteEmployee, createEmployeeLogin,
 } from "../controllers/employeeController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -10,6 +10,7 @@ router.use(authenticate);
 
 // Self-service — own profile, no module permission required (must precede "/:id").
 router.get("/me", getMyEmployeeProfile);
+router.put("/me", updateMyProfile);
 
 router.get("/", checkPermission("employees", "view"), getEmployees);
 router.post("/", checkPermission("employees", "create"), createEmployee);

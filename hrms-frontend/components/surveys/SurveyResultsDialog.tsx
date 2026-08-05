@@ -46,7 +46,11 @@ export function SurveyResultsDialog({ open, onOpenChange, surveyId }: Props) {
                     </div>
                     <span className="text-sm font-semibold tabular-nums">{q.average?.toFixed(2)}</span>
                     <div className="ml-2 flex-1 space-y-0.5">
-                      {[5, 4, 3, 2, 1].map((n) => {
+                      {/* Bucket list comes from whatever the backend actually returned
+                          (not a hardcoded 1-5), so a wider-scale rating question (e.g.
+                          a 0-10 eNPS-style question) still shows every bucket instead of
+                          silently dropping out-of-range responses from the histogram. */}
+                      {Object.keys(q.distribution ?? {}).map(Number).sort((a, b) => b - a).map((n) => {
                         const count = q.distribution?.[n] ?? 0;
                         const pct = q.responseCount ? Math.round((count / q.responseCount) * 100) : 0;
                         return (

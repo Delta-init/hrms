@@ -110,6 +110,12 @@ export class RegularizationService {
         if (outcome.advance) {
           record.workflowStep = (record.workflowStep ?? 1) + 1;
         } else {
+          if (input.status === "approved" && !record.requestedCheckIn && !record.requestedCheckOut) {
+            throw Object.assign(
+              new Error("This request has no corrected check-in or check-out time to apply"),
+              { statusCode: 400 }
+            );
+          }
           record.status = input.status;
           record.reviewedBy = reviewerId as never;
           record.reviewedAt = new Date();

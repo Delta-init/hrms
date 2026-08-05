@@ -1,7 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { EmployeeService } from "../services/employeeService.js";
-import { createEmployeeSchema, updateEmployeeSchema, createLoginSchema } from "../validations/employeeValidation.js";
+import { createEmployeeSchema, updateEmployeeSchema, updateMyProfileSchema, createLoginSchema } from "../validations/employeeValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new EmployeeService();
@@ -38,6 +38,16 @@ export const getEmployeeByUser = async (req: AuthenticatedRequest, res: Response
 export const getMyEmployeeProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Your profile retrieved successfully", await service.getByUser(req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+/** Self-service — the caller edits their own personal-information sections only. */
+export const updateMyProfile = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = updateMyProfileSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.updateMyProfile(req.user!.userId, parsed.data);
+    sendSuccess(res, "Profile updated successfully", record);
   } catch (error) { next(error); }
 };
 

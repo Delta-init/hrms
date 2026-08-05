@@ -1,5 +1,6 @@
 import { SalaryStructure } from "../models/SalaryStructure.js";
 import { SalaryStructureAssignment } from "../models/SalaryStructureAssignment.js";
+import { SalaryIncrement } from "../models/SalaryIncrement.js";
 import { Employee } from "../models/Employee.js";
 import type {
   CreateSalaryStructureInput,
@@ -41,32 +42,39 @@ function componentAmount(c: ISalaryComponent, basic: number): number {
 
 /**
  * The salary breakup in force for an employee as of `month` (YYYY-MM).
- * Uses the latest structure assignment effective on or before that month;
- * when none exists, falls back to a single "Basic" line = `fallbackSalary`
- * (which callers derive from effective-dated increments), so employees
- * without a structure keep their previous behaviour.
+ * Uses the latest structure assignment effective on or before that month for
+ * the *shape* of pay (which allowances/deductions apply), but the *amount* of
+ * Basic comes from whichever is more recent: the assignment's basicAmount, or
+ * a SalaryIncrement effective on or after that assignment. Without this, a
+ * raise recorded after an employee is put on a structure would silently never
+ * reach payroll — the assignment's frozen basicAmount would keep winning.
+ * `baseSalary` (the employee's plain `salary` field) is the last-resort
+ * fallback when neither an assignment nor an increment exists yet.
  */
 export async function resolveSalaryBreakup(
   employeeId: string,
   month: string,
-  fallbackSalary: number
+  baseSalary: number
 ): Promise<SalaryBreakup> {
-  const assignment = await SalaryStructureAssignment.findOne(
-    scoped({ employee: employeeId, effectiveMonth: { $lte: month } })
-  )
-    .sort({ effectiveMonth: -1 })
-    .populate<{ structure: { name: string; components: ISalaryComponent[] } | null }>("structure", "name components");
+  const [assignment, increment] = await Promise.all([
+    SalaryStructureAssignment.findOne(scoped({ employee: employeeId, effectiveMonth: { $lte: month } }))
+      .sort({ effectiveMonth: -1 })
+      .populate<{ structure: { name: string; components: ISalaryComponent[] } | null }>("structure", "name components"),
+    SalaryIncrement.findOne(scoped({ employee: employeeId, effectiveMonth: { $lte: month } })).sort({ effectiveMonth: -1 }),
+  ]);
+
+  const incrementWins = !!increment && (!assignment || increment.effectiveMonth >= assignment.effectiveMonth);
+  const basic = incrementWins ? increment!.newSalary : assignment?.basicAmount ?? increment?.newSalary ?? baseSalary;
 
   if (!assignment || !assignment.structure) {
     return {
-      earnings: [{ label: "Basic", amount: round(fallbackSalary) }],
+      earnings: [{ label: "Basic", amount: round(basic) }],
       deductions: [],
-      gross: round(fallbackSalary),
+      gross: round(basic),
       structureName: null,
     };
   }
 
-  const basic = assignment.basicAmount ?? 0;
   const earnings = [{ label: "Basic", amount: round(basic) }];
   const deductions: { label: string; amount: number }[] = [];
   for (const c of assignment.structure.components) {

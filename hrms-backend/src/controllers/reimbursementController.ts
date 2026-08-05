@@ -5,6 +5,9 @@ import {
   createReimbursementSchema, updateReimbursementSchema, reviewReimbursementSchema,
 } from "../validations/reimbursementValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { putObject, publicUrl, attachmentKey } from "../services/uploadService.js";
+import { extFromMime } from "../middleware/upload.js";
+import { getOrgId } from "../utils/orgContext.js";
 
 const service = new ReimbursementService();
 
@@ -21,6 +24,17 @@ export const createReimbursement = async (req: AuthenticatedRequest, res: Respon
       canApproveOthers: canApprove(req),
     });
     sendSuccess(res, "Reimbursement claim submitted", record, 201);
+  } catch (error) { next(error); }
+};
+
+/** Upload a receipt/bill scan and hand back its public URL to attach to a claim. */
+export const uploadReceipt = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) { sendError(res, "No file uploaded", 400); return; }
+    const ext = extFromMime(req.file.mimetype);
+    const key = attachmentKey(getOrgId(), req.user!.userId, "receipts", ext, Date.now());
+    await putObject(key, req.file.buffer, req.file.mimetype);
+    sendSuccess(res, "Receipt uploaded", { url: publicUrl(key), fileName: req.file.originalname });
   } catch (error) { next(error); }
 };
 

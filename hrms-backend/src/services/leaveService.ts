@@ -202,4 +202,19 @@ export class LeaveService {
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
     return { message: "Leave request deleted successfully" };
   }
+
+  /** Self-service — the requester withdraws their own still-pending request. */
+  async withdraw(id: string, userId: string) {
+    const record = await LeaveRequest.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
+    if (String(record.user) !== String(userId)) {
+      throw Object.assign(new Error("You can only withdraw your own leave request"), { statusCode: 403 });
+    }
+    if (record.status !== "pending") {
+      throw Object.assign(new Error("Only a pending request can be withdrawn"), { statusCode: 400 });
+    }
+    record.status = "cancelled";
+    await record.save();
+    return LeaveRequest.findById(id).populate("user", "name email designation");
+  }
 }

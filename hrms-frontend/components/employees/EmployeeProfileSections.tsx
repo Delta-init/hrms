@@ -34,13 +34,23 @@ const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transiti
  * variant: "all" → everything · "core" → all except passport/visa ·
  * "documents" → only passport + visa.
  */
-export function EmployeeProfileSections({ employee: e, canEdit, variant = "all" }: {
-  employee: Employee; canEdit: boolean; variant?: "all" | "core" | "documents";
+// Sections a self-service employee may edit themselves. Employment (status,
+// department, reporting line, probation/notice) and identity documents
+// (passport/visa) stay admin-only even when the employee can edit their own
+// personal-information sections — see updateMyProfileSchema on the backend.
+const SELF_SERVICE_SECTIONS = new Set<ProfileSection>([
+  "personal", "bank", "education", "currentAddress", "permanentAddress", "emergency", "family",
+]);
+
+export function EmployeeProfileSections({ employee: e, canEdit, variant = "all", selfService }: {
+  employee: Employee; canEdit: boolean; variant?: "all" | "core" | "documents"; selfService?: boolean;
 }) {
   const [section, setSection] = useState<ProfileSection | null>(null);
-  const edit = (s: ProfileSection) => (
-    canEdit ? <EditButton onClick={() => setSection(s)} /> : null
-  );
+  const edit = (s: ProfileSection) => {
+    if (!canEdit) return null;
+    if (selfService && !SELF_SERVICE_SECTIONS.has(s)) return null;
+    return <EditButton onClick={() => setSection(s)} />;
+  };
   const showProfile = variant !== "documents";
   const showDocs = variant !== "core";
 
@@ -172,7 +182,9 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all" 
         </>}
       </motion.div>
 
-      {section && <EmployeeSectionDialog open={!!section} onOpenChange={(o) => !o && setSection(null)} section={section} employee={e} />}
+      {section && (
+        <EmployeeSectionDialog open={!!section} onOpenChange={(o) => !o && setSection(null)} section={section} employee={e} selfService={selfService} />
+      )}
     </>
   );
 }

@@ -66,3 +66,16 @@ export function documentKey(
   const safeExt = ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
   return `${org}/${employeeId}/${docType}-${stamp}.${safeExt}`;
 }
+
+/** Build the storage key for a standalone attachment (e.g. an expense receipt), namespaced per org + uploader. */
+export function attachmentKey(
+  orgId: string | null,
+  userId: string,
+  folder: string,
+  ext: string,
+  stamp: number
+): string {
+  const org = orgId || "global";
+  const safeExt = ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
+  return `${org}/${folder}/${userId}/${stamp}.${safeExt}`;
+}

@@ -7,6 +7,7 @@ import {
   updateLeave,
   reviewLeave,
   deleteLeave,
+  withdrawLeave,
 } from "../controllers/leaveController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -17,6 +18,8 @@ router.use(authenticate);
 
 // Self-service — own requests, no module permission required.
 router.get("/mine", getMyLeaves);
+// Withdraw a still-pending request of one's own; ownership is checked in the service.
+router.patch("/:id/withdraw", withdrawLeave);
 
 router.get("/", checkPermission("leave", "view"), getLeaves);
 router.post("/", checkPermission("leave", "create"), createLeave);

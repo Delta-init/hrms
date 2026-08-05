@@ -112,6 +112,9 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
             <Label htmlFor="requestedCheckOut">Correct Check-out</Label>
             <Input id="requestedCheckOut" type="datetime-local" {...register("requestedCheckOut")} />
           </div>
+          {errors.requestedCheckIn && (
+            <p className="col-span-2 -mt-2 text-xs text-destructive">{errors.requestedCheckIn.message}</p>
+          )}
 
           <div className="space-y-1.5">
             <Label>Time Region</Label>

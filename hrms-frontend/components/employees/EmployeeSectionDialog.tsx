@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useUpdateEmployee, useEmployees } from "@/hooks/useEmployees";
+import { useUpdateEmployee, useUpdateMyProfile, useEmployees } from "@/hooks/useEmployees";
 import { useUsers } from "@/hooks/useUsers";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import {
@@ -98,12 +98,15 @@ function cleanPayload(v: FormValues): FormValues {
 const field = "space-y-1.5";
 
 export function EmployeeSectionDialog({
-  open, onOpenChange, section, employee,
-}: { open: boolean; onOpenChange: (o: boolean) => void; section: ProfileSection; employee: Employee }) {
-  const { mutate: update, isPending } = useUpdateEmployee();
-  const { data: departments = [] } = useDepartmentsSimple();
-  const { data: empData } = useEmployees({ limit: "200" });
-  const { data: userData } = useUsers({ limit: "200" });
+  open, onOpenChange, section, employee, selfService,
+}: { open: boolean; onOpenChange: (o: boolean) => void; section: ProfileSection; employee: Employee; selfService?: boolean }) {
+  const { mutate: updateEmployee, isPending: updatingEmployee } = useUpdateEmployee();
+  const { mutate: updateMyProfile, isPending: updatingMyProfile } = useUpdateMyProfile();
+  const isPending = selfService ? updatingMyProfile : updatingEmployee;
+  // Employment/reporting-line pickers aren't shown in self-service mode, so skip fetching them.
+  const { data: departments = [] } = useDepartmentsSimple({ enabled: !selfService });
+  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !selfService });
+  const { data: userData } = useUsers(selfService ? undefined : { limit: "200" });
   const managers = (empData?.data ?? []).filter((m) => m._id !== employee._id);
   const users = userData?.data ?? [];
 
@@ -127,7 +130,11 @@ export function EmployeeSectionDialog({
         delete payload.reportingToKind;
       }
     }
-    update({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    if (selfService) {
+      updateMyProfile(payload, { onSuccess: () => onOpenChange(false) });
+    } else {
+      updateEmployee({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    }
   };
 
   return (

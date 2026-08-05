@@ -1,16 +1,18 @@
 import { Router } from "express";
 import {
   createReimbursement, getReimbursements, getMyReimbursements, getReimbursementById,
-  updateReimbursement, reviewReimbursement, deleteReimbursement,
+  updateReimbursement, reviewReimbursement, deleteReimbursement, uploadReceipt,
 } from "../controllers/reimbursementController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
+import { uploadSingle } from "../middleware/upload.js";
 
 const router = Router();
 router.use(authenticate);
 
 // Self-service — own claims, no module permission required.
 router.get("/mine", getMyReimbursements);
+router.post("/receipt-upload", uploadSingle, uploadReceipt);
 
 router.get("/", checkPermission("reimbursements", "view"), getReimbursements);
 router.post("/", checkPermission("reimbursements", "create"), createReimbursement);

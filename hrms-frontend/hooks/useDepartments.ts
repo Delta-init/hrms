@@ -19,7 +19,7 @@ export const useDepartments = (params?: Record<string, string>, options?: { enab
     enabled: options?.enabled ?? true,
   });
 
-export const useDepartmentsSimple = () =>
+export const useDepartmentsSimple = (options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: [...KEY, "simple"],
     queryFn: async () => {
@@ -27,6 +27,7 @@ export const useDepartmentsSimple = () =>
       return res.data.data ?? [];
     },
     staleTime: 5 * 60 * 1000,
+    enabled: options?.enabled ?? true,
   });
 
 export const useDepartmentReport = (id: string, month: string) =>

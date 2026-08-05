@@ -43,13 +43,17 @@ export function SalaryRegister() {
     download(`salary-register-${month}.csv`, [header, ...body]);
   };
 
-  // Bank-transfer (WPS-style) file: one row per employee's net credit.
-  const exportWps = () => {
+  // A generic bank-transfer CSV, one row per employee's net credit — this is
+  // NOT the UAE Central Bank / MoHRE Salary Information File (SIF) format
+  // that WPS submission actually requires (no Establishment ID, WPS agent
+  // routing code, labor card number, etc.). Use it to brief your bank/exchange
+  // house, not as a direct WPS upload.
+  const exportBankTransfer = () => {
     const header = ["Employee Code", "Name in Bank", "IBAN", "Account Number", "Bank", "Net Salary", "Currency"];
     const body = rows
       .filter((r) => r.net > 0)
       .map((r) => [r.employee.employeeCode ?? "", r.bank.nameInBank || r.employee.name, r.bank.iban, r.bank.accountNumber, r.bank.bankName, r.net, r.currency]);
-    download(`wps-transfer-${month}.csv`, [header, ...body]);
+    download(`bank-transfer-${month}.csv`, [header, ...body]);
   };
 
   const missingBank = rows.filter((r) => r.net > 0 && !r.bank.iban).length;
@@ -73,13 +77,17 @@ export function SalaryRegister() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={exportRegister} disabled={!rows.length}><FileSpreadsheet className="h-4 w-4" />Export register</Button>
-          <Button onClick={exportWps} disabled={!rows.length} className="shadow-sm"><Landmark className="h-4 w-4" />WPS transfer file</Button>
+          <Button onClick={exportBankTransfer} disabled={!rows.length} className="shadow-sm"><Landmark className="h-4 w-4" />Bank transfer file (CSV)</Button>
         </div>
       </Card>
 
+      <p className="text-xs text-muted-foreground">
+        The bank transfer file is a generic CSV of net pay and bank details — it is not the UAE Central Bank / MoHRE Salary Information File (SIF) format that WPS submission requires. Use it to prepare a transfer with your bank or exchange house, not as a direct WPS upload.
+      </p>
+
       {missingBank > 0 && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700">
-          {missingBank} employee(s) with a net payable have no IBAN on file — they are omitted from the WPS transfer file.
+          {missingBank} employee(s) with a net payable have no IBAN on file — they are omitted from the bank transfer file.
         </div>
       )}
 

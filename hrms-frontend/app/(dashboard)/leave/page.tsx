@@ -5,7 +5,7 @@ import {
   CalendarClock, Plus, Pencil, Trash2, Loader2, Check, X,
   CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send, Wallet, CalendarPlus,
 } from "lucide-react";
-import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
+import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useWithdrawLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -41,11 +41,13 @@ const statusStyles: Record<LeaveStatus, string> = {
 const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(new Date(iso));
 
 // Simple table for Approvals / My tabs (bounded lists).
-function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin }: {
+function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin, onWithdraw, withdrawing }: {
   leaves: LeaveRequest[]; loading?: boolean; emptyText: string; canApprove?: boolean;
   onReview?: (l: LeaveRequest, a: "approved" | "rejected") => void;
   reviewerRoleId?: string; isSuperAdmin?: boolean;
+  onWithdraw?: (l: LeaveRequest) => void; withdrawing?: boolean;
 }) {
+  const showActions = canApprove || !!onWithdraw;
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -54,7 +56,7 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, re
             <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="px-5 py-3 font-semibold">Employee</th><th className="px-5 py-3 font-semibold">Type</th>
               <th className="px-5 py-3 font-semibold">Dates</th><th className="px-5 py-3 font-semibold">Days</th>
-              <th className="px-5 py-3 font-semibold">Status</th>{canApprove && <th className="px-5 py-3 text-right font-semibold">Actions</th>}
+              <th className="px-5 py-3 font-semibold">Status</th>{showActions && <th className="px-5 py-3 text-right font-semibold">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -72,7 +74,21 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, re
                     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[l.status])}>{l.status}</span>
                     {workflowStepLabel(l) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(l)}</span>}
                   </td>
-                  {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(l, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
+                  {showActions && (
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center justify-end gap-1">
+                        {canApprove && l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <>
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button>
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(l, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button>
+                        </>}
+                        {onWithdraw && l.status === "pending" && (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-muted-foreground hover:text-destructive" disabled={withdrawing} onClick={() => onWithdraw(l)}>
+                            <X className="h-3.5 w-3.5" />Withdraw
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -106,6 +122,7 @@ export default function LeavePage() {
 
   const { mutate: reviewLeave, isPending: reviewing } = useReviewLeave();
   const { mutate: removeLeave, isPending: deleting } = useDeleteLeave();
+  const { mutate: withdrawLeave, isPending: withdrawing } = useWithdrawLeave();
   const { mutate: removeHoliday } = useDeleteHoliday();
 
   const pending = pendingData?.data ?? [];
@@ -119,6 +136,7 @@ export default function LeavePage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<LeaveRequest | null>(null);
   const [review, setReview] = useState<{ leave: LeaveRequest; action: "approved" | "rejected" } | null>(null);
+  const [withdrawTarget, setWithdrawTarget] = useState<LeaveRequest | null>(null);
 
   const tabs = [
     canApprove && { key: "requests", label: "Requests", icon: ListChecks },
@@ -223,7 +241,7 @@ export default function LeavePage() {
             <div><h3 className="text-base font-semibold">Apply for leave</h3><p className="text-sm text-muted-foreground">Submit a leave request for yourself. It goes to your manager for approval.</p></div>
             <Button onClick={() => setApplyDialog(true)}><Plus className="h-4 w-4" />Apply</Button>
           </Card>
-          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">My Requests</h4><SimpleLeaveTable leaves={mine} loading={mineLoading} emptyText="You haven't applied for any leave yet." /></div>
+          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">My Requests</h4><SimpleLeaveTable leaves={mine} loading={mineLoading} emptyText="You haven't applied for any leave yet." onWithdraw={setWithdrawTarget} withdrawing={withdrawing} /></div>
         </div>
       )}
 
@@ -254,6 +272,13 @@ export default function LeavePage() {
       <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={user?._id} />
       <HolidayDialog open={holidayDialog} onOpenChange={setHolidayDialog} />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete leave request" description="This leave request will be permanently removed." isPending={deleting} onConfirm={() => selected && removeLeave(selected._id, { onSuccess: () => setDeleteOpen(false) })} />
+      <ConfirmDialog
+        open={!!withdrawTarget} onOpenChange={(o) => !o && setWithdrawTarget(null)}
+        title="Withdraw leave request" description="This request will be marked as cancelled. You can apply again if you still need the time off."
+        confirmLabel="Withdraw"
+        isPending={withdrawing}
+        onConfirm={() => withdrawTarget && withdrawLeave(withdrawTarget._id, { onSuccess: () => setWithdrawTarget(null) })}
+      />
       <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && reviewLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
     </div>
   );

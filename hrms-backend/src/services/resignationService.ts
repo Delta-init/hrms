@@ -1,7 +1,7 @@
 import { Resignation } from "../models/Resignation.js";
 import { Employee } from "../models/Employee.js";
 import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput, ExitDetailsInput } from "../validations/resignationValidation.js";
-import type { PaginationQuery } from "../types/index.js";
+import type { PaginationQuery, IResignation } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 
@@ -22,6 +22,21 @@ const addDays = (d: Date, days: number) => {
 };
 
 export class ResignationService {
+  /**
+   * Marks a resignation relieved and stamps left/leavingDate consistently.
+   * Shared by the explicit Relieve action, the exit-details "left" toggle, and
+   * the auto-relieve cron — previously each of those three independently set
+   * status="relieved", and only the exit-details path also set left/leavingDate,
+   * so an employee terminated via Relieve or the cron ended up with a
+   * different-shaped record than one terminated via exit details. Callers
+   * still own record.save() and the Employee status update.
+   */
+  private markRelieved(record: IResignation) {
+    record.status = "relieved";
+    record.left = true;
+    if (!record.leavingDate) record.leavingDate = record.lastWorkingDay ?? new Date();
+  }
+
   async create(input: CreateResignationInput) {
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
@@ -143,7 +158,7 @@ export class ResignationService {
     if (record.status !== "accepted") {
       throw Object.assign(new Error("Only an accepted resignation can be relieved"), { statusCode: 400 });
     }
-    record.status = "relieved";
+    this.markRelieved(record);
     record.reviewedBy = reviewerId as never;
     record.reviewedAt = new Date();
     await record.save();
@@ -173,8 +188,7 @@ export class ResignationService {
     if (input.left !== undefined) {
       record.left = input.left;
       if (input.left) {
-        record.status = "relieved";
-        if (!record.leavingDate) record.leavingDate = record.lastWorkingDay ?? new Date();
+        this.markRelieved(record);
         await Employee.findByIdAndUpdate(record.employee, { status: "terminated" });
       } else {
         record.status = "accepted";
@@ -192,9 +206,9 @@ export class ResignationService {
 
   /** Cron: relieve accepted resignations whose last working day has passed. */
   async autoRelieveDue(now = new Date()) {
-    const due = await Resignation.find({ status: "accepted", lastWorkingDay: { $lte: now } }).select("_id employee");
+    const due = await Resignation.find({ status: "accepted", lastWorkingDay: { $lte: now } }).select("_id employee lastWorkingDay leavingDate");
     for (const r of due) {
-      r.status = "relieved";
+      this.markRelieved(r);
       r.reviewedAt = new Date();
       await r.save();
       await Employee.findByIdAndUpdate(r.employee, { status: "terminated" });

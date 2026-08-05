@@ -48,6 +48,16 @@ export const useMyEmployeeProfile = () =>
     queryFn: async () => (await api.get<ApiResponse<Employee>>("/employees/me")).data.data!,
   });
 
+/** Self-service — update the caller's own personal-information sections. */
+export const useUpdateMyProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => (await api.put<ApiResponse<Employee>>("/employees/me", data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [...KEY, "me"] }); toast.success("Profile updated"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to update profile")),
+  });
+};
+
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -82,7 +92,7 @@ export const useCreateEmployeeLogin = () => {
       (await api.post<ApiResponse<{ loginEmail: string }>>(`/employees/${id}/create-login`, data)).data,
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: KEY });
-      toast.success("Login created", { description: "Share the temporary password — they activate at /set-password on first sign-in." });
+      toast.success("Login created", { description: "An activation email with the temporary password was sent to the employee." });
     },
     onError: (e) => toast.error(errMsg(e, "Failed to create login")),
   });

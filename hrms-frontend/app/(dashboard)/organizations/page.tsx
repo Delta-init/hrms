@@ -122,7 +122,7 @@ export default function OrganizationsPage() {
               <ResponsiveDialogTitle>Delete Organization</ResponsiveDialogTitle>
             </div>
             <ResponsiveDialogDescription className="pt-2 px-4 sm:px-0">
-              Are you sure you want to delete <strong className="text-foreground">{selected?.name}</strong>? Data belonging to this organization will be orphaned. This action cannot be undone.
+              Are you sure you want to delete <strong className="text-foreground">{selected?.name}</strong>? All employees, attendance, payroll, and every other record belonging to this organization will be permanently deleted. This action cannot be undone.
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogFooter>

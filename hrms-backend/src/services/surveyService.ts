@@ -79,8 +79,19 @@ export class SurveyService {
       if (q.type === "rating") {
         const values = answers.map((a) => Number(a.value)).filter((v) => !Number.isNaN(v));
         const average = values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
-        const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        for (const v of values) if (distribution[v] !== undefined) distribution[v]++;
+        // Bucket range is derived from the actual responses (widened to cover at
+        // least 1-5) rather than hardcoded to 1-5, so a wider-scale rating
+        // question (e.g. a 0-10 eNPS-style question) doesn't silently drop
+        // out-of-range values from the histogram while still counting them
+        // toward the average.
+        const lo = values.length ? Math.min(1, ...values) : 1;
+        const hi = values.length ? Math.max(5, ...values) : 5;
+        const distribution: Record<number, number> = {};
+        for (let i = Math.floor(lo); i <= Math.ceil(hi); i++) distribution[i] = 0;
+        for (const v of values) {
+          const bucket = Math.round(v);
+          distribution[bucket] = (distribution[bucket] ?? 0) + 1;
+        }
         return { questionId: q._id, text: q.text, type: q.type, responseCount: values.length, average: Math.round(average * 100) / 100, distribution };
       }
       if (q.type === "single_choice") {

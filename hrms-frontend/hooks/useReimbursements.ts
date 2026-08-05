@@ -31,6 +31,20 @@ export const useMyReimbursements = (params?: Record<string, string>) =>
     },
   });
 
+export const useUploadReceipt = () => {
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post<ApiResponse<{ url: string; fileName: string }>>("/reimbursements/receipt-upload", form, {
+        headers: { "Content-Type": undefined }, // let the browser set the multipart boundary
+      });
+      return res.data.data!;
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to upload receipt")),
+  });
+};
+
 export const useCreateReimbursement = () => {
   const qc = useQueryClient();
   return useMutation({

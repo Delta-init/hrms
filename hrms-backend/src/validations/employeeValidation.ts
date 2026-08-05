@@ -119,6 +119,29 @@ export const updateEmployeeSchema = z.object({
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
 
+// Self-service profile edit: personal-information sections only. Deliberately
+// excludes employeeCode/name/work email&phone/department/designation/status/
+// salary/reportingTo/passport/visa — those stay admin-only (via updateEmployeeSchema).
+export const updateMyProfileSchema = z.object({
+  title: profileFields.title,
+  gender: profileFields.gender,
+  personalEmail: profileFields.personalEmail,
+  mobileNumber: profileFields.mobileNumber,
+  dob: profileFields.dob,
+  bloodGroup: profileFields.bloodGroup,
+  nationality: profileFields.nationality,
+  maritalStatus: profileFields.maritalStatus,
+  oldCompanyExperience: profileFields.oldCompanyExperience,
+  bank: profileFields.bank,
+  education: profileFields.education,
+  currentAddress: profileFields.currentAddress,
+  permanentAddress: profileFields.permanentAddress,
+  emergencyContacts: profileFields.emergencyContacts,
+  familyMembers: profileFields.familyMembers,
+});
+
+export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>;
+
 // Provision a login account for an employee (they set their own password on first login).
 export const createLoginSchema = z.object({
   email: z.string().email("Invalid email").optional(),

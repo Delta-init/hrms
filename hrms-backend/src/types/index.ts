@@ -1113,3 +1113,16 @@ export interface ICompOffCredit extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** A record of a sensitive/privileged action — currently just impersonation
+ *  start/end, kept minimal and append-only (no update/delete API). */
+export interface IAuditLog extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  action: string;
+  actor: Types.ObjectId | IUser;
+  actorName: string;
+  target?: Types.ObjectId | IUser | null;
+  targetName?: string | null;
+  createdAt: Date;
+}

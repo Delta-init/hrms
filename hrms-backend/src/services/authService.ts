@@ -1,5 +1,6 @@
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
+import { AuditLog } from "../models/AuditLog.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken, signTicket, verifyTicket } from "../utils/jwt.js";
 import type { LoginInput, ChangePasswordInput, SetPasswordInput, CompleteProfileInput } from "../validations/authValidation.js";
 import type { IUser, IRole } from "../types/index.js";
@@ -241,7 +242,20 @@ export class AuthService {
         throw Object.assign(new Error("You cannot impersonate an administrator"), { statusCode: 403 });
       }
       const { accessToken, refreshToken } = this.tokensFor(target);
-      const restoreTicket = signTicket({ kind: "restore", userId: decoded.impersonatorId }, "12h");
+      // Carries the target forward so the eventual restore can log who the
+      // session was impersonating, without re-deriving it from anywhere else.
+      const restoreTicket = signTicket(
+        { kind: "restore", userId: decoded.impersonatorId, targetUserId: decoded.targetUserId },
+        "12h"
+      );
+      await AuditLog.create({
+        organization: target.organization,
+        action: "impersonation.start",
+        actor: decoded.impersonatorId,
+        actorName: decoded.impersonatorName ?? "Admin",
+        target: target._id,
+        targetName: target.name,
+      });
       return {
         accessToken,
         refreshToken,
@@ -254,6 +268,15 @@ export class AuthService {
       const admin = await User.findById(decoded.userId).populate("role");
       if (!admin) throw Object.assign(new Error("Session cannot be restored"), { statusCode: 401 });
       const { accessToken, refreshToken } = this.tokensFor(admin);
+      const target = decoded.targetUserId ? await User.findById(decoded.targetUserId).select("name organization") : null;
+      await AuditLog.create({
+        organization: admin.organization,
+        action: "impersonation.end",
+        actor: admin._id,
+        actorName: admin.name,
+        target: target?._id ?? null,
+        targetName: target?.name ?? null,
+      });
       return { accessToken, refreshToken, user: admin.toJSON() as unknown as Omit<IUser, "password"> };
     }
 
