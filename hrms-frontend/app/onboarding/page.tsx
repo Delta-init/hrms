@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useForm, Controller, type UseFormReturn } from "react-hook-form";
@@ -67,6 +67,24 @@ function Wizard({ employee: e }: { employee: Employee }) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [docsReady, setDocsReady] = useState(false);
+  // Guards against a second click of a double-click landing on the button
+  // that renders in the same screen position for the *next* step — e.g.
+  // Documents' "Next" and Review's "Finish" occupy the same spot, and
+  // Finish is a plain type="submit" button wired to the form's onSubmit,
+  // a completely different code path from next() below that a re-entrancy
+  // guard on next() alone can't reach. So instead of unlocking the instant
+  // `step` changes (which re-renders Finish already enabled), keep every
+  // nav button disabled for a short cooldown after each transition — long
+  // enough that a second click arriving milliseconds later hits a disabled
+  // button instead of firing a real submit. A ref backs the same lock so a
+  // synchronous re-entrant call to next() itself is also caught immediately,
+  // without waiting on React's async state update.
+  const navLockedRef = useRef(false);
+  const [navLocked, setNavLocked] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => { navLockedRef.current = false; setNavLocked(false); }, 400);
+    return () => clearTimeout(t);
+  }, [step]);
 
   const form = useForm<OnboardingValues>({
     resolver: zodResolver(onboardingSchema),
@@ -92,13 +110,16 @@ function Wizard({ employee: e }: { employee: Employee }) {
   const go = (delta: number) => { setDir(delta); setStep((s) => Math.min(SECTIONS.length - 1, Math.max(0, s + delta))); };
 
   const next = async () => {
+    if (navLockedRef.current) return;
+    navLockedRef.current = true;
+    setNavLocked(true);
     if (step === DOC_STEP) {
-      if (!docsReady) { toast.error("Please upload all required documents"); return; }
+      if (!docsReady) { toast.error("Please upload all required documents"); navLockedRef.current = false; setNavLocked(false); return; }
       go(1);
       return;
     }
     const ok = await form.trigger(STEP_FIELDS[step] as never);
-    if (!ok) { toast.error("Please complete the required fields"); return; }
+    if (!ok) { toast.error("Please complete the required fields"); navLockedRef.current = false; setNavLocked(false); return; }
     go(1);
   };
 
@@ -167,15 +188,15 @@ function Wizard({ employee: e }: { employee: Employee }) {
 
           {/* Nav */}
           <div className="mt-4 flex items-center justify-between">
-            <Button type="button" variant="outline" onClick={() => go(-1)} disabled={step === 0}>
+            <Button type="button" variant="outline" onClick={() => go(-1)} disabled={step === 0 || navLocked}>
               <ChevronLeft className="h-4 w-4" />Back
             </Button>
             {isReview ? (
-              <Button type="submit" disabled={isPending} className="min-w-[140px]">
+              <Button type="submit" disabled={isPending || navLocked} className="min-w-[140px]">
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Finish
               </Button>
             ) : (
-              <Button type="button" onClick={next}>Next<ChevronRight className="h-4 w-4" /></Button>
+              <Button type="button" onClick={next} disabled={navLocked}>Next<ChevronRight className="h-4 w-4" /></Button>
             )}
           </div>
         </form>
