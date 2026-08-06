@@ -17,8 +17,8 @@ export const createLetterTemplate = async (req: AuthenticatedRequest, res: Respo
   } catch (error) { next(error); }
 };
 
-export const getLetterTemplates = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Templates retrieved", await service.listTemplates()); } catch (error) { next(error); }
+export const getLetterTemplates = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Templates retrieved", await service.listTemplates(req.query as Record<string, string>)); } catch (error) { next(error); }
 };
 
 export const getLetterTemplateById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {

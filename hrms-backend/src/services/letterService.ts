@@ -6,6 +6,7 @@ import type {
   CreateLetterTemplateInput, UpdateLetterTemplateInput, GenerateLetterInput, UpdateGeneratedLetterInput,
 } from "../validations/letterValidation.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex } from "../utils/query.js";
 
 const LETTER_POP = [
   { path: "employee", select: "name employeeCode designation department joiningDate" },
@@ -60,8 +61,10 @@ export class LetterService {
     return LetterTemplate.create({ organization: getOrgId(), ...input, createdBy });
   }
 
-  async listTemplates() {
-    return LetterTemplate.find(scoped({})).sort({ name: 1 });
+  async listTemplates(query: { search?: string } = {}) {
+    const filter: Record<string, unknown> = scoped({});
+    if (query.search) filter.name = searchRegex(query.search);
+    return LetterTemplate.find(filter).sort({ name: 1 });
   }
 
   async getTemplateById(id: string) {

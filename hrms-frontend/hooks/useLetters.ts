@@ -12,10 +12,10 @@ function errMsg(e: unknown, f: string) {
 }
 
 // ── Templates ──────────────────────────────────────────────────────────────
-export const useLetterTemplates = () =>
+export const useLetterTemplates = (params?: Record<string, string>) =>
   useQuery({
-    queryKey: TEMPLATES_KEY,
-    queryFn: async () => (await api.get<ApiResponse<LetterTemplate[]>>("/letters/templates")).data.data ?? [],
+    queryKey: [...TEMPLATES_KEY, params],
+    queryFn: async () => (await api.get<ApiResponse<LetterTemplate[]>>("/letters/templates", { params })).data.data ?? [],
   });
 
 export const useCreateLetterTemplate = () => {
