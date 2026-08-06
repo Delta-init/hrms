@@ -23,13 +23,18 @@ export const authenticate = async (
     const decoded = verifyAccessToken(token);
 
     // Verify user still exists and is active
-    const user = await User.findById(decoded.userId).select("status organization");
+    const user = await User.findById(decoded.userId).select("status organization tokenVersion");
     if (!user) {
       sendError(res, "User no longer exists", 401);
       return;
     }
     if (user.status === "inactive") {
       sendError(res, "Your account has been deactivated. Contact an administrator.", 403);
+      return;
+    }
+    // Revoked by a logout / password change / admin action since it was issued.
+    if ((decoded.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
+      sendError(res, "Session expired. Please sign in again.", 401);
       return;
     }
 

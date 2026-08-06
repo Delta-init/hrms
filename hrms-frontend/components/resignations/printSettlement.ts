@@ -1,13 +1,14 @@
 import type { FinalSettlement } from "@/types";
+import { escapeHtml as e } from "@/lib/utils";
 
 /** Opens a print-ready full-&-final settlement statement in a new window. */
 export function printSettlement(s: FinalSettlement, emp: { name?: string; employeeCode?: string; designation?: string } | null, lastWorkingDay?: string) {
-  const money = (n: number) => `${s.currency} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (n: number) => `${e(s.currency)} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const rows = (arr: { label: string; amount: number }[]) =>
-    arr.map((l) => `<tr><td>${l.label}</td><td class="r">${money(l.amount)}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">—</td></tr>`;
+    arr.map((l) => `<tr><td>${e(l.label)}</td><td class="r">${money(l.amount)}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">—</td></tr>`;
   const lwd = lastWorkingDay ? new Date(lastWorkingDay).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Final Settlement ${emp?.name ?? ""}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Final Settlement ${e(emp?.name)}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0} body{font-family:Inter,Arial,sans-serif;color:#0f172a;padding:32px;font-size:13px}
     .sheet{max-width:720px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
@@ -33,9 +34,9 @@ export function printSettlement(s: FinalSettlement, emp: { name?: string; employ
       </div>
       <div class="body">
         <div class="grid">
-          <div><div class="k">Employee</div><div class="v">${emp?.name ?? ""}</div></div>
-          <div><div class="k">Employee Code</div><div class="v">${emp?.employeeCode ?? ""}</div></div>
-          <div><div class="k">Designation</div><div class="v">${emp?.designation ?? "—"}</div></div>
+          <div><div class="k">Employee</div><div class="v">${e(emp?.name)}</div></div>
+          <div><div class="k">Employee Code</div><div class="v">${e(emp?.employeeCode)}</div></div>
+          <div><div class="k">Designation</div><div class="v">${emp?.designation ? e(emp.designation) : "—"}</div></div>
           <div><div class="k">Last Working Day</div><div class="v">${lwd}</div></div>
           <div><div class="k">Tenure</div><div class="v">${s.tenureYears} yrs</div></div>
           <div><div class="k">Basic (day rate)</div><div class="v">${money(s.basic)} (${money(s.dayRate)}/day)</div></div>
@@ -51,7 +52,7 @@ export function printSettlement(s: FinalSettlement, emp: { name?: string; employ
           </div>
         </div>
         <div class="net"><span class="l">NET PAYABLE</span><span class="a">${money(s.netPayable)}</span></div>
-        ${s.notes ? `<p style="margin-top:14px;color:#64748b">Note: ${s.notes}</p>` : ""}
+        ${s.notes ? `<p style="margin-top:14px;color:#64748b">Note: ${e(s.notes)}</p>` : ""}
       </div>
       <div class="foot">This is a system-generated settlement statement · Delta HRMS</div>
     </div>

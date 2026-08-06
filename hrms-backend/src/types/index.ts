@@ -99,6 +99,8 @@ export interface IUser extends Document {
   status: "active" | "inactive" | "invited";
   mustResetPassword: boolean;
   profileCompleted: boolean;
+  /** Bumped to invalidate every token previously issued to this user. */
+  tokenVersion: number;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -109,6 +111,8 @@ export interface JwtPayload {
   userId: string;
   email: string;
   roleId: string;
+  /** Must match the user's current tokenVersion, else the token is revoked. */
+  tokenVersion?: number;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -1124,5 +1128,12 @@ export interface IAuditLog extends Document {
   actorName: string;
   target?: Types.ObjectId | IUser | null;
   targetName?: string | null;
+  createdAt: Date;
+}
+
+export interface IConsumedTicket extends Document {
+  _id: Types.ObjectId;
+  jti: string;
+  expiresAt: Date;
   createdAt: Date;
 }

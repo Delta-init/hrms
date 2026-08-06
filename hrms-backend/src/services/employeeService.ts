@@ -140,6 +140,9 @@ export class EmployeeService {
 
     const role = await Role.findById(input.role);
     if (!role) throw Object.assign(new Error("Role not found"), { statusCode: 404 });
+    if (role.isSystemRole) {
+      throw Object.assign(new Error("This role cannot be assigned"), { statusCode: 403 });
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) throw Object.assign(new Error("A user with this email already exists"), { statusCode: 409 });

@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { env } from "../config/env.js";
 import type { JwtPayload } from "../types/index.js";
 
@@ -31,12 +32,17 @@ export interface ImpersonationTicket {
   userId?: string;
   impersonatorId?: string;
   impersonatorName?: string;
+  /** Unique id, recorded on redemption so a ticket can't be replayed. */
+  jti?: string;
+  exp?: number;
 }
 
 export const signTicket = (payload: ImpersonationTicket, expiresIn: string): string => {
-  return jwt.sign(payload, TICKET_SECRET, { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] });
+  return jwt.sign({ ...payload, jti: randomUUID() }, TICKET_SECRET, {
+    expiresIn: expiresIn as jwt.SignOptions["expiresIn"],
+  });
 };
 
 export const verifyTicket = (token: string): ImpersonationTicket => {
-  return jwt.verify(token, TICKET_SECRET) as ImpersonationTicket;
+  return jwt.verify(token, TICKET_SECRET, { algorithms: ["HS256"] }) as ImpersonationTicket;
 };

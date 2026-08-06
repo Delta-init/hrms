@@ -135,9 +135,9 @@ async function seed() {
         role: superAdminRole._id,
         designation: "System Administrator",
         status: "active",
-        mustResetPassword: false,
+        mustResetPassword: true,
       });
-      console.log(`✅ Super Admin user created: ${env.SUPER_ADMIN_EMAIL} (password: ${env.SUPER_ADMIN_PASSWORD})`);
+      console.log(`✅ Super Admin user created: ${env.SUPER_ADMIN_EMAIL} — set a password via /set-password before first sign-in.`);
     } else {
       console.log(`ℹ️  Super Admin user already exists: ${env.SUPER_ADMIN_EMAIL}`);
     }

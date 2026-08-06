@@ -33,6 +33,22 @@ export function formatDateTime(dateString: string): string {
   }) + " GST";
 }
 
+/**
+ * Escape a value for interpolation into an HTML string. Required by the print
+ * helpers, which build markup by hand and hand it to document.write — unlike
+ * React, that sink executes whatever tags it is given, and fields such as an
+ * employee's own name are user-settable.
+ */
+export function escapeHtml(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function getInitials(name: string): string {
   return name
     .split(" ")

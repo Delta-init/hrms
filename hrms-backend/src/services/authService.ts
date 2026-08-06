@@ -1,7 +1,9 @@
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
 import { AuditLog } from "../models/AuditLog.js";
+import { ConsumedTicket } from "../models/ConsumedTicket.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken, signTicket, verifyTicket } from "../utils/jwt.js";
+import type { ImpersonationTicket } from "../utils/jwt.js";
 import type { LoginInput, ChangePasswordInput, SetPasswordInput, CompleteProfileInput } from "../validations/authValidation.js";
 import type { IUser, IRole } from "../types/index.js";
 import { scoped } from "../utils/orgContext.js";
@@ -13,7 +15,7 @@ export class AuthService {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
       .populate("role")
-      .populate("organization", "name code logo settings");
+      .populate("organization", "name code logo settings.currency settings.timeZone");
 
     if (!user) {
       throw Object.assign(new Error("Invalid email or password"), { statusCode: 401 });
@@ -40,6 +42,7 @@ export class AuthService {
       userId: user._id.toString(),
       email: user.email,
       roleId: (user.role as { _id: { toString(): string } })._id.toString(),
+      tokenVersion: user.tokenVersion ?? 0,
     };
 
     const accessToken = signAccessToken(payload);
@@ -52,16 +55,25 @@ export class AuthService {
 
   async refreshToken(token: string) {
     const decoded = verifyRefreshToken(token);
-    const user = await User.findById(decoded.userId).select("status");
+    const user = await User.findById(decoded.userId).select("status role tokenVersion");
 
     if (!user || user.status === "inactive") {
+      throw Object.assign(new Error("Invalid refresh token"), { statusCode: 401 });
+    }
+    // A bumped tokenVersion (logout, password change, admin revoke) retires
+    // every token issued before it, including this refresh token.
+    if ((decoded.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
       throw Object.assign(new Error("Invalid refresh token"), { statusCode: 401 });
     }
 
     const payload = {
       userId: decoded.userId,
       email: decoded.email,
-      roleId: decoded.roleId,
+      // Re-read from the user rather than copying the old claim, so a role
+      // reassignment takes effect on the next refresh instead of persisting
+      // for the refresh token's full lifetime.
+      roleId: String(user.role),
+      tokenVersion: user.tokenVersion ?? 0,
     };
 
     const accessToken = signAccessToken(payload);
@@ -70,8 +82,14 @@ export class AuthService {
     return { accessToken, refreshToken: newRefreshToken };
   }
 
+  /** Invalidate every outstanding token for this user. */
+  async logout(userId: string) {
+    await User.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
+    return { message: "Signed out successfully" };
+  }
+
   async getProfile(userId: string) {
-    const user = await User.findById(userId).populate("role").populate("organization", "name code logo settings");
+    const user = await User.findById(userId).populate("role").populate("organization", "name code logo settings.currency settings.timeZone");
     if (!user) {
       throw Object.assign(new Error("User not found"), { statusCode: 404 });
     }
@@ -90,9 +108,22 @@ export class AuthService {
     }
 
     user.password = input.newPassword;
+    // Retire sessions issued against the old password; the caller gets a fresh
+    // pair back so changing your own password doesn't sign you out.
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
-    return { message: "Password changed successfully" };
+    const payload = {
+      userId: user._id.toString(),
+      email: user.email,
+      roleId: String(user.role),
+      tokenVersion: user.tokenVersion,
+    };
+    return {
+      message: "Password changed successfully",
+      accessToken: signAccessToken(payload),
+      refreshToken: signRefreshToken(payload),
+    };
   }
 
   /**
@@ -103,7 +134,7 @@ export class AuthService {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
       .populate("role")
-      .populate("organization", "name code logo settings");
+      .populate("organization", "name code logo settings.currency settings.timeZone");
 
     if (!user) {
       throw Object.assign(new Error("Invalid email or temporary password"), { statusCode: 401 });
@@ -117,12 +148,15 @@ export class AuthService {
     user.password = input.newPassword;
     user.mustResetPassword = false;
     if (user.status === "invited") user.status = "active";
+    // Setting a password retires anything issued against the temporary one.
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
     const payload = {
       userId: user._id.toString(),
       email: user.email,
       roleId: (user.role as { _id: { toString(): string } })._id.toString(),
+      tokenVersion: user.tokenVersion,
     };
 
     const accessToken = signAccessToken(payload);
@@ -196,7 +230,7 @@ export class AuthService {
   // ── Impersonation ──────────────────────────────────────────────────────────
   private tokensFor(user: IUser) {
     const roleId = (user.role as { _id?: { toString(): string } })?._id?.toString() ?? String(user.role);
-    const payload = { userId: user._id.toString(), email: user.email, roleId };
+    const payload = { userId: user._id.toString(), email: user.email, roleId, tokenVersion: user.tokenVersion ?? 0 };
     return { accessToken: signAccessToken(payload), refreshToken: signRefreshToken(payload) };
   }
 
@@ -224,6 +258,25 @@ export class AuthService {
     return { ticket, target: { id: targetId, name: target.name } };
   }
 
+  /**
+   * Record a ticket's jti so it can only be redeemed once. The unique index
+   * turns a concurrent or replayed second redemption into a duplicate-key
+   * error, which we surface as a plain 401.
+   */
+  private async consumeTicket(decoded: ImpersonationTicket) {
+    if (!decoded.jti) {
+      throw Object.assign(new Error("Invalid or expired ticket"), { statusCode: 401 });
+    }
+    try {
+      await ConsumedTicket.create({
+        jti: decoded.jti,
+        expiresAt: decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 4 * 60 * 60 * 1000),
+      });
+    } catch {
+      throw Object.assign(new Error("This ticket has already been used"), { statusCode: 401 });
+    }
+  }
+
   /** Exchange a ticket for a session (used by the NextAuth impersonate provider). */
   async exchange(ticket: string) {
     let decoded;
@@ -246,7 +299,7 @@ export class AuthService {
       // session was impersonating, without re-deriving it from anywhere else.
       const restoreTicket = signTicket(
         { kind: "restore", userId: decoded.impersonatorId, targetUserId: decoded.targetUserId },
-        "12h"
+        "4h"
       );
       await AuditLog.create({
         organization: target.organization,
@@ -265,8 +318,17 @@ export class AuthService {
     }
 
     if (decoded.kind === "restore") {
+      // Burn the ticket first: the unique index on jti makes a replayed copy
+      // fail here rather than mint a second admin session.
+      await this.consumeTicket(decoded);
+
       const admin = await User.findById(decoded.userId).populate("role");
       if (!admin) throw Object.assign(new Error("Session cannot be restored"), { statusCode: 401 });
+      // Same re-checks the impersonate branch does — an admin deactivated or
+      // demoted during the impersonation must not get their session back.
+      if (admin.status === "inactive") {
+        throw Object.assign(new Error("Session cannot be restored"), { statusCode: 401 });
+      }
       const { accessToken, refreshToken } = this.tokensFor(admin);
       const target = decoded.targetUserId ? await User.findById(decoded.targetUserId).select("name organization") : null;
       await AuditLog.create({

@@ -1,17 +1,18 @@
 import type { Payslip } from "@/types";
+import { escapeHtml as e } from "@/lib/utils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /** Opens a print-ready payslip in a new window (user saves as PDF). */
 export function printPayslip(p: Payslip) {
   const emp = typeof p.employee === "object" ? p.employee : null;
-  const money = (n: number) => `${p.currency} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (n: number) => `${e(p.currency)} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const [y, m] = p.month.split("-");
   const period = `${MONTHS[Number(m) - 1]} ${y}`;
   const rows = (arr: { label: string; amount: number }[]) =>
-    arr.map((l) => `<tr><td>${l.label}</td><td class="r">${money(l.amount)}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">—</td></tr>`;
+    arr.map((l) => `<tr><td>${e(l.label)}</td><td class="r">${money(l.amount)}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">—</td></tr>`;
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Payslip ${emp?.name ?? ""} ${period}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Payslip ${e(emp?.name)} ${period}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0} body{font-family:Inter,Arial,sans-serif;color:#0f172a;padding:32px;font-size:13px}
     .sheet{max-width:720px;margin:0 auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden}
@@ -33,13 +34,13 @@ export function printPayslip(p: Payslip) {
     <div class="sheet">
       <div class="head">
         <div><h1>Delta HRMS</h1><div class="p">Payslip · ${period}</div></div>
-        <span class="badge">${p.status}</span>
+        <span class="badge">${e(p.status)}</span>
       </div>
       <div class="body">
         <div class="grid">
-          <div><div class="k">Employee</div><div class="v">${emp?.name ?? ""}</div></div>
-          <div><div class="k">Employee Code</div><div class="v">${emp?.employeeCode ?? ""}</div></div>
-          <div><div class="k">Designation</div><div class="v">${emp?.designation ?? "—"}</div></div>
+          <div><div class="k">Employee</div><div class="v">${e(emp?.name)}</div></div>
+          <div><div class="k">Employee Code</div><div class="v">${e(emp?.employeeCode)}</div></div>
+          <div><div class="k">Designation</div><div class="v">${emp?.designation ? e(emp.designation) : "—"}</div></div>
           <div><div class="k">Pay Period</div><div class="v">${period}</div></div>
         </div>
         <div class="cols">
@@ -53,7 +54,7 @@ export function printPayslip(p: Payslip) {
           </div>
         </div>
         <div class="net"><span class="l">NET PAY</span><span class="a">${money(p.netPay)}</span></div>
-        ${p.notes ? `<p style="margin-top:14px;color:#64748b">Note: ${p.notes}</p>` : ""}
+        ${p.notes ? `<p style="margin-top:14px;color:#64748b">Note: ${e(p.notes)}</p>` : ""}
       </div>
       <div class="foot">This is a system-generated payslip · Delta HRMS</div>
     </div>

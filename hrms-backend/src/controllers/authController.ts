@@ -88,7 +88,16 @@ export const changePassword = async (req: AuthenticatedRequest, res: Response, n
       return;
     }
 
-    const result = await authService.changePassword(req.user!.userId, parsed.data);
+    const { message, ...tokens } = await authService.changePassword(req.user!.userId, parsed.data);
+    sendSuccess(res, message, tokens);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const logout = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await authService.logout(req.user!.userId);
     sendSuccess(res, result.message);
   } catch (error) {
     next(error);

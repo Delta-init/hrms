@@ -48,7 +48,10 @@ export const exitDetailsSchema = z.object({
 
 const settlementLineSchema = z.object({
   label: z.string().min(1).max(120),
-  amount: z.coerce.number(),
+  // Must be non-negative: earnings and deductions are summed with opposing signs,
+  // so a negative deduction would inflate net payable (and a negative earning
+  // would silently underpay).
+  amount: z.coerce.number().min(0, "Amount cannot be negative"),
 });
 
 /** Manual inputs that steer the settlement computation; auto lines (gratuity,

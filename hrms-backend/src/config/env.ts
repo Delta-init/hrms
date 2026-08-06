@@ -9,8 +9,10 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
   SUPER_ADMIN_NAME: z.string().default("Super Admin"),
-  SUPER_ADMIN_EMAIL: z.string().email().default("admin@hrms.com"),
-  SUPER_ADMIN_PASSWORD: z.string().default("Admin@12345"),
+  // No defaults: a deployment that forgets to set these must fail to boot rather
+  // than silently ship a well-known super-admin login.
+  SUPER_ADMIN_EMAIL: z.string().email("SUPER_ADMIN_EMAIL is required"),
+  SUPER_ADMIN_PASSWORD: z.string().min(1, "SUPER_ADMIN_PASSWORD is required"),
   CLIENT_URL: z.string().default("http://localhost:3000"),
 
   // SMTP (optional) — when unset, email sending is a logged no-op.

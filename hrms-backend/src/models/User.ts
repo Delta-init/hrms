@@ -57,6 +57,13 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    // Stamped into every issued token; bumping it invalidates all outstanding
+    // access and refresh tokens for this user (logout, password change, or an
+    // admin revoking a compromised session).
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
