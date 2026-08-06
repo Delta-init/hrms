@@ -1,47 +1,55 @@
 "use client";
-import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Trash2, ChevronDown, Check } from "lucide-react";
-import { useEmployee, useDeleteEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
+import { Suspense, useEffect } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { useEmployee } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
+import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
-import { getInitials, cn } from "@/lib/utils";
-import {
-  EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS,
-  type Employee, type EmployeeStatus,
-} from "@/types";
+import { getInitials } from "@/lib/utils";
+import { TITLE_LABELS, type Employee } from "@/types";
 
-const statusStyles: Record<string, string> = {
-  active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  probation: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  on_leave: "bg-violet-500/10 text-violet-600 border-violet-500/20",
-  notice_period: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  terminated: "bg-red-500/10 text-red-600 border-red-500/20",
-};
 const deptName = (e: Employee) => (e.department && typeof e.department === "object" ? e.department.name : null);
+const idOf = (v: unknown) => (v && typeof v === "object" ? (v as { _id: string })._id : (v as string) || "");
 
+const Spinner = () => <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+/**
+ * Suspense boundary for useSearchParams — without one Next refuses to
+ * prerender the route at build time.
+ */
 export default function EmployeeDetailPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <EmployeeDetail />
+    </Suspense>
+  );
+}
+
+function EmployeeDetail() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = String(params.id);
   const { data: e, isLoading } = useEmployee(id);
   const { hasPermission } = useAuth();
   const canEdit = hasPermission("employees", "edit");
-  const canDelete = hasPermission("employees", "delete");
-  const { mutate: remove, isPending: deleting } = useDeleteEmployee();
-  const { mutate: update, isPending: updatingStatus } = useUpdateEmployee();
 
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  // Someone with a login is read on their user page, which carries the same
+  // profile plus their cards, loans, resignation and increments. Redirecting
+  // here rather than rewriting every link means the org chart, the dashboard
+  // widgets and the employee list all keep working untouched.
+  const linkedUserId = e ? idOf(e.user) : "";
+  const stayHere = searchParams.get("view") === "employee";
+  const redirecting = !!linkedUserId && !stayHere;
 
-  if (isLoading || !e) {
-    return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  useEffect(() => {
+    if (redirecting) router.replace(`/users/${linkedUserId}`);
+  }, [redirecting, linkedUserId, router]);
+
+  if (isLoading || !e || redirecting) return <Spinner />;
 
   return (
     <div>
@@ -58,13 +66,7 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="capitalize">{EMPLOYMENT_TYPE_LABELS[e.employmentType]}</Badge>
-            {canEdit ? (
-              <StatusChanger status={e.status} pending={updatingStatus} onChange={(s) => update({ id: e._id, data: { status: s } })} />
-            ) : (
-              <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span>
-            )}
-            {canDelete && <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/5 hover:text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 className="h-3.5 w-3.5" />Delete</Button>}
+            <EmployeeAdminControls employee={e} />
           </div>
         </div>
       </Card>
@@ -74,39 +76,6 @@ export default function EmployeeDetailPage() {
       <div className="mt-6">
         <EmployeeDocumentsPanel employeeId={e._id} canEdit={canEdit} />
       </div>
-
-      <ConfirmDialog
-        open={deleteOpen} onOpenChange={setDeleteOpen}
-        title="Delete employee" description={`${e.name} (${e.employeeCode}) will be permanently removed.`}
-        isPending={deleting}
-        onConfirm={() => remove(e._id, { onSuccess: () => router.push("/employees") })}
-      />
     </div>
-  );
-}
-
-/** Inline status pill that opens a dropdown to change employment status. */
-function StatusChanger({ status, pending, onChange }: {
-  status: EmployeeStatus; pending: boolean; onChange: (s: EmployeeStatus) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={pending}>
-        <button className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity hover:opacity-80", statusStyles[status])}>
-          {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          {EMPLOYEE_STATUS_LABELS[status]}
-          <ChevronDown className="h-3 w-3 opacity-70" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {(Object.keys(EMPLOYEE_STATUS_LABELS) as EmployeeStatus[]).map((s) => (
-          <DropdownMenuItem key={s} className="cursor-pointer" onClick={() => s !== status && onChange(s)}>
-            <span className={cn("mr-2 h-2 w-2 rounded-full", statusStyles[s].split(" ")[0])} />
-            {EMPLOYEE_STATUS_LABELS[s]}
-            {s === status && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

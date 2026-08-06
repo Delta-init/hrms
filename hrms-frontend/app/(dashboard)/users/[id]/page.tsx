@@ -17,6 +17,7 @@ import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
 import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
+import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { getInitials, cn } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
@@ -73,9 +74,12 @@ export default function UserDetailPage() {
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Mail className="h-3.5 w-3.5" />{user.email}{user.designation ? ` · ${user.designation}` : ""}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{roleName}</Badge>
+            {/* Account status — whether they can sign in. Distinct from the
+                employment status the controls beside it change. */}
             <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[user.status] ?? statusStyles.inactive)}>{user.status}</span>
+            {employee && <EmployeeAdminControls employee={employee} afterDelete={() => router.push("/users")} />}
           </div>
         </div>
       </Card>
@@ -89,7 +93,7 @@ export default function UserDetailPage() {
           <div>
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-muted-foreground">Linked employee · <span className="font-medium text-foreground">{employee.employeeCode}</span></p>
-              <Link href={`/employees/${employee._id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Full employee page <ArrowUpRight className="h-3 w-3" /></Link>
+              <Link href={`/employees/${employee._id}?view=employee`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">Employee record <ArrowUpRight className="h-3 w-3" /></Link>
             </div>
             <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} variant="core" />
           </div>
