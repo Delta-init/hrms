@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const moduleEnum = z.enum(["leave", "regularization", "reimbursements"]);
+export const moduleEnum = z.enum(["leave", "regularization", "reimbursements", "confirmations"]);
 
 const stepSchema = z.object({
   role: z.string().min(1, "Role is required"),

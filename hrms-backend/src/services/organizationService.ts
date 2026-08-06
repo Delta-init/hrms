@@ -7,6 +7,7 @@ import { Attendance } from "../models/Attendance.js";
 import { AttendancePenaltyPolicy } from "../models/AttendancePenaltyPolicy.js";
 import { Card } from "../models/Card.js";
 import { CompOffCredit } from "../models/CompOffCredit.js";
+import { Confirmation } from "../models/Confirmation.js";
 import { Department } from "../models/Department.js";
 import { Employee } from "../models/Employee.js";
 import { GeneratedLetter } from "../models/GeneratedLetter.js";
@@ -42,7 +43,7 @@ import { searchRegex, parsePagination } from "../utils/query.js";
 /** Every collection that carries an `organization` ref — deleted in full when the tenant is removed. */
 const ORG_SCOPED_MODELS: { deleteMany: (filter: Record<string, unknown>) => Promise<unknown> }[] = [
   Announcement, Appraisal, ApprovalWorkflow, Asset, Attendance, AttendancePenaltyPolicy,
-  Card, CompOffCredit, Department, Employee, GeneratedLetter, HelpdeskTicket, Holiday,
+  Card, CompOffCredit, Confirmation, Department, Employee, GeneratedLetter, HelpdeskTicket, Holiday,
   LeavePolicy, LeaveRequest, LetterTemplate, Loan, OnboardingChecklist, OnboardingTemplate,
   OneTimeAdjustment, Overtime, PayrollChecklistItem, Payslip, PerformanceCycle, Regularization,
   Reimbursement, Resignation, RosterAssignment, SalaryIncrement, SalaryStructure,

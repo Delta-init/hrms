@@ -1,8 +1,10 @@
 "use client";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning, Home, Award, Megaphone, Pin,
+  ShieldCheck, UserPlus, UserMinus,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useAnnouncements } from "@/hooks/useAnnouncements";
@@ -10,24 +12,36 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, cn } from "@/lib/utils";
+import { ConfirmationDialog } from "@/components/confirmations/ConfirmationDialog";
 import {
   LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS,
-  type LeaveLite, type RegularizationLite,
+  type LeaveLite, type RegularizationLite, type DueConfirmation,
 } from "@/types";
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } } };
 const fmtDate = (iso: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(new Date(iso));
 const nameOf = (u?: { name: string } | string | null) => (u && typeof u === "object" ? u.name : "—");
+/** "2 days ago" / "today" for a past date. */
+const daysAgo = (iso: string) => {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "today";
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+};
 
 export function HrDashboard() {
   const { user } = useAuth();
+  const [confirmTarget, setConfirmTarget] = useState<DueConfirmation | null>(null);
   const { data, isLoading } = useDashboardSummary();
   const { data: announcementsData } = useAnnouncements({ limit: "5" });
   const announcements = announcementsData?.data ?? [];
   const firstName = user?.name?.split(" ")[0] ?? "there";
   const today = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
-  const c = data?.counts ?? { birthdays: 0, anniversaries: 0, onLeaveToday: 0, workingFromHomeToday: 0, pendingLeaves: 0, pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0 };
+  const c = data?.counts ?? {
+    birthdays: 0, anniversaries: 0, onLeaveToday: 0, workingFromHomeToday: 0, pendingLeaves: 0,
+    pendingRegularizations: 0, servingNotice: 0, expiringDocuments: 0,
+    upcomingBirthdays: 0, upcomingAnniversaries: 0, newJoiners: 0, recentResignations: 0, dueConfirmations: 0,
+  };
 
   const stats = [
     { label: "Birthdays today", value: c.birthdays, icon: Cake, tint: "text-pink-600 bg-pink-500/10", href: undefined },
@@ -37,6 +51,7 @@ export function HrDashboard() {
     { label: "Pending regularizations", value: c.pendingRegularizations, icon: ClipboardCheck, tint: "text-sky-600 bg-sky-500/10", href: "/regularization" },
     { label: "Docs expiring", value: c.expiringDocuments, icon: FileWarning, tint: "text-rose-600 bg-rose-500/10", href: "/employees" },
     { label: "Serving notice", value: c.servingNotice, icon: LogOut, tint: "text-orange-600 bg-orange-500/10", href: "/resignations" },
+    { label: "Confirmation due", value: c.dueConfirmations, icon: ShieldCheck, tint: "text-emerald-600 bg-emerald-500/10", href: undefined },
   ];
 
   return (
@@ -52,7 +67,7 @@ export function HrDashboard() {
       </motion.div>
 
       {/* Stat tiles */}
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-7">
+      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-8">
         {stats.map((s) => {
           const body = (
             <Card className={cn("group p-5 transition-shadow", s.href && "cursor-pointer hover:shadow-lg")}>
@@ -69,40 +84,119 @@ export function HrDashboard() {
       </motion.div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Birthdays */}
-        <Panel icon={PartyPopper} title="Today's birthdays" tint="text-pink-600">
-          {data?.birthdays.length ? (
+        {/* Confirmation due — probation ending */}
+        <Panel icon={ShieldCheck} title="Confirmation due (next month)" tint="text-emerald-600">
+          {data?.dueConfirmations?.length ? (
             <div className="space-y-2">
-              {data.birthdays.map((b) => (
+              {data.dueConfirmations.map((c) => (
+                <button
+                  key={c.employee._id}
+                  type="button"
+                  onClick={() => !c.pendingId && setConfirmTarget(c)}
+                  disabled={!!c.pendingId}
+                  className="flex w-full items-center gap-3 rounded-lg border border-border p-2.5 text-left transition-colors enabled:hover:border-primary/40 enabled:hover:bg-muted/40 disabled:cursor-default"
+                >
+                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                    c.overdue ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600")}>
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{c.employee.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[c.employee.designation, c.employee.employeeCode].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  {c.pendingId ? (
+                    <Badge variant="secondary">Awaiting approval</Badge>
+                  ) : (
+                    <span className={cn("shrink-0 text-xs font-medium", c.overdue ? "text-destructive" : "text-muted-foreground")}>
+                      {c.overdue ? `${Math.abs(c.daysLeft)}d overdue` : `in ${c.daysLeft} days`}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : <Empty text="No confirmations due." />}
+        </Panel>
+
+        {/* Birthdays — next month */}
+        <Panel icon={PartyPopper} title="Birthdays (next month)" tint="text-pink-600">
+          {data?.upcomingBirthdays?.length ? (
+            <div className="space-y-2">
+              {data.upcomingBirthdays.slice(0, 8).map((b) => (
                 <div key={b._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pink-500/10 text-pink-600"><Cake className="h-4 w-4" /></div>
                   <div className="min-w-0 flex-1">
                     <Link href={`/employees/${b._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{b.name}</Link>
                     <p className="truncate text-xs text-muted-foreground">{[b.designation, b.department].filter(Boolean).join(" · ") || b.employeeCode}</p>
                   </div>
-                  <span className="text-lg">🎂</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{b.daysUntil === 0 ? "Today 🎂" : `in ${b.daysUntil}d`}</span>
                 </div>
               ))}
             </div>
-          ) : <Empty text="No birthdays today." />}
+          ) : <Empty text="No birthdays in the next month." />}
         </Panel>
 
-        {/* Work anniversaries */}
-        <Panel icon={Award} title="Work anniversaries" tint="text-amber-600">
-          {data?.anniversaries.length ? (
+        {/* Work anniversaries — next week */}
+        <Panel icon={Award} title="Work anniversaries (this week)" tint="text-amber-600">
+          {data?.upcomingAnniversaries?.length ? (
             <div className="space-y-2">
-              {data.anniversaries.map((a) => (
+              {data.upcomingAnniversaries.map((a) => (
                 <div key={a._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-600"><Award className="h-4 w-4" /></div>
                   <div className="min-w-0 flex-1">
                     <Link href={`/employees/${a._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{a.name}</Link>
-                    <p className="truncate text-xs text-muted-foreground">{[a.designation, a.department].filter(Boolean).join(" · ") || a.employeeCode}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {a.daysUntil === 0 ? "Today" : `in ${a.daysUntil}d`}
+                      {a.designation ? ` · ${a.designation}` : ""}
+                    </p>
                   </div>
                   <Badge variant="secondary">{a.years} {a.years === 1 ? "year" : "years"}</Badge>
                 </div>
               ))}
             </div>
-          ) : <Empty text="No work anniversaries today." />}
+          ) : <Empty text="No anniversaries this week." />}
+        </Panel>
+
+        {/* New joiners */}
+        <Panel icon={UserPlus} title="New joiners (last month)" tint="text-sky-600" href="/employees">
+          {data?.newJoiners?.length ? (
+            <div className="space-y-2">
+              {data.newJoiners.slice(0, 8).map((j) => (
+                <div key={j._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600"><UserPlus className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/employees/${j._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{j.name}</Link>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[j.designation, typeof j.department === "object" ? j.department?.name : null].filter(Boolean).join(" · ") || j.employeeCode}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{daysAgo(j.joiningDate)}</span>
+                </div>
+              ))}
+            </div>
+          ) : <Empty text="No new joiners this month." />}
+        </Panel>
+
+        {/* Resigned */}
+        <Panel icon={UserMinus} title="Resigned (last month)" tint="text-rose-600" href="/resignations">
+          {data?.recentResignations?.length ? (
+            <div className="space-y-2">
+              {data.recentResignations.slice(0, 8).map((r) => {
+                const emp = typeof r.employee === "object" ? r.employee : null;
+                return (
+                  <div key={r._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-500/10 text-rose-600"><UserMinus className="h-4 w-4" /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{emp?.name ?? "—"}</p>
+                      <p className="truncate text-xs text-muted-foreground">{[emp?.designation, emp?.employeeCode].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">{daysAgo(r.resignationDate)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <Empty text="No resignations this month." />}
         </Panel>
 
         {/* On leave today */}
@@ -185,6 +279,12 @@ export function HrDashboard() {
           </Panel>
         </div>
       </div>
+
+      <ConfirmationDialog
+        open={!!confirmTarget}
+        onOpenChange={(o) => !o && setConfirmTarget(null)}
+        due={confirmTarget}
+      />
     </div>
   );
 }

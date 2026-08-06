@@ -1,15 +1,25 @@
 import cron from "node-cron";
 import { Role } from "../models/Role.js";
 import { User } from "../models/User.js";
+import { Organization } from "../models/Organization.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { birthdaysOn } from "../services/dashboardService.js";
 
-/** Email addresses of all active HR Manager users. */
-async function hrRecipients(): Promise<string[]> {
+/**
+ * Active HR Manager addresses **within one organization**.
+ *
+ * Scoped deliberately: this job runs outside a request, so there is no ambient
+ * org context to inherit. Without the filter it emailed every tenant's employee
+ * names, codes and departments to every tenant's HR — a cross-tenant leak that
+ * left the system over email.
+ */
+async function hrRecipients(orgId: string): Promise<string[]> {
   const role = await Role.findOne({ roleName: "HR Manager", organization: null }).select("_id");
   if (!role) return [];
-  const users = await User.find({ role: role._id, status: { $ne: "inactive" } }).select("email").lean();
+  const users = await User.find({ role: role._id, organization: orgId, status: { $ne: "inactive" } })
+    .select("email")
+    .lean();
   return users.map((u) => u.email).filter(Boolean);
 }
 
@@ -35,22 +45,42 @@ function buildHtml(birthdays: Array<{ name: string; employeeCode?: string; depar
   </div>`;
 }
 
-/** Find today's birthdays and email HR. Safe to call manually (returns a summary). */
+/**
+ * Find today's birthdays and email HR — one email per organization, containing
+ * only that organization's people. Safe to call manually (returns a summary).
+ */
 export async function runBirthdayCheck(now = new Date()) {
-  const birthdays = await birthdaysOn(now);
-  if (birthdays.length === 0) {
-    console.log("🎂 birthday check: none today.");
-    return { birthdays: 0, emailed: false, recipients: 0 };
-  }
-  const recipients = await hrRecipients();
+  const orgs = await Organization.find({ status: "active" }).select("_id name").lean();
   const dateLabel = now.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
-  const emailed = await sendMail({
-    to: recipients,
-    subject: `🎂 ${birthdays.length} birthday${birthdays.length === 1 ? "" : "s"} today — ${dateLabel}`,
-    html: buildHtml(birthdays, dateLabel),
-    text: `Today's birthdays: ${birthdays.map((b) => b.name).join(", ")}`,
-  });
-  return { birthdays: birthdays.length, emailed, recipients: recipients.length };
+
+  let totalBirthdays = 0;
+  let emailsSent = 0;
+  let totalRecipients = 0;
+
+  for (const org of orgs) {
+    const orgId = String(org._id);
+    const birthdays = await birthdaysOn(now, orgId);
+    if (birthdays.length === 0) continue;
+    totalBirthdays += birthdays.length;
+
+    const recipients = await hrRecipients(orgId);
+    if (recipients.length === 0) {
+      console.log(`🎂 ${org.name}: ${birthdays.length} birthday(s) but no HR recipients — skipped.`);
+      continue;
+    }
+    totalRecipients += recipients.length;
+
+    const emailed = await sendMail({
+      to: recipients,
+      subject: `🎂 ${birthdays.length} birthday${birthdays.length === 1 ? "" : "s"} today — ${dateLabel}`,
+      html: buildHtml(birthdays, dateLabel),
+      text: `Today's birthdays: ${birthdays.map((b) => b.name).join(", ")}`,
+    });
+    if (emailed) emailsSent += 1;
+  }
+
+  if (totalBirthdays === 0) console.log("🎂 birthday check: none today.");
+  return { birthdays: totalBirthdays, emailed: emailsSent > 0, emails: emailsSent, recipients: totalRecipients };
 }
 
 /** Schedule the daily birthday check (server local time). */

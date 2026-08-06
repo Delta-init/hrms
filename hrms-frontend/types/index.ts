@@ -34,6 +34,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "confirmations",
   "letters",
   "announcements",
   "surveys",
@@ -65,6 +66,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   reimbursements: "Reimbursements",
   assets: "Assets",
   onboardingTasks: "Onboarding Tasks",
+  confirmations: "Confirmations",
   letters: "Letters",
   announcements: "Announcements",
   surveys: "Surveys",
@@ -470,7 +472,7 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
 };
 
 // ─── Approval workflow (configurable multi-step approval chains) ────────────
-export type ApprovableModule = "leave" | "regularization" | "reimbursements";
+export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations";
 
 export interface ApprovalWorkflowStep {
   order: number;
@@ -978,7 +980,80 @@ export interface DashboardSummary {
   pendingRegularizations: RegularizationLite[];
   servingNotice: NoticeLite[];
   expiringDocuments: ExpiringDocument[];
-  counts: { birthdays: number; anniversaries: number; onLeaveToday: number; workingFromHomeToday: number; pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number };
+  upcomingBirthdays: UpcomingPerson[];
+  upcomingAnniversaries: UpcomingPerson[];
+  newJoiners: JoinerLite[];
+  recentResignations: ResignationLite[];
+  dueConfirmations: DueConfirmation[];
+  counts: {
+    birthdays: number; anniversaries: number; onLeaveToday: number; workingFromHomeToday: number;
+    pendingLeaves: number; pendingRegularizations: number; servingNotice: number; expiringDocuments: number;
+    upcomingBirthdays: number; upcomingAnniversaries: number; newJoiners: number;
+    recentResignations: number; dueConfirmations: number;
+  };
+}
+
+export interface UpcomingPerson {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  department?: string | null;
+  date: string;
+  daysUntil: number;
+  /** Completed years at the upcoming anniversary. Absent for birthdays. */
+  years?: number;
+}
+
+export interface JoinerLite {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  joiningDate: string;
+  department?: { name: string } | string | null;
+}
+
+export interface ResignationLite {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  resignationDate: string;
+  lastWorkingDay?: string;
+  status: ResignationStatus;
+}
+
+// ─── Probation confirmation ─────────────────────────────────────────────────
+export type ConfirmationStatus = "pending" | "confirmed" | "rejected";
+
+export interface DueConfirmation {
+  employee: {
+    _id: string; name: string; employeeCode?: string; designation?: string;
+    location?: string; joiningDate?: string; probationPeriodDays?: number;
+  };
+  dueDate: string;
+  daysLeft: number;
+  overdue: boolean;
+  /** Set when a confirmation is already in flight for this employee. */
+  pendingId?: string;
+}
+
+export interface Confirmation {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string; location?: string; joiningDate?: string; probationPeriodDays?: number } | string | null;
+  dueDate?: string | null;
+  confirmationDate: string;
+  status: ConfirmationStatus;
+  notes?: string;
+  initiatedBy?: { _id: string; name: string } | string | null;
+  reviewedBy?: { _id: string; name: string } | string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: ApprovalStepSnapshot[];
+  approvalTrail?: ApprovalTrailEntry[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Announcements ────────────────────────────────────────────────────────────

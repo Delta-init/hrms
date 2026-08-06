@@ -17,7 +17,7 @@ const approvalStepSchema = new Schema(
 const approvalWorkflowSchema = new Schema<IApprovalWorkflow>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
-    module: { type: String, enum: ["leave", "regularization", "reimbursements"], required: true },
+    module: { type: String, enum: ["leave", "regularization", "reimbursements", "confirmations"], required: true },
     enabled: { type: Boolean, default: false },
     steps: { type: [approvalStepSchema], default: [] },
   },

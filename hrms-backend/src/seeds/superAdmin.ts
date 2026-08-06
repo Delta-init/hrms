@@ -46,6 +46,7 @@ const hrManagerPermissions: PermissionsMap = {
   reimbursements: { ...fullAccess },
   assets: { ...fullAccess },
   onboardingTasks: { ...fullAccess },
+  confirmations: { ...fullAccess },
   letters: { ...fullAccess },
   announcements: { ...fullAccess },
   surveys: { ...fullAccess },

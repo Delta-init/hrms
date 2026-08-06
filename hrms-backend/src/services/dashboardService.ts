@@ -5,6 +5,34 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
 import { orgFilter, getOrgId, scoped } from "../utils/orgContext.js";
+import { confirmationsDue } from "./confirmationService.js";
+
+/**
+ * The month/day keys (month*100 + day) covered by a window starting today.
+ *
+ * Enumerated rather than compared as a range because the window wraps the year
+ * end — 20 Dec + 30 days lands on 19 Jan, where "month/day between start and
+ * end" is false for every date in between. Date.UTC normalises overflow, so
+ * month ends and leap days need no special handling.
+ */
+function monthDayKeys(from: Date, withinDays: number): number[] {
+  const keys: number[] = [];
+  for (let i = 0; i <= withinDays; i++) {
+    const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + i));
+    keys.push((d.getUTCMonth() + 1) * 100 + d.getUTCDate());
+  }
+  return keys;
+}
+
+/** Whole days from today until the next occurrence of a month/day. */
+function daysUntilNext(from: Date, month: number, day: number): number {
+  const start = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  for (let i = 0; i <= 366; i++) {
+    const d = new Date(start + i * 86_400_000);
+    if (d.getUTCMonth() + 1 === month && d.getUTCDate() === day) return i;
+  }
+  return 0;
+}
 
 /** Employees whose birthday (month + day of dob) falls on the given date. */
 export async function birthdaysOn(date = new Date(), orgId?: string | null) {
@@ -55,6 +83,103 @@ export async function anniversariesOn(date = new Date(), orgId?: string | null) 
     },
     { $sort: { name: 1 } },
   ]);
+}
+
+interface UpcomingPerson {
+  _id: unknown;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  department?: string | null;
+  date: Date;
+  daysUntil: number;
+  /** Completed years on the upcoming anniversary. Absent for birthdays. */
+  years?: number;
+}
+
+/** Shared lookahead over a recurring month/day field (dob or joiningDate). */
+async function upcomingByMonthDay(
+  field: "dob" | "joiningDate",
+  withinDays: number,
+  orgId?: string | null,
+  withYears = false
+): Promise<UpcomingPerson[]> {
+  const now = new Date();
+  const keys = monthDayKeys(now, withinDays);
+
+  const match: Record<string, unknown> = { [field]: { $ne: null }, status: { $ne: "terminated" } };
+  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
+
+  const rows = await Employee.aggregate([
+    { $match: match },
+    { $addFields: { _m: { $month: `$${field}` }, _d: { $dayOfMonth: `$${field}` } } },
+    { $addFields: { _key: { $add: [{ $multiply: ["$_m", 100] }, "$_d"] } } },
+    { $match: { _key: { $in: keys } } },
+    { $lookup: { from: "departments", localField: "department", foreignField: "_id", as: "dept" } },
+    {
+      $project: {
+        name: 1, employeeCode: 1, designation: 1, email: 1, _m: 1, _d: 1,
+        date: `$${field}`,
+        department: { $ifNull: [{ $arrayElemAt: ["$dept.name", 0] }, null] },
+      },
+    },
+  ]);
+
+  const out: UpcomingPerson[] = rows.map((r) => {
+    const daysUntil = daysUntilNext(now, r._m, r._d);
+    const person: UpcomingPerson = {
+      _id: r._id, name: r.name, employeeCode: r.employeeCode, designation: r.designation,
+      department: r.department, date: r.date, daysUntil,
+    };
+    if (withYears) {
+      // Years completed as at the upcoming occurrence, not as at today.
+      const at = new Date(Date.now() + daysUntil * 86_400_000);
+      person.years = at.getUTCFullYear() - new Date(r.date).getUTCFullYear();
+    }
+    return person;
+  });
+
+  // Anniversaries only count once a full year is up.
+  const filtered = withYears ? out.filter((p) => (p.years ?? 0) >= 1) : out;
+  filtered.sort((a, b) => a.daysUntil - b.daysUntil || a.name.localeCompare(b.name));
+  return filtered;
+}
+
+/** Birthdays falling within the next `withinDays` days (default a month). */
+export async function upcomingBirthdays(withinDays = 30, orgId?: string | null) {
+  return upcomingByMonthDay("dob", withinDays, orgId);
+}
+
+/** Work anniversaries falling within the next `withinDays` days (default a week). */
+export async function upcomingAnniversaries(withinDays = 7, orgId?: string | null) {
+  return upcomingByMonthDay("joiningDate", withinDays, orgId, true);
+}
+
+/** Employees who joined in the last `withinDays` days, most recent first. */
+export async function recentJoiners(withinDays = 30, orgId?: string | null) {
+  const since = new Date(Date.now() - withinDays * 86_400_000);
+  const match: Record<string, unknown> = {
+    joiningDate: { $ne: null, $gte: since, $lte: new Date() },
+    status: { $ne: "terminated" },
+  };
+  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
+  return Employee.find(match)
+    .select("name employeeCode designation joiningDate")
+    .populate("department", "name")
+    .sort({ joiningDate: -1 })
+    .lean();
+}
+
+/** Employees who resigned in the last `withinDays` days, most recent first. */
+export async function recentResignations(withinDays = 30, orgId?: string | null) {
+  const since = new Date(Date.now() - withinDays * 86_400_000);
+  const match: Record<string, unknown> = { resignationDate: { $gte: since, $lte: new Date() } };
+  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
+  return Resignation.find(match)
+    .select("employee resignationDate lastWorkingDay status")
+    .populate("employee", "name employeeCode designation")
+    .sort({ resignationDate: -1 })
+    .lean();
 }
 
 export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card";
@@ -237,7 +362,7 @@ export class DashboardService {
     const end = new Date(now); end.setHours(23, 59, 59, 999);
 
     const org = orgFilter();
-    const [birthdays, anniversaries, onLeaveToday, workingFromHomeToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs] = await Promise.all([
+    const [birthdays, anniversaries, onLeaveToday, workingFromHomeToday, pendingLeaves, pendingRegs, pendingLeaveCount, pendingRegCount, servingNotice, servingNoticeCount, expiringDocs, upcomingBdays, upcomingAnnivs, joiners, resignations, dueConfirmations] = await Promise.all([
       birthdaysOn(now, getOrgId()),
       anniversariesOn(now, getOrgId()),
       // Working-from-home is not "away" — exclude it so this reflects who's
@@ -256,12 +381,22 @@ export class DashboardService {
         .populate("employee", "name employeeCode designation").sort({ lastWorkingDay: 1 }).limit(8).lean(),
       Resignation.countDocuments({ ...org, status: "accepted" }),
       expiringDocuments(90, getOrgId()),
+      upcomingBirthdays(30, getOrgId()),
+      upcomingAnniversaries(7, getOrgId()),
+      recentJoiners(30, getOrgId()),
+      recentResignations(30, getOrgId()),
+      confirmationsDue(30, getOrgId()),
     ]);
 
     return {
       date: start.toISOString().slice(0, 10),
       birthdays,
       anniversaries,
+      upcomingBirthdays: upcomingBdays,
+      upcomingAnniversaries: upcomingAnnivs,
+      newJoiners: joiners,
+      recentResignations: resignations,
+      dueConfirmations: dueConfirmations.slice(0, 8),
       onLeaveToday,
       workingFromHomeToday,
       pendingLeaves,
@@ -271,6 +406,11 @@ export class DashboardService {
       counts: {
         birthdays: birthdays.length,
         anniversaries: anniversaries.length,
+        upcomingBirthdays: upcomingBdays.length,
+        upcomingAnniversaries: upcomingAnnivs.length,
+        newJoiners: joiners.length,
+        recentResignations: resignations.length,
+        dueConfirmations: dueConfirmations.length,
         onLeaveToday: onLeaveToday.length,
         workingFromHomeToday: workingFromHomeToday.length,
         pendingLeaves: pendingLeaveCount,

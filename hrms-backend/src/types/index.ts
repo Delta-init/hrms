@@ -31,6 +31,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "confirmations",
   "letters",
   "announcements",
   "surveys",
@@ -653,7 +654,7 @@ export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 // ─── Approval workflow (configurable multi-step approval chains) ────────────
 /** Approvable modules that can have a configurable multi-step chain — the
  *  ones sharing the same pending → approved/rejected + reviewedBy shape. */
-export type ApprovableModule = "leave" | "regularization" | "reimbursements";
+export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations";
 
 export interface IApprovalStep {
   order: number;
@@ -839,6 +840,30 @@ export interface IResignation extends Document {
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Probation confirmation ─────────────────────────────────────────────────
+export type ConfirmationStatus = "pending" | "confirmed" | "rejected";
+
+export interface IConfirmation extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  /** Probation end derived at creation: joining date + probation days. */
+  dueDate?: Date | null;
+  confirmationDate: Date;
+  status: ConfirmationStatus;
+  notes?: string;
+  initiatedBy?: Types.ObjectId | IUser | null;
+  reviewedBy?: Types.ObjectId | IUser | null;
+  reviewedAt?: Date | null;
+  reviewNote?: string;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: IApprovalStepSnapshot[];
+  approvalTrail?: IApprovalTrailEntry[];
   createdAt: Date;
   updatedAt: Date;
 }
