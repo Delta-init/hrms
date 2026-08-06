@@ -4,8 +4,8 @@
     {
       "name": "hrms-web",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd hrms-frontend && bun run dev"],
-      "port": 3000,
+      "runtimeArgs": ["-c", "cd hrms-frontend && NEXTAUTH_URL=http://localhost:3011 bun run dev -- -p 3011"],
+      "port": 3011,
       "autoPort": false
     }
   ]
