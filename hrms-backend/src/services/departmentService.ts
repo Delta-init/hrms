@@ -14,14 +14,31 @@ const POP = [
 ];
 
 export class DepartmentService {
+  /** Resolve a mixed Employee/User roster to the employee ids behind it. */
+  private async resolveToEmployeeIds(refs: { kind?: string; ref: unknown }[]): Promise<string[]> {
+    const employeeIds: string[] = [];
+    const userIds: string[] = [];
+    for (const { kind, ref } of refs) {
+      if (!ref) continue;
+      (kind === "User" ? userIds : employeeIds).push(String(ref));
+    }
+    if (userIds.length) {
+      const linked = await Employee.find(scoped({ user: { $in: userIds } })).select("_id").lean();
+      employeeIds.push(...linked.map((e) => String(e._id)));
+    }
+    return [...new Set(employeeIds)];
+  }
+
   /**
-   * Keep `Employee.department` in step with a department's leader + members.
+   * Keep `Employee.department` and the reporting line in step with a
+   * department's leader + members.
    *
    * The two were previously independent: adding someone here recorded them on
    * the Department, but their own record still said they belonged nowhere — so
    * the roster and the employee-count (which is derived from
    * `Employee.department`) disagreed. This makes the department roster the
-   * source of truth in both directions.
+   * source of truth in both directions, and joining a team now also points the
+   * member at that team's leader as their manager.
    *
    * A member may be recorded as a login User rather than an Employee; those are
    * resolved through `Employee.user` so the same human is assigned either way.
@@ -32,21 +49,9 @@ export class DepartmentService {
     leaderKind: string | undefined,
     members: { kind: string; ref: unknown }[]
   ) {
-    const employeeIds: string[] = [];
-    const userIds: string[] = [];
-    const collect = (kind: string | undefined, ref: unknown) => {
-      if (!ref) return;
-      (kind === "User" ? userIds : employeeIds).push(String(ref));
-    };
-
-    collect(leaderKind, leader);
-    for (const m of members ?? []) collect(m.kind, m.ref);
-
-    if (userIds.length) {
-      const linked = await Employee.find(scoped({ user: { $in: userIds } })).select("_id").lean();
-      employeeIds.push(...linked.map((e) => String(e._id)));
-    }
-    const assigned = [...new Set(employeeIds)];
+    const leaderEmpIds = await this.resolveToEmployeeIds([{ kind: leaderKind, ref: leader }]);
+    const memberEmpIds = await this.resolveToEmployeeIds(members ?? []);
+    const assigned = [...new Set([...leaderEmpIds, ...memberEmpIds])];
 
     await Promise.all([
       assigned.length
@@ -57,6 +62,68 @@ export class DepartmentService {
       Employee.updateMany(
         scoped({ department: departmentId, _id: { $nin: assigned } }),
         { $set: { department: null } }
+      ),
+    ]);
+
+    await this.syncReportingLine(departmentId, leader, leaderKind, leaderEmpIds, memberEmpIds);
+  }
+
+  /**
+   * Point every member of a department at its team leader.
+   *
+   * Deliberately narrow about what it clears: someone dropped from the roster
+   * only loses their manager if it was *this* leader, so a reporting line set
+   * by hand elsewhere is never clobbered. The leader never reports to
+   * themselves, and an assignment that would close a reporting loop is skipped
+   * rather than written — the org chart tolerates cycles by promoting people to
+   * roots, but the underlying data would still be wrong.
+   */
+  private async syncReportingLine(
+    departmentId: unknown,
+    leader: unknown,
+    leaderKind: string | undefined,
+    leaderEmpIds: string[],
+    memberEmpIds: string[]
+  ) {
+    // No leader: release anyone still pointing at this department's old one.
+    if (!leader) {
+      await Employee.updateMany(
+        scoped({ department: departmentId, reportingTo: { $ne: null } }),
+        { $set: { reportingTo: null, reportingToKind: "Employee" } }
+      );
+      return;
+    }
+
+    const leaderSet = new Set(leaderEmpIds);
+    const candidates = memberEmpIds.filter((id) => !leaderSet.has(id));
+
+    // Walk the leader's own reporting chain once; anyone on it can't be given
+    // this leader as a manager without creating a loop.
+    const ancestors = new Set<string>();
+    let cursor: string | null = leaderEmpIds[0] ?? null;
+    while (cursor && !ancestors.has(cursor)) {
+      ancestors.add(cursor);
+      const node: { reportingTo?: unknown; reportingToKind?: string } | null =
+        await Employee.findById(cursor).select("reportingTo reportingToKind").lean();
+      if (!node?.reportingTo) break;
+      const [next] = await this.resolveToEmployeeIds([{ kind: node.reportingToKind, ref: node.reportingTo }]);
+      cursor = next ?? null;
+    }
+
+    const safe = candidates.filter((id) => !ancestors.has(id));
+
+    await Promise.all([
+      safe.length
+        ? Employee.updateMany(
+            scoped({ _id: { $in: safe } }),
+            { $set: { reportingTo: leader, reportingToKind: leaderKind ?? "Employee" } }
+          )
+        : Promise.resolve(),
+      // Former members who still report to this leader are released; a manager
+      // set independently of this department is left untouched.
+      Employee.updateMany(
+        scoped({ _id: { $nin: [...safe, ...leaderEmpIds] }, reportingTo: leader }),
+        { $set: { reportingTo: null, reportingToKind: "Employee" } }
       ),
     ]);
   }
