@@ -3,6 +3,7 @@ import { Suspense, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEmployee } from "@/hooks/useEmployees";
+import { useUser } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
@@ -43,13 +44,21 @@ function EmployeeDetail() {
   // widgets and the employee list all keep working untouched.
   const linkedUserId = e ? idOf(e.user) : "";
   const stayHere = searchParams.get("view") === "employee";
-  const redirecting = !!linkedUserId && !stayHere;
+  const wantRedirect = !!linkedUserId && !stayHere;
+
+  // Confirm the account is actually readable before handing over. A login can
+  // sit outside the active org — a global administrator with an employee
+  // record here, for one — and sending them to a page that 404s would strand
+  // them on a permanent spinner with no way back.
+  const { data: linkedUser, isLoading: checkingUser } = useUser(wantRedirect ? linkedUserId : "");
+  const redirecting = wantRedirect && !!linkedUser;
 
   useEffect(() => {
     if (redirecting) router.replace(`/users/${linkedUserId}`);
   }, [redirecting, linkedUserId, router]);
 
-  if (isLoading || !e || redirecting) return <Spinner />;
+  // Hold the spinner through the check so the page doesn't render and jump.
+  if (isLoading || !e || (wantRedirect && checkingUser) || redirecting) return <Spinner />;
 
   return (
     <div>

@@ -43,8 +43,31 @@ export default function UserDetailPage() {
   const [tab, setTab] = useState("profile");
   const [createEmpOpen, setCreateEmpOpen] = useState(false);
 
-  if (isLoading || !user) {
+  if (isLoading) {
     return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  // Deleted, or outside the organization being viewed. Previously this fell
+  // through to the same spinner as loading and simply span forever; the linked
+  // employee is still reachable, so offer that instead of a dead end.
+  if (!user) {
+    return (
+      <Card className="p-12 text-center">
+        <ContactRound className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+        <p className="text-sm font-medium">This login isn&apos;t available here</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          It may have been removed, or it belongs to a different organization.
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          {employee && (
+            <Button variant="outline" asChild>
+              <Link href={`/employees/${employee._id}?view=employee`}>Open employee record</Link>
+            </Button>
+          )}
+          <Button onClick={() => router.push("/users")}>Back to users</Button>
+        </div>
+      </Card>
+    );
   }
 
   const roleName = typeof user.role === "object" ? user.role.roleName : "—";

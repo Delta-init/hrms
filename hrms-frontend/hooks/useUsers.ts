@@ -32,6 +32,9 @@ export const useUser = (id: string) => {
       return response.data.data!;
     },
     enabled: !!id,
+    // A user who isn't there won't appear on the third attempt. Retrying only
+    // delayed the "not found" state behind a spinner.
+    retry: false,
   });
 };
 
