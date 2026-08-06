@@ -28,6 +28,12 @@ export const getEmployeeById = async (req: AuthenticatedRequest, res: Response, 
   } catch (error) { next(error); }
 };
 
+export const getNextEmployeeCode = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Next employee code", { code: await service.nextCode() });
+  } catch (error) { next(error); }
+};
+
 export const getEmployeeByUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Employee retrieved successfully", await service.getByUser(req.params.userId));

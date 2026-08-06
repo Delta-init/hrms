@@ -82,6 +82,42 @@ export class EmployeeService {
     return { records, pagination: buildPagination(total, page, limit) };
   }
 
+  /**
+   * The code to offer for the next employee — one past the highest existing
+   * one, keeping its prefix and zero-padding (EMP-060 → EMP-061).
+   *
+   * Derived from the highest code rather than the employee count, which drifts
+   * the moment anyone is deleted or a code is entered by hand. Codes with no
+   * trailing number (a one-off like "AMAMA") can't be sequenced and are
+   * ignored; when several prefixes are in use the most common one wins, so a
+   * stray oddity doesn't hijack the series. The caller can still overwrite it.
+   */
+  async nextCode(): Promise<string> {
+    const rows = await Employee.find(orgFilter()).select("employeeCode").lean();
+
+    const parsed = rows
+      .map((r) => /^(.*?)(\d+)$/.exec(String(r.employeeCode ?? "").trim()))
+      .filter((m): m is RegExpExecArray => !!m)
+      .map((m) => ({ prefix: m[1], num: parseInt(m[2], 10), width: m[2].length }));
+
+    if (!parsed.length) return "EMP-001";
+
+    const byPrefix = new Map<string, number>();
+    for (const p of parsed) byPrefix.set(p.prefix, (byPrefix.get(p.prefix) ?? 0) + 1);
+    const prefix = [...byPrefix.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+
+    const highest = parsed.filter((p) => p.prefix === prefix).reduce((a, b) => (b.num > a.num ? b : a));
+    const taken = new Set(rows.map((r) => String(r.employeeCode ?? "").trim()));
+
+    // Skip anything already taken — a gap-filling code entered by hand could
+    // otherwise collide and fail the create with a duplicate error.
+    for (let n = highest.num + 1; n <= highest.num + 1000; n++) {
+      const code = prefix + String(n).padStart(highest.width, "0");
+      if (!taken.has(code)) return code;
+    }
+    return prefix + String(highest.num + 1).padStart(highest.width, "0");
+  }
+
   async getById(id: string) {
     const record = await Employee.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });

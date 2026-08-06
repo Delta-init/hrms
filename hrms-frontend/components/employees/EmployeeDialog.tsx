@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DepartmentSelect, UserSelect } from "@/components/pickers";
 import { employeeFormSchema, type EmployeeFormValues } from "@/lib/validations/employeeSchema";
-import { useCreateEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
+import { useCreateEmployee, useUpdateEmployee, useNextEmployeeCode } from "@/hooks/useEmployees";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation } from "@/types";
 
@@ -32,12 +32,14 @@ interface Props {
 
 export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defaultUserId }: Props) {
   const isEditing = !!employee;
+  // Suggested code for a new employee; the field stays editable.
+  const { data: nextCode } = useNextEmployeeCode(open && !isEditing);
   const { data: schedules = [] } = useWorkSchedulesSimple();
   const { mutate: create, isPending: creating } = useCreateEmployee();
   const { mutate: update, isPending: updating } = useUpdateEmployee();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<EmployeeFormValues>({
+  const { register, handleSubmit, control, reset, setValue, getValues, formState: { errors } } = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
       employeeCode: "", name: "", email: "", phone: "", department: "", designation: "",
@@ -69,6 +71,15 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
       reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, salary: 0, currency: "AED" });
     }
   }, [open, employee, reset, defaultName, defaultUserId]);
+
+  // Fill the suggested code when it arrives, rather than re-running reset once
+  // the request resolves — that would wipe anything already typed. Only fills a
+  // blank field, so a code the user has edited is never overwritten.
+  useEffect(() => {
+    if (open && !isEditing && nextCode && !getValues("employeeCode")) {
+      setValue("employeeCode", nextCode);
+    }
+  }, [open, isEditing, nextCode, getValues, setValue]);
 
   const onSubmit = (data: EmployeeFormValues) => {
     const payload: Record<string, unknown> = {

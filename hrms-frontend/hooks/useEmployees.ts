@@ -19,6 +19,20 @@ export const useEmployees = (params?: Record<string, string>, options?: { enable
     enabled: options?.enabled ?? true,
   });
 
+/**
+ * The code to offer for a new employee — one past the highest existing one.
+ * Only fetched while the create dialog is open, and never cached, so two people
+ * adding employees at once don't both get handed the same code from cache.
+ */
+export const useNextEmployeeCode = (enabled: boolean) =>
+  useQuery({
+    queryKey: [...KEY, "next-code"],
+    queryFn: async () => (await api.get<ApiResponse<{ code: string }>>("/employees/next-code")).data.data?.code ?? "",
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
 export const useEmployee = (id?: string) =>
   useQuery({
     queryKey: [...KEY, "detail", id],
