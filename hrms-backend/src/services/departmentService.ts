@@ -14,6 +14,53 @@ const POP = [
 ];
 
 export class DepartmentService {
+  /**
+   * Keep `Employee.department` in step with a department's leader + members.
+   *
+   * The two were previously independent: adding someone here recorded them on
+   * the Department, but their own record still said they belonged nowhere — so
+   * the roster and the employee-count (which is derived from
+   * `Employee.department`) disagreed. This makes the department roster the
+   * source of truth in both directions.
+   *
+   * A member may be recorded as a login User rather than an Employee; those are
+   * resolved through `Employee.user` so the same human is assigned either way.
+   */
+  private async syncEmployeeDepartments(
+    departmentId: unknown,
+    leader: unknown,
+    leaderKind: string | undefined,
+    members: { kind: string; ref: unknown }[]
+  ) {
+    const employeeIds: string[] = [];
+    const userIds: string[] = [];
+    const collect = (kind: string | undefined, ref: unknown) => {
+      if (!ref) return;
+      (kind === "User" ? userIds : employeeIds).push(String(ref));
+    };
+
+    collect(leaderKind, leader);
+    for (const m of members ?? []) collect(m.kind, m.ref);
+
+    if (userIds.length) {
+      const linked = await Employee.find(scoped({ user: { $in: userIds } })).select("_id").lean();
+      employeeIds.push(...linked.map((e) => String(e._id)));
+    }
+    const assigned = [...new Set(employeeIds)];
+
+    await Promise.all([
+      assigned.length
+        ? Employee.updateMany(scoped({ _id: { $in: assigned } }), { $set: { department: departmentId } })
+        : Promise.resolve(),
+      // Anyone previously in this department but no longer on the roster is
+      // released, so removing a member actually takes effect on their record.
+      Employee.updateMany(
+        scoped({ department: departmentId, _id: { $nin: assigned } }),
+        { $set: { department: null } }
+      ),
+    ]);
+  }
+
   async create(input: CreateDepartmentInput) {
     const existing = await Department.findOne(scoped({ name: input.name.trim() }));
     if (existing) throw Object.assign(new Error("A department with this name already exists"), { statusCode: 409 });
@@ -24,6 +71,7 @@ export class DepartmentService {
       leaderKind: input.leaderKind ?? "Employee",
       members: input.members ?? [],
     });
+    await this.syncEmployeeDepartments(dep._id, dep.leader, dep.leaderKind, dep.members ?? []);
     return Department.findById(dep._id).populate(POP);
   }
 
@@ -79,6 +127,11 @@ export class DepartmentService {
     if (input.members !== undefined) record.members = input.members as never;
 
     await record.save();
+    // Only re-sync when the roster itself changed — a rename or status edit
+    // shouldn't reshuffle anyone's department.
+    if (input.leader !== undefined || input.members !== undefined) {
+      await this.syncEmployeeDepartments(record._id, record.leader, record.leaderKind, record.members ?? []);
+    }
     return Department.findById(id).populate(POP);
   }
 

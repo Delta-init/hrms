@@ -16,7 +16,8 @@ import { departmentFormSchema, type DepartmentFormValues } from "@/lib/validatio
 import { useCreateDepartment, useUpdateDepartment } from "@/hooks/useDepartments";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useUsers } from "@/hooks/useUsers";
-import type { Department, PersonKind } from "@/types";
+import { PersonPicker, type PickerPerson, type BlockedReason } from "@/components/departments/PersonPicker";
+import type { Department, Employee, PersonKind } from "@/types";
 
 const NONE = "__none__";
 const keyOf = (kind: PersonKind, id: string) => `${kind}:${id}`;
@@ -25,7 +26,7 @@ const parseKey = (k: string) => {
   return { kind: kind as PersonKind, ref };
 };
 
-interface Person { key: string; kind: PersonKind; id: string; label: string; sub: string }
+type Person = PickerPerson;
 
 interface Props {
   open: boolean;
@@ -41,15 +42,34 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
   const { mutate: update, isPending: updating } = useUpdateDepartment();
   const isPending = creating || updating;
 
-  // Combined people list (employees + users) for leader/member pickers.
+  // Combined people list (employees + users) for leader/member pickers, each
+  // carrying the department they already belong to so the pickers can show it.
   const people = useMemo<Person[]>(() => {
-    const emps = (empData?.data ?? []).map((e) => ({ key: keyOf("Employee", e._id), kind: "Employee" as const, id: e._id, label: e.name, sub: e.employeeCode }));
-    const usrs = (usersData?.data ?? []).map((u) => ({ key: keyOf("User", u._id), kind: "User" as const, id: u._id, label: u.name, sub: u.email }));
+    const employees = empData?.data ?? [];
+    const deptOf = (d: Employee["department"]) =>
+      d && typeof d === "object" ? { deptId: d._id, deptName: d.name } : { deptId: null, deptName: null };
+
+    // A login account maps to the same human as their linked employee record,
+    // so it inherits that employee's department for the "already assigned" check.
+    const empByUserId = new Map(
+      employees
+        .filter((e) => e.user)
+        .map((e) => [typeof e.user === "object" ? e.user!._id : String(e.user), e])
+    );
+
+    const emps = employees.map((e) => ({
+      key: keyOf("Employee", e._id), kind: "Employee" as const, id: e._id,
+      label: e.name, sub: e.employeeCode, ...deptOf(e.department),
+    }));
+    const usrs = (usersData?.data ?? []).map((u) => ({
+      key: keyOf("User", u._id), kind: "User" as const, id: u._id,
+      label: u.name, sub: u.email, ...deptOf(empByUserId.get(u._id)?.department),
+    }));
     return [...emps, ...usrs];
   }, [empData, usersData]);
   const byKey = useMemo(() => Object.fromEntries(people.map((p) => [p.key, p])), [people]);
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<DepartmentFormValues>({
+  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
     defaultValues: { name: "", code: "", description: "", leader: "", members: [], status: "active" },
   });
@@ -72,6 +92,29 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       reset({ name: "", code: "", description: "", leader: "", members: [], status: "active" });
     }
   }, [open, department, reset]);
+
+  // Live form values so each picker can grey out whoever the other one has taken.
+  const currentLeader = watch("leader");
+  const currentMembers = watch("members") ?? [];
+
+  /**
+   * Why a person can't be picked, if they can't.
+   *
+   * Blocked people stay visible with a badge rather than disappearing from the
+   * list, so it's clear they exist and why they're unavailable. Someone already
+   * in THIS department isn't blocked — re-selecting them is how you keep them.
+   */
+  const blockedFor = (p: Person, slot: "leader" | "member"): BlockedReason => {
+    if (slot === "member" && currentLeader === p.key) return { label: "Team leader", tone: "leader" };
+    if (slot === "member" && currentMembers.includes(p.key)) return { label: "Added", tone: "member" };
+    if (slot === "leader" && currentMembers.includes(p.key)) return { label: "Member", tone: "member" };
+    // Already belongs to a different department — moving them is a deliberate
+    // act that should happen from their own profile, not silently from here.
+    if (p.deptId && p.deptId !== department?._id) {
+      return { label: p.deptName ?? "Assigned", tone: "other-dept" };
+    }
+    return null;
+  };
 
   const onSubmit = (data: DepartmentFormValues) => {
     const leader = data.leader ? parseKey(data.leader) : null;
@@ -113,17 +156,24 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
               name="leader"
               control={control}
               render={({ field }) => (
-                <Select value={field.value || NONE} onValueChange={(v) => field.onChange(v === NONE ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>None</SelectItem>
-                    {people.map((p) => (
-                      <SelectItem key={p.key} value={p.key}>
-                        [{p.kind === "Employee" ? "EMP" : "USER"}] {p.label} · {p.sub}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <PersonPicker
+                    people={people}
+                    value={field.value}
+                    onSelect={(k) => field.onChange(k === field.value ? "" : k)}
+                    blockedFor={(p) => blockedFor(p, "leader")}
+                    placeholder="None"
+                  />
+                  {field.value && (
+                    <button
+                      type="button"
+                      onClick={() => field.onChange("")}
+                      className="text-xs font-medium text-muted-foreground hover:text-destructive"
+                    >
+                      Clear team leader
+                    </button>
+                  )}
+                </div>
               )}
             />
           </div>
@@ -152,20 +202,15 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
               control={control}
               render={({ field }) => {
                 const selected = field.value ?? [];
-                const available = people.filter((p) => !selected.includes(p.key));
                 return (
                   <div className="space-y-2">
-                    <Select value={NONE} onValueChange={(v) => { if (v !== NONE) field.onChange([...selected, v]); }}>
-                      <SelectTrigger><SelectValue placeholder="Add member…" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE} disabled>Add member…</SelectItem>
-                        {available.map((p) => (
-                          <SelectItem key={p.key} value={p.key}>
-                            [{p.kind === "Employee" ? "EMP" : "USER"}] {p.label} · {p.sub}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <PersonPicker
+                      people={people}
+                      onSelect={(k) => field.onChange([...selected, k])}
+                      blockedFor={(p) => blockedFor(p, "member")}
+                      placeholder="Add member…"
+                      stayOpenOnSelect
+                    />
                     {selected.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {selected.map((k) => {
