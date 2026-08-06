@@ -13,9 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
 import { useCreateLeave, useUpdateLeave } from "@/hooks/useLeaves";
-import { useUsers } from "@/hooks/useUsers";
+import { useUser } from "@/hooks/useUsers";
 import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
@@ -35,16 +36,23 @@ interface Props {
 export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) {
   const isEditing = !!leave;
   const selfMode = !!lockToUserId && !isEditing;
-  const { data: usersData } = useUsers({ limit: "100" }, { enabled: !selfMode });
-  const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateLeave();
   const { mutate: update, isPending: updating } = useUpdateLeave();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, setValue, formState: { errors } } = useForm<LeaveFormValues>({
+  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<LeaveFormValues>({
     resolver: zodResolver(leaveFormSchema),
     defaultValues: { user: "", type: "annual", startDate: "", endDate: "", halfDay: false, timeZone: "Asia/Dubai", reason: "" },
   });
+
+  // Default the time zone from the picked person's work schedule. Fetched by id
+  // rather than looked up in the picker's page, which holds one page of results.
+  const selectedUserId = watch("user");
+  const { data: selectedUser } = useUser(selectedUserId || "");
+  useEffect(() => {
+    const ws = selectedUser?.workSchedule;
+    if (ws && typeof ws === "object" && ws.timeZone) setValue("timeZone", ws.timeZone);
+  }, [selectedUser, setValue]);
 
   useEffect(() => {
     if (!open) return;
@@ -95,22 +103,12 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                 name="user"
                 control={control}
                 render={({ field }) => (
-                  <Select
+                  <UserSelect
                     value={field.value}
-                    onValueChange={(v) => {
-                      field.onChange(v);
-                      const u = users.find((x) => x._id === v);
-                      if (u && typeof u.workSchedule === "object" && u.workSchedule?.timeZone) {
-                        setValue("timeZone", u.workSchedule.timeZone);
-                      }
-                    }}
+                    onChange={field.onChange}
                     disabled={isEditing}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                    <SelectContent>
-                      {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select employee"
+                  />
                 )}
               />
               {errors.user && <p className="text-xs text-destructive">{errors.user.message}</p>}

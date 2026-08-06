@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import { cardFormSchema, type CardFormValues } from "@/lib/validations/cardSchema";
 import { useCreateCard, useUpdateCard } from "@/hooks/useCards";
-import { useUsers } from "@/hooks/useUsers";
 import type { Card } from "@/types";
 
 interface Props {
@@ -30,8 +30,6 @@ const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().
 
 export function CardDialog({ open, onOpenChange, card, lockClientId }: Props) {
   const isEditing = !!card;
-  const { data: usersData } = useUsers(lockClientId ? undefined : { limit: "200" });
-  const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateCard();
   const { mutate: update, isPending: updating } = useUpdateCard();
   const isPending = creating || updating;
@@ -86,10 +84,7 @@ export function CardDialog({ open, onOpenChange, card, lockClientId }: Props) {
             <div className="space-y-1.5">
               <Label>Client *</Label>
               <Controller name="client" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select a client (user)" /></SelectTrigger>
-                  <SelectContent>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}</SelectContent>
-                </Select>
+                <UserSelect value={field.value} onChange={field.onChange} placeholder="Select a client (user)" />
               )} />
               {errors.client && <p className="text-xs text-destructive">{errors.client.message}</p>}
             </div>

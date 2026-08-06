@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/validations/regularizationSchema";
 import { useCreateRegularization } from "@/hooks/useRegularizations";
-import { useUsers } from "@/hooks/useUsers";
+import { useUser } from "@/hooks/useUsers";
 import { zonedInputToUtcIso } from "@/lib/timezone";
 import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType } from "@/types";
 
@@ -26,14 +27,21 @@ interface Props {
 
 export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props) {
   const selfMode = !!lockToUserId;
-  const { data: usersData } = useUsers(selfMode ? undefined : { limit: "200" });
-  const users = usersData?.data ?? [];
   const { mutate: create, isPending } = useCreateRegularization();
 
-  const { register, handleSubmit, control, reset, setValue, formState: { errors } } = useForm<RegularizationFormValues>({
+  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<RegularizationFormValues>({
     resolver: zodResolver(regularizationFormSchema),
     defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", type: "missing_checkout", requestedCheckIn: "", requestedCheckOut: "", reason: "" },
   });
+
+  // Default the time zone from the picked person's work schedule. Fetched by id
+  // rather than looked up in the picker's page, which holds one page of results.
+  const selectedUserId = watch("user");
+  const { data: selectedUser } = useUser(selectedUserId || "");
+  useEffect(() => {
+    const ws = selectedUser?.workSchedule;
+    if (ws && typeof ws === "object" && ws.timeZone) setValue("timeZone", ws.timeZone);
+  }, [selectedUser, setValue]);
 
   useEffect(() => {
     if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", requestedCheckIn: "", requestedCheckOut: "", reason: "" });
@@ -67,14 +75,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
                 name="user"
                 control={control}
                 render={({ field }) => (
-                  <Select value={field.value} onValueChange={(v) => {
-                    field.onChange(v);
-                    const u = users.find((x) => x._id === v);
-                    if (u && typeof u.workSchedule === "object" && u.workSchedule?.timeZone) setValue("timeZone", u.workSchedule.timeZone);
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                    <SelectContent>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <UserSelect value={field.value} onChange={field.onChange} placeholder="Select employee" />
                 )}
               />
               {errors.user && <p className="text-xs text-destructive">{errors.user.message}</p>}
