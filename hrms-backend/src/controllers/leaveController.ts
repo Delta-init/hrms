@@ -67,8 +67,7 @@ export const updateLeave = async (req: AuthenticatedRequest, res: Response, next
       sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors);
       return;
     }
-    const role = req.user!.role!;
-    const record = await service.update(req.params.id, parsed.data, req.user!.userId, { _id: String(role._id), roleName: role.roleName, isSystemRole: role.isSystemRole });
+    const record = await service.update(req.params.id, parsed.data);
     sendSuccess(res, "Leave request updated successfully", record);
   } catch (error) {
     next(error);
@@ -83,7 +82,7 @@ export const reviewLeave = async (req: AuthenticatedRequest, res: Response, next
       return;
     }
     const role = req.user!.role!;
-    const record = await service.update(req.params.id, parsed.data, req.user!.userId, { _id: String(role._id), roleName: role.roleName, isSystemRole: role.isSystemRole });
+    const record = await service.review(req.params.id, parsed.data, req.user!.userId, { _id: String(role._id), roleName: role.roleName, isSystemRole: role.isSystemRole });
     sendSuccess(res, "Leave request reviewed", record);
   } catch (error) {
     next(error);

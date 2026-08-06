@@ -68,6 +68,24 @@ interface ReviewOutcome {
 }
 
 /**
+ * Refuse to let someone approve or reject their own request.
+ *
+ * Call before resolveReviewOutcome so a blocked attempt never reaches the
+ * approval trail. Deliberately applies to Super Admin too: separation of duties
+ * is a different control from the workflow step-role check that Super Admin
+ * bypasses. A manager filing on an employee's behalf is unaffected — the
+ * request's `user` is the employee, not the filer.
+ */
+export function assertNotSelfReview(requesterId: unknown, reviewerId: string): void {
+  if (String(requesterId) === String(reviewerId)) {
+    throw Object.assign(
+      new Error("You cannot approve or reject your own request"),
+      { statusCode: 403 }
+    );
+  }
+}
+
+/**
  * Decide what a review action does to a record's workflow state, and enforce
  * that the reviewer holds the role assigned to the record's CURRENT step.
  * Records with no workflowStep (no workflow was configured when they were

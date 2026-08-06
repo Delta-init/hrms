@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, LogIn, LogOut } from "lucide-react";
-import { useRegularizations, useMyRegularizations, useUpdateRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
+import { useRegularizations, useMyRegularizations, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -68,7 +68,7 @@ function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview, review
 
 export default function RegularizationPage() {
   const { user, hasPermission } = useAuth();
-  const canApprove = hasPermission("regularization", "edit");
+  const canApprove = hasPermission("regularization", "approve");
   const canDelete = hasPermission("regularization", "delete");
   const reviewerRoleId = user?.role?._id;
   const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
@@ -82,7 +82,7 @@ export default function RegularizationPage() {
   const { data: usersData } = useUsers(canApprove ? { limit: "200" } : undefined);
   const users = usersData?.data ?? [];
 
-  const { mutate: update, isPending: reviewing } = useUpdateRegularization();
+  const { mutate: review_, isPending: reviewing } = useReviewRegularization();
   const { mutate: remove, isPending: deleting } = useDeleteRegularization();
 
   const pending = pendingData?.data ?? [];
@@ -181,7 +181,7 @@ export default function RegularizationPage() {
 
       <RegularizationDialog open={applyOpen} onOpenChange={setApplyOpen} lockToUserId={user?._id} />
       <RegularizationDialog open={adminApplyOpen} onOpenChange={setAdminApplyOpen} />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.reg.user && typeof review.reg.user === "object" ? review.reg.user.name : ""} · ${fmtDate(review.reg.date, review.reg.timeZone)}` : undefined} isPending={reviewing} onConfirm={(note) => review && update({ id: review.reg._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.reg.user && typeof review.reg.user === "object" ? review.reg.user.name : ""} · ${fmtDate(review.reg.date, review.reg.timeZone)}` : undefined} isPending={reviewing} onConfirm={(note) => review && review_({ id: review.reg._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
       <ConfirmDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)} title="Delete request" description="This regularization request will be removed." isPending={deleting} onConfirm={() => deleteTarget && remove(deleteTarget._id, { onSuccess: () => setDeleteTarget(null) })} />
     </div>
   );

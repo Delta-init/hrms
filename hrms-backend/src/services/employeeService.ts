@@ -1,6 +1,7 @@
 import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
+import { assertRoleAssignable } from "./roleService.js";
 import { Resignation } from "../models/Resignation.js";
 import type { CreateEmployeeInput, UpdateEmployeeInput, UpdateMyProfileInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
@@ -139,6 +140,7 @@ export class EmployeeService {
 
     const role = await Role.findById(input.role);
     if (!role) throw Object.assign(new Error("Role not found"), { statusCode: 404 });
+    assertRoleAssignable(role);
     if (role.isSystemRole) {
       throw Object.assign(new Error("This role cannot be assigned"), { statusCode: 403 });
     }

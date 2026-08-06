@@ -42,6 +42,17 @@ const roleSchema = new Schema<IRole>(
       type: Boolean,
       default: false,
     },
+    /**
+     * Owning tenant. Null (or absent, on pre-existing documents) means a
+     * built-in role shared by every tenant — a new organization is provisioned
+     * with no roles of its own, so the built-ins have to stay visible to all.
+     */
+    organization: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      index: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

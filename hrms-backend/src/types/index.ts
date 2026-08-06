@@ -80,6 +80,8 @@ export interface IRole extends Document {
   description?: string;
   permissions: PermissionsMap;
   isSystemRole: boolean;
+  /** Owning tenant. Null = built-in role, visible to every tenant. */
+  organization?: Types.ObjectId | IOrganization | null;
   createdAt: Date;
   updatedAt: Date;
 }

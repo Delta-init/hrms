@@ -21,8 +21,8 @@ export const updateLeaveSchema = z.object({
   halfDay: z.boolean().optional(),
   timeZone: z.string().min(1).optional(),
   reason: z.string().max(500).optional().nullable(),
-  status: statusEnum.optional(),
-  reviewNote: z.string().max(500).optional().nullable(),
+  // No status/reviewNote here — approving is a distinct action gated on the
+  // `approve` permission, via reviewLeaveSchema below.
 });
 
 export const reviewLeaveSchema = z.object({

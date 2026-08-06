@@ -1,5 +1,6 @@
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
+import { assertRoleAssignable } from "./roleService.js";
 import type { CreateUserInput, UpdateUserInput } from "../validations/userValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -17,6 +18,7 @@ export class UserService {
     if (!role) {
       throw Object.assign(new Error("Role not found"), { statusCode: 404 });
     }
+    assertRoleAssignable(role);
     // Guard against privilege escalation: system roles (e.g. Super Admin) are
     // bootstrapped by the seed only and can never be assigned via the API.
     if (role.isSystemRole) {
@@ -91,6 +93,7 @@ export class UserService {
       if (!role) {
         throw Object.assign(new Error("Role not found"), { statusCode: 404 });
       }
+      assertRoleAssignable(role);
       if (role.isSystemRole) {
         throw Object.assign(new Error("This role cannot be assigned"), { statusCode: 403 });
       }

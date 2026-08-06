@@ -88,7 +88,7 @@ async function upsertRole(
   permissions: PermissionsMap,
   isSystemRole: boolean
 ) {
-  let role = await Role.findOne({ roleName });
+  let role = await Role.findOne({ roleName, organization: null });
   if (!role) {
     role = await Role.create({ roleName, description, permissions, isSystemRole });
     console.log(`✅ Role created: ${roleName}`);
@@ -149,6 +149,20 @@ async function seed() {
       { $set: { profileCompleted: true } }
     );
     if (backfill.modifiedCount > 0) console.log(`✅ Marked ${backfill.modifiedCount} existing user(s) profile-complete`);
+
+    // Leave/regularization approval used to ride on the `edit` permission, so a
+    // role with edit could already approve. Now that approving is gated on
+    // `approve`, grant it wherever edit was held — this preserves what those
+    // roles could already do rather than silently taking the capability away.
+    for (const mod of ["leave", "regularization"] as const) {
+      const granted = await Role.updateMany(
+        { [`permissions.${mod}.edit`]: true, [`permissions.${mod}.approve`]: { $ne: true } },
+        { $set: { [`permissions.${mod}.approve`]: true } }
+      );
+      if (granted.modifiedCount > 0) {
+        console.log(`✅ Granted ${mod}.approve to ${granted.modifiedCount} role(s) that previously approved via edit`);
+      }
+    }
 
     // Default work schedules
     const schedules = [

@@ -1,12 +1,12 @@
 import { Regularization } from "../models/Regularization.js";
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
-import type { CreateRegularizationInput, UpdateRegularizationInput } from "../validations/regularizationValidation.js";
+import type { CreateRegularizationInput, UpdateRegularizationInput, ReviewRegularizationInput } from "../validations/regularizationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
-import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
+import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 
@@ -88,7 +88,8 @@ export class RegularizationService {
     await att.save();
   }
 
-  async update(id: string, input: UpdateRegularizationInput, reviewerId: string, reviewerRole: ReviewerRole) {
+  /** Edit a request's details. Cannot change status — see review(). */
+  async update(id: string, input: UpdateRegularizationInput) {
     const record = await Regularization.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
 
@@ -98,31 +99,43 @@ export class RegularizationService {
     if (input.requestedCheckIn !== undefined) record.requestedCheckIn = input.requestedCheckIn;
     if (input.requestedCheckOut !== undefined) record.requestedCheckOut = input.requestedCheckOut;
     if (input.reason !== undefined) record.reason = input.reason ?? undefined;
+
+    await record.save();
+    return Regularization.findById(id).populate(POP);
+  }
+
+  /**
+   * Approve or reject a request. Split out of update() so it can be gated on
+   * the `approve` permission — approving writes corrected punch times straight
+   * into the Attendance record, which `edit` alone should not authorise.
+   */
+  async review(id: string, input: ReviewRegularizationInput, reviewerId: string, reviewerRole: ReviewerRole) {
+    const record = await Regularization.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
+    if (record.status !== "pending") {
+      throw Object.assign(new Error("This request has already been reviewed"), { statusCode: 400 });
+    }
+    assertNotSelfReview(record.user, reviewerId);
+
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
 
-    if (input.status !== undefined && input.status !== record.status) {
-      if (input.status === "approved" || input.status === "rejected") {
-        const outcome = resolveReviewOutcome(
-          record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+    const outcome = resolveReviewOutcome(
+      record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+    );
+    record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+    if (outcome.advance) {
+      record.workflowStep = (record.workflowStep ?? 1) + 1;
+    } else {
+      if (input.status === "approved" && !record.requestedCheckIn && !record.requestedCheckOut) {
+        throw Object.assign(
+          new Error("This request has no corrected check-in or check-out time to apply"),
+          { statusCode: 400 }
         );
-        record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
-        if (outcome.advance) {
-          record.workflowStep = (record.workflowStep ?? 1) + 1;
-        } else {
-          if (input.status === "approved" && !record.requestedCheckIn && !record.requestedCheckOut) {
-            throw Object.assign(
-              new Error("This request has no corrected check-in or check-out time to apply"),
-              { statusCode: 400 }
-            );
-          }
-          record.status = input.status;
-          record.reviewedBy = reviewerId as never;
-          record.reviewedAt = new Date();
-          if (input.status === "approved") await this.applyToAttendance(record);
-        }
-      } else {
-        record.status = input.status;
       }
+      record.status = input.status;
+      record.reviewedBy = reviewerId as never;
+      record.reviewedAt = new Date();
+      if (input.status === "approved") await this.applyToAttendance(record);
     }
 
     await record.save();

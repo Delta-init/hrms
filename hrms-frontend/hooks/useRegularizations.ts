@@ -45,6 +45,17 @@ export const useUpdateRegularization = () => {
   });
 };
 
+/** Approve/reject — separate from update, which no longer accepts a status. */
+export const useReviewRegularization = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { status: "approved" | "rejected"; reviewNote?: string | null } }) =>
+      (await api.patch<ApiResponse<Regularization>>(`/regularizations/${id}/review`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["attendance"] }); toast.success("Regularization reviewed"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to review regularization")),
+  });
+};
+
 export const useDeleteRegularization = () => {
   const qc = useQueryClient();
   return useMutation({

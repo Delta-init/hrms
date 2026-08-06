@@ -7,7 +7,7 @@ import { birthdaysOn } from "../services/dashboardService.js";
 
 /** Email addresses of all active HR Manager users. */
 async function hrRecipients(): Promise<string[]> {
-  const role = await Role.findOne({ roleName: "HR Manager" }).select("_id");
+  const role = await Role.findOne({ roleName: "HR Manager", organization: null }).select("_id");
   if (!role) return [];
   const users = await User.find({ role: role._id, status: { $ne: "inactive" } }).select("email").lean();
   return users.map((u) => u.email).filter(Boolean);

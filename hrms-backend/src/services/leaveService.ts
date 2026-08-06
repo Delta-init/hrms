@@ -1,12 +1,12 @@
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
-import type { CreateLeaveInput, UpdateLeaveInput } from "../validations/leaveValidation.js";
+import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput } from "../validations/leaveValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
-import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
+import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 
@@ -139,7 +139,8 @@ export class LeaveService {
     return record;
   }
 
-  async update(id: string, input: UpdateLeaveInput, reviewerId: string, reviewerRole: ReviewerRole) {
+  /** Edit a request's details. Cannot change status — see review(). */
+  async update(id: string, input: UpdateLeaveInput) {
     const record = await LeaveRequest.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
 
@@ -149,7 +150,6 @@ export class LeaveService {
     if (input.halfDay !== undefined) record.halfDay = input.halfDay;
     if (input.timeZone !== undefined) record.timeZone = input.timeZone;
     if (input.reason !== undefined) record.reason = input.reason ?? undefined;
-    if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
 
     if (record.endDate < record.startDate) {
       throw Object.assign(new Error("End date cannot be before start date"), { statusCode: 400 });
@@ -170,24 +170,38 @@ export class LeaveService {
     const subject = await User.findById(record.user).populate("workSchedule", "workDays");
     record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(subject));
 
-    // Status change = a review action.
-    if (input.status !== undefined && input.status !== record.status) {
-      if (input.status === "approved" || input.status === "rejected") {
-        const outcome = resolveReviewOutcome(
-          record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
-        );
-        record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
-        if (outcome.advance) {
-          record.workflowStep = (record.workflowStep ?? 1) + 1;
-          // Still pending — waiting on the next step.
-        } else {
-          record.status = input.status;
-          record.reviewedBy = reviewerId as never;
-          record.reviewedAt = new Date();
-        }
-      } else {
-        record.status = input.status;
-      }
+    await record.save();
+    return LeaveRequest.findById(id)
+      .populate("user", "name email designation")
+      .populate("reviewedBy", "name email");
+  }
+
+  /**
+   * Approve or reject a request. Separate from update() so it can be gated on
+   * the `approve` permission — previously both went through one method, so
+   * anyone with `edit` could approve by PUTting a status.
+   */
+  async review(id: string, input: ReviewLeaveInput, reviewerId: string, reviewerRole: ReviewerRole) {
+    const record = await LeaveRequest.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
+    if (record.status !== "pending") {
+      throw Object.assign(new Error("This request has already been reviewed"), { statusCode: 400 });
+    }
+    assertNotSelfReview(record.user, reviewerId);
+
+    if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
+
+    const outcome = resolveReviewOutcome(
+      record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
+    );
+    record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+    if (outcome.advance) {
+      // Still pending — waiting on the next step.
+      record.workflowStep = (record.workflowStep ?? 1) + 1;
+    } else {
+      record.status = input.status;
+      record.reviewedBy = reviewerId as never;
+      record.reviewedAt = new Date();
     }
 
     await record.save();

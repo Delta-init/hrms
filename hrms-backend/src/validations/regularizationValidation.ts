@@ -28,9 +28,15 @@ export const updateRegularizationSchema = z.object({
   requestedCheckIn: z.coerce.date().optional().nullable(),
   requestedCheckOut: z.coerce.date().optional().nullable(),
   reason: z.string().max(500).optional().nullable(),
-  status: statusEnum.optional(),
+  // No status/reviewNote here — approving is a distinct action gated on the
+  // `approve` permission, via reviewRegularizationSchema below.
+});
+
+export const reviewRegularizationSchema = z.object({
+  status: z.enum(["approved", "rejected"]),
   reviewNote: z.string().max(500).optional().nullable(),
 });
 
 export type CreateRegularizationInput = z.infer<typeof createRegularizationSchema>;
 export type UpdateRegularizationInput = z.infer<typeof updateRegularizationSchema>;
+export type ReviewRegularizationInput = z.infer<typeof reviewRegularizationSchema>;
