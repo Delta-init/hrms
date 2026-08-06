@@ -9,6 +9,7 @@ import type { CreateRosterAssignmentInput, UpdateRosterAssignmentInput } from ".
 import type { PaginationQuery, IWorkSchedule } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 const ROSTER_POP = [
   { path: "employee", select: "name employeeCode designation" },
@@ -90,12 +91,10 @@ export class WorkScheduleService {
   }
 
   async list(query: PaginationQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
-    if (query.search) filter.name = new RegExp(query.search, "i");
+    if (query.search) filter.name = searchRegex(query.search);
     if (query.status) filter.status = query.status;
 
     const sortable = new Set(["name", "timeZone", "loginTime", "status", "createdAt"]);
@@ -192,9 +191,7 @@ export class WorkScheduleService {
   }
 
   async listRosterAssignments(query: PaginationQuery & { employee?: string }) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;

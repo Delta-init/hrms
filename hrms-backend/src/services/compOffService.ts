@@ -21,9 +21,11 @@ const CREDIT_POP = [
  * automatically moves the balance — nothing to keep in sync separately.
  */
 export async function compOffBalanceFor(userId: string): Promise<number> {
+  // Org-scoped: the userId comes straight from a route param, so without this
+  // a caller could read any other tenant's user's balance.
   const [credits, redemptions] = await Promise.all([
-    CompOffCredit.find({ user: userId, status: "available" }).select("amount").lean(),
-    LeaveRequest.find({ user: userId, type: "comp_off", status: "approved" }).select("days").lean(),
+    CompOffCredit.find(scoped({ user: userId, status: "available" })).select("amount").lean(),
+    LeaveRequest.find(scoped({ user: userId, type: "comp_off", status: "approved" })).select("days").lean(),
   ]);
   const earned = credits.reduce((a, c) => a + (c.amount || 0), 0);
   const redeemed = redemptions.reduce((a, r) => a + (r.days || 0), 0);

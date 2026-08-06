@@ -4,6 +4,7 @@ import type { CreateLoanInput, UpdateLoanInput } from "../validations/loanValida
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { parsePagination } from "../utils/query.js";
 
 interface LoanQuery extends PaginationQuery {
   employee?: string;
@@ -41,9 +42,7 @@ export class LoanService {
   }
 
   async list(query: LoanQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;

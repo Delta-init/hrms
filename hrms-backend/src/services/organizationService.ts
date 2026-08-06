@@ -37,6 +37,7 @@ import { WorkSchedule } from "../models/WorkSchedule.js";
 import type { CreateOrganizationInput, UpdateOrganizationInput } from "../validations/organizationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 /** Every collection that carries an `organization` ref — deleted in full when the tenant is removed. */
 const ORG_SCOPED_MODELS: { deleteMany: (filter: Record<string, unknown>) => Promise<unknown> }[] = [
@@ -60,13 +61,11 @@ export class OrganizationService {
   }
 
   async list(query: PaginationQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = {};
     if (query.search) {
-      const rx = new RegExp(query.search, "i");
+      const rx = searchRegex(query.search);
       filter.$or = [{ name: rx }, { code: rx }];
     }
     if (query.status) filter.status = query.status;

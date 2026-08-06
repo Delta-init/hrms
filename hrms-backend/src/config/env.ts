@@ -4,10 +4,20 @@ const envSchema = z.object({
   PORT: z.string().default("5000"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
-  JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
+  // 32 chars minimum: these are HMAC keys, and a guessable one lets an attacker
+  // mint their own access tokens and impersonation tickets outright.
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
-  JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
+  JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
+  // Signs impersonation tickets. Optional for backward compatibility; when
+  // unset it derives from JWT_SECRET, which is why that now has a real floor.
+  // Empty is treated as unset so a blank line in .env doesn't fail the length
+  // check on an optional value.
+  JWT_TICKET_SECRET: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(32, "JWT_TICKET_SECRET must be at least 32 characters").optional()
+  ),
   SUPER_ADMIN_NAME: z.string().default("Super Admin"),
   // No defaults: a deployment that forgets to set these must fail to boot rather
   // than silently ship a well-known super-admin login.

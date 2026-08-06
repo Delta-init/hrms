@@ -11,6 +11,7 @@ import type {
 import type { PaginationQuery, ISalaryComponent } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -101,13 +102,11 @@ export class SalaryStructureService {
   }
 
   async list(query: StructureQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status;
-    if (query.search) filter.name = { $regex: query.search, $options: "i" };
+    if (query.search) filter.name = searchRegex(query.search);
 
     const [records, total] = await Promise.all([
       SalaryStructure.find(filter).sort({ name: 1 }).skip(skip).limit(limit),
@@ -173,9 +172,7 @@ export class SalaryStructureService {
   }
 
   async listAssignments(query: StructureQuery & { employee?: string }) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;

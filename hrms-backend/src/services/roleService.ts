@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import type { CreateRoleInput, UpdateRoleInput } from "../validations/roleValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 export class RoleService {
   async createRole(input: CreateRoleInput) {
@@ -15,13 +16,11 @@ export class RoleService {
   }
 
   async getRoles(query: PaginationQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? "10", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 10, 100);
 
     const filter: Record<string, unknown> = {};
     if (query.search) {
-      filter.roleName = new RegExp(query.search, "i");
+      filter.roleName = searchRegex(query.search);
     }
 
     if (query.isSystemRole !== undefined) {

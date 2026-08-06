@@ -8,6 +8,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
 import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
+import { parsePagination } from "../utils/query.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -31,9 +32,7 @@ export class RegularizationService {
   }
 
   async list(query: RegQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;

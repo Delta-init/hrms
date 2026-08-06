@@ -8,6 +8,7 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { sendMail } from "../utils/mailer.js";
 import { env } from "../config/env.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 interface EmployeeQuery extends PaginationQuery {
   department?: string;
@@ -54,13 +55,11 @@ export class EmployeeService {
   }
 
   async list(query: EmployeeQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) {
-      const rx = new RegExp(query.search, "i");
+      const rx = searchRegex(query.search);
       filter.$or = [{ name: rx }, { employeeCode: rx }, { email: rx }, { designation: rx }];
     }
     if (query.status) filter.status = query.status;

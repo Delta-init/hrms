@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
 import { AuditLog } from "../models/AuditLog.js";
@@ -10,6 +11,13 @@ import { scoped } from "../utils/orgContext.js";
 import { missingRequiredDocs } from "../config/documentRequirements.js";
 import { publicUrl } from "./uploadService.js";
 
+/**
+ * A valid bcrypt hash (of a random string) compared against when no user
+ * matches, so an unknown email costs the same time as a wrong password and
+ * can't be distinguished by response latency.
+ */
+const DUMMY_HASH = "$2a$12$vvxe7fcKuugHyGlVDs9h5u71eN2FnKco8UCqdd6BpcubJhQy0MPY2";
+
 export class AuthService {
   async login(input: LoginInput) {
     const user = await User.findOne({ email: input.email.toLowerCase() })
@@ -18,16 +26,20 @@ export class AuthService {
       .populate("organization", "name code logo settings.currency settings.timeZone");
 
     if (!user) {
+      // Burn an equivalent bcrypt round before failing — see DUMMY_HASH.
+      await bcrypt.compare(input.password, DUMMY_HASH);
       throw Object.assign(new Error("Invalid email or password"), { statusCode: 401 });
-    }
-
-    if (user.status === "inactive") {
-      throw Object.assign(new Error("Your account has been deactivated"), { statusCode: 403 });
     }
 
     const isPasswordValid = await user.comparePassword(input.password);
     if (!isPasswordValid) {
       throw Object.assign(new Error("Invalid email or password"), { statusCode: 401 });
+    }
+
+    // Checked only after the password is proven — otherwise the distinct 403
+    // tells an unauthenticated caller that the address is a real account.
+    if (user.status === "inactive") {
+      throw Object.assign(new Error("Your account has been deactivated"), { statusCode: 403 });
     }
 
     // Invited users who haven't set a password yet must go through set-password.

@@ -15,16 +15,21 @@ export const signRefreshToken = (payload: JwtPayload): string => {
   });
 };
 
+// Every verify pins algorithms explicitly so a token can't dictate how it is
+// checked via its own header.
 export const verifyAccessToken = (token: string): JwtPayload => {
-  return jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, env.JWT_SECRET, { algorithms: ["HS256"] }) as JwtPayload;
 };
 
 export const verifyRefreshToken = (token: string): JwtPayload => {
-  return jwt.verify(token, env.JWT_REFRESH_SECRET) as JwtPayload;
+  return jwt.verify(token, env.JWT_REFRESH_SECRET, { algorithms: ["HS256"] }) as JwtPayload;
 };
 
 // ── Impersonation tickets (distinct secret so they can't double as access tokens) ──
-const TICKET_SECRET = `${env.JWT_SECRET}::impersonation`;
+// Prefer an independent secret; fall back to a derivation of JWT_SECRET so
+// existing deployments keep working (JWT_SECRET now has a 32-char floor, so the
+// derived value is no longer trivially guessable).
+const TICKET_SECRET = env.JWT_TICKET_SECRET ?? `${env.JWT_SECRET}::impersonation`;
 
 export interface ImpersonationTicket {
   kind: "impersonate" | "restore";

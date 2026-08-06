@@ -7,6 +7,7 @@ import { connectDB } from "./config/database.js";
 import { env } from "./config/env.js";
 import routes from "./routes/index.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
+import { sanitizeQuery } from "./middleware/sanitizeQuery.js";
 import { startBirthdayCron } from "./jobs/birthdayJob.js";
 import { startResignationCron } from "./jobs/resignationJob.js";
 
@@ -24,6 +25,8 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+// After the body parsers (so req.body exists) and before any route.
+app.use(sanitizeQuery);
 
 if (env.NODE_ENV === "development") {
   app.use(morgan("dev"));

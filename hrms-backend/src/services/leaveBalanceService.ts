@@ -11,9 +11,11 @@ const round = (n: number) => Math.round(n * 100) / 100;
 async function usedInYear(userId: string, type: LeaveType, year: number): Promise<number> {
   const start = new Date(Date.UTC(year, 0, 1));
   const end = new Date(Date.UTC(year + 1, 0, 1));
-  const rows = await LeaveRequest.find({
+  // Org-scoped: userId comes from a route param, so an unscoped query would
+  // return another tenant's approved-leave totals for that user.
+  const rows = await LeaveRequest.find(scoped({
     user: userId, type, status: "approved", startDate: { $gte: start, $lt: end },
-  }).select("days").lean();
+  })).select("days").lean();
   return round(rows.reduce((a, r) => a + (r.days || 0), 0));
 }
 

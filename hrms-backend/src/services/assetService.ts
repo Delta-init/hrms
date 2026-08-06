@@ -6,6 +6,7 @@ import type {
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 interface AssetQuery extends PaginationQuery {
   status?: string;
@@ -39,9 +40,7 @@ export class AssetService {
   }
 
   async list(query: AssetQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status;
@@ -49,9 +48,9 @@ export class AssetService {
     if (query.assignedTo) filter.assignedTo = query.assignedTo;
     if (query.search) {
       filter.$or = [
-        { name: { $regex: query.search, $options: "i" } },
-        { assetTag: { $regex: query.search, $options: "i" } },
-        { serialNumber: { $regex: query.search, $options: "i" } },
+        { name: searchRegex(query.search) },
+        { assetTag: searchRegex(query.search) },
+        { serialNumber: searchRegex(query.search) },
       ];
     }
 

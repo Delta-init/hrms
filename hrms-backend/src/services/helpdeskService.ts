@@ -5,6 +5,7 @@ import type {
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 interface TicketQuery extends PaginationQuery {
   status?: string;
@@ -30,15 +31,13 @@ export class HelpdeskService {
   }
 
   async list(query: TicketQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 100);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status;
     if (query.category) filter.category = query.category;
     if (query.assignedTo) filter.assignedTo = query.assignedTo;
-    if (query.search) filter.subject = new RegExp(query.search, "i");
+    if (query.search) filter.subject = searchRegex(query.search);
 
     const [records, total] = await Promise.all([
       HelpdeskTicket.find(filter).populate(POP).sort({ createdAt: -1 }).skip(skip).limit(limit),

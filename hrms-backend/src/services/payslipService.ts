@@ -13,6 +13,7 @@ import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
+import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -85,9 +86,7 @@ export class PayslipService {
   }
 
   async list(query: PayslipQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;
@@ -106,9 +105,7 @@ export class PayslipService {
   }
 
   async listMine(userId: string, query: PayslipQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
     const filter: Record<string, unknown> = { user: userId, status: { $in: ["issued", "paid"] } };
     if (query.month) filter.month = query.month;
     const [records, total] = await Promise.all([

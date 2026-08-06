@@ -9,6 +9,7 @@ import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { parsePagination } from "../utils/query.js";
 
 interface AttendanceQuery extends PaginationQuery {
   user?: string;
@@ -54,9 +55,7 @@ export class AttendanceService {
   }
 
   async list(query: AttendanceQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;

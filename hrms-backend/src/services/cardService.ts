@@ -3,6 +3,7 @@ import type { CreateCardInput, UpdateCardInput } from "../validations/cardValida
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { searchRegex, parsePagination } from "../utils/query.js";
 
 interface CardQuery extends PaginationQuery {
   client?: string;
@@ -20,13 +21,11 @@ export class CardService {
   }
 
   async list(query: CardQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) {
-      const rx = new RegExp(query.search, "i");
+      const rx = searchRegex(query.search);
       filter.$or = [{ cardNumber: rx }, { name: rx }];
     }
     if (query.client) filter.client = query.client;

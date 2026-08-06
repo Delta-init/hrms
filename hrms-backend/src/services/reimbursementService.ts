@@ -8,6 +8,7 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
+import { parsePagination } from "../utils/query.js";
 
 interface ReimbursementQuery extends PaginationQuery {
   employee?: string;
@@ -64,9 +65,7 @@ export class ReimbursementService {
   }
 
   async list(query: ReimbursementQuery) {
-    const page = Math.max(1, parseInt(query.page ?? "1", 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "20", 10)));
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.employee) filter.employee = query.employee;
