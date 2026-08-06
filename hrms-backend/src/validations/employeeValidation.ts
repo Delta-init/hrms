@@ -53,6 +53,16 @@ const visaSchema = z.object({
   issueDate: z.coerce.date().optional().nullable(),
   expiryDate: z.coerce.date().optional().nullable(),
 });
+const labourCardSchema = z.object({
+  cardNumber: z.string().max(40).optional(),
+  issueDate: z.coerce.date().optional().nullable(),
+  expiryDate: z.coerce.date().optional().nullable(),
+});
+const emiratesIdSchema = z.object({
+  idNumber: z.string().max(40).optional(),
+  issueDate: z.coerce.date().optional().nullable(),
+  expiryDate: z.coerce.date().optional().nullable(),
+});
 
 // Extended profile fields — all optional, shared by create + update.
 const profileFields = {
@@ -78,6 +88,8 @@ const profileFields = {
   familyMembers: z.array(familyMemberSchema).optional(),
   passport: passportSchema.optional(),
   visa: visaSchema.optional(),
+  labourCard: labourCardSchema.optional(),
+  emiratesId: emiratesIdSchema.optional(),
 };
 
 export const createEmployeeSchema = z.object({

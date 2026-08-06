@@ -445,6 +445,16 @@ export interface IVisa {
   issueDate?: Date | null;
   expiryDate?: Date | null;
 }
+export interface ILabourCard {
+  cardNumber?: string;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+}
+export interface IEmiratesId {
+  idNumber?: string;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+}
 
 export interface IEmployee extends Document {
   _id: Types.ObjectId;
@@ -497,6 +507,8 @@ export interface IEmployee extends Document {
   familyMembers?: IFamilyMember[];
   passport?: IPassport;
   visa?: IVisa;
+  labourCard?: ILabourCard;
+  emiratesId?: IEmiratesId;
 
   createdAt: Date;
   updatedAt: Date;
@@ -821,11 +833,49 @@ export interface IResignation extends Document {
   remarks?: string;
   // ── Full & final settlement ──
   settlement?: IFinalSettlement | null;
+  // ── Exit clearance & interview ──
+  clearance?: IClearanceItem[];
+  exitInterview?: IExitInterview | null;
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type ClearanceDepartment = "it" | "finance" | "hr" | "admin" | "manager";
+export type ClearanceStatus = "pending" | "cleared" | "not_applicable";
+
+export interface IClearanceItem {
+  _id?: Types.ObjectId;
+  department: ClearanceDepartment;
+  item: string;
+  status: ClearanceStatus;
+  notes?: string;
+  clearedBy?: Types.ObjectId | IUser | null;
+  clearedAt?: Date | null;
+}
+
+export type ExitReason =
+  | "compensation" | "career_growth" | "work_life_balance" | "management"
+  | "relocation" | "higher_studies" | "health" | "role_mismatch" | "other";
+
+export interface IExitInterview {
+  conductedBy?: Types.ObjectId | IUser | null;
+  conductedAt?: Date | null;
+  primaryReason?: ExitReason;
+  ratings?: {
+    workEnvironment?: number | null;
+    management?: number | null;
+    growth?: number | null;
+    compensation?: number | null;
+    workLifeBalance?: number | null;
+  };
+  whatWentWell?: string;
+  whatCouldImprove?: string;
+  wouldRecommend?: boolean | null;
+  eligibleForRehire?: boolean | null;
+  notes?: string;
 }
 
 export interface ISettlementLine {

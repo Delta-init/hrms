@@ -1,7 +1,7 @@
 import { Resignation } from "../models/Resignation.js";
 import { Employee } from "../models/Employee.js";
-import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput, ExitDetailsInput } from "../validations/resignationValidation.js";
-import type { PaginationQuery, IResignation } from "../types/index.js";
+import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput, ExitDetailsInput, ClearanceInput, ClearanceItemUpdateInput, ExitInterviewInput } from "../validations/resignationValidation.js";
+import type { PaginationQuery, IResignation, ClearanceDepartment } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
@@ -21,6 +21,24 @@ const addDays = (d: Date, days: number) => {
   out.setDate(out.getDate() + days);
   return out;
 };
+
+/**
+ * Starting checklist offered when clearance is first opened. Deliberately a
+ * template, not a fixed schema — HR can add, reword or drop lines per exit.
+ */
+const DEFAULT_CLEARANCE: { department: ClearanceDepartment; item: string }[] = [
+  { department: "it", item: "Laptop and accessories returned" },
+  { department: "it", item: "Email, VPN and system access revoked" },
+  { department: "it", item: "SIM card / mobile handset returned" },
+  { department: "admin", item: "Access card and office keys returned" },
+  { department: "admin", item: "Locker and desk cleared" },
+  { department: "finance", item: "Outstanding advances and loans settled" },
+  { department: "finance", item: "Company credit card and expenses cleared" },
+  { department: "manager", item: "Work handover completed" },
+  { department: "manager", item: "Pending tasks reassigned" },
+  { department: "hr", item: "Exit interview conducted" },
+  { department: "hr", item: "Final settlement acknowledged" },
+];
 
 export class ResignationService {
   /**
@@ -194,6 +212,91 @@ export class ResignationService {
         await Employee.findByIdAndUpdate(record.employee, { status: "notice_period" });
       }
     }
+    await record.save();
+    return Resignation.findById(id).populate(POP);
+  }
+
+  // ── Exit clearance ────────────────────────────────────────────────────────
+  /** Seed the default checklist. No-op if one already exists, so it's safe to re-call. */
+  async startClearance(id: string) {
+    const record = await Resignation.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
+    if (!record.clearance?.length) {
+      record.clearance = DEFAULT_CLEARANCE.map((c) => ({ ...c, status: "pending" })) as never;
+      await record.save();
+    }
+    return Resignation.findById(id).populate(POP);
+  }
+
+  /** Replace the checklist wholesale, preserving sign-off on lines that survive. */
+  async setClearance(id: string, input: ClearanceInput) {
+    const record = await Resignation.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
+
+    const existing = new Map((record.clearance ?? []).map((c) => [String(c._id), c]));
+    record.clearance = input.items.map((i) => {
+      const prev = i._id ? existing.get(i._id) : undefined;
+      return {
+        ...(prev ? { _id: prev._id } : {}),
+        department: i.department,
+        item: i.item,
+        status: i.status ?? prev?.status ?? "pending",
+        notes: i.notes ?? prev?.notes,
+        // Keep who signed a line off, unless it's been reopened.
+        clearedBy: (i.status ?? prev?.status) === "pending" ? null : prev?.clearedBy ?? null,
+        clearedAt: (i.status ?? prev?.status) === "pending" ? null : prev?.clearedAt ?? null,
+      };
+    }) as never;
+    await record.save();
+    return Resignation.findById(id).populate(POP);
+  }
+
+  /** Sign off (or reopen) one line, stamping who acted. */
+  async updateClearanceItem(id: string, itemId: string, input: ClearanceItemUpdateInput, actorId: string) {
+    const record = await Resignation.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
+
+    const item = (record.clearance ?? []).find((c) => String(c._id) === itemId);
+    if (!item) throw Object.assign(new Error("Clearance item not found"), { statusCode: 404 });
+
+    item.status = input.status;
+    if (input.notes !== undefined) item.notes = input.notes ?? undefined;
+    // Reopening clears the signature so the record never shows a stale approver.
+    const done = input.status !== "pending";
+    item.clearedBy = (done ? actorId : null) as never;
+    item.clearedAt = done ? new Date() : null;
+
+    await record.save();
+    return Resignation.findById(id).populate(POP);
+  }
+
+  // ── Exit interview ────────────────────────────────────────────────────────
+  async saveExitInterview(id: string, input: ExitInterviewInput, actorId: string) {
+    const record = await Resignation.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Resignation not found"), { statusCode: 404 });
+    if (record.status === "pending") {
+      throw Object.assign(
+        new Error("Accept the resignation before recording an exit interview"),
+        { statusCode: 400 }
+      );
+    }
+
+    record.exitInterview = {
+      ...(record.exitInterview ?? {}),
+      ...input,
+      ratings: { ...(record.exitInterview?.ratings ?? {}), ...(input.ratings ?? {}) },
+      conductedBy: actorId,
+      conductedAt: record.exitInterview?.conductedAt ?? new Date(),
+    } as never;
+
+    // Tick the matching checklist line so the two don't drift apart.
+    const hrLine = (record.clearance ?? []).find((c) => c.department === "hr" && /exit interview/i.test(c.item));
+    if (hrLine && hrLine.status === "pending") {
+      hrLine.status = "cleared";
+      hrLine.clearedBy = actorId as never;
+      hrLine.clearedAt = new Date();
+    }
+
     await record.save();
     return Resignation.findById(id).populate(POP);
   }

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   User2, Briefcase, Landmark, GraduationCap, MapPin, Home, ShieldAlert,
-  Mail, Phone, CalendarDays, Clock3, Users2, BookUser, Plane,
+  Mail, Phone, CalendarDays, Clock3, Users2, BookUser, Plane, CreditCard, Contact,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -177,6 +177,24 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all",
             <Item label="Type" value={e.visa?.type ?? "—"} />
             <Item label="Issue date" value={fmtDate(e.visa?.issueDate)} icon={CalendarDays} />
             <Item label="Expiry date" value={fmtDate(e.visa?.expiryDate)} icon={CalendarDays} />
+          </Grid>
+        </Section>
+
+        {/* Labour card */}
+        <Section icon={CreditCard} title="Labour card" action={edit("labourCard")}>
+          <Grid>
+            <Item label="Card number" value={e.labourCard?.cardNumber ?? "—"} />
+            <Item label="Issue date" value={fmtDate(e.labourCard?.issueDate)} icon={CalendarDays} />
+            <Item label="Expiry date" value={fmtDate(e.labourCard?.expiryDate)} icon={CalendarDays} />
+          </Grid>
+        </Section>
+
+        {/* Emirates ID */}
+        <Section icon={Contact} title="Emirates ID" action={edit("emiratesId")}>
+          <Grid>
+            <Item label="ID number" value={e.emiratesId?.idNumber ?? "—"} />
+            <Item label="Issue date" value={fmtDate(e.emiratesId?.issueDate)} icon={CalendarDays} />
+            <Item label="Expiry date" value={fmtDate(e.emiratesId?.expiryDate)} icon={CalendarDays} />
           </Grid>
         </Section>
         </>}

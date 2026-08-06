@@ -75,6 +75,25 @@ const visaSchema = new Schema(
   { _id: false }
 );
 
+/** UAE work permit. Lapsing one is a compliance problem, so it is alerted on like passport/visa. */
+const labourCardSchema = new Schema(
+  {
+    cardNumber: { type: String, trim: true, maxlength: 40 },
+    issueDate: { type: Date, default: null },
+    expiryDate: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
+const emiratesIdSchema = new Schema(
+  {
+    idNumber: { type: String, trim: true, maxlength: 40 },
+    issueDate: { type: Date, default: null },
+    expiryDate: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const documentSchema = new Schema(
   {
     type: {
@@ -171,6 +190,8 @@ const employeeSchema = new Schema<IEmployee>(
     familyMembers: { type: [familyMemberSchema], default: [] },
     passport: { type: passportSchema, default: undefined },
     visa: { type: visaSchema, default: undefined },
+    labourCard: { type: labourCardSchema, default: undefined },
+    emiratesId: { type: emiratesIdSchema, default: undefined },
   },
   {
     timestamps: true,

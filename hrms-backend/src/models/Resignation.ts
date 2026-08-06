@@ -29,6 +29,59 @@ const settlementSchema = new Schema(
   { _id: false }
 );
 
+/**
+ * One department's sign-off on an exit. Kept as an array of items rather than
+ * flags so an organisation can add its own without a schema change, and so each
+ * line carries who cleared it and when.
+ */
+const clearanceItemSchema = new Schema(
+  {
+    department: {
+      type: String,
+      enum: ["it", "finance", "hr", "admin", "manager"],
+      required: true,
+    },
+    item: { type: String, required: true, trim: true, maxlength: 150 },
+    status: { type: String, enum: ["pending", "cleared", "not_applicable"], default: "pending" },
+    notes: { type: String, trim: true, maxlength: 500 },
+    clearedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    clearedAt: { type: Date, default: null },
+  },
+  { timestamps: false }
+);
+
+const ratingField = { type: Number, min: 1, max: 5, default: null };
+
+/** Structured exit interview, recorded once by HR. */
+const exitInterviewSchema = new Schema(
+  {
+    conductedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    conductedAt: { type: Date, default: null },
+    primaryReason: {
+      type: String,
+      enum: [
+        "compensation", "career_growth", "work_life_balance", "management",
+        "relocation", "higher_studies", "health", "role_mismatch", "other",
+      ],
+      default: undefined,
+    },
+    ratings: {
+      workEnvironment: ratingField,
+      management: ratingField,
+      growth: ratingField,
+      compensation: ratingField,
+      workLifeBalance: ratingField,
+    },
+    whatWentWell: { type: String, trim: true, maxlength: 2000 },
+    whatCouldImprove: { type: String, trim: true, maxlength: 2000 },
+    wouldRecommend: { type: Boolean, default: null },
+    // HR's own judgement, deliberately separate from the employee's answers.
+    eligibleForRehire: { type: Boolean, default: null },
+    notes: { type: String, trim: true, maxlength: 2000 },
+  },
+  { _id: false }
+);
+
 const resignationSchema = new Schema<IResignation>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -60,6 +113,9 @@ const resignationSchema = new Schema<IResignation>(
     paymentType: { type: String, enum: ["cash", "bank_transfer", "cheque"], default: undefined },
     remarks: { type: String, trim: true, maxlength: 1000 },
     settlement: { type: settlementSchema, default: null },
+    // ── Exit clearance & interview ──
+    clearance: { type: [clearanceItemSchema], default: [] },
+    exitInterview: { type: exitInterviewSchema, default: null },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

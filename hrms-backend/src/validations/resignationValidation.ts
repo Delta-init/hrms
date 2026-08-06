@@ -65,6 +65,55 @@ export const settlementInputSchema = z.object({
   notes: z.string().max(1000).optional().nullable(),
 });
 
+const clearanceDepartment = z.enum(["it", "finance", "hr", "admin", "manager"]);
+
+/** Replace the whole checklist — add, remove or reword lines in one call. */
+export const clearanceSchema = z.object({
+  items: z.array(
+    z.object({
+      _id: z.string().optional(),
+      department: clearanceDepartment,
+      item: z.string().min(1, "Item is required").max(150),
+      status: z.enum(["pending", "cleared", "not_applicable"]).optional(),
+      notes: z.string().max(500).optional().nullable(),
+    })
+  ),
+});
+
+/** Sign off (or reopen) a single checklist line. */
+export const clearanceItemUpdateSchema = z.object({
+  status: z.enum(["pending", "cleared", "not_applicable"]),
+  notes: z.string().max(500).optional().nullable(),
+});
+
+const rating = z.coerce.number().min(1).max(5).optional().nullable();
+
+export const exitInterviewSchema = z.object({
+  primaryReason: z
+    .enum([
+      "compensation", "career_growth", "work_life_balance", "management",
+      "relocation", "higher_studies", "health", "role_mismatch", "other",
+    ])
+    .optional(),
+  ratings: z
+    .object({
+      workEnvironment: rating,
+      management: rating,
+      growth: rating,
+      compensation: rating,
+      workLifeBalance: rating,
+    })
+    .optional(),
+  whatWentWell: z.string().max(2000).optional().nullable(),
+  whatCouldImprove: z.string().max(2000).optional().nullable(),
+  wouldRecommend: z.boolean().optional().nullable(),
+  eligibleForRehire: z.boolean().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+export type ClearanceInput = z.infer<typeof clearanceSchema>;
+export type ClearanceItemUpdateInput = z.infer<typeof clearanceItemUpdateSchema>;
+export type ExitInterviewInput = z.infer<typeof exitInterviewSchema>;
 export type SettlementInput = z.infer<typeof settlementInputSchema>;
 export type CreateResignationInput = z.infer<typeof createResignationSchema>;
 export type ReviewResignationInput = z.infer<typeof reviewResignationSchema>;

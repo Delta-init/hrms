@@ -315,6 +315,16 @@ export interface Visa {
   issueDate?: string | null;
   expiryDate?: string | null;
 }
+export interface LabourCard {
+  cardNumber?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+}
+export interface EmiratesId {
+  idNumber?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+}
 export const VISA_TYPES = [
   "Employment", "Residence", "Visit", "Tourist", "Business", "Student", "Dependent", "Transit", "Golden", "Other",
 ] as const;
@@ -366,6 +376,8 @@ export interface Employee {
   familyMembers?: FamilyMember[];
   passport?: Passport;
   visa?: Visa;
+  labourCard?: LabourCard;
+  emiratesId?: EmiratesId;
 
   createdAt: string;
   updatedAt: string;
@@ -1226,11 +1238,67 @@ export interface Resignation {
   paymentType?: PaymentType | null;
   remarks?: string;
   settlement?: FinalSettlement | null;
+  clearance?: ClearanceItem[];
+  exitInterview?: ExitInterview | null;
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export const CLEARANCE_DEPARTMENTS = ["it", "finance", "hr", "admin", "manager"] as const;
+export type ClearanceDepartment = (typeof CLEARANCE_DEPARTMENTS)[number];
+export const CLEARANCE_DEPT_LABELS: Record<ClearanceDepartment, string> = {
+  it: "IT", finance: "Finance", hr: "HR", admin: "Admin", manager: "Manager",
+};
+export type ClearanceStatus = "pending" | "cleared" | "not_applicable";
+
+export interface ClearanceItem {
+  _id: string;
+  department: ClearanceDepartment;
+  item: string;
+  status: ClearanceStatus;
+  notes?: string;
+  clearedBy?: { _id: string; name: string } | string | null;
+  clearedAt?: string | null;
+}
+
+export const EXIT_REASONS = [
+  "compensation", "career_growth", "work_life_balance", "management",
+  "relocation", "higher_studies", "health", "role_mismatch", "other",
+] as const;
+export type ExitReason = (typeof EXIT_REASONS)[number];
+export const EXIT_REASON_LABELS: Record<ExitReason, string> = {
+  compensation: "Compensation",
+  career_growth: "Career growth",
+  work_life_balance: "Work-life balance",
+  management: "Management",
+  relocation: "Relocation",
+  higher_studies: "Higher studies",
+  health: "Health",
+  role_mismatch: "Role mismatch",
+  other: "Other",
+};
+
+export const EXIT_RATING_FIELDS = [
+  { key: "workEnvironment", label: "Work environment" },
+  { key: "management", label: "Management" },
+  { key: "growth", label: "Growth opportunities" },
+  { key: "compensation", label: "Compensation" },
+  { key: "workLifeBalance", label: "Work-life balance" },
+] as const;
+
+export interface ExitInterview {
+  conductedBy?: { _id: string; name: string } | string | null;
+  conductedAt?: string | null;
+  primaryReason?: ExitReason;
+  ratings?: Partial<Record<(typeof EXIT_RATING_FIELDS)[number]["key"], number | null>>;
+  whatWentWell?: string;
+  whatCouldImprove?: string;
+  wouldRecommend?: boolean | null;
+  eligibleForRehire?: boolean | null;
+  notes?: string;
 }
 
 export interface SettlementLine {

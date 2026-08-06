@@ -22,7 +22,7 @@ import {
 export type ProfileSection =
   | "personal" | "employment" | "bank" | "education"
   | "currentAddress" | "permanentAddress" | "emergency"
-  | "family" | "passport" | "visa";
+  | "family" | "passport" | "visa" | "labourCard" | "emiratesId";
 
 const SECTION_TITLES: Record<ProfileSection, string> = {
   personal: "Personal details",
@@ -35,6 +35,8 @@ const SECTION_TITLES: Record<ProfileSection, string> = {
   family: "Family members",
   passport: "Passport details",
   visa: "Visa details",
+  labourCard: "Labour card",
+  emiratesId: "Emirates ID",
 };
 
 const NONE = "__none__";
@@ -78,6 +80,10 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
       return { passport: { passportNumber: e.passport?.passportNumber ?? "", country: e.passport?.country ?? "", issueDate: toDateInput(e.passport?.issueDate), expiryDate: toDateInput(e.passport?.expiryDate) } };
     case "visa":
       return { visa: { country: e.visa?.country ?? "", type: e.visa?.type ?? "", issueDate: toDateInput(e.visa?.issueDate), expiryDate: toDateInput(e.visa?.expiryDate) } };
+    case "labourCard":
+      return { labourCard: { cardNumber: e.labourCard?.cardNumber ?? "", issueDate: toDateInput(e.labourCard?.issueDate), expiryDate: toDateInput(e.labourCard?.expiryDate) } };
+    case "emiratesId":
+      return { emiratesId: { idNumber: e.emiratesId?.idNumber ?? "", issueDate: toDateInput(e.emiratesId?.issueDate), expiryDate: toDateInput(e.emiratesId?.expiryDate) } };
   }
 }
 
@@ -246,6 +252,22 @@ export function EmployeeSectionDialog({
               </div>
               <div className={field}><Label>Issue date</Label><Input type="date" {...register("visa.issueDate")} /></div>
               <div className={field}><Label>Expiry date</Label><Input type="date" {...register("visa.expiryDate")} /></div>
+            </div>
+          )}
+
+          {section === "labourCard" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className={field}><Label>Card number</Label><Input {...register("labourCard.cardNumber")} /></div>
+              <div className={field}><Label>Issue date</Label><Input type="date" {...register("labourCard.issueDate")} /></div>
+              <div className={field}><Label>Expiry date</Label><Input type="date" {...register("labourCard.expiryDate")} /></div>
+            </div>
+          )}
+
+          {section === "emiratesId" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className={field}><Label>ID number</Label><Input {...register("emiratesId.idNumber")} /></div>
+              <div className={field}><Label>Issue date</Label><Input type="date" {...register("emiratesId.issueDate")} /></div>
+              <div className={field}><Label>Expiry date</Label><Input type="date" {...register("emiratesId.expiryDate")} /></div>
             </div>
           )}
 

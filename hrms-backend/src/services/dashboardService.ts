@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Employee } from "../models/Employee.js";
+import { Card } from "../models/Card.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
@@ -56,37 +57,71 @@ export async function anniversariesOn(date = new Date(), orgId?: string | null) 
   ]);
 }
 
+export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card";
+
 interface ExpiringDoc {
   employee: { _id: unknown; name: string; employeeCode?: string; designation?: string };
-  type: "passport" | "visa";
+  type: ExpiringDocType;
   label: string;
   expiryDate: Date;
   daysLeft: number;
   expired: boolean;
 }
 
+interface EmpDocs {
+  _id: unknown;
+  name: string;
+  employeeCode?: string;
+  designation?: string;
+  user?: unknown;
+  passport?: { passportNumber?: string; expiryDate?: Date };
+  visa?: { type?: string; expiryDate?: Date };
+  labourCard?: { cardNumber?: string; expiryDate?: Date };
+  emiratesId?: { idNumber?: string; expiryDate?: Date };
+}
+
 /**
- * Employees whose passport or visa expires within `withinDays` (already-expired
- * documents included, with a negative daysLeft). Sorted most-urgent first.
+ * Everything with an expiry date that lapsing would cause a compliance or
+ * access problem: passport, visa, labour card, Emirates ID and issued access
+ * cards. Already-expired items are included with a negative daysLeft, so the
+ * dashboard can show "overdue" rather than silently dropping them. Sorted
+ * most-urgent first.
  */
 export async function expiringDocuments(withinDays = 90, orgId?: string | null): Promise<ExpiringDoc[]> {
   const now = new Date();
   const cutoff = new Date(now.getTime() + withinDays * 86_400_000);
+  const expiringBy = (path: string) => ({ [path]: { $ne: null, $lte: cutoff } });
+
   const match: Record<string, unknown> = {
     status: { $ne: "terminated" },
     $or: [
-      { "passport.expiryDate": { $ne: null, $lte: cutoff } },
-      { "visa.expiryDate": { $ne: null, $lte: cutoff } },
+      expiringBy("passport.expiryDate"),
+      expiringBy("visa.expiryDate"),
+      expiringBy("labourCard.expiryDate"),
+      expiringBy("emiratesId.expiryDate"),
     ],
   };
-  if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
+  const scope = orgId ? { organization: new mongoose.Types.ObjectId(orgId) } : {};
+  Object.assign(match, scope);
 
-  const emps = await Employee.find(match)
-    .select("name employeeCode designation passport visa")
-    .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; passport?: { passportNumber?: string; expiryDate?: Date }; visa?: { type?: string; expiryDate?: Date } }>>();
+  // Cards hang off the login account, so they are resolved back to the employee
+  // separately rather than being part of the employee $or above.
+  const [emps, cards] = await Promise.all([
+    Employee.find(match)
+      .select("name employeeCode designation passport visa labourCard emiratesId")
+      .lean<EmpDocs[]>(),
+    Card.find({ ...scope, expiryDate: { $ne: null, $lte: cutoff } })
+      .select("cardNumber name client expiryDate")
+      .lean<Array<{ cardNumber: string; name: string; client: unknown; expiryDate?: Date }>>(),
+  ]);
 
   const items: ExpiringDoc[] = [];
-  const push = (emp: (typeof emps)[number], type: "passport" | "visa", label: string, expiry?: Date | null) => {
+  const push = (
+    emp: { _id: unknown; name: string; employeeCode?: string; designation?: string },
+    type: ExpiringDocType,
+    label: string,
+    expiry?: Date | null
+  ) => {
     if (!expiry) return;
     const d = new Date(expiry);
     if (d > cutoff) return;
@@ -96,10 +131,26 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
       type, label, expiryDate: d, daysLeft, expired: daysLeft < 0,
     });
   };
+
   for (const e of emps) {
     push(e, "passport", e.passport?.passportNumber ? `Passport ${e.passport.passportNumber}` : "Passport", e.passport?.expiryDate);
     push(e, "visa", e.visa?.type ? `Visa · ${e.visa.type}` : "Visa", e.visa?.expiryDate);
+    push(e, "labourCard", e.labourCard?.cardNumber ? `Labour card ${e.labourCard.cardNumber}` : "Labour card", e.labourCard?.expiryDate);
+    push(e, "emiratesId", e.emiratesId?.idNumber ? `Emirates ID ${e.emiratesId.idNumber}` : "Emirates ID", e.emiratesId?.expiryDate);
   }
+
+  if (cards.length) {
+    const holders = await Employee.find({ ...scope, user: { $in: cards.map((c) => c.client) } })
+      .select("name employeeCode designation user")
+      .lean<EmpDocs[]>();
+    const byUser = new Map(holders.map((h) => [String(h.user), h]));
+    for (const c of cards) {
+      // Fall back to the name printed on the card when no employee record is linked.
+      const holder = byUser.get(String(c.client)) ?? { _id: null, name: c.name };
+      push(holder, "card", `Access card ${c.cardNumber}`, c.expiryDate);
+    }
+  }
+
   items.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
   return items;
 }

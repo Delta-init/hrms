@@ -107,3 +107,47 @@ export const useFinaliseSettlement = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to finalise settlement")),
   });
 };
+
+// ── Exit clearance & interview ──────────────────────────────────────────────
+
+/** Seed the default checklist. Idempotent — safe to call on an exit that already has one. */
+export const useStartClearance = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<ApiResponse<Resignation>>(`/resignations/${id}/clearance/start`, {})).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Clearance checklist started"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to start clearance")),
+  });
+};
+
+/** Replace the whole checklist — used when adding or removing lines. */
+export const useSetClearance = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, items }: { id: string; items: Record<string, unknown>[] }) =>
+      (await api.put<ApiResponse<Resignation>>(`/resignations/${id}/clearance`, { items })).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Checklist updated"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to update checklist")),
+  });
+};
+
+export const useUpdateClearanceItem = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, itemId, data }: { id: string; itemId: string; data: Record<string, unknown> }) =>
+      (await api.patch<ApiResponse<Resignation>>(`/resignations/${id}/clearance/${itemId}`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); },
+    onError: (e) => toast.error(errMsg(e, "Failed to update clearance item")),
+  });
+};
+
+export const useSaveExitInterview = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.put<ApiResponse<Resignation>>(`/resignations/${id}/exit-interview`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Exit interview saved"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to save exit interview")),
+  });
+};

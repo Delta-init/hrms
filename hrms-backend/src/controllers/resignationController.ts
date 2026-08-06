@@ -3,7 +3,10 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { ResignationService } from "../services/resignationService.js";
 import { SettlementService } from "../services/settlementService.js";
 import { runResignationRelieve } from "../jobs/resignationJob.js";
-import { createResignationSchema, reviewResignationSchema, updateResignationSchema, exitDetailsSchema, settlementInputSchema } from "../validations/resignationValidation.js";
+import {
+  createResignationSchema, reviewResignationSchema, updateResignationSchema, exitDetailsSchema,
+  settlementInputSchema, clearanceSchema, clearanceItemUpdateSchema, exitInterviewSchema,
+} from "../validations/resignationValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new ResignationService();
@@ -95,6 +98,38 @@ export const saveSettlement = async (req: AuthenticatedRequest, res: Response, n
     const parsed = settlementInputSchema.safeParse(req.body ?? {});
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     sendSuccess(res, "Settlement saved", await settlementService.save(req.params.id, parsed.data));
+  } catch (error) { next(error); }
+};
+
+export const startClearance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Clearance checklist started", await service.startClearance(req.params.id));
+  } catch (error) { next(error); }
+};
+
+export const setClearance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = clearanceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Clearance checklist updated", await service.setClearance(req.params.id, parsed.data));
+  } catch (error) { next(error); }
+};
+
+export const updateClearanceItem = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = clearanceItemUpdateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.updateClearanceItem(req.params.id, req.params.itemId, parsed.data, req.user!.userId);
+    sendSuccess(res, "Clearance item updated", record);
+  } catch (error) { next(error); }
+};
+
+export const saveExitInterview = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = exitInterviewSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.saveExitInterview(req.params.id, parsed.data, req.user!.userId);
+    sendSuccess(res, "Exit interview saved", record);
   } catch (error) { next(error); }
 };
 

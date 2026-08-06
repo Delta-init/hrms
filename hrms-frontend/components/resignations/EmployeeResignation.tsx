@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut, Loader2, DoorOpen, Calculator, Lock } from "lucide-react";
+import { Plus, Check, X, UserMinus, Undo2, Trash2, LogOut, Loader2, DoorOpen, Calculator, Lock, ClipboardCheck, MessageSquareText } from "lucide-react";
 import { useResignations, useReviewResignation, useWithdrawResignation, useRelieveResignation, useDeleteResignation, useSetExitDetails } from "@/hooks/useResignations";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -12,10 +12,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResignationDialog } from "@/components/resignations/ResignationDialog";
 import { SettlementDialog } from "@/components/resignations/SettlementDialog";
+import { ClearanceChecklist } from "@/components/resignations/ClearanceChecklist";
+import { ExitInterviewDialog } from "@/components/resignations/ExitInterviewDialog";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { RESIGNATION_STATUS_LABELS, RESIGNATION_TYPE_LABELS, PAYMENT_TYPE_LABELS, type Resignation, type ResignationStatus, type PaymentType } from "@/types";
+import { RESIGNATION_STATUS_LABELS, RESIGNATION_TYPE_LABELS, PAYMENT_TYPE_LABELS, EXIT_REASON_LABELS, type Resignation, type ResignationStatus, type PaymentType } from "@/types";
 
 const statusStyles: Record<ResignationStatus, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
@@ -111,7 +113,10 @@ export function EmployeeResignation({ employee }: Props) {
       )}
 
       {current && ["accepted", "relieved"].includes(current.status) && canEdit && (
-        <ExitDetails resignation={current} />
+        <>
+          <ExitClearance resignation={current} canEdit={canEdit} />
+          <ExitDetails resignation={current} />
+        </>
       )}
 
       {history.length > 0 && (
@@ -304,6 +309,54 @@ function ExitDetails({ resignation: r }: { resignation: Resignation }) {
       <div className="mt-4 flex justify-end">
         <Button size="sm" onClick={onSave} disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save exit details</Button>
       </div>
+    </Card>
+  );
+}
+
+/** Exit clearance checklist + the exit interview, side by side above exit details. */
+function ExitClearance({ resignation: r, canEdit }: { resignation: Resignation; canEdit: boolean }) {
+  const [interviewOpen, setInterviewOpen] = useState(false);
+  const ei = r.exitInterview;
+  const done = !!ei?.conductedAt;
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <ClipboardCheck className="h-4 w-4 text-primary" />
+        <div>
+          <p className="text-sm font-medium">Exit clearance</p>
+          <p className="text-[11px] text-muted-foreground">Departmental sign-off before the employee is relieved</p>
+        </div>
+      </div>
+
+      <ClearanceChecklist resignation={r} canEdit={canEdit} />
+
+      <button
+        type="button"
+        onClick={() => setInterviewOpen(true)}
+        className="mt-4 flex w-full items-center justify-between rounded-xl border border-border p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+      >
+        <div className="flex items-center gap-2">
+          <MessageSquareText className="h-4 w-4 text-primary" />
+          <div>
+            <p className="text-sm font-medium">Exit interview</p>
+            <p className="text-[11px] text-muted-foreground">
+              {done
+                ? `Recorded${ei?.primaryReason ? ` · ${EXIT_REASON_LABELS[ei.primaryReason]}` : ""}`
+                : "Reason for leaving, ratings and feedback"}
+            </p>
+          </div>
+        </div>
+        {done ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
+            <Check className="h-3 w-3" />Recorded
+          </span>
+        ) : (
+          <span className="text-xs font-medium text-primary">Record →</span>
+        )}
+      </button>
+
+      <ExitInterviewDialog open={interviewOpen} onOpenChange={setInterviewOpen} resignation={r} />
     </Card>
   );
 }
