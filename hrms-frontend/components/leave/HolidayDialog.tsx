@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WorkScheduleSelect } from "@/components/pickers";
 import { holidayFormSchema, type HolidayFormValues } from "@/lib/validations/leaveSchema";
 import { useCreateHoliday } from "@/hooks/useLeaves";
-import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { TIME_ZONES } from "@/types";
 
 const NONE = "__none__";
@@ -26,7 +26,6 @@ interface Props {
 
 export function HolidayDialog({ open, onOpenChange }: Props) {
   const { mutate: create, isPending } = useCreateHoliday();
-  const { data: schedules = [] } = useWorkSchedulesSimple();
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<HolidayFormValues>({
     resolver: zodResolver(holidayFormSchema),
@@ -109,13 +108,12 @@ export function HolidayDialog({ open, onOpenChange }: Props) {
               name="workSchedule"
               control={control}
               render={({ field }) => (
-                <Select value={field.value || NONE} onValueChange={(v) => field.onChange(v === NONE ? "" : v)}>
-                  <SelectTrigger><SelectValue placeholder="Global (all)" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Global (all schedules)</SelectItem>
-                    {schedules.map((s) => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <WorkScheduleSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder="Global (all schedules)"
+                  allowClear
+                />
               )}
             />
           </div>

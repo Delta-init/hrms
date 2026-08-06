@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { EmployeeSelect } from "@/components/pickers";
+import { EmployeeSelect, SalaryStructureSelect } from "@/components/pickers";
 import { assignFormSchema, type AssignFormValues } from "@/lib/validations/salaryStructureSchema";
 import { useAssignStructure, useUpdateAssignment, useSalaryStructures } from "@/hooks/useSalaryStructures";
 import type { SalaryStructureAssignment } from "@/types";
@@ -29,8 +29,6 @@ const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 export function AssignStructureDialog({ open, onOpenChange, assignment, defaultMonth }: Props) {
   const isEditing = !!assignment;
-  const { data: structData } = useSalaryStructures({ status: "active", limit: "200" });
-  const structures = structData?.data ?? [];
   const { mutate: assign, isPending: assigning } = useAssignStructure();
   const { mutate: update, isPending: updating } = useUpdateAssignment();
   const isPending = assigning || updating;
@@ -51,7 +49,11 @@ export function AssignStructureDialog({ open, onOpenChange, assignment, defaultM
 
   const structureId = useWatch({ control, name: "structure" });
   const basicAmount = useWatch({ control, name: "basicAmount" });
-  const selected = structures.find((s) => s._id === structureId);
+  // The picker searches the server; this list is only for the component
+  // preview below, which needs the chosen structure's lines. Structures are a
+  // small, bounded set (there is no by-id endpoint to fetch just one).
+  const { data: structData } = useSalaryStructures({ status: "active", limit: "200" });
+  const selected = (structData?.data ?? []).find((s) => s._id === structureId);
 
   const preview = useMemo(() => {
     const basic = Number(basicAmount) || 0;
@@ -102,10 +104,7 @@ export function AssignStructureDialog({ open, onOpenChange, assignment, defaultM
           <div className="space-y-1.5">
             <Label>Structure *</Label>
             <Controller name="structure" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select structure" /></SelectTrigger>
-                <SelectContent>{structures.map((s) => <SelectItem key={s._id} value={s._id}>{s.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <SalaryStructureSelect value={field.value} onChange={field.onChange} placeholder="Select structure" />
             )} />
             {errors.structure && <p className="text-xs text-destructive">{errors.structure.message}</p>}
           </div>

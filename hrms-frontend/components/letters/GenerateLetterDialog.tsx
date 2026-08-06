@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect, LetterTemplateSelect } from "@/components/pickers";
 import { generateLetterFormSchema, type GenerateLetterFormValues } from "@/lib/validations/letterSchema";
 import { useGenerateLetter, useLetterTemplates } from "@/hooks/useLetters";
-import { useEmployees } from "@/hooks/useEmployees";
 import { LETTER_CATEGORY_LABELS, type GeneratedLetter } from "@/types";
 
 interface Props {
@@ -23,11 +23,11 @@ interface Props {
 }
 
 export function GenerateLetterDialog({ open, onOpenChange, onGenerated }: Props) {
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: open });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
+  const { mutate: generate, isPending } = useGenerateLetter();
+  // Only to tell the user there are no templates yet — the picker itself
+  // searches the server.
   const { data: templates } = useLetterTemplates();
   const activeTemplates = (templates ?? []).filter((t) => t.status === "active");
-  const { mutate: generate, isPending } = useGenerateLetter();
 
   const { handleSubmit, control, register, reset, formState: { errors } } = useForm<GenerateLetterFormValues>({
     resolver: zodResolver(generateLetterFormSchema),
@@ -54,10 +54,7 @@ export function GenerateLetterDialog({ open, onOpenChange, onGenerated }: Props)
           <div className="space-y-1.5">
             <Label>Employee *</Label>
             <Controller name="employee" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-              </Select>
+              <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Select employee" />
             )} />
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}
           </div>
@@ -65,10 +62,7 @@ export function GenerateLetterDialog({ open, onOpenChange, onGenerated }: Props)
           <div className="space-y-1.5">
             <Label>Template *</Label>
             <Controller name="templateId" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select template" /></SelectTrigger>
-                <SelectContent>{activeTemplates.map((t) => <SelectItem key={t._id} value={t._id}>{t.name} · {LETTER_CATEGORY_LABELS[t.category]}</SelectItem>)}</SelectContent>
-              </Select>
+              <LetterTemplateSelect value={field.value} onChange={field.onChange} placeholder="Select template" />
             )} />
             {errors.templateId && <p className="text-xs text-destructive">{errors.templateId.message}</p>}
             {activeTemplates.length === 0 && <p className="text-xs text-muted-foreground">No active templates yet — create one under the Templates tab first.</p>}
