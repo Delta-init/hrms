@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/types";
+import type { PackedAuthUser } from "@/lib/auth/authOptions";
 import type { DefaultSession } from "next-auth";
 
 interface ImpersonatedBy {
@@ -21,7 +22,7 @@ declare module "next-auth/jwt" {
     refreshToken?: string;
     accessTokenExpires?: number;
     error?: string;
-    appUser?: AuthUser;
+    appUser?: PackedAuthUser;
     impersonatedBy?: ImpersonatedBy;
   }
 }

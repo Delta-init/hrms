@@ -1,5 +1,13 @@
 // ─── Permissions ──────────────────────────────────────────────────────────────
-export type PermissionAction = "view" | "create" | "edit" | "delete" | "approve" | "export";
+/**
+ * Order is load-bearing: it fixes the bit position of each action when the
+ * permission map is packed into the session JWT (see lib/auth/authOptions.ts).
+ * Appending is safe; reordering or removing would silently reinterpret the
+ * permissions of every already-issued session.
+ */
+export const PERMISSION_ACTIONS = ["view", "create", "edit", "delete", "approve", "export"] as const;
+
+export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
 export interface ModulePermissions {
   view: boolean;

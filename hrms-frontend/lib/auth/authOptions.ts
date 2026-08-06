@@ -1,8 +1,62 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import type { AuthUser, ApiResponse, LoginResponse } from "@/types";
+import type { AuthUser, ApiResponse, LoginResponse, PermissionsMap, HrmsModule, ModulePermissions } from "@/types";
+import { PERMISSION_ACTIONS } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
+
+/**
+ * The session cookie is size-limited (~4KB, after which NextAuth splits it into
+ * chunks — and a half-written chunk set is indistinguishable from being signed
+ * out, which made the first login attempt bounce back to /login). Spelling out
+ * every action of every module cost ~2.8KB on its own, so the permission map is
+ * packed to one small integer per module for storage in the JWT and expanded
+ * again in the session callback. Callers never see the packed form.
+ */
+export type PackedPermissions = Partial<Record<HrmsModule, number>>;
+
+/** What actually lives in the JWT: the role, minus its expanded permission map. */
+export type PackedAuthUser = Omit<AuthUser, "role"> & {
+  role: Omit<AuthUser["role"], "permissions"> & { packedPermissions: PackedPermissions };
+};
+
+function packPermissions(perms: PermissionsMap | undefined): PackedPermissions {
+  const packed: PackedPermissions = {};
+  for (const [mod, actions] of Object.entries(perms ?? {})) {
+    let mask = 0;
+    PERMISSION_ACTIONS.forEach((action, i) => {
+      if (actions?.[action]) mask |= 1 << i;
+    });
+    // Modules with nothing granted are omitted entirely.
+    if (mask) packed[mod as HrmsModule] = mask;
+  }
+  return packed;
+}
+
+function unpackPermissions(packed: PackedPermissions | undefined): PermissionsMap {
+  const perms: PermissionsMap = {};
+  for (const [mod, mask] of Object.entries(packed ?? {})) {
+    const actions = {} as ModulePermissions;
+    PERMISSION_ACTIONS.forEach((action, i) => {
+      actions[action] = (((mask as number) >> i) & 1) === 1;
+    });
+    perms[mod as HrmsModule] = actions;
+  }
+  return perms;
+}
+
+/** Strip the role's permission map down to its packed form for JWT storage. */
+function packAppUser(u: AuthUser): PackedAuthUser {
+  const { permissions, ...role } = u.role;
+  return { ...u, role: { ...role, packedPermissions: packPermissions(permissions) } };
+}
+
+/** Restore the full permission map so `hasPermission` works unchanged. */
+function unpackAppUser(u: PackedAuthUser | undefined): AuthUser | undefined {
+  if (!u?.role) return u as AuthUser | undefined;
+  const { packedPermissions, ...role } = u.role;
+  return { ...u, role: { ...role, permissions: unpackPermissions(packedPermissions) } };
+}
 
 export interface ImpersonatedBy {
   id: string;
@@ -125,7 +179,7 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = u.accessToken;
         token.refreshToken = u.refreshToken;
         token.accessTokenExpires = jwtExpiryMs(u.accessToken);
-        token.appUser = u.appUser;
+        token.appUser = packAppUser(u.appUser);
         // Set/clear impersonation on every (re)auth so restore wipes it.
         token.impersonatedBy = u.impersonatedBy ?? undefined;
         token.error = undefined;
@@ -133,8 +187,10 @@ export const authOptions: NextAuthOptions = {
       }
       // Session update (e.g. after onboarding) — patch the cached appUser so the
       // gate stops redirecting without a full re-login.
-      if (trigger === "update" && session?.appUser) {
-        token.appUser = { ...(token.appUser as AuthUser), ...(session.appUser as Partial<AuthUser>) };
+      if (trigger === "update" && session?.appUser && token.appUser) {
+        // Only scalar fields are patched this way (profileCompleted), so the
+        // packed role survives untouched.
+        token.appUser = { ...token.appUser, ...(session.appUser as Partial<PackedAuthUser>) };
         return token;
       }
       // Access token still valid (60s buffer) → reuse; else rotate via refresh token.
@@ -148,7 +204,9 @@ export const authOptions: NextAuthOptions = {
       session.impersonatedBy = token.impersonatedBy as ImpersonatedBy | undefined;
       session.user = {
         ...(session.user ?? {}),
-        ...(token.appUser as AuthUser),
+        // Expanded back out here — only the cookie needs to stay small, so
+        // consumers keep seeing the ordinary permission map.
+        ...unpackAppUser(token.appUser),
       } as typeof session.user;
       return session;
     },

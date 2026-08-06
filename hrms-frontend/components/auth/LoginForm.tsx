@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,8 +19,16 @@ const enter = "animate-in fade-in-0 slide-in-from-bottom-3 duration-500 fill-mod
 export function LoginForm() {
   const router = useRouter();
   const login = useLogin();
+  const { status } = useSession();
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // /login isn't behind the auth middleware, so an already-signed-in user would
+  // otherwise sit here looking signed out — which is what made a bounced first
+  // attempt read as "the click did nothing".
+  useEffect(() => {
+    if (status === "authenticated") router.replace("/dashboard");
+  }, [status, router]);
 
   const {
     register,
@@ -36,8 +45,10 @@ export function LoginForm() {
     try {
       await login(data.email, data.password);
       toast.success("Welcome back!");
-      router.push("/dashboard");
-      router.refresh();
+      // No router.refresh() here: it refetches the *current* route, and firing
+      // it in the same tick as the push races the pending navigation — the
+      // refresh can resolve against /login and strand you on the form.
+      router.replace("/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       if (message.toLowerCase().includes("set a new password")) {
