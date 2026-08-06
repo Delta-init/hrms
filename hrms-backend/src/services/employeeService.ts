@@ -118,6 +118,54 @@ export class EmployeeService {
     return prefix + String(highest.num + 1).padStart(highest.width, "0");
   }
 
+  /**
+   * Refuse a reporting line that can't hold.
+   *
+   * `reportingTo` was previously accepted as any string: a manager could be
+   * missing, belong to another tenant, have left, or close a loop. The org
+   * chart tolerates loops by promoting people to roots, which hides bad data
+   * rather than preventing it — and now that the chart lets you drag someone
+   * onto anyone, a loop is one gesture away rather than a rare typo.
+   */
+  private async assertValidManager(employeeId: string, managerRef: string, kind: "Employee" | "User") {
+    // A login account is resolved to the employee behind it; the chart is
+    // employee-to-employee, so an unlinked account can't be a chart parent.
+    const manager = kind === "User"
+      ? await Employee.findOne(scoped({ user: managerRef })).select("_id status").lean()
+      : await Employee.findOne(scoped({ _id: managerRef })).select("_id status").lean();
+
+    if (!manager) {
+      throw Object.assign(new Error("That manager could not be found in this organization"), { statusCode: 400 });
+    }
+    if (manager.status === "terminated") {
+      throw Object.assign(new Error("Someone who has left cannot be assigned as a manager"), { statusCode: 400 });
+    }
+    if (String(manager._id) === String(employeeId)) {
+      throw Object.assign(new Error("An employee cannot report to themselves"), { statusCode: 400 });
+    }
+
+    // Walk up from the proposed manager: reaching the employee means the new
+    // line would close a loop.
+    let cursor: string | null = String(manager._id);
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      const node: { reportingTo?: unknown; reportingToKind?: string } | null =
+        await Employee.findById(cursor).select("reportingTo reportingToKind").lean();
+      if (!node?.reportingTo) break;
+      const next: { _id: unknown } | null = node.reportingToKind === "User"
+        ? await Employee.findOne(scoped({ user: node.reportingTo })).select("_id").lean()
+        : await Employee.findById(String(node.reportingTo)).select("_id").lean();
+      cursor = next ? String(next._id) : null;
+      if (cursor === String(employeeId)) {
+        throw Object.assign(
+          new Error("That would create a reporting loop — the person already reports to this employee"),
+          { statusCode: 400 }
+        );
+      }
+    }
+  }
+
   async getById(id: string) {
     const record = await Employee.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
@@ -138,6 +186,11 @@ export class EmployeeService {
     if (input.employeeCode && input.employeeCode.toUpperCase() !== record.employeeCode) {
       const dupe = await Employee.findOne(scoped({ employeeCode: input.employeeCode.trim().toUpperCase(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("Employee code already exists"), { statusCode: 409 });
+    }
+
+    // Clearing the line (null/"") is always allowed; setting one must hold up.
+    if (input.reportingTo) {
+      await this.assertValidManager(id, input.reportingTo, input.reportingToKind ?? "Employee");
     }
 
     Object.assign(record, clean(input));

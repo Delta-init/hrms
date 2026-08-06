@@ -28,9 +28,15 @@ interface Props {
   /** Prefill a new employee's name + linked login when creating from a user. */
   defaultName?: string;
   defaultUserId?: string;
+  /** Manager for a new employee — set when adding someone under an org-chart node. */
+  defaultReportingTo?: string;
+  /** That manager's name, so the reporting line isn't applied invisibly. */
+  defaultReportingToLabel?: string;
 }
 
-export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defaultUserId }: Props) {
+export function EmployeeDialog({
+  open, onOpenChange, employee, defaultName, defaultUserId, defaultReportingTo, defaultReportingToLabel,
+}: Props) {
   const isEditing = !!employee;
   // Suggested code for a new employee; the field stays editable.
   const { data: nextCode } = useNextEmployeeCode(open && !isEditing);
@@ -90,8 +96,16 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
       joiningDate: data.joiningDate || null,
       email: data.email || undefined,
     };
-    if (isEditing) update({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
-    else create(payload, { onSuccess: () => onOpenChange(false) });
+    if (isEditing) {
+      update({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+      return;
+    }
+    // Added under an org-chart node: that node becomes the manager.
+    if (defaultReportingTo) {
+      payload.reportingTo = defaultReportingTo;
+      payload.reportingToKind = "Employee";
+    }
+    create(payload, { onSuccess: () => onOpenChange(false) });
   };
 
   const optSelect = (name: keyof EmployeeFormValues, placeholder: string, options: { _id: string; label: string }[]) => (
@@ -118,6 +132,11 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4 px-4 sm:px-0">
+          {!isEditing && defaultReportingToLabel && (
+            <p className="col-span-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Will report to <span className="font-medium text-foreground">{defaultReportingToLabel}</span>. You can change this later from the org chart.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="employeeCode">Employee Code *</Label>
             <Input id="employeeCode" placeholder="EMP-001" {...register("employeeCode")} />

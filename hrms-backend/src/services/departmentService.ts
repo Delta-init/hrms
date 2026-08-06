@@ -71,12 +71,11 @@ export class DepartmentService {
   /**
    * Point every member of a department at its team leader.
    *
-   * Deliberately narrow about what it clears: someone dropped from the roster
-   * only loses their manager if it was *this* leader, so a reporting line set
-   * by hand elsewhere is never clobbered. The leader never reports to
-   * themselves, and an assignment that would close a reporting loop is skipped
-   * rather than written — the org chart tolerates cycles by promoting people to
-   * roots, but the underlying data would still be wrong.
+   * Fills blanks only. The org chart is the authority on reporting lines, so
+   * joining a team gives a manager to someone who has none — it never re-parents
+   * or releases anyone the chart has already placed. The leader is skipped so
+   * nobody reports to themselves, and an assignment that would close a loop is
+   * skipped rather than written.
    */
   private async syncReportingLine(
     departmentId: unknown,
@@ -85,14 +84,10 @@ export class DepartmentService {
     leaderEmpIds: string[],
     memberEmpIds: string[]
   ) {
-    // No leader: release anyone still pointing at this department's old one.
-    if (!leader) {
-      await Employee.updateMany(
-        scoped({ department: departmentId, reportingTo: { $ne: null } }),
-        { $set: { reportingTo: null, reportingToKind: "Employee" } }
-      );
-      return;
-    }
+    // Clearing the leader no longer clears the team's managers: the org chart
+    // is the authority on reporting lines, so a line set there must survive a
+    // department being edited.
+    if (!leader) return;
 
     const leaderSet = new Set(leaderEmpIds);
     const candidates = memberEmpIds.filter((id) => !leaderSet.has(id));
@@ -111,21 +106,15 @@ export class DepartmentService {
     }
 
     const safe = candidates.filter((id) => !ancestors.has(id));
+    if (!safe.length) return;
 
-    await Promise.all([
-      safe.length
-        ? Employee.updateMany(
-            scoped({ _id: { $in: safe } }),
-            { $set: { reportingTo: leader, reportingToKind: leaderKind ?? "Employee" } }
-          )
-        : Promise.resolve(),
-      // Former members who still report to this leader are released; a manager
-      // set independently of this department is left untouched.
-      Employee.updateMany(
-        scoped({ _id: { $nin: [...safe, ...leaderEmpIds] }, reportingTo: leader }),
-        { $set: { reportingTo: null, reportingToKind: "Employee" } }
-      ),
-    ]);
+    // Fill blanks only. The org chart owns reporting lines, so a member who
+    // already has a manager keeps them — joining a team suggests a manager for
+    // someone who has none, it doesn't re-parent people the chart has placed.
+    await Employee.updateMany(
+      scoped({ _id: { $in: safe }, $or: [{ reportingTo: null }, { reportingTo: { $exists: false } }] }),
+      { $set: { reportingTo: leader, reportingToKind: leaderKind ?? "Employee" } }
+    );
   }
 
   async create(input: CreateDepartmentInput) {

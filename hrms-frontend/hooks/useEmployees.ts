@@ -5,6 +5,15 @@ import api from "@/lib/axios";
 import type { ApiResponse, Employee } from "@/types";
 
 const KEY = ["employees"] as const;
+/**
+ * The org chart and the dashboard widgets are both derived from employees, so
+ * an employee change has to expire them too. Without this a manager reassigned
+ * on the chart snapped back to its old place until a hard reload.
+ */
+function invalidateEmployeeViews(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: KEY });
+  qc.invalidateQueries({ queryKey: ["dashboard"] });
+}
 function errMsg(e: unknown, f: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? f;
 }
@@ -76,7 +85,7 @@ export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => (await api.post<ApiResponse<Employee>>("/employees", data)).data.data!,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Employee created"); },
+    onSuccess: () => { invalidateEmployeeViews(qc); toast.success("Employee created"); },
     onError: (e) => toast.error(errMsg(e, "Failed to create employee")),
   });
 };
@@ -85,7 +94,7 @@ export const useUpdateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => (await api.put<ApiResponse<Employee>>(`/employees/${id}`, data)).data.data!,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Employee updated"); },
+    onSuccess: () => { invalidateEmployeeViews(qc); toast.success("Employee updated"); },
     onError: (e) => toast.error(errMsg(e, "Failed to update employee")),
   });
 };
@@ -94,7 +103,7 @@ export const useDeleteEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => { await api.delete(`/employees/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Employee deleted"); },
+    onSuccess: () => { invalidateEmployeeViews(qc); toast.success("Employee deleted"); },
     onError: (e) => toast.error(errMsg(e, "Failed to delete employee")),
   });
 };
@@ -104,8 +113,8 @@ export const useCreateEmployeeLogin = () => {
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       (await api.post<ApiResponse<{ loginEmail: string }>>(`/employees/${id}/create-login`, data)).data,
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: KEY });
+    onSuccess: () => {
+      invalidateEmployeeViews(qc);
       toast.success("Login created", { description: "An activation email with the temporary password was sent to the employee." });
     },
     onError: (e) => toast.error(errMsg(e, "Failed to create login")),

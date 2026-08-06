@@ -1,16 +1,16 @@
 "use client";
-import Link from "next/link";
 import { Loader2, Network } from "lucide-react";
 import { useOrgChart } from "@/hooks/useDashboard";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { OrgChartBoard } from "@/components/org-chart/OrgChartBoard";
 import { Card } from "@/components/ui/card";
-import { getInitials } from "@/lib/utils";
-import type { OrgNode } from "@/types";
 
 export default function OrgChartPage() {
   const { hasPermission } = useAuth();
   const canView = hasPermission("employees", "view");
+  const canEdit = hasPermission("employees", "edit");
+  const canCreate = hasPermission("employees", "create");
   const { data, isLoading } = useOrgChart(canView);
   const roots = data?.roots ?? [];
 
@@ -18,7 +18,9 @@ export default function OrgChartPage() {
     <div>
       <PageHeader
         title="Organization Chart"
-        description="Reporting lines across the team, built from each employee's manager."
+        description={canEdit
+          ? "Drag someone onto another card to change who they report to, or use a card's menu."
+          : "Reporting lines across the team, built from each employee's manager."}
         icon={Network}
       />
 
@@ -30,11 +32,7 @@ export default function OrgChartPage() {
         <Card className="p-16 text-center text-muted-foreground"><Network className="mx-auto mb-2 h-7 w-7" />No employees to chart yet.</Card>
       ) : (
         <Card className="overflow-x-auto p-6">
-          <div className="org-tree inline-block min-w-full text-center">
-            <ul>
-              {roots.map((n) => <TreeNode key={n._id} node={n} />)}
-            </ul>
-          </div>
+          <OrgChartBoard roots={roots} canEdit={canEdit} canCreate={canCreate} />
         </Card>
       )}
 
@@ -60,26 +58,5 @@ export default function OrgChartPage() {
         .org-tree > ul > li:only-child { padding-top: 0; }
       `}</style>
     </div>
-  );
-}
-
-function TreeNode({ node }: { node: OrgNode }) {
-  return (
-    <li>
-      <Link
-        href={`/employees/${node._id}`}
-        className="inline-flex w-44 flex-col items-center gap-1 rounded-xl border border-border bg-card p-3 align-top shadow-sm transition hover:border-primary/40 hover:shadow-md"
-      >
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(node.name)}</div>
-        <p className="mt-0.5 line-clamp-1 text-sm font-semibold">{node.name}</p>
-        {node.designation && <p className="line-clamp-1 text-xs text-muted-foreground">{node.designation}</p>}
-        {node.department && <span className="mt-0.5 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{node.department}</span>}
-      </Link>
-      {node.children.length > 0 && (
-        <ul>
-          {node.children.map((c) => <TreeNode key={c._id} node={c} />)}
-        </ul>
-      )}
-    </li>
   );
 }
