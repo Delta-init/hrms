@@ -47,12 +47,18 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
 
   // Default the time zone from the picked person's work schedule. Fetched by id
   // rather than looked up in the picker's page, which holds one page of results.
+  //
+  // Only when creating: an existing request stores the time zone it was filed
+  // in, and its dates are rendered against that. Re-applying the person's
+  // current schedule on open would silently rewrite it — and shift the dates
+  // the user sees — for a request nobody edited.
   const selectedUserId = watch("user");
-  const { data: selectedUser } = useUser(selectedUserId || "");
+  const { data: selectedUser } = useUser(isEditing ? "" : selectedUserId || "");
   useEffect(() => {
+    if (isEditing) return;
     const ws = selectedUser?.workSchedule;
     if (ws && typeof ws === "object" && ws.timeZone) setValue("timeZone", ws.timeZone);
-  }, [selectedUser, setValue]);
+  }, [isEditing, selectedUser, setValue]);
 
   useEffect(() => {
     if (!open) return;
