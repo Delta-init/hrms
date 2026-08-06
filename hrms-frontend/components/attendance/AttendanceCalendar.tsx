@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, User2, Users, CalendarDays } from "lucide-react";
 import { useAttendanceCalendar } from "@/hooks/useAttendance";
-import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
+import { useEmployees } from "@/hooks/useEmployees";
 import { cn } from "@/lib/utils";
 import { WEEKDAYS, type AttendanceCalendarDay, type AttendanceStatus } from "@/types";
 
@@ -42,9 +43,16 @@ export function AttendanceCalendar() {
   const [mode, setMode] = useState<"single" | "all">("single");
   const [employeeId, setEmployeeId] = useState<string>("");
 
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: canManage });
-  const employees = useMemo(() => empData?.data ?? [], [empData]);
-  useEffect(() => { if (canManage && !employeeId && employees.length) setEmployeeId(employees[0]._id); }, [canManage, employees, employeeId]);
+  // Seed the picker with the first employee so the calendar isn't blank on
+  // open. Just one row — the picker itself searches the server.
+  const { data: firstEmp } = useEmployees(
+    { limit: "1", excludeTerminated: "true" },
+    { enabled: canManage && !employeeId }
+  );
+  useEffect(() => {
+    const first = firstEmp?.data?.[0];
+    if (canManage && !employeeId && first) setEmployeeId(first._id);
+  }, [canManage, employeeId, firstEmp]);
 
   const { data, isLoading, isFetching } = useAttendanceCalendar(month, canManage ? (mode === "single" ? employeeId || undefined : undefined) : undefined);
   const [y, mm] = month.split("-").map(Number);
@@ -66,10 +74,12 @@ export function AttendanceCalendar() {
               <button onClick={() => setMode("all")} className={cn("inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium", mode === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}><Users className="h-4 w-4" />All</button>
             </div>
             {mode === "single" && (
-              <Select value={employeeId} onValueChange={setEmployeeId}>
-                <SelectTrigger className="h-9 w-[200px]"><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <EmployeeSelect
+                value={employeeId}
+                onChange={setEmployeeId}
+                placeholder="Select employee"
+                className="h-9 w-[200px]"
+              />
             )}
           </div>
         )}

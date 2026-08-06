@@ -11,11 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DepartmentSelect, UserSelect } from "@/components/pickers";
 import { employeeFormSchema, type EmployeeFormValues } from "@/lib/validations/employeeSchema";
 import { useCreateEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
-import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
-import { useUsers } from "@/hooks/useUsers";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation } from "@/types";
 
 const NONE = "__none__";
@@ -33,10 +32,7 @@ interface Props {
 
 export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defaultUserId }: Props) {
   const isEditing = !!employee;
-  const { data: departments = [] } = useDepartmentsSimple();
   const { data: schedules = [] } = useWorkSchedulesSimple();
-  const { data: usersData } = useUsers({ limit: "200" });
-  const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateEmployee();
   const { mutate: update, isPending: updating } = useUpdateEmployee();
   const isPending = creating || updating;
@@ -158,7 +154,9 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
 
           <div className="space-y-1.5">
             <Label>Department</Label>
-            {optSelect("department", "Select department", departments.map((d) => ({ _id: d._id, label: d.code ? `${d.name} (${d.code})` : d.name })))}
+            <Controller control={control} name="department" render={({ field }) => (
+              <DepartmentSelect value={field.value as string} onChange={field.onChange} placeholder="Select department" allowClear />
+            )} />
           </div>
           <div className="space-y-1.5">
             <Label>Work Schedule</Label>
@@ -206,7 +204,9 @@ export function EmployeeDialog({ open, onOpenChange, employee, defaultName, defa
           </div>
           <div className="space-y-1.5">
             <Label>Login Account</Label>
-            {optSelect("user", "Link a user (optional)", users.map((u) => ({ _id: u._id, label: `${u.name} — ${u.email}` })))}
+            <Controller control={control} name="user" render={({ field }) => (
+              <UserSelect value={field.value as string} onChange={field.onChange} placeholder="Link a user (optional)" allowClear />
+            )} />
           </div>
 
           <div className="col-span-2 mt-1 border-t border-border pt-4">

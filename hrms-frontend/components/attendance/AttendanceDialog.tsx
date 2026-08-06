@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import { attendanceFormSchema, type AttendanceFormValues } from "@/lib/validations/attendanceSchema";
 import { useCreateAttendance, useUpdateAttendance } from "@/hooks/useAttendance";
-import { useUsers } from "@/hooks/useUsers";
+import { useUser } from "@/hooks/useUsers";
 import { ATTENDANCE_STATUS_LABELS, TIME_ZONES, type Attendance, type AttendanceStatus } from "@/types";
 import { toLocalInput, toDateInput, zonedInputToUtcIso } from "@/lib/timezone";
 
@@ -25,16 +26,24 @@ interface Props {
 
 export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
   const isEditing = !!attendance;
-  const { data: usersData } = useUsers({ limit: "100" });
-  const users = usersData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreateAttendance();
   const { mutate: update, isPending: updating } = useUpdateAttendance();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, setValue, formState: { errors } } = useForm<AttendanceFormValues>({
+  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<AttendanceFormValues>({
     resolver: zodResolver(attendanceFormSchema),
     defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", checkIn: "", checkOut: "", status: "present", lateMinutes: 0, note: "" },
   });
+
+  // Auto-fill the time region from the picked person's work schedule, on create
+  // only — an existing record keeps the zone it was filed in (see LeaveDialog).
+  const selectedUserId = watch("user");
+  const { data: selectedUser } = useUser(isEditing ? "" : selectedUserId || "");
+  useEffect(() => {
+    if (isEditing) return;
+    const ws = selectedUser?.workSchedule;
+    if (ws && typeof ws === "object" && ws.timeZone) setValue("timeZone", ws.timeZone);
+  }, [isEditing, selectedUser, setValue]);
 
   useEffect(() => {
     if (!open) return;
@@ -86,25 +95,12 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
               name="user"
               control={control}
               render={({ field }) => (
-                <Select
+                <UserSelect
                   value={field.value}
-                  onValueChange={(v) => {
-                    field.onChange(v);
-                    // Auto-fill the time region from the employee's work schedule.
-                    const u = users.find((x) => x._id === v);
-                    if (u && typeof u.workSchedule === "object" && u.workSchedule?.timeZone) {
-                      setValue("timeZone", u.workSchedule.timeZone);
-                    }
-                  }}
+                  onChange={field.onChange}
                   disabled={isEditing}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u._id} value={u._id}>{u.name} — {u.email}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Select employee"
+                />
               )}
             />
             {errors.user && <p className="text-xs text-destructive">{errors.user.message}</p>}

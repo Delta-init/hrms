@@ -170,3 +170,40 @@ export function LetterTemplateSelect({ placeholder = "Select template…", decor
     />
   );
 }
+
+/**
+ * Reporting-line picker.
+ *
+ * A manager may be recorded as an Employee or as a login User, so this searches
+ * both and emits the composite "Kind:id" value the employee form round-trips.
+ * Employees are listed first — they're the normal choice; a User entry only
+ * appears on the org chart if that account is linked to an employee record.
+ */
+export function ManagerSelect({
+  placeholder = "Select manager…", excludeEmployeeId, decorate, ...rest
+}: BaseProps & { /** Keeps someone from reporting to themselves. */ excludeEmployeeId?: string }) {
+  const { search, setSearch, debounced, apply } = usePickerState(decorate);
+  const q: Record<string, string> = debounced ? { search: debounced } : {};
+  const { data: empData, isFetching: loadingEmps } = useEmployees({ limit: PAGE, excludeTerminated: "true", ...q });
+  const { data: userData, isFetching: loadingUsers } = useUsers({ limit: PAGE, ...q });
+
+  const options = apply([
+    ...(empData?.data ?? [])
+      .filter((e) => e._id !== excludeEmployeeId)
+      .map((e) => ({ value: `Employee:${e._id}`, label: e.name, sub: e.employeeCode })),
+    ...(userData?.data ?? []).map((u) => ({ value: `User:${u._id}`, label: u.name, sub: `${u.email} · user` })),
+  ]);
+
+  return (
+    <AsyncSelect
+      {...rest}
+      options={options}
+      loading={loadingEmps || loadingUsers}
+      search={search}
+      onSearchChange={setSearch}
+      placeholder={placeholder}
+      searchPlaceholder="Search people…"
+      emptyText="No one found."
+    />
+  );
+}

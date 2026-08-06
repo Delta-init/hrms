@@ -11,9 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useUpdateEmployee, useUpdateMyProfile, useEmployees } from "@/hooks/useEmployees";
-import { useUsers } from "@/hooks/useUsers";
-import { useDepartmentsSimple } from "@/hooks/useDepartments";
+import { DepartmentSelect, ManagerSelect } from "@/components/pickers";
+import { useUpdateEmployee, useUpdateMyProfile } from "@/hooks/useEmployees";
 import {
   BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS, VISA_TYPES,
   type Employee, type EmployeeStatus, type Gender, type MaritalStatus, type Title,
@@ -110,11 +109,6 @@ export function EmployeeSectionDialog({
   const { mutate: updateMyProfile, isPending: updatingMyProfile } = useUpdateMyProfile();
   const isPending = selfService ? updatingMyProfile : updatingEmployee;
   // Employment/reporting-line pickers aren't shown in self-service mode, so skip fetching them.
-  const { data: departments = [] } = useDepartmentsSimple({ enabled: !selfService });
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !selfService });
-  const { data: userData } = useUsers(selfService ? undefined : { limit: "200" });
-  const managers = (empData?.data ?? []).filter((m) => m._id !== employee._id);
-  const users = userData?.data ?? [];
 
   const { register, handleSubmit, control, reset } = useForm<FormValues>({ defaultValues: defaultsFor(section, employee) });
 
@@ -186,9 +180,14 @@ export function EmployeeSectionDialog({
             <div className="grid grid-cols-2 gap-4">
               <div className={field}><Label>Designation</Label><Input {...register("designation")} /></div>
               <div className={field}><Label>Department</Label>
-                <SelectCtl control={control} name="department" placeholder="Select department">
-                  {departments.map((d) => <SelectItem key={d._id} value={d._id}>{d.code ? `${d.name} (${d.code})` : d.name}</SelectItem>)}
-                </SelectCtl>
+                <Controller control={control} name="department" render={({ field }) => (
+                  <DepartmentSelect
+                    value={field.value as string}
+                    onChange={field.onChange}
+                    placeholder="Select department"
+                    allowClear
+                  />
+                )} />
               </div>
               <div className={field}><Label>Location</Label><Input placeholder="Dubai / India" {...register("location")} /></div>
               <div className={field}><Label>Currency</Label><Input className="uppercase" {...register("currency")} /></div>
@@ -198,10 +197,15 @@ export function EmployeeSectionDialog({
                 </SelectCtl>
               </div>
               <div className={field}><Label>Reporting to</Label>
-                <SelectCtl control={control} name="reportingTo" placeholder="Select manager">
-                  {users.map((u) => <SelectItem key={`u${u._id}`} value={`User:${u._id}`}>{u.name} · user</SelectItem>)}
-                  {managers.map((m) => <SelectItem key={`e${m._id}`} value={`Employee:${m._id}`}>{m.name} ({m.employeeCode})</SelectItem>)}
-                </SelectCtl>
+                <Controller control={control} name="reportingTo" render={({ field }) => (
+                  <ManagerSelect
+                    value={field.value as string}
+                    onChange={field.onChange}
+                    excludeEmployeeId={employee._id}
+                    placeholder="Select manager"
+                    allowClear
+                  />
+                )} />
               </div>
               <div className={field}><Label>Joining date</Label><Input type="date" {...register("joiningDate")} /></div>
               <div className={field}><Label>Confirmation date</Label><Input type="date" {...register("confirmationDate")} /></div>
