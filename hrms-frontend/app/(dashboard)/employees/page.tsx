@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DepartmentSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -109,13 +110,13 @@ export default function EmployeesPage() {
     <>
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Department</Label>
-        <Select value={query.filters.department ?? ALL} onValueChange={(v) => query.setFilter("department", v)}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="All departments" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All departments</SelectItem>
-            {departments.map((d) => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <DepartmentSelect
+          value={query.filters.department}
+          onChange={(v) => query.setFilter("department", v)}
+          placeholder="All departments"
+          allowClear
+          className="h-9 w-[170px]"
+        />
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Type</Label>

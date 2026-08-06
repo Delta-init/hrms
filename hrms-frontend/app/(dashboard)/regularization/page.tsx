@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, LogIn, LogOut } from "lucide-react";
 import { useRegularizations, useMyRegularizations, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
-import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -16,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import { getInitials, cn } from "@/lib/utils";
 import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
 import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType } from "@/types";
@@ -79,8 +79,6 @@ export default function RegularizationPage() {
   const { data: allData, isLoading: allLoading, isFetching } = useRegularizations(canApprove ? query.params : undefined);
   const { data: pendingData } = useRegularizations(canApprove ? { status: "pending", limit: "200" } : undefined);
   const { data: mineData, isLoading: mineLoading } = useMyRegularizations({ limit: "200" });
-  const { data: usersData } = useUsers(canApprove ? { limit: "200" } : undefined);
-  const users = usersData?.data ?? [];
 
   const { mutate: review_, isPending: reviewing } = useReviewRegularization();
   const { mutate: remove, isPending: deleting } = useDeleteRegularization();
@@ -128,7 +126,7 @@ export default function RegularizationPage() {
   const filters = (
     <>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Employee</Label>
-        <Select value={query.filters.user ?? ALL} onValueChange={(v) => query.setFilter("user", v)}><SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All employees</SelectItem>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>)}</SelectContent></Select>
+        <UserSelect value={query.filters.user} onChange={(v) => query.setFilter("user", v)} placeholder="All employees" allowClear className="h-9 w-[160px]" />
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All status</SelectItem>{(["pending", "approved", "rejected", "cancelled"] as RegularizationStatus[]).map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent></Select>

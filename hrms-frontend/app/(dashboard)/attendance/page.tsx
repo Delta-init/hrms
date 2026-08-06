@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange } from "lucide-react";
 import { useAttendance, useDeleteAttendance } from "@/hooks/useAttendance";
-import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -16,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -51,8 +51,6 @@ export default function AttendancePage() {
   // Separate snapshot of *today's* records for the animated stats band.
   const today = new Date().toISOString().slice(0, 10);
   const { data: todayData, isLoading: todayLoading } = useAttendance({ dateFrom: today, dateTo: today, limit: "500" });
-  const { data: usersData } = useUsers({ limit: "200" }, { enabled: canManage });
-  const users = usersData?.data ?? [];
   const { mutate: remove, isPending: deleting } = useDeleteAttendance();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -102,13 +100,13 @@ export default function AttendancePage() {
       {canManage && (
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Employee</Label>
-          <Select value={query.filters.user ?? ALL} onValueChange={(v) => query.setFilter("user", v)}>
-            <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="All employees" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All employees</SelectItem>
-              {users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <UserSelect
+            value={query.filters.user}
+            onChange={(v) => query.setFilter("user", v)}
+            placeholder="All employees"
+            allowClear
+            className="h-9 w-[170px]"
+          />
         </div>
       )}
       <div className="space-y-1.5">

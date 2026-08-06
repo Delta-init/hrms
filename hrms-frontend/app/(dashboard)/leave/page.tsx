@@ -6,7 +6,6 @@ import {
   CalendarDays, PartyPopper, ListChecks, CalendarRange, Inbox, Send, Wallet, CalendarPlus,
 } from "lucide-react";
 import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useWithdrawLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
-import { useUsers } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -24,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -112,8 +112,6 @@ export default function LeavePage() {
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
 
-  const { data: usersData } = useUsers(canApprove ? { limit: "200" } : undefined);
-  const users = usersData?.data ?? [];
   const { data: reqData, isLoading: reqLoading, isFetching } = useLeaves(canApprove ? query.params : undefined);
   const { data: allData } = useLeaves(canApprove ? { limit: "500" } : undefined);
   const { data: pendingData } = useLeaves(canApprove ? { status: "pending", limit: "200" } : undefined);
@@ -192,7 +190,7 @@ export default function LeavePage() {
   const filters = (
     <>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Employee</Label>
-        <Select value={query.filters.user ?? ALL} onValueChange={(v) => query.setFilter("user", v)}><SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All employees</SelectItem>{users.map((u) => <SelectItem key={u._id} value={u._id}>{u.name}</SelectItem>)}</SelectContent></Select>
+        <UserSelect value={query.filters.user} onChange={(v) => query.setFilter("user", v)} placeholder="All employees" allowClear className="h-9 w-[160px]" />
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All status</SelectItem>{(["pending", "approved", "rejected", "cancelled"] as LeaveStatus[]).map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent></Select>

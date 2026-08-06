@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark, Timer } from "lucide-react";
 import { usePayslips, useMyPayslips, useDeletePayslip } from "@/hooks/usePayslips";
-import { useEmployees } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -21,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -49,8 +49,6 @@ export default function PayrollPage() {
   const query = useTableQuery({ defaultSortBy: "month", defaultSortOrder: "desc", defaultLimit: 20 });
   const { data, isLoading, isFetching } = usePayslips(query.params, { enabled: canView });
   const { data: mineData, isLoading: mineLoading } = useMyPayslips({ limit: "50" });
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: canView });
-  const employees = empData?.data ?? [];
   const { mutate: remove, isPending: deleting } = useDeletePayslip();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -101,10 +99,13 @@ export default function PayrollPage() {
   const filters = (
     <>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Employee</Label>
-        <Select value={query.filters.employee ?? ALL} onValueChange={(v) => query.setFilter("employee", v)}>
-          <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="All" /></SelectTrigger>
-          <SelectContent><SelectItem value={ALL}>All employees</SelectItem>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>)}</SelectContent>
-        </Select>
+        <EmployeeSelect
+          value={query.filters.employee}
+          onChange={(v) => query.setFilter("employee", v)}
+          placeholder="All employees"
+          allowClear
+          className="h-9 w-[170px]"
+        />
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Month</Label>
         <Input type="month" value={query.filters.month ?? ""} onChange={(e) => query.setFilter("month", e.target.value)} className="h-9 w-[150px]" />
