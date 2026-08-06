@@ -1,8 +1,8 @@
 "use client";
 import { useEffect } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, KeyRound } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -11,10 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { DepartmentSelect, UserSelect } from "@/components/pickers";
 import { employeeFormSchema, type EmployeeFormValues } from "@/lib/validations/employeeSchema";
 import { useCreateEmployee, useUpdateEmployee, useNextEmployeeCode } from "@/hooks/useEmployees";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
+import { useRolesSimple } from "@/hooks/useRoles";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation } from "@/types";
 
 const NONE = "__none__";
@@ -41,6 +43,7 @@ export function EmployeeDialog({
   // Suggested code for a new employee; the field stays editable.
   const { data: nextCode } = useNextEmployeeCode(open && !isEditing);
   const { data: schedules = [] } = useWorkSchedulesSimple();
+  const { data: roles = [] } = useRolesSimple();
   const { mutate: create, isPending: creating } = useCreateEmployee();
   const { mutate: update, isPending: updating } = useUpdateEmployee();
   const isPending = creating || updating;
@@ -51,8 +54,13 @@ export function EmployeeDialog({
       employeeCode: "", name: "", email: "", phone: "", department: "", designation: "",
       workSchedule: "", user: "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined,
       salary: 0, currency: "AED",
+      createLogin: true, loginEmail: "", loginRole: "",
     },
   });
+
+  // Watched so the login fields can be hidden when the switch is off.
+  const createLoginOn = useWatch({ control, name: "createLogin" });
+  const employeeEmail = useWatch({ control, name: "email" });
 
   useEffect(() => {
     if (!open) return;
@@ -72,9 +80,10 @@ export function EmployeeDialog({
         location: employee.location ?? undefined,
         salary: employee.salary ?? 0,
         currency: employee.currency ?? "AED",
+        createLogin: false, loginEmail: "", loginRole: "",
       });
     } else {
-      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, salary: 0, currency: "AED" });
+      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, salary: 0, currency: "AED", createLogin: !defaultUserId, loginEmail: "", loginRole: "" });
     }
   }, [open, employee, reset, defaultName, defaultUserId]);
 
@@ -88,8 +97,9 @@ export function EmployeeDialog({
   }, [open, isEditing, nextCode, getValues, setValue]);
 
   const onSubmit = (data: EmployeeFormValues) => {
+    const { createLogin, loginEmail, loginRole, ...employeeFields } = data;
     const payload: Record<string, unknown> = {
-      ...data,
+      ...employeeFields,
       department: data.department || null,
       workSchedule: data.workSchedule || null,
       user: data.user || null,
@@ -104,6 +114,11 @@ export function EmployeeDialog({
     if (defaultReportingTo) {
       payload.reportingTo = defaultReportingTo;
       payload.reportingToKind = "Employee";
+    }
+    // Provision the login in the same request. The server generates the
+    // temporary password and emails the invite.
+    if (createLogin && loginRole) {
+      payload.login = { role: loginRole, ...(loginEmail ? { email: loginEmail } : {}) };
     }
     create(payload, { onSuccess: () => onOpenChange(false) });
   };
@@ -252,6 +267,64 @@ export function EmployeeDialog({
             <Label htmlFor="currency">Currency</Label>
             <Input id="currency" className="uppercase" placeholder="AED" {...register("currency")} />
           </div>
+
+          {/* Login provisioning — creating only. Editing an employee goes
+              through the dedicated dialog, and an existing login isn't remade. */}
+          {!isEditing && (
+            <div className="col-span-2 space-y-3 rounded-xl border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <KeyRound className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <Label htmlFor="createLogin">Create login account</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Emails an invite with a temporary password they replace on first sign-in.
+                    </p>
+                  </div>
+                </div>
+                <Controller
+                  name="createLogin"
+                  control={control}
+                  render={({ field }) => (
+                    <Switch id="createLogin" checked={!!field.value} onCheckedChange={field.onChange} />
+                  )}
+                />
+              </div>
+
+              {createLoginOn && (
+                <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                  <div className="space-y-1.5">
+                    <Label>Role *</Label>
+                    <Controller
+                      name="loginRole"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+                          <SelectContent>
+                            {roles.map((r) => <SelectItem key={r._id} value={r._id}>{r.roleName}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {errors.loginRole && <p className="text-xs text-destructive">{errors.loginRole.message}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="loginEmail">Login email</Label>
+                    <Input
+                      id="loginEmail"
+                      type="email"
+                      placeholder={employeeEmail || "Defaults to the email above"}
+                      {...register("loginEmail")}
+                    />
+                    {errors.loginEmail && <p className="text-xs text-destructive">{errors.loginEmail.message}</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <ResponsiveDialogFooter className="col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

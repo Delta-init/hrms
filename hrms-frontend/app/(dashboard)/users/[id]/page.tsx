@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote, TrendingUp } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote, TrendingUp, FolderOpen } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUsers";
 import { useEmployeeByUser } from "@/hooks/useEmployees";
@@ -16,6 +16,7 @@ import { EmployeeResignation } from "@/components/resignations/EmployeeResignati
 import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
 import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
+import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { getInitials, cn } from "@/lib/utils";
 
 const statusStyles: Record<string, string> = {
@@ -49,6 +50,7 @@ export default function UserDetailPage() {
   const tabs = [
     { key: "profile", label: "Profile", icon: User2 },
     { key: "documents", label: "Passport & Visa", icon: BookUser },
+    { key: "files", label: "Documents", icon: FolderOpen },
     canViewResignations && { key: "resignation", label: "Resignation", icon: LogOut },
     canViewLoans && { key: "loans", label: "Loans", icon: Banknote },
     canViewIncrements && { key: "increments", label: "Increments", icon: TrendingUp },
@@ -113,6 +115,20 @@ export default function UserDetailPage() {
             <BookUser className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">No employee profile yet</p>
             <p className="mt-1 text-sm text-muted-foreground">Create the employee profile first (Profile tab) to add passport &amp; visa details.</p>
+          </Card>
+        )
+      )}
+
+      {activeTab === "files" && (
+        empLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : employee ? (
+          <EmployeeDocumentsPanel employeeId={employee._id} canEdit={canEditEmployee} />
+        ) : (
+          <Card className="p-12 text-center">
+            <FolderOpen className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No employee profile yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">Create the employee profile first (Profile tab) to file their documents.</p>
           </Card>
         )
       )}

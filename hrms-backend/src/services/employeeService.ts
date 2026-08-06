@@ -10,6 +10,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { sendMail } from "../utils/mailer.js";
 import { env } from "../config/env.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
+import { randomBytes } from "node:crypto";
 
 interface EmployeeQuery extends PaginationQuery {
   excludeTerminated?: string;
@@ -35,6 +36,32 @@ function clean<T extends Record<string, unknown>>(input: T) {
   return out;
 }
 
+/**
+ * A temporary password that satisfies the login policy.
+ *
+ * Generated rather than typed: the login can now be provisioned in the same
+ * step as the employee, where there is no password box, and a random one beats
+ * the handful of memorable strings that get reused otherwise. The employee is
+ * forced to replace it on first sign-in either way.
+ */
+function generateTemporaryPassword(): string {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const digits = "23456789";
+  const all = upper + lower + digits;
+  const bytes = randomBytes(16);
+  const pick = (set: string, i: number) => set[bytes[i] % set.length];
+  // One of each class up front guarantees the policy, then fill to length.
+  const chars = [pick(upper, 0), pick(lower, 1), pick(digits, 2)];
+  for (let i = 3; i < 12; i++) chars.push(pick(all, i));
+  // Shuffle so the guaranteed characters aren't always in the same positions.
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = bytes[i % bytes.length] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
 function inviteEmailHtml(name: string, email: string, temporaryPassword: string, activateUrl: string) {
   return `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">
     <h2 style="color:#4f46e5">Welcome to Delta HRMS</h2>
@@ -52,8 +79,25 @@ export class EmployeeService {
   async create(input: CreateEmployeeInput) {
     const existing = await Employee.findOne(scoped({ employeeCode: input.employeeCode.trim().toUpperCase() }));
     if (existing) throw Object.assign(new Error("Employee code already exists"), { statusCode: 409 });
-    const emp = await Employee.create({ ...clean(input), organization: getOrgId() });
-    return Employee.findById(emp._id).populate(POP);
+
+    const { login, ...fields } = input;
+    const emp = await Employee.create({ ...clean(fields), organization: getOrgId() });
+
+    // Provisioning the login is a follow-on step, not part of the employee: a
+    // duplicate email or an unassignable role must not throw away the record
+    // that was just created. The caller is told what went wrong instead, and
+    // can retry from the employee's page.
+    let loginError: string | undefined;
+    if (login) {
+      try {
+        await this.createLogin(String(emp._id), { role: login.role, email: login.email });
+      } catch (error) {
+        loginError = error instanceof Error ? error.message : "The login could not be created";
+      }
+    }
+
+    const record = await Employee.findById(emp._id).populate(POP);
+    return { record, loginError };
   }
 
   async list(query: EmployeeQuery) {
@@ -241,10 +285,12 @@ export class EmployeeService {
     const existingUser = await User.findOne({ email });
     if (existingUser) throw Object.assign(new Error("A user with this email already exists"), { statusCode: 409 });
 
+    const temporaryPassword = input.temporaryPassword ?? generateTemporaryPassword();
+
     const user = await User.create({
       name: employee.name,
       email,
-      password: input.temporaryPassword,
+      password: temporaryPassword,
       role: input.role,
       organization: employee.organization ?? getOrgId(),
       designation: employee.designation,
@@ -260,8 +306,8 @@ export class EmployeeService {
     await sendMail({
       to: email,
       subject: "Welcome to Delta HRMS — activate your account",
-      html: inviteEmailHtml(employee.name, email, input.temporaryPassword, activateUrl),
-      text: `Welcome to Delta HRMS. Sign in with ${email} / temporary password ${input.temporaryPassword}, then set your own password at ${activateUrl}`,
+      html: inviteEmailHtml(employee.name, email, temporaryPassword, activateUrl),
+      text: `Welcome to Delta HRMS. Sign in with ${email} / temporary password ${temporaryPassword}, then set your own password at ${activateUrl}`,
     });
 
     return {

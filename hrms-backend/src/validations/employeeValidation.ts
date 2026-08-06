@@ -92,7 +92,15 @@ const profileFields = {
   emiratesId: emiratesIdSchema.optional(),
 };
 
+/** Provision a login in the same step as the employee. */
+const inlineLoginSchema = z.object({
+  role: z.string().min(1, "Role is required"),
+  /** Defaults to the employee's own email. */
+  email: z.string().email("Invalid email").optional(),
+});
+
 export const createEmployeeSchema = z.object({
+  login: inlineLoginSchema.optional(),
   employeeCode: z.string().min(1, "Employee code is required").max(20),
   name: z.string().min(1, "Name is required").max(100),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
@@ -158,13 +166,17 @@ export type UpdateMyProfileInput = z.infer<typeof updateMyProfileSchema>;
 export const createLoginSchema = z.object({
   email: z.string().email("Invalid email").optional(),
   role: z.string().min(1, "Role is required"),
+  // Optional: left out, the server generates one. Creating the login alongside
+  // the employee has nowhere to type a password, and a generated one is
+  // stronger than what gets typed into that box in practice.
   temporaryPassword: z
     .string()
     .min(8, "Password must be at least 8 characters")
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must contain at least one uppercase letter, one lowercase letter, and one number"
-    ),
+    )
+    .optional(),
 });
 
 export type CreateLoginInput = z.infer<typeof createLoginSchema>;

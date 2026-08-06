@@ -15,6 +15,20 @@ export const employeeFormSchema = z.object({
   location: z.enum(["india", "dubai"]).optional(),
   salary: z.coerce.number().min(0, "Salary cannot be negative").optional(),
   currency: z.string().max(6).optional(),
+
+  /* Login provisioning, only used when creating. */
+  createLogin: z.boolean().optional(),
+  loginEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  loginRole: z.string().optional(),
+}).superRefine((v, ctx) => {
+  if (!v.createLogin) return;
+  // A login needs somewhere to send the invite and a role to grant.
+  if (!v.loginRole) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["loginRole"], message: "Pick a role for the login" });
+  }
+  if (!v.loginEmail && !v.email) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["loginEmail"], message: "An email is needed to send the invite" });
+  }
 });
 
 export type EmployeeFormValues = z.infer<typeof employeeFormSchema>;

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
+import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { getInitials, cn } from "@/lib/utils";
 import {
   EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS,
@@ -69,6 +70,10 @@ export default function EmployeeDetailPage() {
       </Card>
 
       <EmployeeProfileSections employee={e} canEdit={canEdit} />
+
+      <div className="mt-6">
+        <EmployeeDocumentsPanel employeeId={e._id} canEdit={canEdit} />
+      </div>
 
       <ConfirmDialog
         open={deleteOpen} onOpenChange={setDeleteOpen}

@@ -3,8 +3,12 @@ import {
   createEmployee, getEmployees, getEmployeeById, getEmployeeByUser,
   getNextEmployeeCode, getMyEmployeeProfile, updateMyProfile, updateEmployee, deleteEmployee, createEmployeeLogin,
 } from "../controllers/employeeController.js";
+import {
+  listDocumentsForEmployee, uploadDocumentForEmployee, deleteDocumentForEmployee,
+} from "../controllers/documentController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
+import { uploadSingle } from "../middleware/upload.js";
 
 const router = Router();
 router.use(authenticate);
@@ -24,5 +28,11 @@ router.put("/:id", checkPermission("employees", "edit"), updateEmployee);
 router.delete("/:id", checkPermission("employees", "delete"), deleteEmployee);
 // Provision a login account for the employee
 router.post("/:id/create-login", checkPermission("employees", "edit"), createEmployeeLogin);
+
+// Documents filed on an employee's behalf. Viewing a passport scan is reading
+// the employee record, so it rides on the same view/edit permissions.
+router.get("/:id/documents", checkPermission("employees", "view"), listDocumentsForEmployee);
+router.post("/:id/documents", checkPermission("employees", "edit"), uploadSingle, uploadDocumentForEmployee);
+router.delete("/:id/documents/:type", checkPermission("employees", "edit"), deleteDocumentForEmployee);
 
 export default router;

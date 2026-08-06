@@ -84,8 +84,15 @@ export const useUpdateMyProfile = () => {
 export const useCreateEmployee = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => (await api.post<ApiResponse<Employee>>("/employees", data)).data.data!,
-    onSuccess: () => { invalidateEmployeeViews(qc); toast.success("Employee created"); },
+    mutationFn: async (data: Record<string, unknown>) => (await api.post<ApiResponse<Employee>>("/employees", data)).data,
+    onSuccess: (res) => {
+      invalidateEmployeeViews(qc);
+      // The employee is saved even when the optional login step failed, so this
+      // reports the partial outcome rather than a flat "created".
+      const partial = res.message?.startsWith("Employee created, but");
+      if (partial) toast.warning("Employee created", { description: res.message });
+      else toast.success("Employee created");
+    },
     onError: (e) => toast.error(errMsg(e, "Failed to create employee")),
   });
 };

@@ -10,8 +10,15 @@ export const createEmployee = async (req: AuthenticatedRequest, res: Response, n
   try {
     const parsed = createEmployeeSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    const record = await service.create(parsed.data);
-    sendSuccess(res, "Employee created successfully", record, 201);
+    const { record, loginError } = await service.create(parsed.data);
+    // The employee exists either way; a failed login is reported in the message
+    // so the caller can retry it from the employee's page.
+    sendSuccess(
+      res,
+      loginError ? `Employee created, but the login was not: ${loginError}` : "Employee created successfully",
+      record,
+      201
+    );
   } catch (error) { next(error); }
 };
 
