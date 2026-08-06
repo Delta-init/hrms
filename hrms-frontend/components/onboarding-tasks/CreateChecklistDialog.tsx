@@ -10,9 +10,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { createChecklistFormSchema, type CreateChecklistFormValues } from "@/lib/validations/onboardingChecklistSchema";
 import { useCreateOnboardingChecklist, useOnboardingTemplates } from "@/hooks/useOnboardingChecklists";
-import { useEmployees } from "@/hooks/useEmployees";
 
 interface Props {
   open: boolean;
@@ -20,8 +20,6 @@ interface Props {
 }
 
 export function CreateChecklistDialog({ open, onOpenChange }: Props) {
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: open });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { data: templates } = useOnboardingTemplates();
   const { mutate: create, isPending } = useCreateOnboardingChecklist();
 
@@ -47,10 +45,7 @@ export function CreateChecklistDialog({ open, onOpenChange }: Props) {
           <div className="space-y-1.5">
             <Label>Employee *</Label>
             <Controller name="employee" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-              </Select>
+              <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Select employee" />
             )} />
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}
           </div>

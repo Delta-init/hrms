@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { issueAssetFormSchema, type IssueAssetFormValues } from "@/lib/validations/assetSchema";
 import { useIssueAsset } from "@/hooks/useAssets";
-import { useEmployees } from "@/hooks/useEmployees";
 import { ASSET_CONDITION_LABELS, type Asset, type AssetCondition } from "@/types";
 
 interface Props {
@@ -23,8 +23,6 @@ interface Props {
 }
 
 export function IssueAssetDialog({ open, onOpenChange, asset }: Props) {
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: open });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: issue, isPending } = useIssueAsset();
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<IssueAssetFormValues>({
@@ -53,10 +51,7 @@ export function IssueAssetDialog({ open, onOpenChange, asset }: Props) {
           <div className="space-y-1.5">
             <Label>Employee *</Label>
             <Controller name="employee" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-              </Select>
+              <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Select employee" />
             )} />
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}
           </div>

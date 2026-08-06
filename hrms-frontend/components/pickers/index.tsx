@@ -43,9 +43,15 @@ function usePickerState(decorate?: BaseProps["decorate"]) {
   return { search, setSearch, debounced, apply };
 }
 
-export function EmployeeSelect({ placeholder = "Select employee…", decorate, ...rest }: BaseProps) {
+export function EmployeeSelect({
+  placeholder = "Select employee…", decorate, activeOnly = true, ...rest
+}: BaseProps & { /** Hide leavers. On by default — you rarely pick one. */ activeOnly?: boolean }) {
   const { search, setSearch, debounced, apply } = usePickerState(decorate);
-  const { data, isFetching } = useEmployees({ limit: PAGE, ...(debounced ? { search: debounced } : {}) });
+  const { data, isFetching } = useEmployees({
+    limit: PAGE,
+    ...(activeOnly ? { excludeTerminated: "true" } : {}),
+    ...(debounced ? { search: debounced } : {}),
+  });
   const options = apply(
     (data?.data ?? []).map((e) => ({ value: e._id, label: e.name, sub: e.employeeCode }))
   );

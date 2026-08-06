@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { reimbursementFormSchema, type ReimbursementFormValues } from "@/lib/validations/reimbursementSchema";
 import { useCreateReimbursement, useUpdateReimbursement, useUploadReceipt } from "@/hooks/useReimbursements";
-import { useEmployees } from "@/hooks/useEmployees";
 import { REIMBURSEMENT_CATEGORY_LABELS, type Reimbursement, type ReimbursementCategory } from "@/types";
 
 interface Props {
@@ -32,8 +32,6 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function ReimbursementDialog({ open, onOpenChange, claim, canFileForOthers, defaultMonth }: Props) {
   const isEditing = !!claim;
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !!canFileForOthers && !isEditing });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: create, isPending: creating } = useCreateReimbursement();
   const { mutate: update, isPending: updating } = useUpdateReimbursement();
   const isPending = creating || updating;
@@ -83,10 +81,12 @@ export function ReimbursementDialog({ open, onOpenChange, claim, canFileForOther
             <div className="space-y-1.5">
               <Label>Employee</Label>
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value || undefined} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Myself (leave empty) or pick an employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder="Myself (leave empty) or pick an employee"
+                  allowClear
+                />
               )} />
               <p className="text-[11px] text-muted-foreground">Leave empty to file for yourself.</p>
             </div>

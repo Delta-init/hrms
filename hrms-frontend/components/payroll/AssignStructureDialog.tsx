@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { assignFormSchema, type AssignFormValues } from "@/lib/validations/salaryStructureSchema";
 import { useAssignStructure, useUpdateAssignment, useSalaryStructures } from "@/hooks/useSalaryStructures";
-import { useEmployees } from "@/hooks/useEmployees";
 import type { SalaryStructureAssignment } from "@/types";
 
 interface Props {
@@ -29,8 +29,6 @@ const thisMonth = () => new Date().toISOString().slice(0, 7);
 
 export function AssignStructureDialog({ open, onOpenChange, assignment, defaultMonth }: Props) {
   const isEditing = !!assignment;
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !isEditing });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { data: structData } = useSalaryStructures({ status: "active", limit: "200" });
   const structures = structData?.data ?? [];
   const { mutate: assign, isPending: assigning } = useAssignStructure();
@@ -95,10 +93,7 @@ export function AssignStructureDialog({ open, onOpenChange, assignment, defaultM
               <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">{lockName}</div>
             ) : (
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Select employee" />
               )} />
             )}
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}

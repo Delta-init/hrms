@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
+import { useEmployee } from "@/hooks/useEmployees";
 import { salaryIncrementFormSchema, type SalaryIncrementFormValues } from "@/lib/validations/salaryIncrementSchema";
 import { useCreateSalaryIncrement, useUpdateSalaryIncrement } from "@/hooks/useSalaryIncrements";
-import { useEmployees } from "@/hooks/useEmployees";
 import { cn } from "@/lib/utils";
 import type { SalaryIncrement } from "@/types";
 
@@ -31,8 +32,6 @@ const idOf = (v: unknown) => (v && typeof v === "object" ? (v as { _id: string }
 
 export function SalaryIncrementDialog({ open, onOpenChange, increment, employee: locked }: Props) {
   const isEditing = !!increment;
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !locked && !isEditing });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: create, isPending: creating } = useCreateSalaryIncrement();
   const { mutate: update, isPending: updating } = useUpdateSalaryIncrement();
   const isPending = creating || updating;
@@ -53,14 +52,16 @@ export function SalaryIncrementDialog({ open, onOpenChange, increment, employee:
   }, [open, increment, locked?._id]);
 
   const selectedId = watch("employee");
+  // The picker only loads a page at a time, so the chosen employee is
+  // fetched by id rather than looked up in the visible list.
+  const { data: pickedEmployee } = useEmployee(selectedId || undefined);
   const newSalary = Number(watch("newSalary")) || 0;
 
   const { current, currency } = useMemo(() => {
     if (locked) return { current: locked.salary ?? 0, currency: locked.currency ?? "AED" };
     if (isEditing) return { current: increment!.previousSalary, currency: (typeof increment!.employee === "object" ? increment!.employee?.currency : "") || "AED" };
-    const emp = employees.find((e) => e._id === selectedId);
-    return { current: emp?.salary ?? 0, currency: emp?.currency ?? "AED" };
-  }, [locked, isEditing, increment, employees, selectedId]);
+    return { current: pickedEmployee?.salary ?? 0, currency: pickedEmployee?.currency ?? "AED" };
+  }, [locked, isEditing, increment, pickedEmployee]);
 
   const diff = newSalary - current;
   const pct = current > 0 ? (diff / current) * 100 : 0;
@@ -89,10 +90,7 @@ export function SalaryIncrementDialog({ open, onOpenChange, increment, employee:
               <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">{lockName}{lockCode ? ` (${lockCode})` : ""}</div>
             ) : (
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect value={field.value} onChange={field.onChange} />
               )} />
             )}
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}

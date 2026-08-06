@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { payslipFormSchema, type PayslipFormValues } from "@/lib/validations/payslipSchema";
 import { useCreatePayslip, useUpdatePayslip, usePayslipSummary } from "@/hooks/usePayslips";
-import { useEmployees } from "@/hooks/useEmployees";
 import { toast } from "@/lib/toast";
 import type { Payslip } from "@/types";
 
@@ -37,8 +37,6 @@ const thisMonth = () => new Date().toISOString().slice(0, 7);
 export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   const isEditing = !!payslip;
   const locked = !!preset;
-  const { data: empData } = useEmployees({ limit: "200" });
-  const employees = empData?.data ?? [];
   const { mutate: create, isPending: creating } = useCreatePayslip();
   const { mutate: update, isPending: updating } = useUpdatePayslip();
   const isPending = creating || updating;
@@ -140,10 +138,12 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
             <div className="col-span-2 space-y-1.5">
               <Label>Employee *</Label>
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isEditing || locked}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  disabled={isEditing || !!locked}
+                  placeholder="Select employee"
+                />
               )} />
               {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}
             </div>

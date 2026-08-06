@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { loanFormSchema, type LoanFormValues } from "@/lib/validations/loanSchema";
 import { useCreateLoan, useUpdateLoan } from "@/hooks/useLoans";
-import { useEmployees } from "@/hooks/useEmployees";
 import { LOAN_STATUS_LABELS, type Loan, type LoanStatus } from "@/types";
 
 interface LockedEmployee { _id: string; name: string; employeeCode?: string }
@@ -32,8 +32,6 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export function LoanDialog({ open, onOpenChange, loan, employee: locked }: Props) {
   const isEditing = !!loan;
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !locked && !isEditing });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: create, isPending: creating } = useCreateLoan();
   const { mutate: update, isPending: updating } = useUpdateLoan();
   const isPending = creating || updating;
@@ -90,10 +88,7 @@ export function LoanDialog({ open, onOpenChange, loan, employee: locked }: Props
               </div>
             ) : (
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect value={field.value} onChange={field.onChange} />
               )} />
             )}
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}

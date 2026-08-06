@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
+import { useEmployee } from "@/hooks/useEmployees";
 import { overtimeFormSchema, type OvertimeFormValues } from "@/lib/validations/overtimeSchema";
 import { useCreateOvertime, useUpdateOvertime } from "@/hooks/useOvertime";
-import { useEmployees } from "@/hooks/useEmployees";
 import type { Overtime } from "@/types";
 
 interface Props {
@@ -31,8 +32,6 @@ const EMPTY: OvertimeFormValues = { employee: "", date: today(), hours: 0, hourl
 
 export function OvertimeDialog({ open, onOpenChange, overtime, defaultMonth }: Props) {
   const isEditing = !!overtime;
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !isEditing });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: create, isPending: creating } = useCreateOvertime();
   const { mutate: update, isPending: updating } = useUpdateOvertime();
   const isPending = creating || updating;
@@ -52,6 +51,9 @@ export function OvertimeDialog({ open, onOpenChange, overtime, defaultMonth }: P
   }, [open, overtime, defaultMonth, reset]);
 
   const employeeId = useWatch({ control, name: "employee" });
+  // The picker only loads a page at a time, so the chosen employee is
+  // fetched by id rather than looked up in the visible list.
+  const { data: pickedEmployee } = useEmployee(employeeId || undefined);
   const hours = useWatch({ control, name: "hours" });
   const hourlyRate = useWatch({ control, name: "hourlyRate" });
   const multiplier = useWatch({ control, name: "multiplier" });
@@ -59,13 +61,13 @@ export function OvertimeDialog({ open, onOpenChange, overtime, defaultMonth }: P
   // Suggest an hourly rate from the picked employee's monthly salary (÷ ~240 hrs).
   useEffect(() => {
     if (isEditing || !employeeId) return;
-    const emp = employees.find((e) => e._id === employeeId);
+    const emp = pickedEmployee;
     if (emp?.salary && (!hourlyRate || Number(hourlyRate) === 0)) setValue("hourlyRate", Math.round((emp.salary / 240) * 100) / 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employeeId]);
+  }, [employeeId, pickedEmployee]);
 
   const amount = (Number(hours) || 0) * (Number(hourlyRate) || 0) * (Number(multiplier) || 1);
-  const cur = employees.find((e) => e._id === employeeId)?.currency ?? "";
+  const cur = pickedEmployee?.currency ?? "";
 
   const onSubmit = (data: OvertimeFormValues) => {
     const payload = { ...data, notes: data.notes || undefined };
@@ -89,10 +91,7 @@ export function OvertimeDialog({ open, onOpenChange, overtime, defaultMonth }: P
               <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">{lockName}</div>
             ) : (
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect value={field.value} onChange={field.onChange} />
               )} />
             )}
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}

@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
 import { grantCompOffFormSchema, type GrantCompOffFormValues } from "@/lib/validations/compOffSchema";
 import { useGrantCompOff } from "@/hooks/useCompOff";
-import { useEmployees } from "@/hooks/useEmployees";
 import type { CompOffSuggestion } from "@/types";
 
 interface Props {
@@ -27,8 +27,6 @@ interface Props {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export function GrantCompOffDialog({ open, onOpenChange, prefill }: Props) {
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: open });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: grant, isPending } = useGrantCompOff();
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<GrantCompOffFormValues>({
@@ -64,10 +62,12 @@ export function GrantCompOffDialog({ open, onOpenChange, prefill }: Props) {
           <div className="space-y-1.5">
             <Label>Employee *</Label>
             <Controller name="employee" control={control} render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange} disabled={!!prefill}>
-                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-              </Select>
+              <EmployeeSelect
+                value={field.value}
+                onChange={field.onChange}
+                disabled={!!prefill}
+                placeholder="Select employee"
+              />
             )} />
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}
           </div>

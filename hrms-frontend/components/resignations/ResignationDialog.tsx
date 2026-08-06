@@ -13,9 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmployeeSelect } from "@/components/pickers";
+import { useEmployee } from "@/hooks/useEmployees";
 import { resignationFormSchema, type ResignationFormValues } from "@/lib/validations/resignationSchema";
 import { useCreateResignation } from "@/hooks/useResignations";
-import { useEmployees } from "@/hooks/useEmployees";
 import { RESIGNATION_TYPE_LABELS, type ResignationType } from "@/types";
 
 interface LockedEmployee {
@@ -41,8 +42,6 @@ const addDays = (dateStr: string, days: number) => {
 };
 
 export function ResignationDialog({ open, onOpenChange, employee: locked }: Props) {
-  const { data: empData } = useEmployees({ limit: "200" }, { enabled: !locked });
-  const employees = (empData?.data ?? []).filter((e) => e.status !== "terminated");
   const { mutate: create, isPending } = useCreateResignation();
 
   const defaults = (): ResignationFormValues => {
@@ -77,11 +76,15 @@ export function ResignationDialog({ open, onOpenChange, employee: locked }: Prop
     setValue("lastWorkingDay", noticeRequired ? addDays(resignationDate, Number(noticePeriodDays)) : resignationDate);
   }, [resignationDate, noticePeriodDays, noticeRequired, setValue]);
 
-  const onEmployeeChange = (id: string, onChange: (v: string) => void) => {
-    onChange(id);
-    const emp = employees.find((e) => e._id === id);
-    if (emp?.noticePeriodDays != null) setValue("noticePeriodDays", emp.noticePeriodDays);
-  };
+  // Prefill the notice period from the chosen employee. Fetched by id rather
+  // than looked up in the picker's page, which only holds one page of results.
+  const selectedEmployeeId = watch("employee");
+  const { data: selectedEmployee } = useEmployee(selectedEmployeeId || undefined);
+  useEffect(() => {
+    if (selectedEmployee?.noticePeriodDays != null) {
+      setValue("noticePeriodDays", selectedEmployee.noticePeriodDays);
+    }
+  }, [selectedEmployee, setValue]);
 
   const onSubmit = (data: ResignationFormValues) => {
     create({ ...data, reason: data.reason || undefined }, { onSuccess: () => onOpenChange(false) });
@@ -103,10 +106,11 @@ export function ResignationDialog({ open, onOpenChange, employee: locked }: Prop
               </div>
             ) : (
               <Controller name="employee" control={control} render={({ field }) => (
-                <Select value={field.value} onValueChange={(v) => onEmployeeChange(v, field.onChange)}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
-                  <SelectContent>{employees.map((e) => <SelectItem key={e._id} value={e._id}>{e.name} ({e.employeeCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <EmployeeSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  placeholder="Select employee"
+                />
               )} />
             )}
             {errors.employee && <p className="text-xs text-destructive">{errors.employee.message}</p>}

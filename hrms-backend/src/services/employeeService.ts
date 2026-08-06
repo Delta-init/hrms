@@ -12,6 +12,7 @@ import { env } from "../config/env.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
 
 interface EmployeeQuery extends PaginationQuery {
+  excludeTerminated?: string;
   department?: string;
   employmentType?: string;
 }
@@ -64,6 +65,9 @@ export class EmployeeService {
       filter.$or = [{ name: rx }, { employeeCode: rx }, { email: rx }, { designation: rx }];
     }
     if (query.status) filter.status = query.status;
+    // Pickers exclude leavers. Done here rather than by filtering the returned
+    // page, which drops people from the middle of a paginated result.
+    else if (query.excludeTerminated === "true") filter.status = { $ne: "terminated" };
     if (query.department) filter.department = query.department;
     if (query.employmentType) filter.employmentType = query.employmentType;
 
