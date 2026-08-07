@@ -17,7 +17,7 @@ import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
 import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeaves";
 import { useUser } from "@/hooks/useUsers";
-import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType, BUILTIN_LEAVE_TYPES } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
  *  the list display (avoids a silent off-by-one for zones ahead of UTC). */
@@ -143,10 +143,10 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                     {allowed
                       ? allowed.map((o) => (
                           <SelectItem key={o.type} value={o.type} disabled={o.remaining <= 0}>
-                            {LEAVE_TYPE_LABELS[o.type]} · {o.remaining}/{o.monthlyDays} left{o.paid ? "" : " · unpaid"}
+                            {o.label} · {o.remaining}/{o.monthlyDays} left{o.paid ? "" : " · unpaid"}
                           </SelectItem>
                         ))
-                      : (Object.keys(LEAVE_TYPE_LABELS) as LeaveType[]).map((t) => (
+                      : BUILTIN_LEAVE_TYPES.map((t) => (
                           <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>
                         ))}
                   </SelectContent>

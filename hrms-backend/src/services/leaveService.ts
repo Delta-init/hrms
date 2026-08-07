@@ -47,7 +47,7 @@ async function assertLeaveAllowed(
   excludeId: string | null
 ) {
   const schedule = user.workSchedule as
-    | { name?: string; leavePolicies?: Array<{ type: string; monthlyDays: number }> }
+    | { name?: string; leavePolicies?: Array<{ type: string; label?: string; monthlyDays: number }> }
     | null
     | undefined;
 
@@ -58,11 +58,14 @@ async function assertLeaveAllowed(
 
   const policy = policies.find((p) => p.type === type);
   if (!policy) {
+    // A custom type has no built-in name, so fall back to the slug itself.
+    const named = LEAVE_TYPE_LABEL[type] ?? type;
     throw Object.assign(
-      new Error(`${LEAVE_TYPE_LABEL[type] ?? type} isn't available on ${schedule.name ? `the ${schedule.name} schedule` : "this work schedule"}`),
+      new Error(`${named} isn't available on ${schedule.name || "this work schedule"}`),
       { statusCode: 400 }
     );
   }
+  const policyName = policy.label?.trim() || LEAVE_TYPE_LABEL[type] || type;
 
   // Allowance is per calendar month, counted against the month the leave starts in.
   const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
@@ -82,7 +85,7 @@ async function assertLeaveAllowed(
   if (days > remaining) {
     throw Object.assign(
       new Error(
-        `Only ${remaining} day${remaining === 1 ? "" : "s"} of ${LEAVE_TYPE_LABEL[type] ?? type} left this month (${policy.monthlyDays}/month, ${taken} already booked)`
+        `Only ${remaining} day${remaining === 1 ? "" : "s"} of ${policyName} left this month (${policy.monthlyDays}/month, ${taken} already booked)`
       ),
       { statusCode: 400 }
     );
@@ -315,7 +318,7 @@ export async function leaveOptionsFor(userId: string, month?: string) {
   if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
   const schedule = user.workSchedule as
-    | { name?: string; leavePolicies?: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }> }
+    | { name?: string; leavePolicies?: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }> }
     | null;
   const policies = schedule?.leavePolicies ?? [];
 
@@ -345,6 +348,8 @@ export async function leaveOptionsFor(userId: string, month?: string) {
       const used = Math.round((usedByType.get(p.type) ?? 0) * 100) / 100;
       return {
         type: p.type,
+        // The schedule's own name for it, so a custom type reads properly.
+        label: p.label?.trim() || LEAVE_TYPE_LABEL[p.type] || p.type,
         monthlyDays: p.monthlyDays,
         paid: p.paid !== false,
         used,

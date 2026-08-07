@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { workScheduleFormSchema, type WorkScheduleFormValues } from "@/lib/validations/workScheduleSchema";
 import { useCreateWorkSchedule, useUpdateWorkSchedule } from "@/hooks/useWorkSchedules";
 import { Switch } from "@/components/ui/switch";
-import { TIME_ZONES, WEEKDAYS, LEAVE_TYPE_LABELS, type LeaveType, type WorkSchedule } from "@/types";
+import { TIME_ZONES, WEEKDAYS, LEAVE_TYPE_LABELS, type LeaveType, type WorkSchedule, BUILTIN_LEAVE_TYPES } from "@/types";
 
 interface Props {
   open: boolean;
@@ -41,8 +41,12 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
   const leave = useFieldArray({ control, name: "leavePolicies" });
   const leaveRows = watch("leavePolicies") ?? [];
   // Only offer types not already listed — one rule per type.
-  const unusedTypes = (Object.keys(LEAVE_TYPE_LABELS) as LeaveType[])
-    .filter((t) => !leaveRows.some((r) => r.type === t));
+  const unusedTypes = BUILTIN_LEAVE_TYPES.filter((t) => !leaveRows.some((r) => r.type === t));
+  const isCustom = (t: string) => !BUILTIN_LEAVE_TYPES.includes(t as never);
+
+  /** A name becomes the slug the request and payroll carry. */
+  const slugify = (name: string) =>
+    name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
 
   const workDays = watch("workDays");
   const halfDays = watch("halfDays");
@@ -196,14 +200,22 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
                   every type without a limit.
                 </p>
               </div>
-              {unusedTypes.length > 0 && (
+              <div className="flex gap-2">
+                {unusedTypes.length > 0 && (
+                  <Button
+                    type="button" variant="outline" size="sm"
+                    onClick={() => leave.append({ type: unusedTypes[0], monthlyDays: 1, paid: true })}
+                  >
+                    <Plus className="h-3.5 w-3.5" />Add type
+                  </Button>
+                )}
                 <Button
                   type="button" variant="outline" size="sm"
-                  onClick={() => leave.append({ type: unusedTypes[0], monthlyDays: 1, paid: true })}
+                  onClick={() => leave.append({ type: "", label: "", monthlyDays: 1, paid: true })}
                 >
-                  <Plus className="h-3.5 w-3.5" />Add type
+                  <Plus className="h-3.5 w-3.5" />Custom type
                 </Button>
-              )}
+              </div>
             </div>
 
             {leave.fields.length === 0 ? (
@@ -214,20 +226,40 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
               <div className="space-y-2">
                 {leave.fields.map((f, i) => (
                   <div key={f.id} className="flex flex-wrap items-center gap-2">
-                    <Controller
-                      control={control}
-                      name={`leavePolicies.${i}.type`}
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {(Object.keys(LEAVE_TYPE_LABELS) as LeaveType[])
-                              .filter((t) => t === field.value || !leaveRows.some((r) => r.type === t))
-                              .map((t) => <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
+                    {/* A custom row is named freely; its slug is derived from
+                        the name, because that is what leave records carry. */}
+                    {isCustom(leaveRows[i]?.type ?? "") || leaveRows[i]?.type === "" ? (
+                      <Controller
+                        control={control}
+                        name={`leavePolicies.${i}.label`}
+                        render={({ field }) => (
+                          <Input
+                            className="w-40"
+                            placeholder="Leave type name"
+                            value={field.value ?? ""}
+                            onChange={(ev) => {
+                              field.onChange(ev.target.value);
+                              setValue(`leavePolicies.${i}.type`, slugify(ev.target.value), { shouldValidate: true });
+                            }}
+                          />
+                        )}
+                      />
+                    ) : (
+                      <Controller
+                        control={control}
+                        name={`leavePolicies.${i}.type`}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {BUILTIN_LEAVE_TYPES
+                                .filter((t) => t === field.value || !leaveRows.some((r) => r.type === t))
+                                .map((t) => <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    )}
                     <div className="flex items-center gap-1.5">
                       <Input type="number" min={0} step="0.5" className="w-20" {...register(`leavePolicies.${i}.monthlyDays`)} />
                       <span className="text-xs text-muted-foreground">days / month</span>

@@ -13,7 +13,8 @@ export const workScheduleFormSchema = z.object({
   graceMinutes: z.coerce.number().min(0).max(240),
   /** Leave this schedule grants. An empty list places no restriction. */
   leavePolicies: z.array(z.object({
-    type: z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]),
+    type: z.string().min(1, "Required").max(40).regex(/^[a-z0-9_]+$/, "Lowercase letters, numbers or _"),
+    label: z.string().max(60).optional(),
     monthlyDays: z.coerce.number().min(0, "Cannot be negative").max(31),
     paid: z.boolean(),
   })).default([]).superRefine((rows, ctx) => {

@@ -15,8 +15,7 @@ import { getInitials, cn } from "@/lib/utils";
 import { ConfirmationDialog } from "@/components/confirmations/ConfirmationDialog";
 import {
   LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS,
-  type LeaveLite, type RegularizationLite, type DueConfirmation,
-} from "@/types";
+  type LeaveLite, type RegularizationLite, type DueConfirmation, leaveTypeLabel } from "@/types";
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } } };
@@ -202,7 +201,7 @@ export function HrDashboard() {
         {/* On leave today */}
         <Panel icon={Plane} title="On leave today" tint="text-violet-600" href="/leave">
           {data?.onLeaveToday.length ? (
-            <div className="space-y-2">{data.onLeaveToday.map((l) => <PersonRow key={l._id} name={nameOf(l.user)} sub={`${LEAVE_TYPE_LABELS[l.type]} · until ${fmtDate(l.endDate)}`} tint="bg-violet-500/10 text-violet-600" icon={Plane} />)}</div>
+            <div className="space-y-2">{data.onLeaveToday.map((l) => <PersonRow key={l._id} name={nameOf(l.user)} sub={`${leaveTypeLabel(l.type)} · until ${fmtDate(l.endDate)}`} tint="bg-violet-500/10 text-violet-600" icon={Plane} />)}</div>
           ) : <Empty text="Everyone's in today." />}
         </Panel>
 
@@ -217,7 +216,7 @@ export function HrDashboard() {
         <Panel icon={CalendarClock} title="Pending leave approvals" tint="text-amber-600" href="/leave">
           {data?.pendingLeaves.length ? (
             <div className="space-y-2">{data.pendingLeaves.map((l: LeaveLite) => (
-              <PersonRow key={l._id} name={nameOf(l.user)} sub={`${LEAVE_TYPE_LABELS[l.type]} · ${fmtDate(l.startDate)}→${fmtDate(l.endDate)} · ${l.days}d`} tint="bg-amber-500/10 text-amber-600" icon={CalendarClock} badge="pending" />
+              <PersonRow key={l._id} name={nameOf(l.user)} sub={`${leaveTypeLabel(l.type)} · ${fmtDate(l.startDate)}→${fmtDate(l.endDate)} · ${l.days}d`} tint="bg-amber-500/10 text-amber-600" icon={CalendarClock} badge="pending" />
             ))}</div>
           ) : <Empty text="No leave awaiting approval." />}
         </Panel>

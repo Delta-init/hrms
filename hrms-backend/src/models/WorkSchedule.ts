@@ -19,9 +19,14 @@ const scheduleLeaveSchema = new Schema(
   {
     type: {
       type: String,
-      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"],
       required: true,
+      trim: true,
+      lowercase: true,
+      maxlength: 40,
+      match: /^[a-z0-9_]+$/,
     },
+    /** Display name for a type the built-in list doesn't cover. */
+    label: { type: String, trim: true, maxlength: 60 },
     /** Days granted per month. */
     monthlyDays: { type: Number, required: true, min: 0, max: 31 },
     paid: { type: Boolean, default: true },

@@ -620,7 +620,7 @@ export interface IWorkSchedule extends Document {
   /** Late tolerance (minutes) before an arrival is counted as late. */
   graceMinutes: number;
   /** Leave this schedule grants, by type. Empty = no leave can be requested. */
-  leavePolicies: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }>;
+  leavePolicies: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
@@ -664,15 +664,11 @@ export interface IAttendancePenaltyPolicy extends Document {
 }
 
 // ─── Leave Calendar: Leave Requests ─────────────────────────────────────────
-export type LeaveType =
-  | "annual"
-  | "sick"
-  | "casual"
-  | "unpaid"
-  | "maternity"
-  | "paternity"
-  | "wfh"
-  | "comp_off";
+/** Built-in leave slugs. A work schedule may define others of its own. */
+export type BuiltinLeaveType =
+  | "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off";
+/** Any leave slug — built-in, or one a schedule defines. */
+export type LeaveType = BuiltinLeaveType | (string & {});
 
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 

@@ -11,10 +11,19 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
       ref: "User",
       required: [true, "User is required"],
     },
+    /**
+     * Built-in slug or one a work schedule defines. Not an enum any more:
+     * organizations name leave in their own terms, and the schedule that grants
+     * a type is what says whether it exists — so validating against a fixed
+     * list here would reject the very types an administrator had just created.
+     */
     type: {
       type: String,
-      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"],
       required: [true, "Leave type is required"],
+      trim: true,
+      lowercase: true,
+      maxlength: [40, "Leave type cannot exceed 40 characters"],
+      match: [/^[a-z0-9_]+$/, "Leave type must be lowercase letters, numbers or underscores"],
     },
     startDate: {
       type: Date,

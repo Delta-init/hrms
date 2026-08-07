@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-const typeEnum = z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]);
+/** Any slug — the requester's schedule decides which ones exist. */
+const typeEnum = z.string().min(1).max(40).regex(/^[a-z0-9_]+$/, "Invalid leave type");
 const statusEnum = z.enum(["pending", "approved", "rejected", "cancelled"]);
 
 export const createLeaveSchema = z.object({

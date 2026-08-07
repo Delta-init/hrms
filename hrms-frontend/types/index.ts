@@ -144,7 +144,7 @@ export interface WorkSchedule {
   halfDays: number[];
   graceMinutes: number;
   /** Leave this schedule grants. Empty = unrestricted. */
-  leavePolicies?: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }>;
+  leavePolicies?: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: string;
   updatedAt: string;
@@ -281,7 +281,7 @@ export interface LeaveOptions {
   scheduleName: string | null;
   /** True when no schedule policy applies — every type stays available. */
   unrestricted: boolean;
-  options: Array<{ type: LeaveType; monthlyDays: number; paid: boolean; used: number; remaining: number }>;
+  options: Array<{ type: LeaveType; label: string; monthlyDays: number; paid: boolean; used: number; remaining: number }>;
 }
 
 export interface DocumentsResponse {
@@ -485,10 +485,14 @@ export interface Attendance {
 }
 
 // ─── Leave ──────────────────────────────────────────────────────────────────
-export type LeaveType = "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off";
+/** Built-in leave slugs. A work schedule may define others of its own. */
+export type BuiltinLeaveType =
+  | "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off";
+/** Any leave slug — built-in, or one a schedule defines. */
+export type LeaveType = BuiltinLeaveType | (string & {});
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 
-export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
+export const LEAVE_TYPE_LABELS: Record<BuiltinLeaveType, string> = {
   annual: "Annual",
   sick: "Sick",
   casual: "Casual",
@@ -498,6 +502,14 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   wfh: "Work From Home",
   comp_off: "Comp-Off",
 };
+
+/** Every built-in slug, for pickers that offer the standard set. */
+export const BUILTIN_LEAVE_TYPES = Object.keys(LEAVE_TYPE_LABELS) as BuiltinLeaveType[];
+
+/** Display name for a slug — the schedule's own label wins over the built-in. */
+export function leaveTypeLabel(type: LeaveType, label?: string): string {
+  return label?.trim() || LEAVE_TYPE_LABELS[type as BuiltinLeaveType] || type;
+}
 
 // ─── Approval workflow (configurable multi-step approval chains) ────────────
 export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations";
@@ -575,7 +587,14 @@ export interface Holiday {
 // ─── Leave policy (balances & accrual) ─────────────────────────────────────────
 // comp_off is earned per off-day-worked event, not an annual accrual — it never
 // gets a LeavePolicy row, so policy/balance types exclude it deliberately.
-export type PolicyLeaveType = Exclude<LeaveType, "comp_off">;
+/**
+ * Types the org-level annual policy covers.
+ *
+ * Deliberately the built-in set: an annual entitlement is a company-wide
+ * arrangement, whereas custom types are defined by, and belong to, a single
+ * work schedule.
+ */
+export type PolicyLeaveType = Exclude<BuiltinLeaveType, "comp_off">;
 
 export interface LeavePolicy {
   _id: string;

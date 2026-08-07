@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { leavePolicyFormSchema, type LeavePolicyFormValues } from "@/lib/validations/leavePolicySchema";
 import { useCreateLeavePolicy, useUpdateLeavePolicy } from "@/hooks/useLeaveBalances";
-import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType, leaveTypeLabel } from "@/types";
 
 interface Props {
   open: boolean;
@@ -61,7 +61,7 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, availableTypes }
           <div className="space-y-1.5">
             <Label>Leave type *</Label>
             {isEditing ? (
-              <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">{LEAVE_TYPE_LABELS[policy.type]}</div>
+              <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">{leaveTypeLabel(policy.type)}</div>
             ) : (
               <Controller name="type" control={control} render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>

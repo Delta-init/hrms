@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, type LeaveRequest, type Holiday, WEEKDAYS } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeaveRequest, type Holiday, WEEKDAYS, leaveTypeLabel } from "@/types";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -48,7 +48,7 @@ export function LeaveCalendar({ leaves, holidays }: Props) {
       if (key >= s && key <= e && l.status !== "cancelled") {
         const who = l.user && typeof l.user === "object" ? l.user.name.split(" ")[0] : "";
         items.push({
-          label: `${who} · ${LEAVE_TYPE_LABELS[l.type]}`,
+          label: `${who} · ${leaveTypeLabel(l.type)}`,
           kind: l.status === "approved" ? "approved" : l.status === "rejected" ? "rejected" : "pending",
         });
       }

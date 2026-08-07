@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { LeavePolicyDialog } from "@/components/leave/LeavePolicyDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType, leaveTypeLabel } from "@/types";
 
 const ALL_TYPES: PolicyLeaveType[] = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"];
 
@@ -47,7 +47,7 @@ export function LeaveBalances({ canManage }: Props) {
               {policies.map((p) => (
                 <div key={p._id} className="group flex items-start justify-between gap-2 rounded-lg border border-border p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{LEAVE_TYPE_LABELS[p.type]}</p>
+                    <p className="text-sm font-medium">{leaveTypeLabel(p.type)}</p>
                     <p className="text-xs text-muted-foreground">{p.annualDays}d/yr · {p.accrueMonthly ? "accrues monthly" : "granted upfront"}</p>
                     {p.carryForwardLimit > 0 && <p className="text-xs text-muted-foreground">Carries up to {p.carryForwardLimit}d forward</p>}
                   </div>
@@ -72,7 +72,7 @@ export function LeaveBalances({ canManage }: Props) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {balances.map((b) => (
               <div key={b.type} className="rounded-xl border border-border p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{LEAVE_TYPE_LABELS[b.type]}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{leaveTypeLabel(b.type)}</p>
                 <p className={cn("mt-1 text-2xl font-bold tabular-nums", b.balance < 0 ? "text-red-500" : "text-primary")}>{b.balance}<span className="ml-1 text-sm font-normal text-muted-foreground">days left</span></p>
                 <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                   <div className="flex justify-between"><span>Accrued</span><span className="tabular-nums">{b.accrued}</span></div>

@@ -3,10 +3,18 @@ import { z } from "zod";
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const time = z.string().regex(TIME_RE, "Must be in HH:mm format");
 
+export const BUILTIN_LEAVE_TYPES = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"] as const;
+
 const leavePolicy = z.object({
-  type: z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]),
+  type: z.string().min(1).max(40).regex(/^[a-z0-9_]+$/, "Use lowercase letters, numbers or underscores"),
+  label: z.string().max(60).optional(),
   monthlyDays: z.coerce.number().min(0).max(31),
   paid: z.boolean().default(true),
+}).superRefine((v, ctx) => {
+  // A built-in type already has a name; anything else has to bring its own.
+  if (!BUILTIN_LEAVE_TYPES.includes(v.type as never) && !v.label?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["label"], message: "Give this leave type a name" });
+  }
 });
 /** One entry per type — two rules for the same leave would be ambiguous. */
 const leavePolicies = z.array(leavePolicy).superRefine((rows, ctx) => {

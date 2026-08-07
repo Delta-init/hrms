@@ -3,7 +3,8 @@ import { z } from "zod";
 export const leaveFormSchema = z
   .object({
     user: z.string().min(1, "Employee is required"),
-    type: z.enum(["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"]),
+    // Any slug — the requester's schedule decides which types exist.
+    type: z.string().min(1, "Pick a leave type").max(40),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     halfDay: z.boolean().default(false),
