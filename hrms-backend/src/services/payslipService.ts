@@ -395,13 +395,22 @@ export class PayslipService {
   async summary(employeeId: string, month: string) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
-      .lean<IEmployee & { user?: { _id?: unknown; workSchedule?: { timeZone?: string; workDays?: number[] } } | null }>();
+      .populate({ path: "workSchedule", select: "timeZone workDays" })
+      .lean<IEmployee & {
+        user?: { _id?: unknown; workSchedule?: { timeZone?: string; workDays?: number[] } } | null;
+        workSchedule?: { timeZone?: string; workDays?: number[] } | null;
+      }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
     // Bound the month in the employee's timezone so local days at the month
     // edges bucket correctly (attendance is stored as local-midnight-UTC).
-    const tz = emp.user?.workSchedule?.timeZone || "Asia/Dubai";
-    const workDays = emp.user?.workSchedule?.workDays;
+    // A schedule can hang off either record. It is set on the employee from the
+    // employee form and on the user from the user form, and reading only the
+    // latter meant a schedule assigned the obvious way was ignored — every
+    // calendar day counted as a working day, weekends included.
+    const schedule = emp.user?.workSchedule ?? emp.workSchedule ?? null;
+    const tz = schedule?.timeZone || "Asia/Dubai";
+    const workDays = schedule?.workDays;
     const { start, end } = monthBoundsTz(month, tz);
 
     // Active-loan instalments that will be deducted from this payslip.

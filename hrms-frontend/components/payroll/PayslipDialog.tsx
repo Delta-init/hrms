@@ -15,6 +15,7 @@ import { EmployeeSelect } from "@/components/pickers";
 import { payslipFormSchema, type PayslipFormValues } from "@/lib/validations/payslipSchema";
 import { useCreatePayslip, useUpdatePayslip, usePayslipSummary } from "@/hooks/usePayslips";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import type { Payslip } from "@/types";
 
 interface Preset {
@@ -110,10 +111,35 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
   const money = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  /**
+   * Lines the payslip derives itself, shown in the column they belong to.
+   *
+   * They sit with the editable rows because that is where someone looks for
+   * them — a reimbursement is an earning and a loan instalment is a deduction,
+   * and listing them only in the totals made both columns look empty. They stay
+   * read-only: the payslip recomputes all of them on generate, so an edit here
+   * would be silently discarded.
+   */
+  const autoRows = (lines: { label: string; amount: number }[], tone: "earning" | "deduction") =>
+    lines.map((l, i) => (
+      <div key={`auto-${tone}-${i}`} className="flex items-start justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2">
+        {/* Wraps rather than truncates: the detail in the label — "(31d)", which
+            reimbursement — is the part worth reading. */}
+        <span className="min-w-0 flex-1 break-words text-sm leading-snug text-muted-foreground">{l.label}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className={cn("text-sm font-medium tabular-nums", tone === "earning" ? "text-emerald-600" : "text-red-600")}>
+            {tone === "earning" ? "+" : "−"} {money(l.amount)}
+          </span>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">auto</span>
+        </span>
+      </div>
+    ));
+
   const lineRows = (
     fa: { fields: { id: string }[]; append: (v: { label: string; amount: number }) => void; remove: (i: number) => void },
     name: "earnings" | "deductions",
     addLabel: string,
+    auto: { label: string; amount: number }[],
   ) => (
     <div className="space-y-2">
       {fa.fields.map((f, i) => (
@@ -123,6 +149,7 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => fa.remove(i)}><Trash2 className="h-4 w-4" /></Button>
         </div>
       ))}
+      {autoRows(auto, name === "earnings" ? "earning" : "deduction")}
       <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => fa.append({ label: "", amount: 0 })}><Plus className="h-3.5 w-3.5" />{addLabel}</Button>
     </div>
   );
@@ -168,11 +195,11 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-emerald-600">Earnings</Label>
-              {lineRows(earnings, "earnings", "Add earning")}
+              {lineRows(earnings, "earnings", "Add earning", autoEarnings)}
             </div>
             <div className="space-y-2">
               <Label className="text-red-600">Deductions</Label>
-              {lineRows(deductions, "deductions", "Add deduction")}
+              {lineRows(deductions, "deductions", "Add deduction", autoDeductions)}
             </div>
           </div>
 
@@ -199,23 +226,6 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                 Attendance recorded for {summary.recordedDays} of {summary.workingDays} working days.
                 The remaining {summary.unrecordedDays} have no attendance, leave or holiday against them and are
                 being paid in full — check the month is complete before generating.
-              </div>
-            )}
-            {(autoEarnings.length > 0 || autoDeductions.length > 0) && (
-              <div className="mb-2 space-y-1 border-b border-border pb-2">
-                <p className="text-xs font-medium text-muted-foreground">Added automatically on generate</p>
-                {autoEarnings.map((l, i) => (
-                  <div key={`ae-${i}`} className="flex items-center justify-between text-xs">
-                    <span className="truncate text-muted-foreground">{l.label}</span>
-                    <span className="text-emerald-600">+ {money(l.amount)}</span>
-                  </div>
-                ))}
-                {autoDeductions.map((l, i) => (
-                  <div key={`ad-${i}`} className="flex items-center justify-between text-xs">
-                    <span className="truncate text-muted-foreground">{l.label}</span>
-                    <span className="text-red-600">− {money(l.amount)}</span>
-                  </div>
-                ))}
               </div>
             )}
             <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Gross</span><span className="font-medium text-emerald-600">{money(gross)}</span></div>
