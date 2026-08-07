@@ -9,6 +9,23 @@ const lineSchema = new Schema<IPayslipLine>(
   { _id: false }
 );
 
+/**
+ * What this payslip actually collected against a loan or a one-time deduction.
+ *
+ * Recorded because the amount taken is not always the amount scheduled — a
+ * month can only recover what it can afford — and because editing or deleting a
+ * payslip has to give back exactly what it took, which is impossible to work
+ * out from the line labels alone.
+ */
+const recoverySchema = new Schema(
+  {
+    kind: { type: String, enum: ["loan", "adjustment"], required: true },
+    ref: { type: Schema.Types.ObjectId, required: true },
+    amount: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
 const payslipSchema = new Schema<IPayslip>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -30,6 +47,9 @@ const payslipSchema = new Schema<IPayslip>(
     issuedAt: { type: Date, default: null },
     paidAt: { type: Date, default: null },
     notes: { type: String, trim: true, maxlength: 500 },
+    recoveries: { type: [recoverySchema], default: [] },
+    /** Scheduled recovery this month's pay couldn't cover; taken next month. */
+    deferred: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, versionKey: false }
 );

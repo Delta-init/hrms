@@ -86,23 +86,76 @@ interface Line { label: string; amount: number }
  * Unapplied one-time payments (earnings) and deductions for an employee-month.
  * Returns the lines to add to the payslip and the ids to mark applied.
  */
+export interface AdjustmentRecovery {
+  adjustmentId: string;
+  amount: number;
+}
+
+/**
+ * One-time items still owed for a month.
+ *
+ * Payments are taken whole. Deductions report only what is left to recover, so
+ * a fine larger than one month's pay is collected over several payslips instead
+ * of driving a single one negative — the caller decides how much of that the
+ * month can afford.
+ *
+ * Anything from an earlier month that is still outstanding is swept up too:
+ * unrecovered money should not be forgotten because the calendar moved on.
+ */
 export async function computeOneTimeAdjustments(
   employeeId: string,
   month: string
-): Promise<{ earnings: Line[]; deductions: Line[]; ids: string[] }> {
-  const items = await OneTimeAdjustment.find(scoped({ employee: employeeId, month, applied: false }));
+): Promise<{ earnings: Line[]; deductions: Array<Line & { adjustmentId: string }>; ids: string[] }> {
+  const items = await OneTimeAdjustment.find(
+    scoped({ employee: employeeId, month: { $lte: month }, applied: false })
+  ).sort({ month: 1, createdAt: 1 });
+
   const earnings: Line[] = [];
-  const deductions: Line[] = [];
+  const deductions: Array<Line & { adjustmentId: string }> = [];
   const ids: string[] = [];
   for (const a of items) {
-    (a.kind === "payment" ? earnings : deductions).push({ label: a.label, amount: a.amount });
-    ids.push(String(a._id));
+    const remaining = Math.round((a.amount - (a.appliedAmount ?? 0)) * 100) / 100;
+    if (remaining <= 0) continue;
+    if (a.kind === "payment") {
+      earnings.push({ label: a.label, amount: remaining });
+      ids.push(String(a._id));
+    } else {
+      deductions.push({ label: a.label, amount: remaining, adjustmentId: String(a._id) });
+    }
   }
   return { earnings, deductions, ids };
 }
 
-/** Mark one-time adjustments as applied to a payslip so they aren't reused. */
+/** Mark one-time payments as fully applied to a payslip so they aren't reused. */
 export async function markOneTimeApplied(ids: string[], payslipId: string): Promise<void> {
   if (!ids.length) return;
-  await OneTimeAdjustment.updateMany({ _id: { $in: ids } }, { $set: { applied: true, payslip: payslipId } });
+  await OneTimeAdjustment.updateMany(
+    { _id: { $in: ids } },
+    [{ $set: { applied: true, appliedAmount: "$amount", payslip: payslipId } }]
+  );
+}
+
+/** Credit what a payslip actually recovered; only close the item once it's whole. */
+export async function recordAdjustmentRecoveries(
+  recoveries: AdjustmentRecovery[],
+  payslipId: string
+): Promise<void> {
+  for (const r of recoveries) {
+    const item = await OneTimeAdjustment.findById(r.adjustmentId);
+    if (!item) continue;
+    item.appliedAmount = Math.min(item.amount, Math.round(((item.appliedAmount ?? 0) + r.amount) * 100) / 100);
+    if (item.appliedAmount >= item.amount) { item.applied = true; item.payslip = payslipId as never; }
+    await item.save();
+  }
+}
+
+/** Undo what a payslip recovered, for when it is edited or deleted. */
+export async function reverseAdjustmentRecoveries(recoveries: AdjustmentRecovery[]): Promise<void> {
+  for (const r of recoveries) {
+    const item = await OneTimeAdjustment.findById(r.adjustmentId);
+    if (!item) continue;
+    item.appliedAmount = Math.max(0, Math.round(((item.appliedAmount ?? 0) - r.amount) * 100) / 100);
+    if (item.appliedAmount < item.amount) { item.applied = false; item.payslip = null; }
+    await item.save();
+  }
 }

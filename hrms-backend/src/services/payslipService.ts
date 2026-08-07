@@ -6,8 +6,10 @@ import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/pays
 import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
-import { computeLoanDeductions, recordLoanRepayments, LOAN_DEDUCTION_PREFIX } from "./loanService.js";
-import { computeOneTimeAdjustments, markOneTimeApplied } from "./oneTimeAdjustmentService.js";
+import {
+  computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
+} from "./loanService.js";
+import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries } from "./oneTimeAdjustmentService.js";
 import { computeReimbursements, markReimbursementsPaid } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
@@ -39,6 +41,92 @@ function monthBoundsTz(month: string, tz: string) {
   return { start: zonedTimeToUtc(`${month}-01`, "00:00", tz), end: zonedTimeToUtc(`${nm}-01`, "00:00", tz) };
 }
 
+
+interface Line { label: string; amount: number }
+interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Fit the recoverable deductions into what the month can actually pay.
+ *
+ * Take-home is never allowed below zero. Anything scheduled that the pay can't
+ * cover is simply not taken this month — one-time deductions keep their unpaid
+ * remainder, and loans re-derive theirs from the schedule — so it comes off the
+ * next payslip that has room. Previously the full instalment was deducted
+ * regardless, producing a negative net pay and recording money as collected
+ * that nobody had paid.
+ *
+ * Order matters: hand-entered lines (loss of pay, penalties) come off first
+ * because they are reductions in earnings rather than debts and can't be
+ * deferred. One-time items are recovered before loans — they are usually the
+ * shorter-lived of the two.
+ */
+function allocateRecoveries(
+  earnings: Line[],
+  manualDeductions: Line[],
+  adjustments: Array<Line & { adjustmentId: string }>,
+  loanLines: Line[],
+  repayments: Array<{ loanId: string; amount: number }>
+): { lines: Line[]; recoveries: Recovery[]; deferred: number; taken: Array<{ kind: "loan" | "adjustment"; id: string; amount: number }> } {
+  const gross = r2(earnings.reduce((a, l) => a + (l.amount || 0), 0));
+  const manual = r2(manualDeductions.reduce((a, l) => a + (l.amount || 0), 0));
+
+  if (manual > gross) {
+    throw Object.assign(
+      new Error(
+        `Deductions of ${r2(manual)} exceed earnings of ${gross}. Reduce them — only loans and one-time deductions can be carried to next month.`
+      ),
+      { statusCode: 400 }
+    );
+  }
+
+  let available = r2(gross - manual);
+  const lines: Line[] = [];
+  const recoveries: Recovery[] = [];
+  const taken: Array<{ kind: "loan" | "adjustment"; id: string; amount: number }> = [];
+  let deferred = 0;
+
+  const consume = (kind: "loan" | "adjustment", id: string, label: string, want: number) => {
+    const amount = r2(Math.min(want, available));
+    if (amount > 0) {
+      available = r2(available - amount);
+      lines.push({ label, amount });
+      recoveries.push({ kind, ref: id, amount });
+      taken.push({ kind, id, amount });
+    }
+    deferred = r2(deferred + (want - amount));
+  };
+
+  for (const a of adjustments) consume("adjustment", a.adjustmentId, a.label, a.amount);
+  loanLines.forEach((line, i) => {
+    const id = repayments[i]?.loanId;
+    if (id) consume("loan", id, line.label, line.amount);
+  });
+
+  return { lines, recoveries, deferred, taken };
+}
+
+/** Credit the loans and one-time items with what the payslip actually took. */
+async function applyRecoveries(
+  alloc: { taken: Array<{ kind: "loan" | "adjustment"; id: string; amount: number }> },
+  payslipId: string
+) {
+  const loans = alloc.taken.filter((t) => t.kind === "loan").map((t) => ({ loanId: t.id, amount: t.amount }));
+  const adjustments = alloc.taken.filter((t) => t.kind === "adjustment").map((t) => ({ adjustmentId: t.id, amount: t.amount }));
+  if (loans.length) await recordLoanRepayments(loans);
+  if (adjustments.length) await recordAdjustmentRecoveries(adjustments, payslipId);
+}
+
+/** Hand back everything a payslip collected, before editing or deleting it. */
+async function undoRecoveries(record: { recoveries?: Array<{ kind: string; ref: unknown; amount: number }> }) {
+  const rows = record.recoveries ?? [];
+  const loans = rows.filter((r) => r.kind === "loan").map((r) => ({ loanId: String(r.ref), amount: r.amount }));
+  const adjustments = rows.filter((r) => r.kind === "adjustment").map((r) => ({ adjustmentId: String(r.ref), amount: r.amount }));
+  if (loans.length) await reverseLoanRepayments(loans);
+  if (adjustments.length) await reverseAdjustmentRecoveries(adjustments);
+}
+
 export class PayslipService {
   async create(input: CreatePayslipInput, issuerId: string) {
     const emp = await Employee.findOne(scoped({ _id: input.employee }));
@@ -47,25 +135,28 @@ export class PayslipService {
     const existing = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
     if (existing) throw Object.assign(new Error("A payslip already exists for this employee and month"), { statusCode: 409 });
 
-    // Auto-apply this month's active-loan instalments as deduction lines. Any
-    // loan lines already present (from the summary prefill) are re-derived here
-    // so the deduction stays authoritative and is never double-counted.
-    const { lines: loanLines, repayments } = await computeLoanDeductions(input.employee);
+    // Auto-derived lines are recomputed here rather than trusted from the form,
+    // so a stale prefill can never double-count.
+    const { lines: loanLines, repayments } = await computeLoanDeductions(input.employee, input.month);
     const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
-    // One-time payments (earnings) and deductions registered for this month.
+    // One-time payments (earnings) and deductions still owed for this month.
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
     // Approved expense reimbursements paid out this month (earnings).
     const reimb = await computeReimbursements(input.employee, input.month);
     // Overtime worked, paid out this month (earnings).
     const ot = await computeOvertime(input.employee, input.month);
     const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
-    const deductions = [...userDeductions, ...loanLines, ...oneTime.deductions];
+
+    const alloc = allocateRecoveries(earnings, userDeductions, oneTime.deductions, loanLines, repayments);
+    const deductions = [...userDeductions, ...alloc.lines];
 
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
       ...input,
       earnings,
       deductions,
+      recoveries: alloc.recoveries,
+      deferred: alloc.deferred,
       organization: getOrgId(),
       monthDate: start,
       user: emp.user ?? null,
@@ -77,8 +168,8 @@ export class PayslipService {
     if (status === "paid") doc.paidAt = new Date();
     await doc.save();
 
-    // Record loan repayments + mark one-time adjustments applied now the slip exists.
-    if (repayments.length) await recordLoanRepayments(repayments);
+    // Credit only what the payslip could actually collect, now the slip exists.
+    await applyRecoveries(alloc, String(doc._id));
     if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(doc._id));
     if (reimb.ids.length) await markReimbursementsPaid(reimb.ids, String(doc._id));
     if (ot.ids.length) await markOvertimeApplied(ot.ids, String(doc._id));
@@ -127,8 +218,29 @@ export class PayslipService {
 
     if (input.month !== undefined) { record.month = input.month; record.monthDate = monthBounds(input.month).start; }
     if (input.currency !== undefined) record.currency = input.currency;
-    if (input.earnings !== undefined) record.earnings = input.earnings as never;
-    if (input.deductions !== undefined) record.deductions = input.deductions as never;
+    // Earnings or deductions changing means the recoverable amount changes too.
+    // Hand back everything this slip collected and re-run the allocation, or the
+    // loan balance drifts from what was actually paid — an edit used to leave the
+    // original repayment credited on top of the new one.
+    if (input.earnings !== undefined || input.deductions !== undefined) {
+      await undoRecoveries(record);
+
+      const month = input.month ?? record.month;
+      const employeeId = String(record.employee);
+      const earnings = (input.earnings ?? record.earnings) as unknown as Line[];
+      const manual = ((input.deductions ?? record.deductions) as unknown as Line[])
+        .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
+
+      const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
+      const oneTime = await computeOneTimeAdjustments(employeeId, month);
+      const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
+
+      record.earnings = earnings as never;
+      record.deductions = [...manual, ...alloc.lines] as never;
+      record.recoveries = alloc.recoveries as never;
+      record.deferred = alloc.deferred;
+      await applyRecoveries(alloc, String(record._id));
+    }
     if (input.workingDays !== undefined) record.workingDays = input.workingDays;
     if (input.paidDays !== undefined) record.paidDays = input.paidDays;
     if (input.lopDays !== undefined) record.lopDays = input.lopDays;
@@ -148,8 +260,12 @@ export class PayslipService {
   }
 
   async remove(id: string) {
-    const record = await Payslip.findOneAndDelete(scoped({ _id: id }));
+    const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+    // Deleting a payslip un-collects its recoveries; leaving them credited made
+    // loans look repaid by a slip that no longer exists.
+    await undoRecoveries(record);
+    await Payslip.deleteOne({ _id: record._id });
     return { message: "Payslip deleted successfully" };
   }
 
@@ -166,7 +282,7 @@ export class PayslipService {
     const { start, end } = monthBoundsTz(month, tz);
 
     // Active-loan instalments that will be deducted from this payslip.
-    const { lines: loanDeductions } = await computeLoanDeductions(employeeId);
+    const { lines: loanDeductions } = await computeLoanDeductions(employeeId, month);
     // Salary breakup in force: a structure assignment if one exists, else a
     // single Basic = the salary from any effective-dated increment (resolved
     // internally by resolveSalaryBreakup, which also lets a later increment

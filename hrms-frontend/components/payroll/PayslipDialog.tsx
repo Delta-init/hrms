@@ -179,7 +179,20 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           <div className="rounded-xl border border-border bg-muted/30 p-4">
             <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Gross</span><span className="font-medium text-emerald-600">{money(gross)}</span></div>
             <div className="mt-1 flex items-center justify-between text-sm"><span className="text-muted-foreground">Deductions</span><span className="font-medium text-red-600">− {money(totalDed)}</span></div>
-            <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base font-bold"><span>Net Pay</span><span className="text-primary">{money(net)}</span></div>
+            <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base font-bold">
+              <span>Net Pay</span>
+              <span className="text-primary">{money(Math.max(0, net))}</span>
+            </div>
+            {net < 0 && (
+              /* Loans and one-time deductions are recovered only as far as the
+                 pay reaches; the rest comes off the next payslip that has room.
+                 The server does the same arithmetic, so this only previews it. */
+              <p className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                Deductions exceed earnings by {money(Math.abs(net))}. Take-home is held at zero and the
+                shortfall carries to next month — but only loans and one-time deductions can be carried.
+                Anything typed in by hand has to fit.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

@@ -14,6 +14,13 @@ const oneTimeAdjustmentSchema = new Schema<IOneTimeAdjustment>(
     /** Payout month it applies to (YYYY-MM). */
     month: { type: String, required: [true, "Month is required"], match: /^\d{4}-\d{2}$/ },
     notes: { type: String, trim: true, maxlength: 300 },
+    /**
+     * How much has actually been recovered so far. A deduction bigger than the
+     * month's take-home is collected across several payslips rather than
+     * pushing net pay negative, so "applied" is a threshold, not a flag flipped
+     * on first sight.
+     */
+    appliedAmount: { type: Number, default: 0, min: 0 },
     applied: { type: Boolean, default: false },
     payslip: { type: Schema.Types.ObjectId, ref: "Payslip", default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },

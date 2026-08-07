@@ -92,27 +92,47 @@ interface Repayment {
   amount: number;
 }
 
+/** Instalments that should have been collected by the end of `month`, inclusive. */
+function instalmentsDueBy(disbursedDate: Date | undefined | null, month: string): number {
+  if (!disbursedDate) return 0;
+  const d = new Date(disbursedDate);
+  const [y, m] = month.split("-").map(Number);
+  return (y - d.getFullYear()) * 12 + (m - (d.getMonth() + 1)) + 1;
+}
+
 /**
- * Compute this month's salary-deduction lines for an employee's active loans.
- * Returns the deduction lines to add to a payslip and the repayments to record
- * once the payslip is saved. Each instalment is capped at the outstanding balance.
+ * What an employee's active loans should recover in `month`.
+ *
+ * The figure is the whole schedule to date minus what has actually been repaid,
+ * not a flat instalment — so a month that could only collect part of one (a
+ * salary too small to cover it, unpaid leave) is made up automatically the next
+ * time there is room, with no arrears field to keep in step. Still capped at
+ * the outstanding balance, and the caller caps it again at what the payslip can
+ * actually afford.
  */
 export async function computeLoanDeductions(
-  employeeId: string
+  employeeId: string,
+  month: string
 ): Promise<{ lines: LoanDeductionLine[]; repayments: Repayment[] }> {
   const loans = await Loan.find(scoped({ employee: employeeId, status: "active" }));
   const lines: LoanDeductionLine[] = [];
   const repayments: Repayment[] = [];
   for (const loan of loans) {
-    const outstanding = loan.amount - loan.amountRepaid;
+    const outstanding = round2(loan.amount - loan.amountRepaid);
     if (outstanding <= 0) continue;
-    const instalment = Math.min(loan.monthlyDeduction || outstanding, outstanding);
-    if (instalment <= 0) continue;
+
+    const elapsed = instalmentsDueBy(loan.disbursedDate, month);
+    if (elapsed <= 0) continue;
+    const schedule = loan.monthlyDeduction || loan.amount;
+    const dueToDate = Math.min(loan.amount, round2(schedule * elapsed));
+    const want = Math.min(round2(dueToDate - loan.amountRepaid), outstanding);
+    if (want <= 0) continue;
+
     lines.push({
-      label: `Loan repayment${loan.purpose ? ` (${loan.purpose})` : ""}`,
-      amount: Math.round(instalment * 100) / 100,
+      label: `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`,
+      amount: want,
     });
-    repayments.push({ loanId: String(loan._id), amount: instalment });
+    repayments.push({ loanId: String(loan._id), amount: want });
   }
   return { lines, repayments };
 }
@@ -122,11 +142,29 @@ export async function recordLoanRepayments(repayments: Repayment[]): Promise<voi
   for (const r of repayments) {
     const loan = await Loan.findById(r.loanId);
     if (!loan) continue;
-    loan.amountRepaid = Math.min(loan.amount, Math.round((loan.amountRepaid + r.amount) * 100) / 100);
+    loan.amountRepaid = Math.min(loan.amount, round2(loan.amountRepaid + r.amount));
     if (loan.amountRepaid >= loan.amount) loan.status = "closed";
     await loan.save();
   }
 }
+
+/**
+ * Undo repayments a payslip recorded, for when it is edited or deleted.
+ *
+ * Without this, correcting a payslip left the money counted as collected: the
+ * balance fell, the loan could even close, and nothing had actually been paid.
+ */
+export async function reverseLoanRepayments(repayments: Repayment[]): Promise<void> {
+  for (const r of repayments) {
+    const loan = await Loan.findById(r.loanId);
+    if (!loan) continue;
+    loan.amountRepaid = Math.max(0, round2(loan.amountRepaid - r.amount));
+    if (loan.amountRepaid < loan.amount && loan.status === "closed") loan.status = "active";
+    await loan.save();
+  }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Label prefix used for auto-generated loan deduction lines. */
 export const LOAN_DEDUCTION_PREFIX = "Loan repayment";

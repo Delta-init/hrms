@@ -593,6 +593,10 @@ export interface IPayslip extends Document {
   issuedAt?: Date | null;
   paidAt?: Date | null;
   notes?: string;
+  /** What this slip collected against loans / one-time deductions. */
+  recoveries?: Array<{ kind: "loan" | "adjustment"; ref: Types.ObjectId; amount: number }>;
+  /** Scheduled recovery this month couldn't afford. */
+  deferred?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -976,6 +980,8 @@ export interface IOneTimeAdjustment extends Document {
   /** Payout month (YYYY-MM). */
   month: string;
   notes?: string;
+  /** Recovered so far — a deduction may span several payslips. */
+  appliedAmount: number;
   applied: boolean;
   payslip?: Types.ObjectId | null;
   createdBy?: Types.ObjectId | IUser | null;
