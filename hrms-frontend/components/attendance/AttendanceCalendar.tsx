@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmployeeSelect } from "@/components/pickers";
 import { useEmployees } from "@/hooks/useEmployees";
 import { cn } from "@/lib/utils";
-import { WEEKDAYS, type AttendanceCalendarDay, type AttendanceStatus } from "@/types";
+import { WEEKDAYS, REGULARIZATION_TYPE_LABELS, ATTENDANCE_STATUS_LABELS, type AttendanceCalendarDay, type AttendanceStatus } from "@/types";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const curMonth = () => new Date().toISOString().slice(0, 7);
@@ -104,6 +104,8 @@ function Legend() {
       {(Object.keys(STATUS) as AttendanceStatus[]).map((s) => (
         <span key={s} className="flex items-center gap-1.5"><span className={cn("flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold", STATUS[s].cell)}>{STATUS[s].letter}</span>{STATUS[s].label}</span>
       ))}
+      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-black/10" />Correction pending</span>
+      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-sky-400 ring-1 ring-black/10" />Approved leave</span>
     </div>
   );
 }
@@ -152,9 +154,23 @@ function SingleView({ data, y, monthIndex, month, employeeSelected }: { data?: {
               const st = day ? STATUS[day.status] : undefined;
               return (
                 <button key={i} onClick={() => day && setSelected(key)} disabled={!day}
-                  className={cn("flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", selected === key && "ring-2 ring-primary")}>
+                  className={cn("relative flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", selected === key && "ring-2 ring-primary")}>
                   <span>{d}</span>
                   {st && <span className="text-[9px] font-bold opacity-90">{st.letter}</span>}
+                  {/* A correction on this day: amber while it waits, white once
+                      applied. Marked on the cell so a disputed day is findable
+                      without opening each one. */}
+                  {day?.regularization && (
+                    <span
+                      title={`Correction ${day.regularization.status}`}
+                      className={cn("absolute right-1 top-1 h-1.5 w-1.5 rounded-full ring-1 ring-black/10",
+                        day.regularization.status === "pending" ? "bg-amber-300" : "bg-white")}
+                    />
+                  )}
+                  {/* Leave the attendance status doesn't already show. */}
+                  {day?.leave && day.status !== "on_leave" && day.status !== "wfh" && (
+                    <span title={day.leave.label} className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-sky-300 ring-1 ring-black/10" />
+                  )}
                 </button>
               );
             })}
@@ -175,6 +191,19 @@ function SingleView({ data, y, monthIndex, month, employeeSelected }: { data?: {
               <Row k="Worked hours" v={fmtWorked(sel.workedMinutes)} />
               <Row k="Late by" v={sel.lateMinutes ? `${sel.lateMinutes} min` : "—"} />
               {sel.note && <Row k="Note" v={sel.note} />}
+              {sel.leave && (
+                <Row k="Leave" v={`${sel.leave.label}${sel.leave.paid ? "" : " · unpaid"}`} />
+              )}
+              {sel.regularization && (
+                <Row
+                  k="Correction"
+                  v={`${REGULARIZATION_TYPE_LABELS[sel.regularization.type]} · ${sel.regularization.status}${
+                    sel.regularization.resultingStatus
+                      ? ` → ${ATTENDANCE_STATUS_LABELS[sel.regularization.resultingStatus]}`
+                      : ""
+                  }`}
+                />
+              )}
             </div>
           </>
         ) : (

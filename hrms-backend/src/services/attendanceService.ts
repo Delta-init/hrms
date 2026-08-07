@@ -2,6 +2,7 @@ import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
@@ -16,6 +17,11 @@ interface AttendanceQuery extends PaginationQuery {
   dateFrom?: string;
   dateTo?: string;
 }
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  annual: "Annual leave", sick: "Sick leave", casual: "Casual leave", unpaid: "Unpaid leave",
+  maternity: "Maternity leave", paternity: "Paternity leave", wfh: "Work from home", comp_off: "Comp-off",
+};
 
 export class AttendanceService {
   private applySessions(doc: { checkIn?: Date | null; checkOut?: Date | null; sessions: unknown }, checkIn?: Date | null, checkOut?: Date | null) {
@@ -225,22 +231,35 @@ export class AttendanceService {
     if (employeeId) empFilter._id = employeeId;
     const employees = await Employee.find(empFilter)
       .select("name employeeCode designation user")
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays" } })
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays leavePolicies" } })
       .sort({ name: 1 })
       .lean();
 
     const userIds = employees.map((e) => (e.user as { _id?: unknown } | null)?._id).filter(Boolean);
 
-    const [att, monthLeaves, holidays, rosterMap] = await Promise.all([
+    const [att, monthLeaves, holidays, rosterMap, regs] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } })
         .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
-        .select("user startDate endDate type").lean(),
+        .select("user startDate endDate type halfDay").lean(),
       Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
       rosterWorkDaysByUser(userIds.map((id) => String(id)), start, end),
+      // Corrections in flight or already applied. Shown on the day they concern
+      // so a disputed day is visible as disputed, rather than looking settled.
+      Regularization.find({ user: { $in: userIds }, status: { $in: ["pending", "approved"] }, date: { $gte: start, $lt: end } })
+        .select("user date type status resultingStatus").lean(),
     ]);
 
-    type DayEntry = { status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null; lateMinutes?: number; note?: string; timeZone?: string | null };
+    type DayLeave = { type: string; label: string; paid: boolean };
+    type DayReg = { _id: unknown; type: string; status: string; resultingStatus?: string };
+    type DayEntry = {
+      status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null;
+      lateMinutes?: number; note?: string; timeZone?: string | null;
+      /** Approved leave covering this day, whatever the attendance says. */
+      leave?: DayLeave;
+      /** A correction raised for this day. */
+      regularization?: DayReg;
+    };
     const attByUser = new Map<string, Record<string, DayEntry>>();
     for (const a of att) {
       const uid = String(a.user);
@@ -252,8 +271,8 @@ export class AttendanceService {
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
       };
     }
-    // Per user, the leave type in force on each day — "wfh" paints the
-    // calendar distinctly from actual leave (on_leave).
+    // Per user, the leave in force on each day — "wfh" paints the calendar
+    // distinctly from actual leave (on_leave).
     const leaveDaysByUser = new Map<string, Map<string, string>>();
     for (const l of monthLeaves) {
       const uid = String(l.user);
@@ -262,6 +281,16 @@ export class AttendanceService {
       const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
       const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
       for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) map.set(d.toISOString().slice(0, 10), l.type as string);
+    }
+
+    const regsByUser = new Map<string, Map<string, DayReg>>();
+    for (const r of regs) {
+      const uid = String(r.user);
+      if (!regsByUser.has(uid)) regsByUser.set(uid, new Map());
+      regsByUser.get(uid)!.set(new Date(r.date).toISOString().slice(0, 10), {
+        _id: r._id, type: r.type as string, status: r.status as string,
+        resultingStatus: (r as { resultingStatus?: string }).resultingStatus,
+      });
     }
     const holidayMap = new Map<string, string>();
     for (const h of holidays) holidayMap.set(new Date(h.date).toISOString().slice(0, 10), h.name);
@@ -274,6 +303,15 @@ export class AttendanceService {
       const rosterWindows = rosterMap.get(uid);
       const recs = attByUser.get(uid) ?? {};
       const leaveMap = leaveDaysByUser.get(uid) ?? new Map<string, string>();
+      const regMap = regsByUser.get(uid) ?? new Map<string, DayReg>();
+      // The schedule's own name for a leave type, so a custom one reads
+      // properly instead of collapsing into a generic "On leave".
+      const policies = (e.user as { workSchedule?: { leavePolicies?: Array<{ type: string; label?: string; paid: boolean }> } } | null)
+        ?.workSchedule?.leavePolicies ?? [];
+      const describeLeave = (type: string): DayLeave => {
+        const p = policies.find((x) => x.type === type);
+        return { type, label: p?.label?.trim() || LEAVE_TYPE_LABELS[type] || type, paid: p ? p.paid !== false : type !== "unpaid" };
+      };
 
       const days: Record<string, DayEntry> = {};
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
@@ -294,6 +332,10 @@ export class AttendanceService {
         else if (key < todayKey) entry = { status: "absent" };
         else entry = null;
         if (!entry) continue;
+        // Attached whatever the day's status says, so leave stays visible even
+        // when attendance was also recorded — previously a record hid it.
+        if (leaveMap.has(key)) entry.leave = describeLeave(leaveMap.get(key)!);
+        if (regMap.has(key)) entry.regularization = regMap.get(key);
         days[key] = entry;
         if (countable.has(entry.status)) summary[entry.status]++;
       }
