@@ -11,7 +11,7 @@ import {
   computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
 } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries } from "./oneTimeAdjustmentService.js";
-import { REIMBURSE_PREFIX, computeReimbursements, markReimbursementsPaid, releaseReimbursements } from "./reimbursementService.js";
+import { computeReimbursements, markReimbursementsPaid, releaseReimbursements } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
@@ -52,14 +52,6 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
 const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
-
-/**
- * Earnings the payslip adds for itself, rather than contractual pay.
- *
- * Used to keep them out of the loss-of-pay base: a day away costs a day of
- * salary, not a day of salary plus whatever expenses were reimbursed alongside.
- */
-const isAddOn = (label: string) => label.startsWith(REIMBURSE_PREFIX) || label.startsWith("Overtime");
 
 /** Local calendar day of an instant, as YYYY-MM-DD. */
 function dayKey(date: Date | string, tz: string): string {
@@ -250,9 +242,13 @@ export class PayslipService {
 
     // Attendance applies itself, like loans and reimbursements do. Any lines the
     // form sent are dropped first so a stale prefill can't double them.
+    // Loss of pay is a proportion of contractual salary — the resolved breakup,
+    // not whatever sits in the earnings boxes. A bonus typed in for the month
+    // was raising the price of a day off, and basing it on the breakup is also
+    // what the payroll run and the salary register do, so all four paths now
+    // put the same number on the screen.
     const att = await this.summary(input.employee, input.month);
-    const salaryBase = r2((input.earnings ?? []).reduce((a, l) => a + (l.amount || 0), 0)) || att.salary;
-    const attLines = attendanceDeductions(att, salaryBase, input.month);
+    const attLines = attendanceDeductions(att, att.salary, input.month);
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
@@ -345,10 +341,7 @@ export class PayslipService {
         .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
-      // Only the recurring earnings price a day of absence, not reimbursements
-      // or overtime that happen to be paid the same month.
-      const salaryBase = r2(earnings.filter((l) => !isAddOn(l.label)).reduce((a, l) => a + (l.amount || 0), 0)) || att.salary;
-      const manual = [...typed, ...attendanceDeductions(att, salaryBase, month)];
+      const manual = [...typed, ...attendanceDeductions(att, att.salary, month)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -535,8 +528,10 @@ export class PayslipService {
     const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))
       .select("name employeeCode salary currency user")
       .sort({ name: 1 });
-    const existing = await Payslip.find(scoped({ month })).select("employee status");
-    const existMap = new Map(existing.map((p) => [String(p.employee), { id: String(p._id), status: p.status }]));
+    // The whole payslip, not just its status: once one exists it is the record
+    // of what was paid, and the row has to show that rather than a fresh guess.
+    const existing = await Payslip.find(scoped({ month }));
+    const existMap = new Map(existing.map((p) => [String(p.employee), p]));
 
     const round = (n: number) => Math.round(n * 100) / 100;
     const rows = [];
@@ -558,27 +553,52 @@ export class PayslipService {
       const ot = await computeOvertime(String(emp._id), month);
       const overtime = round(ot.earnings.reduce((a, l) => a + l.amount, 0));
       const totalDeductions = round(lopAmount + latePenaltyAmount + loanTotal + structureDeductions + oneTimeDeductions);
-      const existRow = existMap.get(String(emp._id));
+      const slip = existMap.get(String(emp._id));
+
+      // A generated payslip is the truth. Recomputing the row from today's data
+      // meant the list and the payslip disagreed the moment anything moved —
+      // a loan instalment read 99.94 in the table and 100.06 on the payslip,
+      // because the table was re-running an allocation the payslip had already
+      // settled. Where a payslip exists, its own figures are reported.
+      const sum = (lines: Array<{ label: string; amount: number }>, match: (l: string) => boolean) =>
+        round(lines.filter((l) => match(l.label)).reduce((a, l) => a + l.amount, 0));
+
+      const row = slip
+        ? {
+            salary: round(sum(slip.earnings, (l) => !l.startsWith("Reimbursement") && !l.startsWith("Overtime"))),
+            earnings: slip.earnings,
+            lopAmount: sum(slip.deductions, (l) => l.startsWith(LOP_PREFIX)),
+            latePenaltyAmount: sum(slip.deductions, (l) => l.startsWith(PENALTY_PREFIX)),
+            loanTotal: sum(slip.deductions, (l) => l.startsWith(LOAN_DEDUCTION_PREFIX)),
+            reimbursements: sum(slip.earnings, (l) => l.startsWith("Reimbursement")),
+            overtime: sum(slip.earnings, (l) => l.startsWith("Overtime")),
+            totalDeductions: round(slip.totalDeductions),
+            netPay: round(slip.netPay),
+          }
+        : {
+            salary: base,
+            earnings: s.earnings ?? [{ label: "Basic", amount: base }],
+            lopAmount,
+            latePenaltyAmount,
+            loanTotal,
+            reimbursements,
+            overtime,
+            totalDeductions,
+            netPay: round(base + oneTimePayments + reimbursements + overtime - totalDeductions),
+          };
+
       rows.push({
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
         currency: s.currency,
-        salary: base,
-        earnings: s.earnings ?? [{ label: "Basic", amount: base }],
         structureName: s.structureName ?? null,
         structureDeductions: s.structureDeductions ?? [],
-        lopDays: s.lopDays,
-        lopAmount,
+        lopDays: slip ? (slip.lopDays ?? s.lopDays) : s.lopDays,
         latePenaltyDays: s.latePenaltyDays,
-        latePenaltyAmount,
-        loanTotal,
         oneTimePayments,
         oneTimeDeductions,
-        reimbursements,
-        overtime,
-        totalDeductions,
-        netPay: round(base + oneTimePayments + reimbursements + overtime - totalDeductions),
-        payslipId: existRow?.id ?? null,
-        status: existRow?.status ?? null, // null → not generated yet
+        ...row,
+        payslipId: slip ? String(slip._id) : null,
+        status: slip?.status ?? null, // null → not generated yet
       });
     }
     return { month, rows };
