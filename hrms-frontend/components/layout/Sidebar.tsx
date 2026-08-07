@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Users,
   Shield,
-  Sparkles,
   UserRound,
   Building2,
   Network,
@@ -35,6 +34,7 @@ import {
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
+import { Logo as BrandLogo, LogoMark } from "@/components/shared/Logo";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyProfile } from "@/hooks/useOnboarding";
@@ -149,11 +149,10 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 function Logo({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className="flex h-16 items-center gap-3 border-b border-sidebar-border/10 px-4 shrink-0">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-        <Sparkles className="h-5 w-5 text-primary-foreground" />
-      </div>
-      <AnimatePresence>
-        {!collapsed && (
+      {collapsed ? (
+        <LogoMark className="h-7 shrink-0" />
+      ) : (
+        <AnimatePresence mode="wait">
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
@@ -161,11 +160,12 @@ function Logo({ collapsed = false }: { collapsed?: boolean }) {
             transition={{ duration: 0.15 }}
             className="overflow-hidden"
           >
-            <p className="text-sm font-bold text-sidebar-foreground whitespace-nowrap">Delta HRMS</p>
-            <p className="text-xs text-muted-foreground whitespace-nowrap">Human Resources</p>
+            {/* The lockup carries the name, so no wordmark text beside it. */}
+            <BrandLogo className="h-6" />
+            <p className="mt-0.5 whitespace-nowrap text-[10px] uppercase tracking-wider text-muted-foreground">Human Resources</p>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>
+      )}
     </div>
   );
 }
@@ -246,12 +246,9 @@ function MobileDrawer() {
       >
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
             <div>
-              <p className="text-sm font-bold text-sidebar-foreground">Delta HRMS</p>
-              <p className="text-xs text-muted-foreground">Human Resources</p>
+              <BrandLogo className="h-6" />
+              <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">Human Resources</p>
             </div>
           </div>
           <button

@@ -10,6 +10,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { sendMail } from "../utils/mailer.js";
 import { env } from "../config/env.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
+import { publicUrl } from "../config/r2.js";
 import { randomBytes } from "node:crypto";
 
 interface EmployeeQuery extends PaginationQuery {
@@ -119,10 +120,12 @@ export class EmployeeService {
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "createdAt";
     const sortDir = query.sortOrder === "asc" ? 1 : -1;
 
-    const [records, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       Employee.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       Employee.countDocuments(filter),
     ]);
+    // lean() skips the schema's toJSON transform, so the photo URL is added here.
+    const records = rows.map((r) => ({ ...r, photoUrl: r.photo ? publicUrl(String(r.photo)) : "" }));
     return { records, pagination: buildPagination(total, page, limit) };
   }
 

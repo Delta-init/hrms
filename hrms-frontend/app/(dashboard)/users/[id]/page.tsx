@@ -18,7 +18,8 @@ import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
-import { getInitials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { AvatarUploader } from "@/components/shared/AvatarUploader";
 
 const statusStyles: Record<string, string> = {
   active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
@@ -91,7 +92,14 @@ export default function UserDetailPage() {
         <div className="h-20 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent" />
         <div className="flex flex-col gap-4 px-6 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
-            <div className="-mt-10 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg ring-4 ring-card">{getInitials(user.name)}</div>
+            <AvatarUploader
+              name={user.name}
+              photoUrl={employee?.photoUrl}
+              employeeId={employee?._id}
+              canEdit={canEditEmployee && !!employee}
+              className="-mt-10 h-20 w-20 rounded-2xl shadow-lg ring-4 ring-card"
+              fallbackClassName="rounded-2xl text-2xl"
+            />
             <div className="pb-1">
               <h2 className="text-xl font-bold">{user.name}</h2>
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Mail className="h-3.5 w-3.5" />{user.email}{user.designation ? ` · ${user.designation}` : ""}</p>

@@ -349,6 +349,8 @@ export interface Employee {
   salary?: number;
   currency?: string;
   photo?: string;
+  /** Servable URL for `photo`; empty when none is set. */
+  photoUrl?: string;
   documents?: EmployeeDocument[];
 
   // Personal
@@ -964,6 +966,7 @@ export interface OrgNode {
   employeeCode?: string;
   designation?: string;
   department: string | null;
+  photoUrl?: string;
   children: OrgNode[];
 }
 export interface OrgChart {

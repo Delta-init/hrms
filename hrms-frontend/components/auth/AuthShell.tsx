@@ -12,10 +12,16 @@ import { DashboardMock } from "./DashboardMock";
 
 const enter = "animate-in fade-in-0 slide-in-from-bottom-3 duration-500 fill-mode-both ease-out";
 
-/** Brand logo mark. Pass `dark` to render it black (for light backgrounds). */
+/**
+ * Brand logo mark.
+ *
+ * This shell paints its own light and dark panels regardless of the app theme,
+ * so the colour is passed rather than taken from it: `dark` renders the mark
+ * black for the white form panel, and it stays white on the coloured one.
+ */
 export function BrandLogo({ className = "h-8 w-auto", dark = false }: { className?: string; dark?: boolean }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src="/logo.png" alt="Delta HRMS" className={`${className} ${dark ? "brightness-0" : ""}`} />;
+  return <img src="/logo.png" alt="Delta International" className={`${className} ${dark ? "brightness-0" : ""}`} draggable={false} />;
 }
 
 export function AuthShell({ children }: { children: React.ReactNode }) {

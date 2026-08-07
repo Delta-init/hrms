@@ -9,7 +9,8 @@ import { EmployeeDialog } from "@/components/employees/EmployeeDialog";
 import { AssignReportDialog } from "@/components/org-chart/AssignReportDialog";
 import { useEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
 import { toast } from "@/lib/toast";
-import { getInitials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { PersonAvatar } from "@/components/shared/PersonAvatar";
 import type { OrgNode } from "@/types";
 
 interface Props {
@@ -262,9 +263,7 @@ function TreeNode(props: NodeProps) {
         )}
 
         <Link href={`/employees/${node._id}`} className="flex flex-col items-center gap-1" draggable={false}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-            {getInitials(node.name)}
-          </div>
+          <PersonAvatar name={node.name} photoUrl={node.photoUrl} className="h-10 w-10" fallbackClassName="text-xs" />
           <p className="mt-0.5 line-clamp-1 text-sm font-semibold">{node.name}</p>
           {node.designation && <p className="line-clamp-1 text-xs text-muted-foreground">{node.designation}</p>}
           {node.department && (

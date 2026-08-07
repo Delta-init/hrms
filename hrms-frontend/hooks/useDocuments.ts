@@ -43,8 +43,10 @@ export const useUploadDocument = (employeeId?: string) => {
     },
     onSuccess: (data) => {
       qc.setQueryData(keyFor(employeeId), data);
-      // The photo slot doubles as the profile picture, so the record is stale now.
-      if (employeeId) qc.invalidateQueries({ queryKey: ["employees"] });
+      // The photo slot doubles as the profile picture, so the employee record
+      // is stale either way — self-service writes to the caller's own record,
+      // which is what feeds their avatar.
+      qc.invalidateQueries({ queryKey: ["employees"] });
       toast.success("Document uploaded");
     },
     onError: (e) => toast.error(errMsg(e, "Upload failed")),
@@ -58,7 +60,7 @@ export const useDeleteDocument = (employeeId?: string) => {
       (await api.delete<ApiResponse<DocumentsResponse>>(`${pathFor(employeeId)}/${type}`)).data.data!,
     onSuccess: (data) => {
       qc.setQueryData(keyFor(employeeId), data);
-      if (employeeId) qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
       toast.success("Document removed");
     },
     onError: (e) => toast.error(errMsg(e, "Failed to remove document")),

@@ -20,7 +20,8 @@ import { DepartmentSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getInitials, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { PersonAvatar } from "@/components/shared/PersonAvatar";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, type Employee, type EmployeeStatus, type EmploymentType } from "@/types";
 
 const ALL = "__all__";
@@ -70,7 +71,7 @@ export default function EmployeesPage() {
       id: "employee", label: "Employee", alwaysVisible: true, sortKey: "name",
       render: (e) => (
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(e.name)}</div>
+          <PersonAvatar name={e.name} photoUrl={e.photoUrl} className="h-9 w-9" fallbackClassName="text-xs" />
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 truncate font-medium">
               <Link href={`/employees/${e._id}`} className="truncate hover:text-primary hover:underline">{e.name}</Link>

@@ -1,7 +1,6 @@
 "use client";
 import { LogOut, User, Menu, ChevronRight } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,13 +10,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth, useLogout } from "@/hooks/useAuth";
-import { getInitials } from "@/lib/utils";
+import { PersonAvatar } from "@/components/shared/PersonAvatar";
+import { useMyEmployeeProfile } from "@/hooks/useEmployees";
 import { useUiStore } from "@/lib/store/uiStore";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { navItems } from "@/components/layout/Sidebar";
 
 export function Header() {
   const { user } = useAuth();
+  // Own employee record, for the avatar. Absent for accounts with no employee
+  // profile, which falls back to initials.
+  const { data: me } = useMyEmployeeProfile();
   const logout = useLogout();
   const router = useRouter();
   const { toggleMobileDrawer, toggleSidebarCollapsed } = useUiStore();
@@ -65,11 +68,12 @@ export function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="ml-1 rounded-full transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">
-                  {user ? getInitials(user.name) : "?"}
-                </AvatarFallback>
-              </Avatar>
+              <PersonAvatar
+                name={user?.name ?? "?"}
+                photoUrl={me?.photoUrl}
+                className="h-8 w-8"
+                fallbackClassName="text-xs font-semibold"
+              />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

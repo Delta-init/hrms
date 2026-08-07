@@ -29,3 +29,14 @@ export const r2: S3Client | null = r2Enabled
       },
     })
   : null;
+
+/**
+ * Public URL for a stored object key.
+ *
+ * Lives here rather than in the upload service so models can serve a key
+ * without depending on the S3 client. When object access moves behind signed
+ * URLs, this is the one place that changes.
+ */
+export function publicUrl(key: string): string {
+  return R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${key}` : key;
+}

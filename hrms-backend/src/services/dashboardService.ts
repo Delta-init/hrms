@@ -5,6 +5,7 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
 import { orgFilter, getOrgId, scoped } from "../utils/orgContext.js";
+import { publicUrl } from "../config/r2.js";
 import { confirmationsDue } from "./confirmationService.js";
 
 /**
@@ -286,6 +287,8 @@ interface OrgNode {
   employeeCode?: string;
   designation?: string;
   department: string | null;
+  /** Servable URL for the employee photo; empty when none is set. */
+  photoUrl: string;
   children: OrgNode[];
 }
 
@@ -302,9 +305,9 @@ export class DashboardService {
    */
   async orgChart() {
     const emps = await Employee.find(scoped({ status: { $ne: "terminated" } }))
-      .select("name employeeCode designation department reportingTo reportingToKind user")
+      .select("name employeeCode designation department reportingTo reportingToKind user photo")
       .populate("department", "name")
-      .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; department?: { name?: string } | null; reportingTo?: unknown; reportingToKind?: string; user?: unknown }>>();
+      .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; department?: { name?: string } | null; reportingTo?: unknown; reportingToKind?: string; user?: unknown; photo?: string }>>();
 
     const idOf = (v: unknown) => (v ? String(v) : "");
     const byId = new Map(emps.map((e) => [idOf(e._id), e]));
@@ -339,7 +342,7 @@ export class DashboardService {
     const nodes = new Map<string, OrgNode>();
     for (const e of emps) nodes.set(idOf(e._id), {
       _id: idOf(e._id), name: e.name, employeeCode: e.employeeCode, designation: e.designation,
-      department: e.department?.name ?? null, children: [],
+      department: e.department?.name ?? null, photoUrl: e.photo ? publicUrl(e.photo) : "", children: [],
     });
 
     const roots: OrgNode[] = [];

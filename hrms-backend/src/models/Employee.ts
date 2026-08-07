@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { publicUrl } from "../config/r2.js";
 import type { IEmployee } from "../types/index.js";
 
 const educationSchema = new Schema(
@@ -198,6 +199,22 @@ const employeeSchema = new Schema<IEmployee>(
     versionKey: false,
   }
 );
+
+/**
+ * Serve the stored photo as a URL.
+ *
+ * `photo` holds an object key, which is useless to a browser. Doing this on the
+ * schema means every response that returns an employee carries it, rather than
+ * each endpoint remembering to convert — and it is the single place to change
+ * when object access moves behind signed URLs.
+ */
+employeeSchema.set("toJSON", {
+  transform(_doc, ret) {
+    const out = ret as unknown as Record<string, unknown>;
+    out.photoUrl = out.photo ? publicUrl(String(out.photo)) : "";
+    return out;
+  },
+});
 
 employeeSchema.index({ department: 1 });
 employeeSchema.index({ status: 1 });

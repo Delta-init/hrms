@@ -1,5 +1,7 @@
 import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { r2, r2Enabled, R2_BUCKET, R2_PUBLIC_URL } from "../config/r2.js";
+import { r2, r2Enabled, R2_BUCKET, publicUrl } from "../config/r2.js";
+
+export { publicUrl };
 
 export class UploadError extends Error {
   status: number;
@@ -16,11 +18,6 @@ function ensureEnabled() {
       503
     );
   }
-}
-
-/** Public URL for a stored object key. */
-export function publicUrl(key: string): string {
-  return R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${key}` : key;
 }
 
 /**

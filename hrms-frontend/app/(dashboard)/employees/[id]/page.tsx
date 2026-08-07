@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
-import { getInitials } from "@/lib/utils";
+import { AvatarUploader } from "@/components/shared/AvatarUploader";
 import { TITLE_LABELS, type Employee } from "@/types";
 
 const deptName = (e: Employee) => (e.department && typeof e.department === "object" ? e.department.name : null);
@@ -68,7 +68,14 @@ function EmployeeDetail() {
         <div className="h-20 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent" />
         <div className="flex flex-col gap-4 px-6 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
-            <div className="-mt-10 flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-lg ring-4 ring-card">{getInitials(e.name)}</div>
+            <AvatarUploader
+              name={e.name}
+              photoUrl={e.photoUrl}
+              employeeId={e._id}
+              canEdit={canEdit}
+              className="-mt-10 h-20 w-20 rounded-2xl shadow-lg ring-4 ring-card"
+              fallbackClassName="rounded-2xl text-2xl"
+            />
             <div className="pb-1">
               <h2 className="text-xl font-bold">{e.title ? `${TITLE_LABELS[e.title]} ` : ""}{e.name}</h2>
               <p className="text-sm text-muted-foreground">{e.designation ?? "—"}{deptName(e) ? ` · ${deptName(e)}` : ""} · {e.employeeCode}</p>
