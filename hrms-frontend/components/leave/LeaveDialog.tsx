@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
-import { useCreateLeave, useUpdateLeave } from "@/hooks/useLeaves";
+import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeaves";
 import { useUser } from "@/hooks/useUsers";
 import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
@@ -53,6 +53,16 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
   // current schedule on open would silently rewrite it — and shift the dates
   // the user sees — for a request nobody edited.
   const selectedUserId = watch("user");
+  const startDate = watch("startDate");
+
+  // What this person may actually request. Types outside their schedule are not
+  // offered at all, and the remaining balance is shown so the limit is visible
+  // before the form is filled in rather than after it is rejected.
+  const { data: leaveOptions } = useLeaveOptions(
+    lockToUserId ?? selectedUserId ?? "",
+    startDate ? startDate.slice(0, 7) : undefined
+  );
+  const allowed = leaveOptions && !leaveOptions.unrestricted ? leaveOptions.options : null;
   const { data: selectedUser } = useUser(isEditing ? "" : selectedUserId || "");
   useEffect(() => {
     if (isEditing) return;
@@ -128,11 +138,17 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               control={control}
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select leave type" /></SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(LEAVE_TYPE_LABELS) as LeaveType[]).map((t) => (
-                      <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>
-                    ))}
+                    {allowed
+                      ? allowed.map((o) => (
+                          <SelectItem key={o.type} value={o.type} disabled={o.remaining <= 0}>
+                            {LEAVE_TYPE_LABELS[o.type]} · {o.remaining}/{o.monthlyDays} left{o.paid ? "" : " · unpaid"}
+                          </SelectItem>
+                        ))
+                      : (Object.keys(LEAVE_TYPE_LABELS) as LeaveType[]).map((t) => (
+                          <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>
+                        ))}
                   </SelectContent>
                 </Select>
               )}
@@ -176,6 +192,13 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               render={({ field }) => <Switch id="halfDay" checked={field.value} onCheckedChange={field.onChange} />}
             />
           </div>
+
+          {allowed?.length === 0 && (
+            <p className="col-span-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              The assigned work schedule grants no leave types, so nothing can be requested. Add an allowance
+              to that schedule first.
+            </p>
+          )}
 
           <div className="col-span-2 space-y-1.5">
             <Label htmlFor="reason">Reason</Label>

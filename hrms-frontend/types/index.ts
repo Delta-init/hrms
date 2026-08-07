@@ -143,6 +143,8 @@ export interface WorkSchedule {
   workDays: number[];
   halfDays: number[];
   graceMinutes: number;
+  /** Leave this schedule grants. Empty = unrestricted. */
+  leavePolicies?: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: string;
   updatedAt: string;
@@ -272,6 +274,14 @@ export interface EmployeeOtherDocument {
   mimeType?: string;
   size?: number;
   uploadedAt?: string | null;
+}
+
+/** What a person may request, and how much of it is left this month. */
+export interface LeaveOptions {
+  scheduleName: string | null;
+  /** True when no schedule policy applies — every type stays available. */
+  unrestricted: boolean;
+  options: Array<{ type: LeaveType; monthlyDays: number; paid: boolean; used: number; remaining: number }>;
 }
 
 export interface DocumentsResponse {

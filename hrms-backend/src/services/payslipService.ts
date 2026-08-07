@@ -44,6 +44,12 @@ function monthBoundsTz(month: string, tz: string) {
 
 
 interface Line { label: string; amount: number }
+/** The slice of a work schedule payroll reads. */
+interface ScheduleShape {
+  timeZone?: string;
+  workDays?: number[];
+  leavePolicies?: Array<{ type: string; monthlyDays: number; paid: boolean }>;
+}
 interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -103,10 +109,10 @@ export function daysInMonth(month: string): number {
  * Derived here rather than by the form, so loss of pay applies itself the way
  * loans and reimbursements already did instead of waiting for a button.
  *
- * The daily rate divides by the days the month actually has, not a flat thirty.
- * A fixed divisor priced a day in a 31-day month slightly too high, so losing
- * every one of them deducted 31/30ths of the salary — more than was earned, and
- * for someone who had merely never had attendance recorded.
+ * A day is worth the salary divided by the days actually worked in the month,
+ * so missing every one of them costs exactly a month's pay. Dividing by
+ * calendar days instead made a full month of absence cost only the working
+ * fraction of the salary, and made weekends look chargeable.
  *
  * `salary` is contractual pay, deliberately not the gross. A day away costs a
  * day of salary; reimbursements and overtime paid in the same month are not
@@ -115,10 +121,12 @@ export function daysInMonth(month: string): number {
 function attendanceDeductions(
   summary: { lopDays: number; latePenaltyDays: number },
   salary: number,
-  month: string
+  month: string,
+  workingDays?: number
 ): Line[] {
   if (salary <= 0) return [];
-  const perDay = r2(salary / daysInMonth(month));
+  const divisor = workingDays && workingDays > 0 ? workingDays : daysInMonth(month);
+  const perDay = r2(salary / divisor);
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
@@ -248,7 +256,7 @@ export class PayslipService {
     // what the payroll run and the salary register do, so all four paths now
     // put the same number on the screen.
     const att = await this.summary(input.employee, input.month);
-    const attLines = attendanceDeductions(att, att.salary, input.month);
+    const attLines = attendanceDeductions(att, att.salary, input.month, att.workingDays);
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
@@ -341,7 +349,7 @@ export class PayslipService {
         .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
-      const manual = [...typed, ...attendanceDeductions(att, att.salary, month)];
+      const manual = [...typed, ...attendanceDeductions(att, att.salary, month, att.workingDays)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -387,11 +395,11 @@ export class PayslipService {
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
   async summary(employeeId: string, month: string) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
-      .populate({ path: "workSchedule", select: "timeZone workDays" })
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays leavePolicies" } })
+      .populate({ path: "workSchedule", select: "timeZone workDays leavePolicies" })
       .lean<IEmployee & {
-        user?: { _id?: unknown; workSchedule?: { timeZone?: string; workDays?: number[] } } | null;
-        workSchedule?: { timeZone?: string; workDays?: number[] } | null;
+        user?: { _id?: unknown; workSchedule?: ScheduleShape } | null;
+        workSchedule?: ScheduleShape | null;
       }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
@@ -446,7 +454,7 @@ export class PayslipService {
 
     const [att, unpaid, anyLeave, holidays] = await Promise.all([
       Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
-      LeaveRequest.find({ user: userId, type: "unpaid", status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("days startDate endDate").lean(),
+      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type days startDate endDate").lean(),
       // Any approved leave counts as accounted for, paid or not — the day is
       // explained, which is what the coverage check is asking about.
       LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("startDate endDate").lean(),
@@ -465,17 +473,34 @@ export class PayslipService {
       else if (a.status === "half_day") { base.half++; halfSet.add(key); }
       else if (a.status === "absent") { base.absent++; lopFull.add(key); }
     }
-    for (const l of unpaid) {
-      const from = new Date(Math.max(new Date(l.startDate).getTime(), start.getTime()));
-      const to = new Date(Math.min(new Date(l.endDate).getTime(), end.getTime() - 1));
-      const cur = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
-      const toU = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
-      while (cur <= toU) { lopFull.add(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 1); }
+    // Which leave types cost pay is the schedule's decision, not the type name:
+    // an organization may run casual leave paid or unpaid. Falls back to the
+    // literal "unpaid" type for schedules with no policies yet.
+    const paidByType = new Map((schedule?.leavePolicies ?? []).map((p) => [p.type, p.paid !== false]));
+    const isUnpaidLeave = (type: string) =>
+      paidByType.size ? paidByType.get(type) === false : type === "unpaid";
+
+    const unpaidLeave = unpaid.filter((l) => isUnpaidLeave(l.type));
+    for (const l of unpaidLeave) {
+      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) lopFull.add(k);
     }
-    base.unpaidLeaveDays = unpaid.reduce((s, l) => s + (l.days || 0), 0);
+    base.unpaidLeaveDays = unpaidLeave.reduce((s, l) => s + (l.days || 0), 0);
+
+    // Paid leave and non-working days never cost pay, so they are removed before
+    // counting: only a working day the employee was neither present for nor
+    // excused from reduces the salary.
+    const paidLeaveDays = new Set<string>();
+    for (const l of unpaid) {
+      if (isUnpaidLeave(l.type)) continue;
+      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) paidLeaveDays.add(k);
+    }
+    const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
+    const workingSet = new Set(workingDayKeys(month, workDays));
+    const chargeable = (k: string) => workingSet.has(k) && !paidLeaveDays.has(k) && !holidayDays.has(k);
+
     let halfCount = 0;
-    for (const k of halfSet) if (!lopFull.has(k)) halfCount++;
-    base.lopDays = Math.round((lopFull.size + halfCount * 0.5) * 100) / 100;
+    for (const k of halfSet) if (!lopFull.has(k) && chargeable(k)) halfCount++;
+    base.lopDays = Math.round(([...lopFull].filter(chargeable).length + halfCount * 0.5) * 100) / 100;
 
     // Repeated lateness beyond the org's configured grace converts into a
     // separate half-day-equivalent deduction (kept apart from absence-driven LOP).
@@ -511,7 +536,7 @@ export class PayslipService {
     // so without them the preview quietly under-reported the deductions and
     // promised a net pay the payslip was never going to produce.
     base.autoDeductions = [
-      ...attendanceDeductions(base, base.salary, month),
+      ...attendanceDeductions(base, base.salary, month, base.workingDays),
       ...loanDeductions,
       ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
     ];
@@ -540,7 +565,7 @@ export class PayslipService {
       const base = s.salary || 0;
       // Same helper the payslip uses, so the preview row and the generated
       // payslip cannot disagree about what a day is worth.
-      const attLines = attendanceDeductions(s, base, month);
+      const attLines = attendanceDeductions(s, base, month, s.workingDays);
       const lopAmount = round(attLines.find((l) => l.label.startsWith(LOP_PREFIX))?.amount ?? 0);
       const latePenaltyAmount = round(attLines.find((l) => l.label.startsWith(PENALTY_PREFIX))?.amount ?? 0);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
@@ -628,7 +653,7 @@ export class PayslipService {
 
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
-      deductions.push(...attendanceDeductions(s, s.salary || 0, month));
+      deductions.push(...attendanceDeductions(s, s.salary || 0, month, s.workingDays));
       for (const l of s.loanDeductions ?? []) deductions.push(l);
       deductions.push(...oneTime.deductions);
 

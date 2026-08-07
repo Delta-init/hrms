@@ -2,7 +2,7 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
 import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput } from "../validations/leaveValidation.js";
-import type { PaginationQuery } from "../types/index.js";
+import type { PaginationQuery, LeaveType } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
@@ -28,6 +28,72 @@ function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
   }
 }
 
+/**
+ * Refuse leave the requester's schedule doesn't grant.
+ *
+ * The schedule lists which types exist and how many days a month each allows,
+ * so a type missing from it cannot be taken at all — previously every type in
+ * the enum was offered to everyone and nothing checked the amount, so a month's
+ * allowance could be exceeded without anything noticing.
+ *
+ * `excludeId` lets an edit ignore the request being edited when totalling the
+ * month, or amending one by a day would count it twice.
+ */
+async function assertLeaveAllowed(
+  user: { workSchedule?: unknown },
+  type: LeaveType,
+  startDate: Date,
+  days: number,
+  excludeId: string | null
+) {
+  const schedule = user.workSchedule as
+    | { name?: string; leavePolicies?: Array<{ type: string; monthlyDays: number }> }
+    | null
+    | undefined;
+
+  // No schedule, or one that predates leave policies: nothing to check against,
+  // so behave as before rather than blocking everyone on an empty list.
+  const policies = schedule?.leavePolicies;
+  if (!schedule || !policies?.length) return;
+
+  const policy = policies.find((p) => p.type === type);
+  if (!policy) {
+    throw Object.assign(
+      new Error(`${LEAVE_TYPE_LABEL[type] ?? type} isn't available on ${schedule.name ? `the ${schedule.name} schedule` : "this work schedule"}`),
+      { statusCode: 400 }
+    );
+  }
+
+  // Allowance is per calendar month, counted against the month the leave starts in.
+  const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+  const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1));
+  const filter: Record<string, unknown> = {
+    user: (user as { _id: unknown })._id,
+    type,
+    status: { $in: ["pending", "approved"] },
+    startDate: { $gte: monthStart, $lt: monthEnd },
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+
+  const taken = (await LeaveRequest.find(scoped(filter)).select("days").lean())
+    .reduce((a, r) => a + (r.days || 0), 0);
+  const remaining = Math.round((policy.monthlyDays - taken) * 100) / 100;
+
+  if (days > remaining) {
+    throw Object.assign(
+      new Error(
+        `Only ${remaining} day${remaining === 1 ? "" : "s"} of ${LEAVE_TYPE_LABEL[type] ?? type} left this month (${policy.monthlyDays}/month, ${taken} already booked)`
+      ),
+      { statusCode: 400 }
+    );
+  }
+}
+
+const LEAVE_TYPE_LABEL: Record<string, string> = {
+  annual: "Annual leave", sick: "Sick leave", casual: "Casual leave", unpaid: "Unpaid leave",
+  maternity: "Maternity leave", paternity: "Paternity leave", wfh: "Work from home", comp_off: "Comp-off",
+};
+
 export class LeaveService {
   /** Working days in [start,end], excluding non-work-days (weekends) and org holidays. */
   private async countWorkingDays(start: Date, end: Date, workDays: number[]): Promise<number> {
@@ -46,7 +112,7 @@ export class LeaveService {
 
   async create(input: CreateLeaveInput) {
     // Scope the user to the caller's org so a request can't reference another tenant's user.
-    const user = await User.findOne(scoped({ _id: input.user })).populate("workSchedule", "workDays");
+    const user = await User.findOne(scoped({ _id: input.user })).populate("workSchedule", "workDays leavePolicies name");
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
     if (input.endDate < input.startDate) {
@@ -69,6 +135,8 @@ export class LeaveService {
     }
 
     const days = input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(user));
+
+    await assertLeaveAllowed(user, input.type, input.startDate, days, null);
 
     if (input.type === "comp_off") {
       const balance = await compOffBalanceFor(input.user);
@@ -170,6 +238,9 @@ export class LeaveService {
     const subject = await User.findById(record.user).populate("workSchedule", "workDays");
     record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(subject));
 
+    const owner = await User.findOne(scoped({ _id: record.user })).populate("workSchedule", "workDays leavePolicies name");
+    if (owner) await assertLeaveAllowed(owner, record.type, record.startDate, record.days, id);
+
     await record.save();
     return LeaveRequest.findById(id)
       .populate("user", "name email designation")
@@ -230,4 +301,55 @@ export class LeaveService {
     await record.save();
     return LeaveRequest.findById(id).populate("user", "name email designation");
   }
+}
+
+/**
+ * What a person may request this month, and how much of it is left.
+ *
+ * The leave form asked for none of this: it offered every type in the enum to
+ * everyone, so a request could only fail after it had been filled in. Returning
+ * the schedule's list lets the form show the menu that actually applies.
+ */
+export async function leaveOptionsFor(userId: string, month?: string) {
+  const user = await User.findOne(scoped({ _id: userId })).populate("workSchedule", "name workDays leavePolicies");
+  if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
+
+  const schedule = user.workSchedule as
+    | { name?: string; leavePolicies?: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }> }
+    | null;
+  const policies = schedule?.leavePolicies ?? [];
+
+  // No schedule, or one configured before leave policies existed: every type
+  // stays available, matching how the form behaved before.
+  if (!policies.length) {
+    return { scheduleName: schedule?.name ?? null, unrestricted: true, options: [] };
+  }
+
+  const ref = month ? new Date(`${month}-01T00:00:00.000Z`) : new Date();
+  const monthStart = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), 1));
+  const monthEnd = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() + 1, 1));
+
+  const booked = await LeaveRequest.find(scoped({
+    user: userId,
+    status: { $in: ["pending", "approved"] },
+    startDate: { $gte: monthStart, $lt: monthEnd },
+  })).select("type days").lean();
+
+  const usedByType = new Map<string, number>();
+  for (const b of booked) usedByType.set(b.type, (usedByType.get(b.type) ?? 0) + (b.days || 0));
+
+  return {
+    scheduleName: schedule?.name ?? null,
+    unrestricted: false,
+    options: policies.map((p) => {
+      const used = Math.round((usedByType.get(p.type) ?? 0) * 100) / 100;
+      return {
+        type: p.type,
+        monthlyDays: p.monthlyDays,
+        paid: p.paid !== false,
+        used,
+        remaining: Math.max(0, Math.round((p.monthlyDays - used) * 100) / 100),
+      };
+    }),
+  };
 }

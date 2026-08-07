@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, LeaveRequest, Holiday } from "@/types";
+import type { ApiResponse, LeaveRequest, Holiday, LeaveOptions } from "@/types";
 
 const LEAVE_KEY = ["leaves"] as const;
 const HOLIDAY_KEY = ["holidays"] as const;
@@ -121,3 +121,19 @@ export const useDeleteHoliday = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to remove holiday")),
   });
 };
+
+/**
+ * Leave types the requester's schedule grants, with what is left this month.
+ *
+ * The form used to offer every type in the enum regardless of policy, so a
+ * request could only fail after it had been filled in.
+ */
+export const useLeaveOptions = (userId?: string, month?: string) =>
+  useQuery({
+    queryKey: ["leave-options", userId ?? "me", month ?? "current"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<LeaveOptions>>("/leaves/options", {
+        params: { ...(userId ? { user: userId } : {}), ...(month ? { month } : {}) },
+      })).data.data!,
+    enabled: userId !== "",
+  });

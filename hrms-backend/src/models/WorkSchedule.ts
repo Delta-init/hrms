@@ -3,6 +3,32 @@ import type { IWorkSchedule } from "../types/index.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/**
+ * Leave a schedule grants, by type.
+ *
+ * Attached to the schedule rather than the organization because entitlement
+ * follows the shift someone works, and it is the schedule that already says
+ * which days they are expected to be in. A type absent from this list cannot be
+ * requested at all — the list is the menu, not a set of limits on a fixed menu.
+ *
+ * `paid` is what payroll reads: an unpaid day off costs a day's salary, a paid
+ * one does not, and that cannot be inferred from the name once an organization
+ * has its own idea of whether casual leave is paid.
+ */
+const scheduleLeaveSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off"],
+      required: true,
+    },
+    /** Days granted per month. */
+    monthlyDays: { type: Number, required: true, min: 0, max: 31 },
+    paid: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
 const workScheduleSchema = new Schema<IWorkSchedule>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -51,6 +77,7 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
       default: 10,
       min: 0,
     },
+    leavePolicies: { type: [scheduleLeaveSchema], default: [] },
     status: {
       type: String,
       enum: ["active", "inactive"],

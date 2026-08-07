@@ -619,6 +619,8 @@ export interface IWorkSchedule extends Document {
   halfDays: number[];
   /** Late tolerance (minutes) before an arrival is counted as late. */
   graceMinutes: number;
+  /** Leave this schedule grants, by type. Empty = no leave can be requested. */
+  leavePolicies: Array<{ type: LeaveType; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;

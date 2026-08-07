@@ -1,6 +1,6 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { LeaveService } from "../services/leaveService.js";
+import { LeaveService, leaveOptionsFor } from "../services/leaveService.js";
 import { createLeaveSchema, updateLeaveSchema, reviewLeaveSchema } from "../validations/leaveValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -106,4 +106,12 @@ export const withdrawLeave = async (req: AuthenticatedRequest, res: Response, ne
   } catch (error) {
     next(error);
   }
+};
+
+/** Leave types the requester's schedule grants, with what is left this month. */
+export const getLeaveOptions = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const userId = (req.query.user as string) || req.user!.userId;
+    sendSuccess(res, "Leave options retrieved", await leaveOptionsFor(userId, req.query.month as string | undefined));
+  } catch (error) { next(error); }
 };
