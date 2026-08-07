@@ -183,7 +183,7 @@ export async function recentResignations(withinDays = 30, orgId?: string | null)
     .lean();
 }
 
-export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card";
+export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other";
 
 interface ExpiringDoc {
   employee: { _id: unknown; name: string; employeeCode?: string; designation?: string };
@@ -204,6 +204,7 @@ interface EmpDocs {
   visa?: { type?: string; expiryDate?: Date };
   labourCard?: { cardNumber?: string; expiryDate?: Date };
   emiratesId?: { idNumber?: string; expiryDate?: Date };
+  otherDocuments?: Array<{ label: string; number?: string; expiryDate?: Date | null }>;
 }
 
 /**
@@ -225,6 +226,8 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
       expiringBy("visa.expiryDate"),
       expiringBy("labourCard.expiryDate"),
       expiringBy("emiratesId.expiryDate"),
+      // Matches when any entry in the array is due, which is what we want.
+      expiringBy("otherDocuments.expiryDate"),
     ],
   };
   const scope = orgId ? { organization: new mongoose.Types.ObjectId(orgId) } : {};
@@ -234,7 +237,7 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
   // separately rather than being part of the employee $or above.
   const [emps, cards] = await Promise.all([
     Employee.find(match)
-      .select("name employeeCode designation passport visa labourCard emiratesId")
+      .select("name employeeCode designation passport visa labourCard emiratesId otherDocuments")
       .lean<EmpDocs[]>(),
     Card.find({ ...scope, expiryDate: { $ne: null, $lte: cutoff } })
       .select("cardNumber name client expiryDate")
@@ -263,6 +266,11 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
     push(e, "visa", e.visa?.type ? `Visa · ${e.visa.type}` : "Visa", e.visa?.expiryDate);
     push(e, "labourCard", e.labourCard?.cardNumber ? `Labour card ${e.labourCard.cardNumber}` : "Labour card", e.labourCard?.expiryDate);
     push(e, "emiratesId", e.emiratesId?.idNumber ? `Emirates ID ${e.emiratesId.idNumber}` : "Emirates ID", e.emiratesId?.expiryDate);
+    // The employee matched if ANY custom record is due, so each is checked
+    // individually here — push() ignores the ones that aren't.
+    for (const d of e.otherDocuments ?? []) {
+      push(e, "other", d.number ? `${d.label} ${d.number}` : d.label, d.expiryDate);
+    }
   }
 
   if (cards.length) {

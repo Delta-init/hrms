@@ -400,6 +400,21 @@ export interface IEmployeeDocument {
   uploadedAt?: Date;
 }
 
+/** A document or credential outside the fixed passport/visa/labour-card set. */
+export interface IEmployeeOtherDocument {
+  _id?: unknown;
+  label: string;
+  number?: string;
+  issueDate?: Date | null;
+  expiryDate?: Date | null;
+  notes?: string;
+  fileName?: string;
+  fileKey?: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt?: Date | null;
+}
+
 export interface IEducation {
   qualification?: string;
   from?: string;
@@ -480,6 +495,8 @@ export interface IEmployee extends Document {
   photo?: string;
   /** Uploaded onboarding documents (passport, visa, certificates, …). */
   documents?: IEmployeeDocument[];
+  /** Free-form documents and credentials the fixed fields don't cover. */
+  otherDocuments?: IEmployeeOtherDocument[];
 
   // ── Personal ──
   title?: Title;

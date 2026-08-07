@@ -151,3 +151,117 @@ export async function uploadEmployeeDocument(employeeId: string, type: string, f
 export async function deleteEmployeeDocument(employeeId: string, type: string) {
   return dropDocument(await employeeById(employeeId), type);
 }
+
+/*
+ * Free-form documents and credentials — anything the fixed passport/visa/
+ * labour-card/Emirates-ID fields don't cover. One list serves both the file
+ * side and the expiry side, so a residence permit is filed once and shows up
+ * both as a scan and in the renewal reminders.
+ */
+
+export interface OtherDocumentInput {
+  label: string;
+  number?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  notes?: string;
+}
+
+/** Dates arrive as strings from a multipart form; blank means "not set". */
+function toDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function serializeOther(employee: IEmployee) {
+  return (employee.otherDocuments ?? []).map((d) => {
+    // Spreading a subdocument yields Mongoose internals, not the fields.
+    const plain =
+      (d as { toObject?: () => Record<string, unknown> }).toObject?.() ?? (d as unknown as Record<string, unknown>);
+    return { ...plain, fileUrl: plain.fileKey ? publicUrl(String(plain.fileKey)) : "" };
+  });
+}
+
+/** Store an attachment for a custom record, replacing any previous one. */
+async function attachFile(
+  employee: IEmployee,
+  entry: { fileKey?: string; fileName?: string; mimeType?: string; size?: number; uploadedAt?: Date | null },
+  file: Express.Multer.File
+) {
+  const ext = (file.originalname.split(".").pop() || "").toLowerCase();
+  const key = documentKey(getOrgId(), String(employee._id), "other", ext, Date.now());
+  await putObject(key, file.buffer, file.mimetype);
+  if (entry.fileKey) await deleteObject(entry.fileKey);
+  entry.fileKey = key;
+  entry.fileName = file.originalname;
+  entry.mimeType = file.mimetype;
+  entry.size = file.size;
+  entry.uploadedAt = new Date();
+}
+
+export async function listOtherDocuments(employeeId: string) {
+  return serializeOther(await employeeById(employeeId));
+}
+
+export async function addOtherDocument(
+  employeeId: string,
+  input: OtherDocumentInput,
+  file?: Express.Multer.File
+) {
+  const label = (input.label ?? "").trim();
+  if (!label) throw new DocError("A name for this document is required");
+
+  const employee = await employeeById(employeeId);
+  const entry: Record<string, unknown> = {
+    label,
+    number: input.number?.trim() || undefined,
+    issueDate: toDate(input.issueDate),
+    expiryDate: toDate(input.expiryDate),
+    notes: input.notes?.trim() || undefined,
+  };
+  if (file) await attachFile(employee, entry as never, file);
+
+  employee.otherDocuments = [...(employee.otherDocuments ?? []), entry as never];
+  await employee.save();
+  return serializeOther(employee);
+}
+
+export async function updateOtherDocument(
+  employeeId: string,
+  recordId: string,
+  input: Partial<OtherDocumentInput>,
+  file?: Express.Multer.File
+) {
+  const employee = await employeeById(employeeId);
+  const entry = (employee.otherDocuments ?? []).find((d) => String(d._id) === String(recordId));
+  if (!entry) throw new DocError("That document could not be found on this employee", 404);
+
+  if (input.label !== undefined) {
+    const label = input.label.trim();
+    if (!label) throw new DocError("A name for this document is required");
+    entry.label = label;
+  }
+  // Sent-but-blank clears the field; absent leaves it alone.
+  if (input.number !== undefined) entry.number = input.number.trim() || undefined;
+  if (input.notes !== undefined) entry.notes = input.notes.trim() || undefined;
+  if (input.issueDate !== undefined) entry.issueDate = toDate(input.issueDate);
+  if (input.expiryDate !== undefined) entry.expiryDate = toDate(input.expiryDate);
+  if (file) await attachFile(employee, entry, file);
+
+  await employee.save();
+  return serializeOther(employee);
+}
+
+export async function deleteOtherDocument(employeeId: string, recordId: string) {
+  const employee = await employeeById(employeeId);
+  const entry = (employee.otherDocuments ?? []).find((d) => String(d._id) === String(recordId));
+  if (!entry) throw new DocError("That document could not be found on this employee", 404);
+
+  if (entry.fileKey) await deleteObject(entry.fileKey);
+  employee.otherDocuments = (employee.otherDocuments ?? []).filter(
+    (d) => String(d._id) !== String(recordId)
+  );
+  await employee.save();
+  return serializeOther(employee);
+}

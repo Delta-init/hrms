@@ -259,6 +259,21 @@ export interface EmployeeDocument {
   uploadedAt?: string;
   url: string;
 }
+/** A document or credential outside the fixed passport/visa/labour-card set. */
+export interface EmployeeOtherDocument {
+  _id: string;
+  label: string;
+  number?: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  notes?: string;
+  fileName?: string;
+  fileUrl?: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt?: string | null;
+}
+
 export interface DocumentsResponse {
   location: EmployeeLocation | null;
   requirements: DocRequirement[];
@@ -351,6 +366,7 @@ export interface Employee {
   photo?: string;
   /** Servable URL for `photo`; empty when none is set. */
   photoUrl?: string;
+  otherDocuments?: EmployeeOtherDocument[];
   documents?: EmployeeDocument[];
 
   // Personal
@@ -954,7 +970,8 @@ export interface NoticeLite {
 }
 export interface ExpiringDocument {
   employee: { _id: string; name: string; employeeCode?: string; designation?: string };
-  type: "passport" | "visa";
+  /** "other" covers the free-form documents an employee can have any number of. */
+  type: "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other";
   label: string;
   expiryDate: string;
   daysLeft: number;

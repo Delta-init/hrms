@@ -17,6 +17,7 @@ import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
 import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
+import { OtherDocumentsPanel } from "@/components/documents/OtherDocumentsPanel";
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { cn } from "@/lib/utils";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
@@ -144,7 +145,12 @@ export default function UserDetailPage() {
         empLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : employee ? (
-          <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} variant="documents" />
+          <div className="space-y-6">
+            <EmployeeProfileSections employee={employee} canEdit={canEditEmployee} variant="documents" />
+            {/* Credentials beyond the fixed four, alongside them rather than
+                buried in the file list. */}
+            <OtherDocumentsPanel employeeId={employee._id} canEdit={canEditEmployee} />
+          </div>
         ) : (
           <Card className="p-12 text-center">
             <BookUser className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />

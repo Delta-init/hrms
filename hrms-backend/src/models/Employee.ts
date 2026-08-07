@@ -95,6 +95,35 @@ const emiratesIdSchema = new Schema(
   { _id: false }
 );
 
+/**
+ * Anything the fixed fields don't cover: a second passport, a driving licence,
+ * a contract, a training certificate.
+ *
+ * One shape for both asks — a credential with an expiry, and a document with a
+ * file — because in practice they're the same thing seen from two sides, and
+ * splitting them would mean filing a residence permit twice to get both the
+ * reminder and the scan. Every field past the label is optional, so a bare
+ * "NDA · signed" entry is as valid as a fully dated permit.
+ *
+ * Unlike `documents`, these keep their `_id`: they are a list a person adds to,
+ * not a fixed set of slots, so entries need to be addressable individually.
+ */
+const otherDocumentSchema = new Schema(
+  {
+    label: { type: String, required: true, trim: true, maxlength: 120 },
+    number: { type: String, trim: true, maxlength: 60 },
+    issueDate: { type: Date, default: null },
+    expiryDate: { type: Date, default: null },
+    notes: { type: String, trim: true, maxlength: 500 },
+    fileName: { type: String, trim: true, maxlength: 260 },
+    fileKey: { type: String, trim: true },
+    mimeType: { type: String, trim: true, maxlength: 100 },
+    size: { type: Number, min: 0 },
+    uploadedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
 const documentSchema = new Schema(
   {
     type: {
@@ -193,6 +222,7 @@ const employeeSchema = new Schema<IEmployee>(
     visa: { type: visaSchema, default: undefined },
     labourCard: { type: labourCardSchema, default: undefined },
     emiratesId: { type: emiratesIdSchema, default: undefined },
+    otherDocuments: { type: [otherDocumentSchema], default: [] },
   },
   {
     timestamps: true,
@@ -212,11 +242,18 @@ employeeSchema.set("toJSON", {
   transform(_doc, ret) {
     const out = ret as unknown as Record<string, unknown>;
     out.photoUrl = out.photo ? publicUrl(String(out.photo)) : "";
+    if (Array.isArray(out.otherDocuments)) {
+      out.otherDocuments = (out.otherDocuments as Array<Record<string, unknown>>).map((d) => ({
+        ...d,
+        fileUrl: d.fileKey ? publicUrl(String(d.fileKey)) : "",
+      }));
+    }
     return out;
   },
 });
 
 employeeSchema.index({ department: 1 });
+employeeSchema.index({ "otherDocuments.expiryDate": 1 });
 employeeSchema.index({ status: 1 });
 
 employeeSchema.index({ organization: 1, employeeCode: 1 }, { unique: true });

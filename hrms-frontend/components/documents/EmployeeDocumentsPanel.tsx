@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { FolderOpen, Loader2 } from "lucide-react";
 import { useDocuments } from "@/hooks/useDocuments";
 import { DocumentSlots, allSlots } from "@/components/documents/DocumentSlots";
+import { OtherDocumentsPanel } from "@/components/documents/OtherDocumentsPanel";
 import { Card } from "@/components/ui/card";
 
 interface Props {
@@ -60,6 +61,10 @@ export function EmployeeDocumentsPanel({ employeeId, canEdit }: Props) {
       </div>
 
       <DocumentSlots slots={slots} documents={documents} employeeId={employeeId} readOnly={!canEdit} />
+
+      <div className="mt-6 border-t border-border pt-5">
+        <OtherDocumentsPanel employeeId={employeeId} canEdit={canEdit} bare />
+      </div>
     </Card>
   );
 }

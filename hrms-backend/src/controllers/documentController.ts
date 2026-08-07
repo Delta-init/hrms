@@ -7,6 +7,10 @@ import {
   listEmployeeDocuments,
   uploadEmployeeDocument,
   deleteEmployeeDocument,
+  listOtherDocuments,
+  addOtherDocument,
+  updateOtherDocument,
+  deleteOtherDocument,
 } from "../services/documentService.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -104,6 +108,63 @@ export const deleteDocumentForEmployee = async (
 ): Promise<void> => {
   try {
     const data = await deleteEmployeeDocument(req.params.id, req.params.type);
+    sendSuccess(res, "Document removed", data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * Free-form documents and credentials. These arrive as multipart so a file can
+ * ride along with the details in one request; the fields land in req.body as
+ * strings and the service parses the dates.
+ */
+
+export const listOtherDocs = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    sendSuccess(res, "Documents retrieved", await listOtherDocuments(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await addOtherDocument(req.params.id, req.body ?? {}, req.file);
+    sendSuccess(res, "Document added", data, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await updateOtherDocument(req.params.id, req.params.recordId, req.body ?? {}, req.file);
+    sendSuccess(res, "Document updated", data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await deleteOtherDocument(req.params.id, req.params.recordId);
     sendSuccess(res, "Document removed", data);
   } catch (error) {
     next(error);

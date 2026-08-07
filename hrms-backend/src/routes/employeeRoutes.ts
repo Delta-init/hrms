@@ -5,6 +5,7 @@ import {
 } from "../controllers/employeeController.js";
 import {
   listDocumentsForEmployee, uploadDocumentForEmployee, deleteDocumentForEmployee,
+  listOtherDocs, addOtherDoc, updateOtherDoc, deleteOtherDoc,
 } from "../controllers/documentController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -34,5 +35,12 @@ router.post("/:id/create-login", checkPermission("employees", "edit"), createEmp
 router.get("/:id/documents", checkPermission("employees", "view"), listDocumentsForEmployee);
 router.post("/:id/documents", checkPermission("employees", "edit"), uploadSingle, uploadDocumentForEmployee);
 router.delete("/:id/documents/:type", checkPermission("employees", "edit"), deleteDocumentForEmployee);
+
+// Free-form documents and credentials. Multipart so the details and an optional
+// scan arrive together; `uploadSingle` is a no-op when no file is attached.
+router.get("/:id/other-documents", checkPermission("employees", "view"), listOtherDocs);
+router.post("/:id/other-documents", checkPermission("employees", "edit"), uploadSingle, addOtherDoc);
+router.put("/:id/other-documents/:recordId", checkPermission("employees", "edit"), uploadSingle, updateOtherDoc);
+router.delete("/:id/other-documents/:recordId", checkPermission("employees", "edit"), deleteOtherDoc);
 
 export default router;
