@@ -77,8 +77,17 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   const watchedEarnings = watch("earnings");
   const watchedDeductions = watch("deductions");
   const currency = watch("currency");
-  const gross = (watchedEarnings ?? []).reduce((a, l) => a + (Number(l.amount) || 0), 0);
-  const totalDed = (watchedDeductions ?? []).reduce((a, l) => a + (Number(l.amount) || 0), 0);
+  // Reimbursements, overtime and one-time items are added by the server when
+  // the payslip is created. Previewing without them showed a net pay lower than
+  // the payslip that followed, so they are folded into the totals here — but
+  // kept out of the form arrays, because sending them back would double them.
+  const autoEarnings = (!isEditing && summary?.autoEarnings) || [];
+  const autoDeductions = (!isEditing && summary?.autoDeductions) || [];
+  const autoIn = autoEarnings.reduce((a, l) => a + (Number(l.amount) || 0), 0);
+  const autoOut = autoDeductions.reduce((a, l) => a + (Number(l.amount) || 0), 0);
+
+  const gross = (watchedEarnings ?? []).reduce((a, l) => a + (Number(l.amount) || 0), 0) + autoIn;
+  const totalDed = (watchedDeductions ?? []).reduce((a, l) => a + (Number(l.amount) || 0), 0) + autoOut;
   const net = gross - totalDed;
 
   const prefill = () => {
@@ -177,6 +186,23 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
           {/* Totals */}
           <div className="rounded-xl border border-border bg-muted/30 p-4">
+            {(autoEarnings.length > 0 || autoDeductions.length > 0) && (
+              <div className="mb-2 space-y-1 border-b border-border pb-2">
+                <p className="text-xs font-medium text-muted-foreground">Added automatically on generate</p>
+                {autoEarnings.map((l, i) => (
+                  <div key={`ae-${i}`} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-muted-foreground">{l.label}</span>
+                    <span className="text-emerald-600">+ {money(l.amount)}</span>
+                  </div>
+                ))}
+                {autoDeductions.map((l, i) => (
+                  <div key={`ad-${i}`} className="flex items-center justify-between text-xs">
+                    <span className="truncate text-muted-foreground">{l.label}</span>
+                    <span className="text-red-600">− {money(l.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Gross</span><span className="font-medium text-emerald-600">{money(gross)}</span></div>
             <div className="mt-1 flex items-center justify-between text-sm"><span className="text-muted-foreground">Deductions</span><span className="font-medium text-red-600">− {money(totalDed)}</span></div>
             <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base font-bold">

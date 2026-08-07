@@ -679,6 +679,13 @@ export interface Payslip {
 export interface PayslipSummary {
   present: number; late: number; half: number; absent: number;
   unpaidLeaveDays: number; lopDays: number; latePenaltyDays: number; salary: number; currency: string;
+  /**
+   * Lines the payslip adds by itself — reimbursements, overtime, one-time
+   * items. Shown so the form previews the payslip it will actually create;
+   * never submitted back, since the server re-derives them.
+   */
+  autoEarnings?: PayComponentLine[];
+  autoDeductions?: PayComponentLine[];
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────

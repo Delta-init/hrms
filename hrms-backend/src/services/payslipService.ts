@@ -290,6 +290,16 @@ export class PayslipService {
     // earnings) is the LOP base.
     const breakup = await resolveSalaryBreakup(employeeId, month, emp.salary ?? 0);
 
+    // Lines the payslip will pick up on its own — reimbursements, overtime and
+    // one-time items. Reported so the form can preview the figure it is going
+    // to produce: without them it showed a net pay lower than the payslip it
+    // then created, because the server adds these after the form is submitted.
+    const [reimb, ot, oneTime] = await Promise.all([
+      computeReimbursements(employeeId, month),
+      computeOvertime(employeeId, month),
+      computeOneTimeAdjustments(employeeId, month),
+    ]);
+
     const base = {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
       salary: breakup.gross,
@@ -297,6 +307,10 @@ export class PayslipService {
       structureDeductions: breakup.deductions,
       structureName: breakup.structureName,
       currency: emp.currency ?? "AED", loanDeductions,
+      // Read-only: the payslip re-derives all of these, so sending them back
+      // with the form would count them twice.
+      autoEarnings: [...oneTime.earnings, ...reimb.earnings, ...ot.earnings],
+      autoDeductions: oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
     };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
