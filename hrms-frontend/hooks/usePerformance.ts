@@ -32,18 +32,39 @@ export const useCreateCycle = () => {
   });
 };
 
+/** Cycles, appraisals and "my appraisals" are all derived from the roster. */
+function invalidatePerformance(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: CYCLES_KEY });
+  qc.invalidateQueries({ queryKey: APPRAISALS_KEY });
+  qc.invalidateQueries({ queryKey: MINE_KEY });
+}
+
 export const useSetCycleStatus = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: PerformanceCycleStatus }) =>
-      (await api.patch<ApiResponse<PerformanceCycle>>(`/performance/cycles/${id}/status`, { status })).data.data!,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CYCLES_KEY });
-      qc.invalidateQueries({ queryKey: APPRAISALS_KEY });
-      qc.invalidateQueries({ queryKey: MINE_KEY });
-      toast.success("Cycle status updated");
+      (await api.patch<ApiResponse<PerformanceCycle>>(`/performance/cycles/${id}/status`, { status })).data,
+    onSuccess: (res) => {
+      invalidatePerformance(qc);
+      // The server counts what it generated and skipped; showing that is the
+      // difference between "nothing happened" and "nobody was eligible".
+      toast.success(res.message ?? "Cycle status updated");
     },
     onError: (e) => toast.error(errMsg(e, "Failed to update cycle status")),
+  });
+};
+
+/** Top up a running cycle with employees hired since it was activated. */
+export const useSyncCycle = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await api.post<ApiResponse<PerformanceCycle>>(`/performance/cycles/${id}/sync`)).data,
+    onSuccess: (res) => {
+      invalidatePerformance(qc);
+      toast.success(res.message ?? "Roster synced");
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to sync the roster")),
   });
 };
 

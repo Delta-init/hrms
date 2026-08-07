@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createCycle, getCycles, setCycleStatus, deleteCycle,
+  createCycle, getCycles, setCycleStatus, syncCycle, deleteCycle,
   getAppraisals, getAppraisalById, reviewAppraisal,
   getMyAppraisals, setMyGoals, submitMySelfReview,
 } from "../controllers/performanceController.js";
@@ -21,6 +21,8 @@ router.post("/mine/:id/submit", submitMySelfReview);
 router.get("/cycles", checkPermission("performance", "edit"), getCycles);
 router.post("/cycles", checkPermission("performance", "create"), createCycle);
 router.patch("/cycles/:id/status", checkPermission("performance", "edit"), setCycleStatus);
+// Pull in anyone hired since the cycle was activated, without closing it.
+router.post("/cycles/:id/sync", checkPermission("performance", "edit"), syncCycle);
 router.delete("/cycles/:id", checkPermission("performance", "delete"), deleteCycle);
 
 router.get("/appraisals", checkPermission("performance", "edit"), getAppraisals);

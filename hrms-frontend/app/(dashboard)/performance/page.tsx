@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Target, Plus, Loader2, ClipboardList, Play, Square } from "lucide-react";
+import { Target, Plus, Loader2, ClipboardList, Play, Square, RefreshCw } from "lucide-react";
 import {
-  useMyAppraisals, useCycles, useAppraisals, useSetCycleStatus, useDeleteCycle,
+  useMyAppraisals, useCycles, useAppraisals, useSetCycleStatus, useSyncCycle, useDeleteCycle,
 } from "@/hooks/usePerformance";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -42,6 +42,7 @@ export default function PerformancePage() {
   const { data: cycles, isLoading: cyclesLoading } = useCycles({ enabled: canEdit });
   const { data: appraisals, isLoading: appraisalsLoading } = useAppraisals({ limit: "200" }, { enabled: canEdit });
   const { mutate: setCycleStatus, isPending: settingStatus } = useSetCycleStatus();
+  const { mutate: syncCycle, isPending: syncing } = useSyncCycle();
   const { mutate: removeCycle, isPending: deletingCycle } = useDeleteCycle();
 
   const [newCycleOpen, setNewCycleOpen] = useState(false);
@@ -135,7 +136,14 @@ export default function PerformancePage() {
                                 <Button size="sm" variant="outline" disabled={settingStatus} onClick={() => setCycleStatus({ id: c._id, status: "active" })}><Play className="h-3.5 w-3.5" />Activate</Button>
                               )}
                               {canEdit && c.status === "active" && (
-                                <Button size="sm" variant="outline" disabled={settingStatus} onClick={() => setCycleStatus({ id: c._id, status: "closed" })}><Square className="h-3.5 w-3.5" />Close</Button>
+                                <>
+                                  {/* Anyone hired after activation has no appraisal for this
+                                      cycle. This pulls them in without closing it. */}
+                                  <Button size="sm" variant="outline" disabled={syncing} onClick={() => syncCycle(c._id)}>
+                                    <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />Sync employees
+                                  </Button>
+                                  <Button size="sm" variant="outline" disabled={settingStatus} onClick={() => setCycleStatus({ id: c._id, status: "closed" })}><Square className="h-3.5 w-3.5" />Close</Button>
+                                </>
                               )}
                               {canDelete && c.status === "draft" && (
                                 <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteCycleTarget(c)}>Delete</Button>

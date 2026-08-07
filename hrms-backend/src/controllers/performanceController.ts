@@ -22,11 +22,38 @@ export const getCycles = async (req: AuthenticatedRequest, res: Response, next: 
   catch (error) { next(error); }
 };
 
+/**
+ * Say what the roster sync did.
+ *
+ * "Cycle status updated" gave no clue whether anyone had actually been given an
+ * appraisal, so activating a cycle for an organization with no eligible
+ * employees looked exactly like a working feature until someone went looking
+ * for the appraisals that were never created.
+ */
+function syncSummary(counts: { generated?: number; skipped?: number }): string {
+  const generated = counts.generated ?? 0;
+  const skipped = counts.skipped ?? 0;
+  const parts = [`${generated} appraisal${generated === 1 ? "" : "s"} generated`];
+  if (skipped) parts.push(`${skipped} employee${skipped === 1 ? "" : "s"} skipped — no login account`);
+  else if (!generated) parts.push("no eligible employees found");
+  return parts.join(", ");
+}
+
 export const setCycleStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = setCycleStatusSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    sendSuccess(res, "Cycle status updated", await service.setCycleStatus(req.params.id, parsed.data));
+    const result = await service.setCycleStatus(req.params.id, parsed.data);
+    const message =
+      parsed.data.status === "active" ? `Cycle activated — ${syncSummary(result)}` : "Cycle status updated";
+    sendSuccess(res, message, result);
+  } catch (error) { next(error); }
+};
+
+export const syncCycle = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await service.syncCycle(req.params.id);
+    sendSuccess(res, `Roster synced — ${syncSummary(result)}`, result);
   } catch (error) { next(error); }
 };
 
