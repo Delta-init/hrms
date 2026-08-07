@@ -15,7 +15,7 @@ import { computeReimbursements, markReimbursementsPaid, releaseReimbursements } 
 import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
-import { zonedTimeToUtc } from "../utils/schedule.js";
+import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -75,26 +75,28 @@ function dayRange(from: Date, to: Date, start: Date, end: Date, tz: string): str
   return keys;
 }
 
-/** The month's working days as YYYY-MM-DD keys. */
+/**
+ * The month's working days as YYYY-MM-DD keys.
+ *
+ * Without a schedule this falls back to the same default leave uses, rather
+ * than counting every calendar day. Treating Sundays as working days inflated
+ * the month and made the two disagree about the same person.
+ */
 function workingDayKeys(month: string, workDays?: number[]): string[] {
+  const days = workDays?.length ? workDays : DEFAULT_WORK_DAYS;
   const [y, m] = month.split("-").map(Number);
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const total = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const keys: string[] = [];
-  for (let d = 1; d <= days; d++) {
+  for (let d = 1; d <= total; d++) {
     const dt = new Date(Date.UTC(y, m - 1, d));
-    if (!workDays?.length || workDays.includes(dt.getUTCDay())) keys.push(dt.toISOString().slice(0, 10));
+    if (days.includes(dt.getUTCDay())) keys.push(dt.toISOString().slice(0, 10));
   }
   return keys;
 }
 
 /** Days in `month` that fall on the schedule's working weekdays. */
 function countWorkingDays(month: string, workDays?: number[]): number {
-  const [y, m] = month.split("-").map(Number);
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  if (!workDays?.length) return days;
-  let count = 0;
-  for (let d = 1; d <= days; d++) if (workDays.includes(new Date(Date.UTC(y, m - 1, d)).getUTCDay())) count++;
-  return count;
+  return workingDayKeys(month, workDays).length;
 }
 
 /** Calendar days in a YYYY-MM month. */

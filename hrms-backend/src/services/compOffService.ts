@@ -1,3 +1,4 @@
+import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { CompOffCredit } from "../models/CompOffCredit.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
@@ -119,7 +120,7 @@ export class CompOffService {
       let isWeekend = false;
       if (!isHoliday) {
         const ws = await resolveWorkScheduleForUser(uid, new Date(a.date));
-        const workDays = ws?.workDays ?? [1, 2, 3, 4, 5];
+        const workDays = ws?.workDays ?? DEFAULT_WORK_DAYS;
         isWeekend = !workDays.includes(new Date(a.date).getUTCDay());
       }
       if (!isHoliday && !isWeekend) continue;

@@ -33,7 +33,7 @@ export const createWorkScheduleSchema = z.object({
   timeZone: z.string().min(1).default("Asia/Dubai"),
   loginTime: time.default("09:00"),
   logoutTime: time.default("18:00"),
-  workDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5]),
+  workDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5, 6]),
   halfDays: z.array(z.number().int().min(0).max(6)).default([]),
   graceMinutes: z.number().min(0).max(240).default(10),
   leavePolicies: leavePolicies.default([]),

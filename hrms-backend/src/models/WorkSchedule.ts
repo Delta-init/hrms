@@ -70,7 +70,7 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
     // 0 = Sunday … 6 = Saturday. Default Mon–Fri.
     workDays: {
       type: [Number],
-      default: [1, 2, 3, 4, 5],
+      default: [1, 2, 3, 4, 5, 6],
     },
     // Subset of workDays worked as half-days.
     halfDays: {

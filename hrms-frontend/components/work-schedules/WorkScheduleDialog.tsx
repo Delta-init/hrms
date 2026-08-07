@@ -33,7 +33,7 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
     resolver: zodResolver(workScheduleFormSchema),
     defaultValues: {
       name: "", description: "", timeZone: "Asia/Dubai",
-      loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5], halfDays: [], graceMinutes: 10,
+      loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10,
       leavePolicies: [], status: "active",
     },
   });
@@ -81,7 +81,7 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
         status: schedule.status,
       });
     } else {
-      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5], halfDays: [], graceMinutes: 10, leavePolicies: [], status: "active" });
+      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, leavePolicies: [], status: "active" });
     }
   }, [open, schedule, reset]);
 

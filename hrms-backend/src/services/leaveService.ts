@@ -1,9 +1,11 @@
 import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
 import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput } from "../validations/leaveValidation.js";
 import type { PaginationQuery, LeaveType } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
+import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
@@ -17,9 +19,26 @@ interface LeaveQuery extends PaginationQuery {
   dateTo?: string;
 }
 
-const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5]; // Mon–Fri (0=Sun)
-const workDaysOf = (user: { workSchedule?: { workDays?: number[] } | unknown } | null): number[] =>
-  (user?.workSchedule as { workDays?: number[] } | undefined)?.workDays ?? DEFAULT_WORK_DAYS;
+type ScheduleRef = { name?: string; workDays?: number[]; leavePolicies?: Array<{ type: string; label?: string; monthlyDays: number; paid: boolean }> } | null;
+
+/**
+ * The schedule governing someone: the one on their login, else the one on their
+ * employee record.
+ *
+ * Reading only the login meant a schedule assigned from the employee form was
+ * invisible here, so leave silently fell back to the default and counted a
+ * different number of days than payroll did for the very same month.
+ */
+async function scheduleFor(userId: unknown, loaded?: { workSchedule?: unknown }): Promise<ScheduleRef> {
+  const fromUser = loaded?.workSchedule as ScheduleRef;
+  if (fromUser?.workDays?.length || fromUser?.leavePolicies?.length) return fromUser;
+  const emp = await Employee.findOne(scoped({ user: userId }))
+    .populate("workSchedule", "name workDays leavePolicies")
+    .select("workSchedule");
+  return ((emp?.workSchedule as ScheduleRef) ?? fromUser) ?? null;
+}
+const workDaysOf = (schedule: ScheduleRef): number[] =>
+  schedule?.workDays?.length ? schedule.workDays : DEFAULT_WORK_DAYS;
 
 /** A half-day leave must fall on a single date. */
 function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
@@ -40,17 +59,13 @@ function assertHalfDayIsSingleDay(halfDay: boolean, start: Date, end: Date) {
  * month, or amending one by a day would count it twice.
  */
 async function assertLeaveAllowed(
-  user: { workSchedule?: unknown },
+  schedule: ScheduleRef,
+  userId: unknown,
   type: LeaveType,
   startDate: Date,
   days: number,
   excludeId: string | null
 ) {
-  const schedule = user.workSchedule as
-    | { name?: string; leavePolicies?: Array<{ type: string; label?: string; monthlyDays: number }> }
-    | null
-    | undefined;
-
   // No schedule, or one that predates leave policies: nothing to check against,
   // so behave as before rather than blocking everyone on an empty list.
   const policies = schedule?.leavePolicies;
@@ -71,7 +86,7 @@ async function assertLeaveAllowed(
   const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
   const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1));
   const filter: Record<string, unknown> = {
-    user: (user as { _id: unknown })._id,
+    user: userId,
     type,
     status: { $in: ["pending", "approved"] },
     startDate: { $gte: monthStart, $lt: monthEnd },
@@ -137,9 +152,10 @@ export class LeaveService {
       );
     }
 
-    const days = input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(user));
+    const schedule = await scheduleFor(input.user, user);
+    const days = input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(schedule));
 
-    await assertLeaveAllowed(user, input.type, input.startDate, days, null);
+    await assertLeaveAllowed(schedule, input.user, input.type, input.startDate, days, null);
 
     if (input.type === "comp_off") {
       const balance = await compOffBalanceFor(input.user);
@@ -239,10 +255,10 @@ export class LeaveService {
       if (clash) throw Object.assign(new Error("This overlaps an existing leave request for these dates"), { statusCode: 409 });
     }
     const subject = await User.findById(record.user).populate("workSchedule", "workDays");
-    record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(subject));
+    record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(await scheduleFor(record.user, subject ?? undefined)));
 
     const owner = await User.findOne(scoped({ _id: record.user })).populate("workSchedule", "workDays leavePolicies name");
-    if (owner) await assertLeaveAllowed(owner, record.type, record.startDate, record.days, id);
+    await assertLeaveAllowed(await scheduleFor(record.user, owner ?? undefined), record.user, record.type, record.startDate, record.days, id);
 
     await record.save();
     return LeaveRequest.findById(id)
@@ -317,10 +333,8 @@ export async function leaveOptionsFor(userId: string, month?: string) {
   const user = await User.findOne(scoped({ _id: userId })).populate("workSchedule", "name workDays leavePolicies");
   if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
-  const schedule = user.workSchedule as
-    | { name?: string; leavePolicies?: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }> }
-    | null;
-  const policies = schedule?.leavePolicies ?? [];
+  const schedule = await scheduleFor(userId, user);
+  const policies = (schedule?.leavePolicies ?? []) as Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }>;
 
   // No schedule, or one configured before leave policies existed: every type
   // stays available, matching how the form behaved before.

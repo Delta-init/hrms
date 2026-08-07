@@ -6,7 +6,7 @@ import { Holiday } from "../models/Holiday.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
-import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule } from "../utils/schedule.js";
+import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
@@ -270,7 +270,7 @@ export class AttendanceService {
     const employeesOut = employees.map((e) => {
       const uid = (e.user as { _id?: unknown } | null)?._id ? String((e.user as { _id: unknown })._id) : "";
       // Static fallback for employees with no roster assignment covering a given day.
-      const staticWorkDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? [1, 2, 3, 4, 5];
+      const staticWorkDays: number[] = (e.user as { workSchedule?: { workDays?: number[] } } | null)?.workSchedule?.workDays ?? DEFAULT_WORK_DAYS;
       const rosterWindows = rosterMap.get(uid);
       const recs = attByUser.get(uid) ?? {};
       const leaveMap = leaveDaysByUser.get(uid) ?? new Map<string, string>();

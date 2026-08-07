@@ -1,3 +1,4 @@
+import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { WorkSchedule } from "../models/WorkSchedule.js";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
@@ -67,7 +68,7 @@ export async function rosterWorkDaysByUser(userIds: string[], start: Date, end: 
     map.get(uid)!.push({
       from: new Date(a.effectiveFrom),
       to: a.effectiveTo ? new Date(a.effectiveTo) : null,
-      workDays: (a.workSchedule as { workDays?: number[] } | null)?.workDays ?? [1, 2, 3, 4, 5],
+      workDays: (a.workSchedule as { workDays?: number[] } | null)?.workDays ?? DEFAULT_WORK_DAYS,
     });
   }
   for (const list of map.values()) list.sort((a, b) => b.from.getTime() - a.from.getTime());

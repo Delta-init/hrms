@@ -1,4 +1,13 @@
 /**
+ * Working days assumed when nobody has assigned a schedule: Sunday off.
+ *
+ * One constant because it was written out in six services, and a default that
+ * disagrees with itself is worse than one that is merely wrong — leave counted
+ * a month at Mon–Fri while payroll charged Mon–Sat for the same person.
+ */
+export const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5, 6]; // Mon–Sat (0 = Sunday)
+
+/**
  * Timezone-aware shift resolution for attendance clock-in/out.
  * No external tz library — uses Intl to compute the zone offset.
  */
