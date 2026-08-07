@@ -44,12 +44,11 @@ export function PayrollRun() {
         month,
         currency: createRow.currency,
         earnings: createRow.earnings?.length ? createRow.earnings : [{ label: "Basic", amount: createRow.salary }],
-        deductions: [
-          ...(createRow.structureDeductions ?? []),
-          ...(createRow.lopAmount > 0 ? [{ label: `Loss of Pay (${createRow.lopDays}d)`, amount: createRow.lopAmount }] : []),
-          ...(createRow.latePenaltyAmount > 0 ? [{ label: `Late Penalty (${createRow.latePenaltyDays}d)`, amount: createRow.latePenaltyAmount }] : []),
-          ...(createRow.loanTotal > 0 ? [{ label: "Loan repayment", amount: createRow.loanTotal }] : []),
-        ],
+        // Only the structure's own lines. Loss of pay, late penalties and loan
+        // instalments are all derived when the payslip is created — seeding
+        // them here just put a figure in an editable box that the server was
+        // going to recompute anyway.
+        deductions: [...(createRow.structureDeductions ?? [])],
       }
     : null;
   const closeDialog = () => { setCreateRow(null); setEditId(null); };

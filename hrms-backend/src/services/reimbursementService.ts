@@ -25,7 +25,7 @@ const POP = [
 ];
 
 /** Label a reimbursement earning line for a payslip. */
-const REIMBURSE_PREFIX = "Reimbursement";
+export const REIMBURSE_PREFIX = "Reimbursement";
 
 export class ReimbursementService {
   /**
@@ -161,5 +161,18 @@ export async function markReimbursementsPaid(ids: string[], payslipId: string) {
   await Reimbursement.updateMany(
     scoped({ _id: { $in: ids } }),
     { $set: { status: "paid", payslip: payslipId } }
+  );
+}
+
+/**
+ * Release claims a payslip paid out, for when that payslip is deleted.
+ *
+ * Without this a claim stayed "paid", pointing at a payslip that no longer
+ * exists, and could never be paid again — the employee simply lost the money.
+ */
+export async function releaseReimbursements(payslipId: string) {
+  await Reimbursement.updateMany(
+    { payslip: payslipId },
+    { $set: { status: "approved", payslip: null } }
   );
 }

@@ -96,3 +96,8 @@ export async function markOvertimeApplied(ids: string[], payslipId: string) {
   if (!ids.length) return;
   await Overtime.updateMany(scoped({ _id: { $in: ids } }), { $set: { applied: true, payslip: payslipId } });
 }
+
+/** Release overtime a deleted payslip had paid out, so it can be paid again. */
+export async function releaseOvertime(payslipId: string) {
+  await Overtime.updateMany({ payslip: payslipId }, { $set: { applied: false, payslip: null } });
+}

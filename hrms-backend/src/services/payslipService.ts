@@ -11,8 +11,8 @@ import {
   computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
 } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries } from "./oneTimeAdjustmentService.js";
-import { computeReimbursements, markReimbursementsPaid } from "./reimbursementService.js";
-import { computeOvertime, markOvertimeApplied } from "./overtimeService.js";
+import { REIMBURSE_PREFIX, computeReimbursements, markReimbursementsPaid, releaseReimbursements } from "./reimbursementService.js";
+import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
@@ -54,17 +54,13 @@ export const PENALTY_PREFIX = "Late Penalty";
 const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
 
 /**
- * Attendance-driven deductions for a month.
+ * Earnings the payslip adds for itself, rather than contractual pay.
  *
- * Derived here rather than by the form. Loss of pay and late penalties used to
- * reach a payslip only if someone pressed "Prefill", so a payslip generated
- * without that button silently paid a full month to someone who had not worked
- * one — while loans and reimbursements applied themselves. Same rule for all of
- * them now.
- *
- * Capped at gross: a month with more unpaid days than the 30-day divisor
- * assumes would otherwise deduct more than was earned.
+ * Used to keep them out of the loss-of-pay base: a day away costs a day of
+ * salary, not a day of salary plus whatever expenses were reimbursed alongside.
  */
+const isAddOn = (label: string) => label.startsWith(REIMBURSE_PREFIX) || label.startsWith("Overtime");
+
 /** Local calendar day of an instant, as YYYY-MM-DD. */
 function dayKey(date: Date | string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(date));
@@ -103,19 +99,42 @@ function countWorkingDays(month: string, workDays?: number[]): number {
   return count;
 }
 
+/** Calendar days in a YYYY-MM month. */
+export function daysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/**
+ * Attendance-driven deductions for a month.
+ *
+ * Derived here rather than by the form, so loss of pay applies itself the way
+ * loans and reimbursements already did instead of waiting for a button.
+ *
+ * The daily rate divides by the days the month actually has, not a flat thirty.
+ * A fixed divisor priced a day in a 31-day month slightly too high, so losing
+ * every one of them deducted 31/30ths of the salary — more than was earned, and
+ * for someone who had merely never had attendance recorded.
+ *
+ * `salary` is contractual pay, deliberately not the gross. A day away costs a
+ * day of salary; reimbursements and overtime paid in the same month are not
+ * part of that, and counting them let a taxi claim raise the price of absence.
+ */
 function attendanceDeductions(
   summary: { lopDays: number; latePenaltyDays: number },
-  gross: number
+  salary: number,
+  month: string
 ): Line[] {
-  if (gross <= 0) return [];
-  const perDay = r2(gross / 30);
+  if (salary <= 0) return [];
+  const perDay = r2(salary / daysInMonth(month));
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
 
+  // Rounding the daily rate can still overshoot by pennies across a whole month.
   const total = lines.reduce((a, l) => a + l.amount, 0);
-  if (total > gross && total > 0) {
-    const scale = gross / total;
+  if (total > salary && total > 0) {
+    const scale = salary / total;
     for (const l of lines) l.amount = r2(l.amount * scale);
   }
   return lines;
@@ -193,12 +212,20 @@ async function applyRecoveries(
 }
 
 /** Hand back everything a payslip collected, before editing or deleting it. */
-async function undoRecoveries(record: { recoveries?: Array<{ kind: string; ref: unknown; amount: number }> }) {
+async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind: string; ref: unknown; amount: number }> }) {
   const rows = record.recoveries ?? [];
   const loans = rows.filter((r) => r.kind === "loan").map((r) => ({ loanId: String(r.ref), amount: r.amount }));
   const adjustments = rows.filter((r) => r.kind === "adjustment").map((r) => ({ adjustmentId: String(r.ref), amount: r.amount }));
   if (loans.length) await reverseLoanRepayments(loans);
   if (adjustments.length) await reverseAdjustmentRecoveries(adjustments);
+
+  // Reimbursements and overtime record which payslip paid them, so that link is
+  // what gets undone. Left alone, a claim stayed paid against a payslip that no
+  // longer existed and could never be claimed again.
+  if (record._id) {
+    await releaseReimbursements(String(record._id));
+    await releaseOvertime(String(record._id));
+  }
 }
 
 export class PayslipService {
@@ -224,8 +251,8 @@ export class PayslipService {
     // Attendance applies itself, like loans and reimbursements do. Any lines the
     // form sent are dropped first so a stale prefill can't double them.
     const att = await this.summary(input.employee, input.month);
-    const grossEarnings = r2(earnings.reduce((a, l) => a + (l.amount || 0), 0));
-    const attLines = attendanceDeductions(att, grossEarnings);
+    const salaryBase = r2((input.earnings ?? []).reduce((a, l) => a + (l.amount || 0), 0)) || att.salary;
+    const attLines = attendanceDeductions(att, salaryBase, input.month);
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
@@ -318,8 +345,10 @@ export class PayslipService {
         .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
-      const grossEarnings = r2(earnings.reduce((a, l) => a + (l.amount || 0), 0));
-      const manual = [...typed, ...attendanceDeductions(att, grossEarnings)];
+      // Only the recurring earnings price a day of absence, not reimbursements
+      // or overtime that happen to be paid the same month.
+      const salaryBase = r2(earnings.filter((l) => !isAddOn(l.label)).reduce((a, l) => a + (l.amount || 0), 0)) || att.salary;
+      const manual = [...typed, ...attendanceDeductions(att, salaryBase, month)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -495,9 +524,11 @@ export class PayslipService {
     for (const emp of employees) {
       const s = await this.summary(String(emp._id), month);
       const base = s.salary || 0;
-      const perDay = round(base / 30);
-      const lopAmount = round(perDay * s.lopDays);
-      const latePenaltyAmount = round(perDay * s.latePenaltyDays);
+      // Same helper the payslip uses, so the preview row and the generated
+      // payslip cannot disagree about what a day is worth.
+      const attLines = attendanceDeductions(s, base, month);
+      const lopAmount = round(attLines.find((l) => l.label.startsWith(LOP_PREFIX))?.amount ?? 0);
+      const latePenaltyAmount = round(attLines.find((l) => l.label.startsWith(PENALTY_PREFIX))?.amount ?? 0);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
@@ -558,8 +589,7 @@ export class PayslipService {
 
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
-      if (s.lopDays > 0 && s.salary > 0) deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: round((s.salary / 30) * s.lopDays) });
-      if (s.latePenaltyDays > 0 && s.salary > 0) deductions.push({ label: `Late Penalty (${s.latePenaltyDays}d)`, amount: round((s.salary / 30) * s.latePenaltyDays) });
+      deductions.push(...attendanceDeductions(s, s.salary || 0, month));
       for (const l of s.loanDeductions ?? []) deductions.push(l);
       deductions.push(...oneTime.deductions);
 
@@ -607,17 +637,10 @@ export class PayslipService {
       const s = await this.summary(String(emp._id), month);
       // Earnings from the salary structure (Basic + allowances), else a single Basic.
       const earnings = s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }];
-      // Recurring structure deductions; LOP/loans/one-time appended below + in create().
+      // Recurring structure deductions only. Attendance, loans and one-time
+      // items are all derived by create(), which strips anything sent here to
+      // avoid counting them twice — so there is nothing to gain by seeding them.
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
-      if (s.lopDays > 0 && s.salary > 0) {
-        const perDay = Math.round((s.salary / 30) * 100) / 100;
-        deductions.push({ label: `Loss of Pay (${s.lopDays}d)`, amount: Math.round(perDay * s.lopDays * 100) / 100 });
-      }
-      if (s.latePenaltyDays > 0 && s.salary > 0) {
-        const perDay = Math.round((s.salary / 30) * 100) / 100;
-        deductions.push({ label: `Late Penalty (${s.latePenaltyDays}d)`, amount: Math.round(perDay * s.latePenaltyDays * 100) / 100 });
-      }
-      // Loan instalments are appended + recorded by create().
       await this.create({ employee: String(emp._id), month, currency: s.currency, earnings, deductions, status: "draft" } as never, issuerId);
       created++;
     }
