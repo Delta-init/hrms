@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, LogIn, LogOut } from "lucide-react";
+import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, Pencil, LogIn, LogOut, AlertCircle } from "lucide-react";
 import { useRegularizations, useMyRegularizations, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { RegularizationDialog } from "@/components/regularization/RegularizationDialog";
-import { ReviewDialog } from "@/components/shared/ReviewDialog";
+import { RegularizationReviewDialog } from "@/components/regularization/RegularizationReviewDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserSelect } from "@/components/pickers";
 import { getInitials, cn } from "@/lib/utils";
 import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
-import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType, ATTENDANCE_STATUS_LABELS } from "@/types";
+import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType, type RegularizationOutcome, ATTENDANCE_STATUS_LABELS } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<RegularizationStatus, string> = {
@@ -31,32 +31,48 @@ const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", {
 const fmtTime = (iso?: string | null, tz?: string) => (iso ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(iso)) : "—");
 
 // Simple table for Approvals / My tabs.
-function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin }: {
-  rows: Regularization[]; loading?: boolean; emptyText: string; canApprove?: boolean;
+function SimpleRegTable({ rows, loading, error, emptyText, canApprove, canEdit, canDelete, onReview, onEdit, onDelete, reviewerRoleId, isSuperAdmin }: {
+  rows: Regularization[]; loading?: boolean; error?: unknown; emptyText: string;
+  canApprove?: boolean; canEdit?: boolean; canDelete?: boolean;
   onReview?: (r: Regularization, a: "approved" | "rejected") => void;
+  onEdit?: (r: Regularization) => void;
+  onDelete?: (r: Regularization) => void;
   reviewerRoleId?: string; isSuperAdmin?: boolean;
 }) {
+  // An empty list and a failed request used to look identical here — both drew
+  // the cheerful "no pending requests" line, so a 403 or a dropped connection
+  // read as "nothing to approve".
+  const showActions = canApprove || canEdit || canDelete;
+  const cols = 5 + (showActions ? 1 : 0);
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead><tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="px-5 py-3 font-semibold">Employee</th><th className="px-5 py-3 font-semibold">Date</th><th className="px-5 py-3 font-semibold">Type</th><th className="px-5 py-3 font-semibold">Requested</th><th className="px-5 py-3 font-semibold">Status</th>{canApprove && <th className="px-5 py-3 text-right font-semibold">Actions</th>}
+            <th className="px-5 py-3 font-semibold">Employee</th><th className="px-5 py-3 font-semibold">Date</th><th className="px-5 py-3 font-semibold">Type</th><th className="px-5 py-3 font-semibold">Requested</th><th className="px-5 py-3 font-semibold">Status</th>{showActions && <th className="px-5 py-3 text-right font-semibold">Actions</th>}
           </tr></thead>
           <tbody className="divide-y divide-border">
-            {loading ? <tr><td colSpan={6} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
-            : rows.length === 0 ? <tr><td colSpan={6} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
+            {loading ? <tr><td colSpan={cols} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+            : error ? <tr><td colSpan={cols} className="px-5 py-16 text-center text-sm text-destructive"><AlertCircle className="mx-auto mb-2 h-6 w-6" />Could not load requests. Refresh to try again.</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={cols} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
             : rows.map((r) => { const name = r.user && typeof r.user === "object" ? r.user.name : "—"; return (
               <tr key={r._id} className="hover:bg-muted/30">
                 <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div></td>
                 <td className="px-5 py-3.5 text-muted-foreground">{fmtDate(r.date, r.timeZone)}</td>
-                <td className="px-5 py-3.5">{REGULARIZATION_TYPE_LABELS[r.type]}</td>
+                <td className="px-5 py-3.5">
+                  <p>{REGULARIZATION_TYPE_LABELS[r.type]}</p>
+                  <p className="text-[11px] text-muted-foreground">→ marks {ATTENDANCE_STATUS_LABELS[r.resultingStatus ?? "present"]}</p>
+                </td>
                 <td className="px-5 py-3.5 text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></td>
                 <td className="px-5 py-3.5">
                   <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span>
                   {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
                 </td>
-                {canApprove && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">{r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(r, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(r, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}</div></td>}
+                {showActions && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">
+                  {canEdit && r.status === "pending" && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit?.(r)}><Pencil className="h-4 w-4" /></Button>}
+                  {canApprove && r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && <><Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(r, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(r, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button></>}
+                  {canDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDelete?.(r)}><Trash2 className="h-4 w-4" /></Button>}
+                </div></td>}
               </tr>
             ); })}
           </tbody>
@@ -69,6 +85,7 @@ function SimpleRegTable({ rows, loading, emptyText, canApprove, onReview, review
 export default function RegularizationPage() {
   const { user, hasPermission } = useAuth();
   const canApprove = hasPermission("regularization", "approve");
+  const canEdit = hasPermission("regularization", "edit");
   const canDelete = hasPermission("regularization", "delete");
   const reviewerRoleId = user?.role?._id;
   const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
@@ -76,9 +93,13 @@ export default function RegularizationPage() {
   const [tab, setTab] = useState("requests");
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
 
-  const { data: allData, isLoading: allLoading, isFetching } = useRegularizations(canApprove ? query.params : undefined);
-  const { data: pendingData } = useRegularizations(canApprove ? { status: "pending", limit: "200" } : undefined);
-  const { data: mineData, isLoading: mineLoading } = useMyRegularizations({ limit: "200" });
+  // Both are gated on the permission rather than merely passing no params:
+  // without the guard the hook still fired, so every load made an extra
+  // unfiltered call — a guaranteed 403 for anyone who cannot view the module.
+  const { data: allData, isLoading: allLoading, isFetching } = useRegularizations(query.params, canApprove);
+  const { data: pendingData, isLoading: pendingLoading, error: pendingError } =
+    useRegularizations({ status: "pending", limit: "200" }, canApprove);
+  const { data: mineData, isLoading: mineLoading, error: mineError } = useMyRegularizations({ limit: "200" });
 
   const { mutate: review_, isPending: reviewing } = useReviewRegularization();
   const { mutate: remove, isPending: deleting } = useDeleteRegularization();
@@ -89,6 +110,7 @@ export default function RegularizationPage() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [adminApplyOpen, setAdminApplyOpen] = useState(false);
   const [review, setReview] = useState<{ reg: Regularization; action: "approved" | "rejected" } | null>(null);
+  const [editTarget, setEditTarget] = useState<Regularization | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Regularization | null>(null);
 
   const tabs = [
@@ -124,6 +146,7 @@ export default function RegularizationPage() {
     },
     { id: "actions", label: "", alwaysVisible: true, align: "right", render: (r) => (
       <div className="flex items-center justify-end gap-1">
+        {canEdit && r.status === "pending" && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditTarget(r)}><Pencil className="h-4 w-4" /></Button>}
         {canApprove && r.status === "pending" && canActOnWorkflowStep(r, reviewerRoleId, isSuperAdmin) && <>
           <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReview({ reg: r, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
           <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReview({ reg: r, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>
@@ -176,7 +199,15 @@ export default function RegularizationPage() {
         />
       )}
 
-      {activeTab === "approvals" && <SimpleRegTable rows={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(r, a) => setReview({ reg: r, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} />}
+      {activeTab === "approvals" && (
+        <SimpleRegTable
+          rows={pending} loading={pendingLoading} error={pendingError} emptyText="No pending requests 🎉"
+          canApprove={canApprove} canEdit={canEdit} canDelete={canDelete}
+          onReview={(r, a) => setReview({ reg: r, action: a })}
+          onEdit={setEditTarget} onDelete={setDeleteTarget}
+          reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin}
+        />
+      )}
 
       {activeTab === "mine" && (
         <div className="space-y-4">
@@ -184,13 +215,37 @@ export default function RegularizationPage() {
             <div><h3 className="text-base font-semibold">Request a correction</h3><p className="text-sm text-muted-foreground">Raise a regularization for a day you missed a punch.</p></div>
             <Button onClick={() => setApplyOpen(true)}><Plus className="h-4 w-4" />New Request</Button>
           </Card>
-          <SimpleRegTable rows={mine} loading={mineLoading} emptyText="You have no regularization requests." />
+          <SimpleRegTable
+            rows={mine} loading={mineLoading} error={mineError} emptyText="You have no regularization requests."
+            canEdit onEdit={setEditTarget}
+          />
         </div>
       )}
 
       <RegularizationDialog open={applyOpen} onOpenChange={setApplyOpen} lockToUserId={user?._id} />
       <RegularizationDialog open={adminApplyOpen} onOpenChange={setAdminApplyOpen} />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.reg.user && typeof review.reg.user === "object" ? review.reg.user.name : ""} · ${fmtDate(review.reg.date, review.reg.timeZone)}` : undefined} isPending={reviewing} onConfirm={(note) => review && review_({ id: review.reg._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <RegularizationDialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)} record={editTarget} />
+      <RegularizationReviewDialog
+        open={!!review}
+        onOpenChange={(o) => !o && setReview(null)}
+        record={review?.reg ?? null}
+        action={review?.action ?? "approved"}
+        isPending={reviewing}
+        onConfirm={(note, resultingStatus: RegularizationOutcome) =>
+          review && review_(
+            {
+              id: review.reg._id,
+              data: {
+                status: review.action,
+                reviewNote: note || undefined,
+                // Only sent on approval — a rejection leaves the day untouched.
+                ...(review.action === "approved" ? { resultingStatus } : {}),
+              },
+            },
+            { onSuccess: () => setReview(null) }
+          )
+        }
+      />
       <ConfirmDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)} title="Delete request" description="This regularization request will be removed." isPending={deleting} onConfirm={() => deleteTarget && remove(deleteTarget._id, { onSuccess: () => setDeleteTarget(null) })} />
     </div>
   );

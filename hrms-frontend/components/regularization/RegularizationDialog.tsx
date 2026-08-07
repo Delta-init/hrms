@@ -14,21 +14,26 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserSelect } from "@/components/pickers";
 import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/validations/regularizationSchema";
-import { useCreateRegularization } from "@/hooks/useRegularizations";
+import { useCreateRegularization, useUpdateRegularization } from "@/hooks/useRegularizations";
 import { useUser } from "@/hooks/useUsers";
 import { useAttendancePenaltyPolicy } from "@/hooks/useAttendancePenaltyPolicy";
-import { zonedInputToUtcIso } from "@/lib/timezone";
-import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType, REGULARIZATION_OUTCOMES, ATTENDANCE_STATUS_LABELS } from "@/types";
+import { zonedInputToUtcIso, toLocalInput, toDateInput } from "@/lib/timezone";
+import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType, type Regularization, REGULARIZATION_OUTCOMES, ATTENDANCE_STATUS_LABELS } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lockToUserId?: string;
+  /** Pass a pending request to edit it instead of raising a new one. */
+  record?: Regularization | null;
 }
 
-export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props) {
+export function RegularizationDialog({ open, onOpenChange, lockToUserId, record }: Props) {
+  const editing = !!record;
   const selfMode = !!lockToUserId;
-  const { mutate: create, isPending } = useCreateRegularization();
+  const { mutate: create, isPending: creating } = useCreateRegularization();
+  const { mutate: save, isPending: saving } = useUpdateRegularization();
+  const isPending = creating || saving;
   // Which status a correction proposes is an organization setting, not a
   // constant — open the form on whatever they chose.
   const { data: policy } = useAttendancePenaltyPolicy(open);
@@ -54,20 +59,35 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
   defaultStatusRef.current = defaultStatus;
 
   useEffect(() => {
-    if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: defaultStatusRef.current, requestedCheckIn: "", requestedCheckOut: "", reason: "" });
-  }, [open, reset, lockToUserId]);
+    if (!open) return;
+    if (record) {
+      const tz = record.timeZone || "Asia/Dubai";
+      reset({
+        user: typeof record.user === "object" ? record.user._id : String(record.user ?? ""),
+        date: toDateInput(record.date, tz),
+        timeZone: tz,
+        type: record.type,
+        resultingStatus: record.resultingStatus ?? "present",
+        requestedCheckIn: toLocalInput(record.requestedCheckIn, tz),
+        requestedCheckOut: toLocalInput(record.requestedCheckOut, tz),
+        reason: record.reason ?? "",
+      });
+      return;
+    }
+    reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: defaultStatusRef.current, requestedCheckIn: "", requestedCheckOut: "", reason: "" });
+  }, [open, reset, lockToUserId, record]);
 
   // If it arrives after the form opened, move only that field, and only while
-  // nobody has picked a status of their own.
+  // nobody has picked a status of their own. Never on an edit — that form
+  // already carries the status the request was saved with.
   useEffect(() => {
-    if (open && !touchedFields.resultingStatus) setValue("resultingStatus", defaultStatus);
-  }, [open, defaultStatus, setValue, touchedFields.resultingStatus]);
+    if (open && !editing && !touchedFields.resultingStatus) setValue("resultingStatus", defaultStatus);
+  }, [open, editing, defaultStatus, setValue, touchedFields.resultingStatus]);
 
   const resultingStatus = watch("resultingStatus");
 
   const onSubmit = (data: RegularizationFormValues) => {
     const payload: Record<string, unknown> = {
-      user: lockToUserId ?? data.user,
       date: data.date,
       timeZone: data.timeZone,
       type: data.type,
@@ -76,18 +96,22 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
       requestedCheckOut: zonedInputToUtcIso(data.requestedCheckOut, data.timeZone),
       reason: data.reason || undefined,
     };
-    create(payload, { onSuccess: () => onOpenChange(false) });
+    const done = { onSuccess: () => onOpenChange(false) };
+    // Who the request belongs to is fixed once raised — an edit never moves it
+    // to a different person.
+    if (record) save({ id: record._id, data: payload }, done);
+    else create({ ...payload, user: lockToUserId ?? data.user }, done);
   };
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-lg">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Regularization Request</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{editing ? "Edit Regularization Request" : "Regularization Request"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4 px-4 sm:px-0">
-          {!selfMode && (
+          {!selfMode && !editing && (
             <div className="col-span-2 space-y-1.5">
               <Label>Employee *</Label>
               <Controller
@@ -188,7 +212,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Submit Request
+              {editing ? "Save Changes" : "Submit Request"}
             </Button>
           </ResponsiveDialogFooter>
         </form>
