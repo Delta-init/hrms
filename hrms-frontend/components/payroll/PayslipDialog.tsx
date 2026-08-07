@@ -191,6 +191,16 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                 {summary.lopDays === 0 && summary.latePenaltyDays === 0 && <span className="text-emerald-600">No unpaid days</span>}
               </div>
             )}
+            {!isEditing && !!summary?.unrecordedDays && (
+              /* A payslip is only as good as its attendance coverage. Without
+                 this, one record in a 31-day month reads exactly like a full
+                 one — the figures look complete when they are not. */
+              <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                Attendance recorded for {summary.recordedDays} of {summary.workingDays} working days.
+                The remaining {summary.unrecordedDays} have no attendance, leave or holiday against them and are
+                being paid in full — check the month is complete before generating.
+              </div>
+            )}
             {(autoEarnings.length > 0 || autoDeductions.length > 0) && (
               <div className="mb-2 space-y-1 border-b border-border pb-2">
                 <p className="text-xs font-medium text-muted-foreground">Added automatically on generate</p>

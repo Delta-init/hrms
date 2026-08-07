@@ -10,6 +10,15 @@ const attendancePenaltyPolicySchema = new Schema<IAttendancePenaltyPolicy>(
     enabled: { type: Boolean, default: false },
     graceLates: { type: Number, required: true, min: 0, max: 31, default: 3 },
     lateBlockSize: { type: Number, required: true, min: 1, max: 31, default: 3 },
+    /**
+     * Whether a working day with no attendance and no leave is unpaid.
+     *
+     * Off by default, and deliberately so: a missing record usually means
+     * nobody ran attendance that day, not that the person stayed home, and
+     * docking pay for a gap in the data is far worse than paying through it.
+     * Organizations that do treat attendance as mandatory can turn it on.
+     */
+    unrecordedDaysUnpaid: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );

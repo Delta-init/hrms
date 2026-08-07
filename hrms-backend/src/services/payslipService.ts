@@ -1,6 +1,7 @@
 import { Payslip } from "../models/Payslip.js";
 import { Employee } from "../models/Employee.js";
 import { Attendance } from "../models/Attendance.js";
+import { Holiday } from "../models/Holiday.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/payslipValidation.js";
 import type { PaginationQuery, IEmployee } from "../types/index.js";
@@ -64,6 +65,34 @@ const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || labe
  * Capped at gross: a month with more unpaid days than the 30-day divisor
  * assumes would otherwise deduct more than was earned.
  */
+/** Local calendar day of an instant, as YYYY-MM-DD. */
+function dayKey(date: Date | string, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(date));
+}
+
+/** Every local day a leave request covers, clipped to the month. */
+function dayRange(from: Date, to: Date, start: Date, end: Date, tz: string): string[] {
+  const a = new Date(Math.max(new Date(from).getTime(), start.getTime()));
+  const b = new Date(Math.min(new Date(to).getTime(), end.getTime() - 1));
+  const keys: string[] = [];
+  const cur = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate()));
+  const last = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate()));
+  while (cur <= last) { keys.push(dayKey(cur, tz)); cur.setUTCDate(cur.getUTCDate() + 1); }
+  return keys;
+}
+
+/** The month's working days as YYYY-MM-DD keys. */
+function workingDayKeys(month: string, workDays?: number[]): string[] {
+  const [y, m] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const keys: string[] = [];
+  for (let d = 1; d <= days; d++) {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    if (!workDays?.length || workDays.includes(dt.getUTCDay())) keys.push(dt.toISOString().slice(0, 10));
+  }
+  return keys;
+}
+
 /** Days in `month` that fall on the schedule's working weekdays. */
 function countWorkingDays(month: string, workDays?: number[]): number {
   const [y, m] = month.split("-").map(Number);
@@ -378,13 +407,19 @@ export class PayslipService {
       autoDeductions: oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
       workingDays: 0,
       paidDays: 0,
+      recordedDays: 0,
+      unrecordedDays: 0,
     };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
 
-    const [att, unpaid] = await Promise.all([
+    const [att, unpaid, anyLeave, holidays] = await Promise.all([
       Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
       LeaveRequest.find({ user: userId, type: "unpaid", status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("days startDate endDate").lean(),
+      // Any approved leave counts as accounted for, paid or not — the day is
+      // explained, which is what the coverage check is asking about.
+      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("startDate endDate").lean(),
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date").lean(),
     ]);
 
     // Build day-level sets so a day that is both absent and on unpaid leave
@@ -420,6 +455,24 @@ export class PayslipService {
     // of the month counts, which is the honest answer when nobody has said
     // which days this person is expected to work.
     base.workingDays = countWorkingDays(month, workDays);
+
+    // Working days nothing accounts for — no attendance, no approved leave, no
+    // holiday. A payslip is only as good as its attendance coverage, and one
+    // record in a 31-day month should not read the same as a full one.
+    const accounted = new Set<string>();
+    for (const a of att) accounted.add(dayKey(a.date, a.timeZone || tz));
+    for (const h of holidays) accounted.add(dayKey(h.date, tz));
+    for (const l of anyLeave) for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) accounted.add(k);
+
+    const workingKeys = workingDayKeys(month, workDays);
+    base.unrecordedDays = workingKeys.filter((k) => !accounted.has(k)).length;
+    base.recordedDays = base.workingDays - base.unrecordedDays;
+
+    // Only docked when the organization has said attendance is mandatory.
+    if (penaltyPolicy.unrecordedDaysUnpaid && base.unrecordedDays > 0) {
+      base.lopDays = Math.round((base.lopDays + base.unrecordedDays) * 100) / 100;
+    }
+
     base.paidDays = Math.max(0, Math.round((base.workingDays - base.lopDays) * 100) / 100);
     return base;
   }

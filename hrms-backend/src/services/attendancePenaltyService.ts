@@ -3,13 +3,20 @@ import type { UpsertAttendancePenaltyPolicyInput } from "../validations/attendan
 import type { IAttendancePenaltyPolicy } from "../types/index.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 
-const DEFAULTS = { enabled: false, graceLates: 3, lateBlockSize: 3 };
+const DEFAULTS = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false };
 
 /** The org's late-penalty policy, or sane defaults (disabled) if never configured. */
-export async function getAttendancePenaltyPolicy(): Promise<Pick<IAttendancePenaltyPolicy, "enabled" | "graceLates" | "lateBlockSize">> {
+export async function getAttendancePenaltyPolicy(): Promise<
+  Pick<IAttendancePenaltyPolicy, "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid">
+> {
   const record = await AttendancePenaltyPolicy.findOne(scoped({})).lean();
   if (!record) return DEFAULTS;
-  return { enabled: record.enabled, graceLates: record.graceLates, lateBlockSize: record.lateBlockSize };
+  return {
+    enabled: record.enabled,
+    graceLates: record.graceLates,
+    lateBlockSize: record.lateBlockSize,
+    unrecordedDaysUnpaid: record.unrecordedDaysUnpaid ?? false,
+  };
 }
 
 /** Half-days of penalty LOP for a month with `lateCount` late arrivals under `policy`. */

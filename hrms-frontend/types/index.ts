@@ -689,6 +689,9 @@ export interface PayslipSummary {
   /** Scheduled working days in the month, and those left after unpaid days. */
   workingDays?: number;
   paidDays?: number;
+  /** Working days with attendance, leave or a holiday — and those with none. */
+  recordedDays?: number;
+  unrecordedDays?: number;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────

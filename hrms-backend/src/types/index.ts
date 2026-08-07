@@ -655,6 +655,8 @@ export interface IAttendancePenaltyPolicy extends Document {
   enabled: boolean;
   graceLates: number;
   lateBlockSize: number;
+  /** A working day with no attendance and no leave counts as unpaid. */
+  unrecordedDaysUnpaid: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

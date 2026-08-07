@@ -16,7 +16,7 @@ interface Props {
   canEdit: boolean;
 }
 
-const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3 };
+const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false };
 
 export function AttendancePenaltyCard({ canEdit }: Props) {
   const { data: policy, isLoading } = useAttendancePenaltyPolicy();
@@ -34,6 +34,7 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
   const enabled = watch("enabled");
   const graceLates = watch("graceLates");
   const lateBlockSize = watch("lateBlockSize");
+  const unrecordedUnpaid = watch("unrecordedDaysUnpaid");
 
   const onSubmit = (data: AttendancePenaltyFormValues) => update(data);
 
@@ -72,6 +73,27 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
             {errors.lateBlockSize && <p className="text-xs text-destructive">{errors.lateBlockSize.message}</p>}
           </div>
         </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div className="pr-3">
+            <p className="text-sm font-medium">Days with no attendance are unpaid</p>
+            <p className="text-[11px] text-muted-foreground">
+              A working day with no attendance record, no approved leave and no holiday against it.
+              Leave this off unless attendance is captured every day — a gap in the data usually means
+              nobody ran attendance, not that the person stayed away.
+            </p>
+          </div>
+          <Controller name="unrecordedDaysUnpaid" control={control} render={({ field }) => (
+            <Switch checked={field.value} onCheckedChange={field.onChange} disabled={!canEdit} />
+          )} />
+        </div>
+
+        {unrecordedUnpaid && (
+          <p className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+            Every unaccounted working day will now reduce pay. Make sure attendance is complete before
+            each payroll run, or people will be docked for days nobody recorded.
+          </p>
+        )}
 
         <p className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
           {enabled
