@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import api from "@/lib/axios";
 import { toast } from "@/lib/toast";
-import { setActiveOrg } from "@/lib/activeOrg";
 import type { AuthUser, HrmsModule, PermissionAction } from "@/types";
 
 /**
@@ -53,7 +52,9 @@ export function useLogout() {
   const queryClient = useQueryClient();
   return useCallback(async () => {
     queryClient.clear();
-    setActiveOrg(null); // don't carry a Super Admin's org selection into the next login
+    // The org selection is deliberately left in place — it is stored against
+    // this user and restored when they sign back in. Signing in as anyone else
+    // ignores it, so nothing carries across between people.
     toast.success("Logged out successfully");
     await signOut({ callbackUrl: "/login" });
   }, [queryClient]);

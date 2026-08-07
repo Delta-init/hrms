@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { Building, Check, ChevronsUpDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllOrganizations } from "@/hooks/useOrganizations";
-import { getActiveOrg, setActiveOrg } from "@/lib/activeOrg";
+import { getActiveOrg, getActiveOrgFor, setActiveOrg } from "@/lib/activeOrg";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { OrganizationSimple } from "@/types";
@@ -13,19 +13,22 @@ export function OrgSwitcher() {
   const isSuperAdmin = !!(user?.role?.isSystemRole && user.role.roleName === "Super Admin");
   const { data: orgs = [] } = useAllOrganizations(isSuperAdmin);
 
-  // Ensure a Super Admin always has an active org selected (default to first).
+  // Restore this user's last organization, falling back to the first one. A
+  // selection left by somebody else on the same browser is not adopted.
   useEffect(() => {
     if (!isSuperAdmin || orgs.length === 0) return;
-    const current = getActiveOrg();
-    if (!current || !orgs.some((o) => o._id === current)) {
-      setActiveOrg(orgs[0]._id);
-      window.location.reload();
-    }
-  }, [isSuperAdmin, orgs]);
+    const mine = getActiveOrgFor(user?._id);
+    const target = mine && orgs.some((o) => o._id === mine) ? mine : orgs[0]._id;
+    const changed = getActiveOrg() !== target;
+    // Always re-stamp: an entry written before this was owned has no user on
+    // it, and claiming it here is what makes the next sign-in restore it.
+    setActiveOrg(target, user?._id);
+    if (changed) window.location.reload();
+  }, [isSuperAdmin, orgs, user?._id]);
 
   const switchTo = (o: OrganizationSimple) => {
     if (getActiveOrg() === o._id) return;
-    setActiveOrg(o._id);
+    setActiveOrg(o._id, user?._id);
     window.location.reload();
   };
 
