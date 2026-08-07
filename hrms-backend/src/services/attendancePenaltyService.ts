@@ -3,11 +3,11 @@ import type { UpsertAttendancePenaltyPolicyInput } from "../validations/attendan
 import type { IAttendancePenaltyPolicy } from "../types/index.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 
-const DEFAULTS = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false };
+const DEFAULTS = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, defaultRegularizationStatus: "present" as const };
 
 /** The org's late-penalty policy, or sane defaults (disabled) if never configured. */
 export async function getAttendancePenaltyPolicy(): Promise<
-  Pick<IAttendancePenaltyPolicy, "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid">
+  Pick<IAttendancePenaltyPolicy, "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid" | "defaultRegularizationStatus">
 > {
   const record = await AttendancePenaltyPolicy.findOne(scoped({})).lean();
   if (!record) return DEFAULTS;
@@ -16,6 +16,7 @@ export async function getAttendancePenaltyPolicy(): Promise<
     graceLates: record.graceLates,
     lateBlockSize: record.lateBlockSize,
     unrecordedDaysUnpaid: record.unrecordedDaysUnpaid ?? false,
+    defaultRegularizationStatus: record.defaultRegularizationStatus ?? "present",
   };
 }
 

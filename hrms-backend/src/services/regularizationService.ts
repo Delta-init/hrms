@@ -1,4 +1,5 @@
 import { Regularization } from "../models/Regularization.js";
+import { getAttendancePenaltyPolicy } from "./attendancePenaltyService.js";
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
 import type { CreateRegularizationInput, UpdateRegularizationInput, ReviewRegularizationInput } from "../validations/regularizationValidation.js";
@@ -27,7 +28,16 @@ export class RegularizationService {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
     const workflow = await beginWorkflowState("regularization");
-    const reg = await Regularization.create({ ...input, organization: getOrgId(), status: input.status ?? "pending", ...workflow });
+    // The form sends a choice; a request raised without one takes the
+    // organization's default rather than a value fixed in the code.
+    const policy = await getAttendancePenaltyPolicy();
+    const reg = await Regularization.create({
+      ...input,
+      resultingStatus: input.resultingStatus ?? policy.defaultRegularizationStatus ?? "present",
+      organization: getOrgId(),
+      status: input.status ?? "pending",
+      ...workflow,
+    });
     return Regularization.findById(reg._id).populate(POP);
   }
 

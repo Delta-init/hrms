@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
@@ -16,6 +16,7 @@ import { UserSelect } from "@/components/pickers";
 import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/validations/regularizationSchema";
 import { useCreateRegularization } from "@/hooks/useRegularizations";
 import { useUser } from "@/hooks/useUsers";
+import { useAttendancePenaltyPolicy } from "@/hooks/useAttendancePenaltyPolicy";
 import { zonedInputToUtcIso } from "@/lib/timezone";
 import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType, REGULARIZATION_OUTCOMES, ATTENDANCE_STATUS_LABELS } from "@/types";
 
@@ -28,8 +29,12 @@ interface Props {
 export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props) {
   const selfMode = !!lockToUserId;
   const { mutate: create, isPending } = useCreateRegularization();
+  // Which status a correction proposes is an organization setting, not a
+  // constant — open the form on whatever they chose.
+  const { data: policy } = useAttendancePenaltyPolicy(open);
+  const defaultStatus = policy?.defaultRegularizationStatus ?? "present";
 
-  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<RegularizationFormValues>({
+  const { register, handleSubmit, control, reset, setValue, watch, formState: { errors, touchedFields } } = useForm<RegularizationFormValues>({
     resolver: zodResolver(regularizationFormSchema),
     defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: "present", requestedCheckIn: "", requestedCheckOut: "", reason: "" },
   });
@@ -43,9 +48,20 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
     if (ws && typeof ws === "object" && ws.timeZone) setValue("timeZone", ws.timeZone);
   }, [selectedUser, setValue]);
 
+  // Read through a ref so a late-arriving policy doesn't re-run the reset and
+  // wipe whatever has been typed in the meantime.
+  const defaultStatusRef = useRef(defaultStatus);
+  defaultStatusRef.current = defaultStatus;
+
   useEffect(() => {
-    if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: "present", requestedCheckIn: "", requestedCheckOut: "", reason: "" });
+    if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: defaultStatusRef.current, requestedCheckIn: "", requestedCheckOut: "", reason: "" });
   }, [open, reset, lockToUserId]);
+
+  // If it arrives after the form opened, move only that field, and only while
+  // nobody has picked a status of their own.
+  useEffect(() => {
+    if (open && !touchedFields.resultingStatus) setValue("resultingStatus", defaultStatus);
+  }, [open, defaultStatus, setValue, touchedFields.resultingStatus]);
 
   const resultingStatus = watch("resultingStatus");
 
@@ -55,6 +71,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
       date: data.date,
       timeZone: data.timeZone,
       type: data.type,
+      resultingStatus: data.resultingStatus,
       requestedCheckIn: zonedInputToUtcIso(data.requestedCheckIn, data.timeZone),
       requestedCheckOut: zonedInputToUtcIso(data.requestedCheckOut, data.timeZone),
       reason: data.reason || undefined,

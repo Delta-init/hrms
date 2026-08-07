@@ -179,6 +179,9 @@ export interface AttendancePenaltyPolicy {
   enabled: boolean;
   graceLates: number;
   lateBlockSize: number;
+  unrecordedDaysUnpaid: boolean;
+  /** What a new regularization proposes before anyone changes it. */
+  defaultRegularizationStatus: RegularizationOutcome;
 }
 
 // ─── Department ──────────────────────────────────────────────────────────────
@@ -944,6 +947,15 @@ export interface AttendanceCalendarDay {
   lateMinutes?: number;
   note?: string;
   timeZone?: string | null;
+  /** Approved leave covering this day, shown even when attendance was recorded. */
+  leave?: { type: LeaveType; label: string; paid: boolean };
+  /** A correction raised for this day, pending or already applied. */
+  regularization?: {
+    _id: string;
+    type: RegularizationType;
+    status: RegularizationStatus;
+    resultingStatus?: RegularizationOutcome;
+  };
 }
 export interface AttendanceCalendarEmployee {
   employee: { _id: string; name: string; employeeCode?: string; designation?: string };

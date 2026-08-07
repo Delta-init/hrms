@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { REGULARIZATION_OUTCOMES, ATTENDANCE_STATUS_LABELS } from "@/types";
 import { attendancePenaltyFormSchema, type AttendancePenaltyFormValues } from "@/lib/validations/attendancePenaltySchema";
 import { useAttendancePenaltyPolicy, useUpdateAttendancePenaltyPolicy } from "@/hooks/useAttendancePenaltyPolicy";
 
@@ -16,7 +18,7 @@ interface Props {
   canEdit: boolean;
 }
 
-const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false };
+const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, defaultRegularizationStatus: "present" };
 
 export function AttendancePenaltyCard({ canEdit }: Props) {
   const { data: policy, isLoading } = useAttendancePenaltyPolicy();
@@ -94,6 +96,24 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
             each payroll run, or people will be docked for days nobody recorded.
           </p>
         )}
+
+        <div className="space-y-1.5 border-t border-border pt-4">
+          <Label>A correction marks the day as</Label>
+          <Controller name="defaultRegularizationStatus" control={control} render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange} disabled={!canEdit}>
+              <SelectTrigger className="sm:w-64"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {REGULARIZATION_OUTCOMES.map((o) => (
+                  <SelectItem key={o} value={o}>{ATTENDANCE_STATUS_LABELS[o]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )} />
+          <p className="text-[11px] text-muted-foreground">
+            What a regularization request starts on. Whoever raises one can still pick a different
+            status for that day — this only decides where the form opens.
+          </p>
+        </div>
 
         <p className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
           {enabled

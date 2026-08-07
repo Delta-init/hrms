@@ -19,6 +19,19 @@ const attendancePenaltyPolicySchema = new Schema<IAttendancePenaltyPolicy>(
      * Organizations that do treat attendance as mandatory can turn it on.
      */
     unrecordedDaysUnpaid: { type: Boolean, default: false },
+    /**
+     * What a regularization proposes by default.
+     *
+     * Most organizations correct a day to "present", but one that tracks
+     * on-site work separately may want every correction to start as work from
+     * home. The request still carries its own choice; this only decides what
+     * the form opens with.
+     */
+    defaultRegularizationStatus: {
+      type: String,
+      enum: ["present", "half_day", "wfh"],
+      default: "present",
+    },
   },
   { timestamps: true, versionKey: false }
 );

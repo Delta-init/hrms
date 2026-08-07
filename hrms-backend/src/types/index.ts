@@ -664,6 +664,8 @@ export interface IAttendancePenaltyPolicy extends Document {
   lateBlockSize: number;
   /** A working day with no attendance and no leave counts as unpaid. */
   unrecordedDaysUnpaid: boolean;
+  /** What a new regularization proposes before anyone changes it. */
+  defaultRegularizationStatus: RegularizationOutcome;
   createdAt: Date;
   updatedAt: Date;
 }
