@@ -433,7 +433,7 @@ export class PayslipService {
       // Read-only: the payslip re-derives all of these, so sending them back
       // with the form would count them twice.
       autoEarnings: [...oneTime.earnings, ...reimb.earnings, ...ot.earnings],
-      autoDeductions: oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
+      autoDeductions: [...loanDeductions, ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount }))],
       workingDays: 0,
       paidDays: 0,
       recordedDays: 0,
@@ -503,6 +503,16 @@ export class PayslipService {
     }
 
     base.paidDays = Math.max(0, Math.round((base.workingDays - base.lopDays) * 100) / 100);
+
+    // Everything the payslip will deduct on its own, now the attendance figures
+    // are final. The form has no rows for these — they are derived on create —
+    // so without them the preview quietly under-reported the deductions and
+    // promised a net pay the payslip was never going to produce.
+    base.autoDeductions = [
+      ...attendanceDeductions(base, base.salary, month),
+      ...loanDeductions,
+      ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
+    ];
     return base;
   }
 
