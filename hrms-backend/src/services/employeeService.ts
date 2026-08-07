@@ -273,7 +273,21 @@ export class EmployeeService {
   async createLogin(id: string, input: CreateLoginInput) {
     const employee = await Employee.findOne(scoped({ _id: id }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
-    if (employee.user) throw Object.assign(new Error("This employee already has a login account"), { statusCode: 409 });
+
+    // A reference here doesn't prove the account survives. Deleting a login used
+    // to leave the employee pointing at nothing, and this check — reading the
+    // raw id, where every other read populates it to null — then refused to
+    // issue a replacement, locking the employee out for good. Confirm the
+    // account is real before refusing, and release the link when it isn't.
+    // Unscoped on purpose: an account in another tenant still exists, and
+    // issuing a second login for it would be wrong.
+    if (employee.user) {
+      const linked = await User.exists({ _id: employee.user });
+      if (linked) {
+        throw Object.assign(new Error("This employee already has a login account"), { statusCode: 409 });
+      }
+      employee.user = null;
+    }
 
     const email = (input.email ?? employee.email ?? "").toLowerCase();
     if (!email) throw Object.assign(new Error("An email is required to create a login"), { statusCode: 400 });

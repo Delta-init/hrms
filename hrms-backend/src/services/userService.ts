@@ -1,5 +1,6 @@
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
+import { Employee } from "../models/Employee.js";
 import { assertRoleAssignable } from "./roleService.js";
 import type { CreateUserInput, UpdateUserInput } from "../validations/userValidation.js";
 import type { PaginationQuery } from "../types/index.js";
@@ -135,6 +136,14 @@ export class UserService {
     }
 
     await User.findOneAndDelete(scoped({ _id: id }));
+
+    // Release any employee that pointed at this login. Left behind, the
+    // reference is worse than useless: createLogin reads the raw field, sees an
+    // id and refuses with "already has a login account", while every read
+    // populates the same field to null and offers to create one — so the
+    // employee is shown the only action that would help and denied it.
+    await Employee.updateMany(scoped({ user: id }), { $set: { user: null } });
+
     return { message: "User deleted successfully" };
   }
 }

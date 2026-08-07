@@ -7,6 +7,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "seed": "bun src/seeds/superAdmin.ts",
+    "repair:logins": "bun src/seeds/repairEmployeeLogins.ts",
     "build": "bun build src/index.ts --outdir dist --target bun"
   },
   "dependencies": {
