@@ -9,8 +9,12 @@ export const createRegularizationSchema = z
     date: z.coerce.date({ errorMap: () => ({ message: "Valid date is required" }) }),
     timeZone: z.string().min(1).default("Asia/Dubai"),
     type: typeEnum,
-    /** What the day is marked as once approved. */
-    resultingStatus: z.enum(["present", "half_day", "wfh"]).default("present"),
+    /**
+     * What the day is marked as once approved. Deliberately optional rather
+     * than defaulted here — a default would fill the field in before the
+     * service sees it, and the organization's own default could never apply.
+     */
+    resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
     requestedCheckIn: z.coerce.date().optional().nullable(),
     requestedCheckOut: z.coerce.date().optional().nullable(),
     reason: z.string().max(500).optional(),
@@ -38,6 +42,12 @@ export const updateRegularizationSchema = z.object({
 export const reviewRegularizationSchema = z.object({
   status: z.enum(["approved", "rejected"]),
   reviewNote: z.string().max(500).optional().nullable(),
+  /**
+   * Lets the approver correct what the day is marked as at the moment they
+   * approve it — they are the last person to look at the request, and without
+   * this a wrong status means rejecting it and asking for a resubmission.
+   */
+  resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
 });
 
 export type CreateRegularizationInput = z.infer<typeof createRegularizationSchema>;

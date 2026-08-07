@@ -104,6 +104,15 @@ export class RegularizationService {
   async update(id: string, input: UpdateRegularizationInput) {
     const record = await Regularization.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Regularization not found"), { statusCode: 404 });
+    // An approved request has already written times and a status into the
+    // Attendance record. Editing it here would leave the two disagreeing
+    // without touching the day itself, so the correction has to start again.
+    if (record.status !== "pending") {
+      throw Object.assign(
+        new Error(`This request has already been ${record.status} and can no longer be edited`),
+        { statusCode: 400 }
+      );
+    }
 
     if (input.date !== undefined) record.date = input.date;
     if (input.timeZone !== undefined) record.timeZone = input.timeZone;
@@ -131,6 +140,10 @@ export class RegularizationService {
     assertNotSelfReview(record.user, reviewerId);
 
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
+    // The approver may correct the day's outcome as they approve. Recorded on
+    // the request itself so the trail shows what was actually applied, not
+    // what was originally asked for.
+    if (input.resultingStatus !== undefined) record.resultingStatus = input.resultingStatus;
 
     const outcome = resolveReviewOutcome(
       record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
