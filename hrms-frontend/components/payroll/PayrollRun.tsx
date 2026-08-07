@@ -145,7 +145,16 @@ function Row({ r, canEdit, canGenerate, onAdd, onEdit }: { r: PayrollRunRow; can
         {r.structureName && <p className="text-[11px] font-normal text-muted-foreground" title="Salary structure in force">{r.structureName}</p>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
-        {r.lopAmount > 0 && <div>-{money(r.lopAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.lopDays}d LOP)</span></div>}
+        {/* Out of the month's working days, not its calendar days — a bare
+            count left it ambiguous which one it meant. */}
+        {r.lopAmount > 0 && (
+          <div>
+            -{money(r.lopAmount, r.currency)}
+            <span className="ml-1 text-[11px] text-muted-foreground">
+              ({r.lopDays}{r.workingDays ? ` of ${r.workingDays}` : ""} working day{r.lopDays === 1 ? "" : "s"})
+            </span>
+          </div>
+        )}
         {r.latePenaltyAmount > 0 && <div title="Late-arrival penalty">-{money(r.latePenaltyAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.latePenaltyDays}d late)</span></div>}
         {r.lopAmount === 0 && r.latePenaltyAmount === 0 && <span className="text-muted-foreground">—</span>}
       </td>

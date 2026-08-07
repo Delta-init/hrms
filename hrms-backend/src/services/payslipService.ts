@@ -620,6 +620,9 @@ export class PayslipService {
         structureName: s.structureName ?? null,
         structureDeductions: s.structureDeductions ?? [],
         lopDays: slip ? (slip.lopDays ?? s.lopDays) : s.lopDays,
+        // Reported so the row can say what the lost days are out of. A bare
+        // count gave no clue whether it was calendar days or working ones.
+        workingDays: slip ? (slip.workingDays || s.workingDays) : s.workingDays,
         latePenaltyDays: s.latePenaltyDays,
         oneTimePayments,
         oneTimeDeductions,

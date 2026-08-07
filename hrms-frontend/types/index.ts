@@ -740,6 +740,8 @@ export interface PayrollRunRow {
   /** Recurring deduction lines from the salary structure. */
   structureDeductions: PayComponentLine[];
   lopDays: number;
+  /** Scheduled working days in the month — what lopDays is out of. */
+  workingDays?: number;
   lopAmount: number;
   latePenaltyDays: number;
   latePenaltyAmount: number;
