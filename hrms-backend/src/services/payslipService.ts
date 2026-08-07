@@ -47,6 +47,51 @@ interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/** Labels the attendance deductions carry, so a resubmitted form can't double them. */
+export const LOP_PREFIX = "Loss of Pay";
+export const PENALTY_PREFIX = "Late Penalty";
+const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
+
+/**
+ * Attendance-driven deductions for a month.
+ *
+ * Derived here rather than by the form. Loss of pay and late penalties used to
+ * reach a payslip only if someone pressed "Prefill", so a payslip generated
+ * without that button silently paid a full month to someone who had not worked
+ * one — while loans and reimbursements applied themselves. Same rule for all of
+ * them now.
+ *
+ * Capped at gross: a month with more unpaid days than the 30-day divisor
+ * assumes would otherwise deduct more than was earned.
+ */
+/** Days in `month` that fall on the schedule's working weekdays. */
+function countWorkingDays(month: string, workDays?: number[]): number {
+  const [y, m] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  if (!workDays?.length) return days;
+  let count = 0;
+  for (let d = 1; d <= days; d++) if (workDays.includes(new Date(Date.UTC(y, m - 1, d)).getUTCDay())) count++;
+  return count;
+}
+
+function attendanceDeductions(
+  summary: { lopDays: number; latePenaltyDays: number },
+  gross: number
+): Line[] {
+  if (gross <= 0) return [];
+  const perDay = r2(gross / 30);
+  const lines: Line[] = [];
+  if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
+  if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
+
+  const total = lines.reduce((a, l) => a + l.amount, 0);
+  if (total > gross && total > 0) {
+    const scale = gross / total;
+    for (const l of lines) l.amount = r2(l.amount * scale);
+  }
+  return lines;
+}
+
 /**
  * Fit the recoverable deductions into what the month can actually pay.
  *
@@ -147,14 +192,26 @@ export class PayslipService {
     const ot = await computeOvertime(input.employee, input.month);
     const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
 
-    const alloc = allocateRecoveries(earnings, userDeductions, oneTime.deductions, loanLines, repayments);
-    const deductions = [...userDeductions, ...alloc.lines];
+    // Attendance applies itself, like loans and reimbursements do. Any lines the
+    // form sent are dropped first so a stale prefill can't double them.
+    const att = await this.summary(input.employee, input.month);
+    const grossEarnings = r2(earnings.reduce((a, l) => a + (l.amount || 0), 0));
+    const attLines = attendanceDeductions(att, grossEarnings);
+    const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
+
+    const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
+    const deductions = [...manual, ...alloc.lines];
 
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
       ...input,
       earnings,
       deductions,
+      // The attendance basis, stored rather than left inside a line label so
+      // the figures can be checked and recomputed later.
+      workingDays: input.workingDays ?? att.workingDays,
+      paidDays: input.paidDays ?? att.paidDays,
+      lopDays: input.lopDays ?? att.lopDays,
       recoveries: alloc.recoveries,
       deferred: alloc.deferred,
       organization: getOrgId(),
@@ -228,8 +285,12 @@ export class PayslipService {
       const month = input.month ?? record.month;
       const employeeId = String(record.employee);
       const earnings = (input.earnings ?? record.earnings) as unknown as Line[];
-      const manual = ((input.deductions ?? record.deductions) as unknown as Line[])
-        .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
+      const typed = ((input.deductions ?? record.deductions) as unknown as Line[])
+        .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
+
+      const att = await this.summary(employeeId, month);
+      const grossEarnings = r2(earnings.reduce((a, l) => a + (l.amount || 0), 0));
+      const manual = [...typed, ...attendanceDeductions(att, grossEarnings)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -237,6 +298,9 @@ export class PayslipService {
 
       record.earnings = earnings as never;
       record.deductions = [...manual, ...alloc.lines] as never;
+      record.workingDays = att.workingDays;
+      record.paidDays = att.paidDays;
+      record.lopDays = att.lopDays;
       record.recoveries = alloc.recoveries as never;
       record.deferred = alloc.deferred;
       await applyRecoveries(alloc, String(record._id));
@@ -272,13 +336,14 @@ export class PayslipService {
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
   async summary(employeeId: string, month: string) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone" } })
-      .lean<IEmployee & { user?: { _id?: unknown; workSchedule?: { timeZone?: string } } | null }>();
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
+      .lean<IEmployee & { user?: { _id?: unknown; workSchedule?: { timeZone?: string; workDays?: number[] } } | null }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
     // Bound the month in the employee's timezone so local days at the month
     // edges bucket correctly (attendance is stored as local-midnight-UTC).
     const tz = emp.user?.workSchedule?.timeZone || "Asia/Dubai";
+    const workDays = emp.user?.workSchedule?.workDays;
     const { start, end } = monthBoundsTz(month, tz);
 
     // Active-loan instalments that will be deducted from this payslip.
@@ -311,6 +376,8 @@ export class PayslipService {
       // with the form would count them twice.
       autoEarnings: [...oneTime.earnings, ...reimb.earnings, ...ot.earnings],
       autoDeductions: oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
+      workingDays: 0,
+      paidDays: 0,
     };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
@@ -348,6 +415,12 @@ export class PayslipService {
     // separate half-day-equivalent deduction (kept apart from absence-driven LOP).
     const penaltyPolicy = await getAttendancePenaltyPolicy();
     base.latePenaltyDays = computeLatePenaltyDays(base.late, penaltyPolicy);
+
+    // Working days come from the schedule's week pattern; without one every day
+    // of the month counts, which is the honest answer when nobody has said
+    // which days this person is expected to work.
+    base.workingDays = countWorkingDays(month, workDays);
+    base.paidDays = Math.max(0, Math.round((base.workingDays - base.lopDays) * 100) / 100);
     return base;
   }
 

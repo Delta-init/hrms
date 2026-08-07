@@ -686,6 +686,9 @@ export interface PayslipSummary {
    */
   autoEarnings?: PayComponentLine[];
   autoDeductions?: PayComponentLine[];
+  /** Scheduled working days in the month, and those left after unpaid days. */
+  workingDays?: number;
+  paidDays?: number;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────

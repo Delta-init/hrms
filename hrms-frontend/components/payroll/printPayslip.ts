@@ -42,6 +42,9 @@ export function printPayslip(p: Payslip) {
           <div><div class="k">Employee Code</div><div class="v">${e(emp?.employeeCode)}</div></div>
           <div><div class="k">Designation</div><div class="v">${emp?.designation ? e(emp.designation) : "—"}</div></div>
           <div><div class="k">Pay Period</div><div class="v">${period}</div></div>
+          ${p.workingDays ? `<div><div class="k">Working Days</div><div class="v">${p.workingDays}</div></div>` : ""}
+          ${p.workingDays ? `<div><div class="k">Paid Days</div><div class="v">${p.paidDays ?? p.workingDays}</div></div>` : ""}
+          ${p.lopDays ? `<div><div class="k">Loss of Pay</div><div class="v">${p.lopDays} day${p.lopDays === 1 ? "" : "s"}</div></div>` : ""}
         </div>
         <div class="cols">
           <div>

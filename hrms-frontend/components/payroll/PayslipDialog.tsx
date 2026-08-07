@@ -97,17 +97,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
       if (first) setValue(`earnings.0.label`, "Basic"), setValue(`earnings.0.amount`, summary.salary);
       else earnings.append({ label: "Basic", amount: summary.salary });
     }
-    if (summary.lopDays > 0 && summary.salary > 0) {
-      const perDay = Math.round((summary.salary / 30) * 100) / 100;
-      const lop = Math.round(perDay * summary.lopDays * 100) / 100;
-      deductions.append({ label: `Loss of Pay (${summary.lopDays}d)`, amount: lop });
-    }
-    if (summary.latePenaltyDays > 0 && summary.salary > 0) {
-      const perDay = Math.round((summary.salary / 30) * 100) / 100;
-      const penalty = Math.round(perDay * summary.latePenaltyDays * 100) / 100;
-      deductions.append({ label: `Late Penalty (${summary.latePenaltyDays}d)`, amount: penalty });
-    }
-    toast.success("Prefilled from attendance");
+    // Loss of pay and late penalties are no longer appended here — the payslip
+    // derives them itself, so adding them would double them.
+    toast.success("Earnings filled from the salary breakup");
   };
 
   const onSubmit = (data: PayslipFormValues) => {
@@ -169,7 +161,7 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
           {!isEditing && !locked && (
             <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={prefill}>
-              <Wand2 className="h-3.5 w-3.5" />Prefill from attendance {summary && summary.lopDays > 0 ? `(LOP ${summary.lopDays}d)` : ""}{summary && summary.latePenaltyDays > 0 ? ` (Penalty ${summary.latePenaltyDays}d)` : ""}
+              <Wand2 className="h-3.5 w-3.5" />Fill earnings from salary
             </Button>
           )}
 
@@ -186,6 +178,19 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
           {/* Totals */}
           <div className="rounded-xl border border-border bg-muted/30 p-4">
+            {!isEditing && summary && (
+              /* The attendance behind the figures. Loss of pay and late
+                 penalties are applied by the payslip itself, so this explains
+                 deduction lines the form never shows as editable. */
+              <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border pb-2 text-xs text-muted-foreground">
+                <span>Working days <span className="font-medium text-foreground">{summary.workingDays ?? "—"}</span></span>
+                <span>Paid <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span></span>
+                <span>Present <span className="font-medium text-foreground">{summary.present}</span></span>
+                {summary.lopDays > 0 && <span className="text-red-600">Loss of pay {summary.lopDays}d</span>}
+                {summary.latePenaltyDays > 0 && <span className="text-amber-600">Late penalty {summary.latePenaltyDays}d</span>}
+                {summary.lopDays === 0 && summary.latePenaltyDays === 0 && <span className="text-emerald-600">No unpaid days</span>}
+              </div>
+            )}
             {(autoEarnings.length > 0 || autoDeductions.length > 0) && (
               <div className="mb-2 space-y-1 border-b border-border pb-2">
                 <p className="text-xs font-medium text-muted-foreground">Added automatically on generate</p>
