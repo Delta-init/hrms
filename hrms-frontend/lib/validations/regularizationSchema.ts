@@ -6,6 +6,7 @@ export const regularizationFormSchema = z
     date: z.string().min(1, "Date is required"),
     timeZone: z.string().min(1, "Time zone is required"),
     type: z.enum(["missing_checkin", "missing_checkout", "wrong_time", "absent_correction"]),
+    resultingStatus: z.enum(["present", "half_day", "wfh"]),
     requestedCheckIn: z.string().optional(),
     requestedCheckOut: z.string().optional(),
     reason: z.string().max(500).optional(),

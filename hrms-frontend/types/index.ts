@@ -627,6 +627,10 @@ export const TIME_ZONES = [
 ] as const;
 
 // ─── Attendance Regularization ───────────────────────────────────────────────
+/** Attendance statuses a regularization can set on approval. */
+export type RegularizationOutcome = "present" | "half_day" | "wfh";
+export const REGULARIZATION_OUTCOMES: RegularizationOutcome[] = ["present", "half_day", "wfh"];
+
 export type RegularizationType = "missing_checkin" | "missing_checkout" | "wrong_time" | "absent_correction";
 export type RegularizationStatus = "pending" | "approved" | "rejected" | "cancelled";
 
@@ -643,6 +647,8 @@ export interface Regularization extends WorkflowState {
   date: string;
   timeZone: string;
   type: RegularizationType;
+  /** Status the day takes when this is approved. */
+  resultingStatus?: RegularizationOutcome;
   requestedCheckIn?: string | null;
   requestedCheckOut?: string | null;
   reason?: string;

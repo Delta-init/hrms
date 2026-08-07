@@ -67,7 +67,7 @@ export class RegularizationService {
   }
 
   /** On approval, apply the corrected times to the Attendance record for user+date. */
-  private async applyToAttendance(reg: { user: unknown; date: Date; timeZone: string; requestedCheckIn?: Date | null; requestedCheckOut?: Date | null }) {
+  private async applyToAttendance(reg: { user: unknown; date: Date; timeZone: string; resultingStatus?: string; requestedCheckIn?: Date | null; requestedCheckOut?: Date | null }) {
     // Normalize to the local-midnight-UTC convention self-service uses, and match
     // the whole day, so we update the existing record instead of creating a
     // duplicate. Stamp the org so the row is never invisible to scoped reports.
@@ -76,7 +76,7 @@ export class RegularizationService {
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
     let att = await Attendance.findOne(scoped({ user: reg.user, date: { $gte: dayStart, $lt: dayEnd } }));
     if (!att) {
-      att = new Attendance({ organization: getOrgId(), user: reg.user, date: dayStart, timeZone: reg.timeZone, status: "present" });
+      att = new Attendance({ organization: getOrgId(), user: reg.user, date: dayStart, timeZone: reg.timeZone, status: reg.resultingStatus ?? "present" });
     }
     att.timeZone = reg.timeZone;
     if (reg.requestedCheckIn) {
@@ -84,7 +84,9 @@ export class RegularizationService {
     } else if (reg.requestedCheckOut && att.sessions.length > 0) {
       att.sessions[att.sessions.length - 1].checkOut = reg.requestedCheckOut;
     }
-    if (att.status === "absent") att.status = "present";
+    // The approved outcome wins outright. Flipping only absent left a corrected
+    // day still marked late or half-day, which then priced it as lost pay.
+    att.status = (reg.resultingStatus ?? "present") as never;
     await att.save();
   }
 
@@ -96,6 +98,7 @@ export class RegularizationService {
     if (input.date !== undefined) record.date = input.date;
     if (input.timeZone !== undefined) record.timeZone = input.timeZone;
     if (input.type !== undefined) record.type = input.type;
+    if (input.resultingStatus !== undefined) record.resultingStatus = input.resultingStatus;
     if (input.requestedCheckIn !== undefined) record.requestedCheckIn = input.requestedCheckIn;
     if (input.requestedCheckOut !== undefined) record.requestedCheckOut = input.requestedCheckOut;
     if (input.reason !== undefined) record.reason = input.reason ?? undefined;

@@ -13,6 +13,20 @@ const regularizationSchema = new Schema<IRegularization>(
       enum: ["missing_checkin", "missing_checkout", "wrong_time", "absent_correction"],
       required: [true, "Type is required"],
     },
+    /**
+     * What the day becomes once this is approved.
+     *
+     * Approval used to flip absent to present and leave every other status
+     * alone, so a correction could put the right times on a day that stayed
+     * marked half-day or late — and nothing on the form said what the day would
+     * end up as. Stating it up front makes the outcome reviewable rather than
+     * something discovered afterwards on the payslip.
+     */
+    resultingStatus: {
+      type: String,
+      enum: ["present", "half_day", "wfh"],
+      default: "present",
+    },
     requestedCheckIn: { type: Date, default: null },
     requestedCheckOut: { type: Date, default: null },
     reason: { type: String, trim: true, maxlength: [500, "Reason cannot exceed 500 characters"] },

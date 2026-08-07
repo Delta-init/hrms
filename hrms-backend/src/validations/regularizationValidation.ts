@@ -9,6 +9,8 @@ export const createRegularizationSchema = z
     date: z.coerce.date({ errorMap: () => ({ message: "Valid date is required" }) }),
     timeZone: z.string().min(1).default("Asia/Dubai"),
     type: typeEnum,
+    /** What the day is marked as once approved. */
+    resultingStatus: z.enum(["present", "half_day", "wfh"]).default("present"),
     requestedCheckIn: z.coerce.date().optional().nullable(),
     requestedCheckOut: z.coerce.date().optional().nullable(),
     reason: z.string().max(500).optional(),
@@ -22,6 +24,7 @@ export const createRegularizationSchema = z
   });
 
 export const updateRegularizationSchema = z.object({
+  resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
   date: z.coerce.date().optional(),
   timeZone: z.string().min(1).optional(),
   type: typeEnum.optional(),

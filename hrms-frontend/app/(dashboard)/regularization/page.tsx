@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserSelect } from "@/components/pickers";
 import { getInitials, cn } from "@/lib/utils";
 import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
-import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType } from "@/types";
+import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType, ATTENDANCE_STATUS_LABELS } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<RegularizationStatus, string> = {
@@ -101,7 +101,17 @@ export default function RegularizationPage() {
   const columns: DataTableColumn<Regularization>[] = [
     { id: "employee", label: "Employee", alwaysVisible: true, render: (r) => { const name = r.user && typeof r.user === "object" ? r.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; } },
     { id: "date", label: "Date", sortKey: "date", render: (r) => <span className="text-muted-foreground">{fmtDate(r.date, r.timeZone)}</span> },
-    { id: "type", label: "Type", sortKey: "type", render: (r) => REGULARIZATION_TYPE_LABELS[r.type] },
+    {
+      id: "type", label: "Type", sortKey: "type",
+      render: (r) => (
+        <div>
+          <p>{REGULARIZATION_TYPE_LABELS[r.type]}</p>
+          <p className="text-[11px] text-muted-foreground">
+            → marks {ATTENDANCE_STATUS_LABELS[r.resultingStatus ?? "present"]}
+          </p>
+        </div>
+      ),
+    },
     { id: "requested", label: "Requested", render: (r) => <span className="text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></span> },
     {
       id: "status", label: "Status", sortKey: "status",
@@ -159,6 +169,7 @@ export default function RegularizationPage() {
           exportMapper={(r) => ({
             Employee: r.user && typeof r.user === "object" ? r.user.name : "",
             Date: fmtDate(r.date, r.timeZone), Type: REGULARIZATION_TYPE_LABELS[r.type],
+            "Marks as": ATTENDANCE_STATUS_LABELS[r.resultingStatus ?? "present"],
             CheckIn: fmtTime(r.requestedCheckIn, r.timeZone), CheckOut: fmtTime(r.requestedCheckOut, r.timeZone),
             Status: r.status,
           })}

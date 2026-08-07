@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
 import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
-import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus, type LeaveType } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus, type LeaveType, leaveTypeLabel, BUILTIN_LEAVE_TYPES } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<LeaveStatus, string> = {
@@ -67,7 +67,7 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, re
               return (
                 <tr key={l._id} className="hover:bg-muted/30">
                   <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div></td>
-                  <td className="px-5 py-3.5">{LEAVE_TYPE_LABELS[l.type]}</td>
+                  <td className="px-5 py-3.5">{leaveTypeLabel(l.type)}</td>
                   <td className="px-5 py-3.5 text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</td>
                   <td className="px-5 py-3.5 font-medium">{l.days}</td>
                   <td className="px-5 py-3.5">
@@ -152,7 +152,7 @@ export default function LeavePage() {
       id: "employee", label: "Employee", alwaysVisible: true,
       render: (l) => { const name = l.user && typeof l.user === "object" ? l.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; },
     },
-    { id: "type", label: "Type", sortKey: "type", render: (l) => <>{LEAVE_TYPE_LABELS[l.type]}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}</> },
+    { id: "type", label: "Type", sortKey: "type", render: (l) => <>{leaveTypeLabel(l.type)}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}</> },
     { id: "dates", label: "Dates", sortKey: "startDate", render: (l) => <span className="text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</span> },
     { id: "days", label: "Days", sortKey: "days", render: (l) => <span className="font-medium">{l.days}</span> },
     {
@@ -196,7 +196,7 @@ export default function LeavePage() {
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All status</SelectItem>{(["pending", "approved", "rejected", "cancelled"] as LeaveStatus[]).map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent></Select>
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Type</Label>
-        <Select value={query.filters.type ?? ALL} onValueChange={(v) => query.setFilter("type", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All types</SelectItem>{(Object.keys(LEAVE_TYPE_LABELS) as LeaveType[]).map((t) => <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select>
+        <Select value={query.filters.type ?? ALL} onValueChange={(v) => query.setFilter("type", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All types</SelectItem>{BUILTIN_LEAVE_TYPES.map((t) => <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select>
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">From</Label><Input type="date" value={query.filters.dateFrom ?? ""} onChange={(e) => query.setFilter("dateFrom", e.target.value)} className="h-9 w-[150px]" /></div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">To</Label><Input type="date" value={query.filters.dateTo ?? ""} onChange={(e) => query.setFilter("dateTo", e.target.value)} className="h-9 w-[150px]" /></div>
@@ -222,7 +222,7 @@ export default function LeavePage() {
           exportName="leave-requests"
           exportMapper={(l) => ({
             Employee: l.user && typeof l.user === "object" ? l.user.name : "",
-            Type: LEAVE_TYPE_LABELS[l.type], Start: fmtDate(l.startDate, l.timeZone), End: fmtDate(l.endDate, l.timeZone),
+            Type: leaveTypeLabel(l.type), Start: fmtDate(l.startDate, l.timeZone), End: fmtDate(l.endDate, l.timeZone),
             Days: l.days, HalfDay: l.halfDay ? "Yes" : "No", Status: l.status,
             ReviewedBy: typeof l.reviewedBy === "object" && l.reviewedBy ? l.reviewedBy.name : "",
           })}
@@ -277,7 +277,7 @@ export default function LeavePage() {
         isPending={withdrawing}
         onConfirm={() => withdrawTarget && withdrawLeave(withdrawTarget._id, { onSuccess: () => setWithdrawTarget(null) })}
       />
-      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${LEAVE_TYPE_LABELS[review.leave.type]}` : undefined} isPending={reviewing} onConfirm={(note) => review && reviewLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
+      <ReviewDialog open={!!review} onOpenChange={(o) => !o && setReview(null)} action={review?.action ?? "approved"} subject={review ? `${review.leave.user && typeof review.leave.user === "object" ? review.leave.user.name : ""} · ${leaveTypeLabel(review.leave.type)}` : undefined} isPending={reviewing} onConfirm={(note) => review && reviewLeave({ id: review.leave._id, data: { status: review.action, reviewNote: note || undefined } }, { onSuccess: () => setReview(null) })} />
     </div>
   );
 }

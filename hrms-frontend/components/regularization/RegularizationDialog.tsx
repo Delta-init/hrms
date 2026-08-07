@@ -17,7 +17,7 @@ import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/v
 import { useCreateRegularization } from "@/hooks/useRegularizations";
 import { useUser } from "@/hooks/useUsers";
 import { zonedInputToUtcIso } from "@/lib/timezone";
-import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType } from "@/types";
+import { REGULARIZATION_TYPE_LABELS, TIME_ZONES, type RegularizationType, REGULARIZATION_OUTCOMES, ATTENDANCE_STATUS_LABELS } from "@/types";
 
 interface Props {
   open: boolean;
@@ -31,7 +31,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
 
   const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<RegularizationFormValues>({
     resolver: zodResolver(regularizationFormSchema),
-    defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", type: "missing_checkout", requestedCheckIn: "", requestedCheckOut: "", reason: "" },
+    defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: "present", requestedCheckIn: "", requestedCheckOut: "", reason: "" },
   });
 
   // Default the time zone from the picked person's work schedule. Fetched by id
@@ -44,8 +44,10 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
   }, [selectedUser, setValue]);
 
   useEffect(() => {
-    if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", requestedCheckIn: "", requestedCheckOut: "", reason: "" });
+    if (open) reset({ user: lockToUserId ?? "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: "present", requestedCheckIn: "", requestedCheckOut: "", reason: "" });
   }, [open, reset, lockToUserId]);
+
+  const resultingStatus = watch("resultingStatus");
 
   const onSubmit = (data: RegularizationFormValues) => {
     const payload: Record<string, unknown> = {
@@ -103,6 +105,32 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId }: Props
                 </Select>
               )}
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Mark the day as</Label>
+            <Controller
+              name="resultingStatus"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {REGULARIZATION_OUTCOMES.map((o) => (
+                      <SelectItem key={o} value={o}>{ATTENDANCE_STATUS_LABELS[o]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="col-span-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {/* Approval overwrites the day's status outright, so it is worth
+                saying which one before anybody approves it. */}
+            Once approved, this day is marked{" "}
+            <span className="font-medium text-foreground">{ATTENDANCE_STATUS_LABELS[resultingStatus]}</span>
+            {" "}and the corrected times are applied.
           </div>
 
           <div className="space-y-1.5">

@@ -533,6 +533,9 @@ export interface IEmployee extends Document {
 }
 
 // ─── Attendance Regularization ──────────────────────────────────────────────
+/** Attendance statuses a regularization may set. */
+export type RegularizationOutcome = "present" | "half_day" | "wfh";
+
 export type RegularizationType =
   | "missing_checkin"
   | "missing_checkout"
@@ -548,6 +551,8 @@ export interface IRegularization extends Document {
   date: Date;
   timeZone: string;
   type: RegularizationType;
+  /** Status the day takes on approval. */
+  resultingStatus: RegularizationOutcome;
   requestedCheckIn?: Date | null;
   requestedCheckOut?: Date | null;
   reason?: string;

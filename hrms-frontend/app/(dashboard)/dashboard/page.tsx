@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS, type LeaveStatus } from "@/types";
+import { LEAVE_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS, type LeaveStatus, leaveTypeLabel } from "@/types";
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } } };
@@ -180,7 +180,7 @@ function EmployeeDashboard() {
                 <div key={l._id} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarClock className="h-4 w-4" /></div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{LEAVE_TYPE_LABELS[l.type]} · {l.days} day{l.days === 1 ? "" : "s"}</p>
+                    <p className="truncate text-sm font-medium">{leaveTypeLabel(l.type)} · {l.days} day{l.days === 1 ? "" : "s"}</p>
                     <p className="text-xs text-muted-foreground">{fmtDate(l.startDate)} → {fmtDate(l.endDate)}</p>
                   </div>
                   <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium capitalize", leaveStatusStyle[l.status])}>{l.status}</span>
