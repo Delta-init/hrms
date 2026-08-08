@@ -146,8 +146,6 @@ export interface WorkSchedule {
   workDays: number[];
   halfDays: number[];
   graceMinutes: number;
-  /** Leave this schedule grants. Empty = unrestricted. */
-  leavePolicies?: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: string;
   updatedAt: string;
@@ -286,8 +284,9 @@ export interface EmployeeOtherDocument {
 export interface LeaveOptions {
   scheduleName: string | null;
   /** True when no schedule policy applies — every type stays available. */
+  /** Retained for compatibility; always false — nothing is offered without a policy. */
   unrestricted: boolean;
-  options: Array<{ type: LeaveType; label: string; monthlyDays: number; paid: boolean; used: number; remaining: number }>;
+  options: Array<{ type: string; label: string; days: number; period: LeavePeriod; paid: boolean; used: number; remaining: number }>;
 }
 
 export interface DocumentsResponse {
@@ -602,21 +601,37 @@ export interface Holiday {
  */
 export type PolicyLeaveType = Exclude<BuiltinLeaveType, "comp_off">;
 
+export type LeavePeriod = "month" | "year";
+export const LEAVE_PERIOD_LABELS: Record<LeavePeriod, string> = { month: "Every month", year: "Every year" };
+
 export interface LeavePolicy {
   _id: string;
-  type: PolicyLeaveType;
+  /** Open slug — organizations can name leave the built-in set doesn't cover. */
+  type: string;
+  /** Display name for a type the built-in list doesn't cover. */
+  label?: string;
   /** The work schedule this covers; null applies to everyone in the org. */
   workSchedule?: { _id: string; name: string } | string | null;
-  annualDays: number;
+  /** How many days `period` grants. */
+  days: number;
+  period: LeavePeriod;
+  /** Unpaid leave becomes Loss of Pay on the payslip. */
+  paid: boolean;
+  /** Yearly only. */
   accrueMonthly: boolean;
   carryForwardLimit: number;
   createdAt: string;
   updatedAt: string;
 }
 export interface LeaveBalance {
-  type: PolicyLeaveType;
+  type: string;
+  label: string;
   year: number;
-  annualDays: number;
+  period: LeavePeriod;
+  paid: boolean;
+  /** Days the policy grants per its own period. */
+  days: number;
+  /** What the period has granted so far (accrual applied). */
   accrued: number;
   carriedForward: number;
   used: number;

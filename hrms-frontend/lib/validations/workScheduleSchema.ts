@@ -11,19 +11,6 @@ export const workScheduleFormSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).min(1, "Pick at least one work day"),
   halfDays: z.array(z.number().int().min(0).max(6)).default([]),
   graceMinutes: z.coerce.number().min(0).max(240),
-  /** Leave this schedule grants. An empty list places no restriction. */
-  leavePolicies: z.array(z.object({
-    type: z.string().min(1, "Required").max(40).regex(/^[a-z0-9_]+$/, "Lowercase letters, numbers or _"),
-    label: z.string().max(60).optional(),
-    monthlyDays: z.coerce.number().min(0, "Cannot be negative").max(31),
-    paid: z.boolean(),
-  })).default([]).superRefine((rows, ctx) => {
-    const seen = new Set<string>();
-    rows.forEach((r, i) => {
-      if (seen.has(r.type)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [i, "type"], message: "Already listed" });
-      seen.add(r.type);
-    });
-  }),
   status: z.enum(["active", "inactive"]),
 });
 

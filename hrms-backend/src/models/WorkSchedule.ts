@@ -15,25 +15,6 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  * one does not, and that cannot be inferred from the name once an organization
  * has its own idea of whether casual leave is paid.
  */
-const scheduleLeaveSchema = new Schema(
-  {
-    type: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-      maxlength: 40,
-      match: /^[a-z0-9_]+$/,
-    },
-    /** Display name for a type the built-in list doesn't cover. */
-    label: { type: String, trim: true, maxlength: 60 },
-    /** Days granted per month. */
-    monthlyDays: { type: Number, required: true, min: 0, max: 31 },
-    paid: { type: Boolean, default: true },
-  },
-  { _id: false }
-);
-
 const workScheduleSchema = new Schema<IWorkSchedule>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -82,7 +63,6 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
       default: 10,
       min: 0,
     },
-    leavePolicies: { type: [scheduleLeaveSchema], default: [] },
     status: {
       type: String,
       enum: ["active", "inactive"],

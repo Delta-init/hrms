@@ -5,6 +5,7 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
 import { Organization } from "../models/Organization.js";
+import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -28,10 +29,6 @@ interface AttendanceQuery extends PaginationQuery {
   dateTo?: string;
 }
 
-const LEAVE_TYPE_LABELS: Record<string, string> = {
-  annual: "Annual leave", sick: "Sick leave", casual: "Casual leave", unpaid: "Unpaid leave",
-  maternity: "Maternity leave", paternity: "Paternity leave", wfh: "Work from home", comp_off: "Comp-off",
-};
 
 export class AttendanceService {
   private applySessions(doc: { checkIn?: Date | null; checkOut?: Date | null; sessions: unknown }, checkIn?: Date | null, checkOut?: Date | null) {
@@ -261,12 +258,15 @@ export class AttendanceService {
     // either side of midnight the UTC date marks the wrong day.
     const orgTz = await this.orgTimeZone();
     const todayKey = todayInTz(orgTz);
+    // Loaded once for the whole month rather than per employee — a calendar
+    // walks everybody, and a query each would turn one page into dozens.
+    const policyIndex = await leavePolicyIndex();
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = employeeId;
     const employees = await Employee.find(empFilter)
       .select("name employeeCode designation user")
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays leavePolicies timeZone" } })
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays timeZone" } })
       .sort({ name: 1 })
       .lean();
 
@@ -344,11 +344,11 @@ export class AttendanceService {
       const regMap = regsByUser.get(uid) ?? new Map<string, DayReg>();
       // The schedule's own name for a leave type, so a custom one reads
       // properly instead of collapsing into a generic "On leave".
-      const policies = (e.user as { workSchedule?: { leavePolicies?: Array<{ type: string; label?: string; paid: boolean }> } } | null)
-        ?.workSchedule?.leavePolicies ?? [];
+      const scheduleId = (e.user as { workSchedule?: { _id?: unknown } } | null)?.workSchedule?._id;
+      const policies = policyIndex.for(scheduleId ? String(scheduleId) : null);
       const describeLeave = (type: string): DayLeave => {
         const p = policies.find((x) => x.type === type);
-        return { type, label: p?.label?.trim() || LEAVE_TYPE_LABELS[type] || type, paid: p ? p.paid !== false : type !== "unpaid" };
+        return { type, label: p?.label ?? leaveLabel(type), paid: p ? p.paid : type !== "unpaid" };
       };
 
       const days: Record<string, DayEntry> = {};

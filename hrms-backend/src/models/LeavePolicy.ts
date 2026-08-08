@@ -1,25 +1,48 @@
 import mongoose, { Schema } from "mongoose";
 import type { ILeavePolicy } from "../types/index.js";
 
-/** A per-leave-type accrual policy: yearly entitlement, whether it accrues
- *  monthly (pro-rata) or is available in full from the start, and how many
- *  unused days carry into the next year.
+/**
+ * Everything the organization decides about one kind of leave: how much of it
+ * somebody gets, over what period, whether taking it costs pay, and what
+ * happens to what they don't use.
  *
- *  A policy either covers the whole organization or one work schedule. Shift
- *  and office staff rarely earn leave at the same rate, and a single org-wide
- *  number forced them to. */
+ * This used to be two records. The work schedule carried a monthly allowance
+ * and the paid/unpaid flag, while a separate policy carried the yearly
+ * entitlement and carry-forward — so the same question had two answers and
+ * nothing kept them agreeing. They are one record now.
+ *
+ * A policy either covers the whole organization or one work schedule. Shift and
+ * office staff rarely earn leave at the same rate, and a single org-wide number
+ * forced them to.
+ */
 const leavePolicySchema = new Schema<ILeavePolicy>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
+    /**
+     * Open slug rather than a fixed list: an organization can name leave the
+     * built-in set doesn't cover, which is what `label` is for.
+     */
     type: {
       type: String,
-      enum: ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"],
       required: [true, "Leave type is required"],
+      trim: true,
+      lowercase: true,
+      maxlength: 40,
+      match: /^[a-z0-9_]+$/,
     },
+    /** Display name for a type the built-in list doesn't cover. */
+    label: { type: String, trim: true, maxlength: 60 },
     /** The schedule this applies to, or null for everyone in the organization. */
     workSchedule: { type: Schema.Types.ObjectId, ref: "WorkSchedule", default: null, index: true },
-    annualDays: { type: Number, required: [true, "Annual entitlement is required"], min: 0 },
+    /** How many days `period` grants. */
+    days: { type: Number, required: [true, "Entitlement is required"], min: 0, max: 366 },
+    /** Whether `days` is granted each month or each year. */
+    period: { type: String, enum: ["month", "year"], default: "year" },
+    /** Unpaid leave becomes Loss of Pay on the payslip; paid leave does not. */
+    paid: { type: Boolean, default: true },
+    /** Yearly only: pro-rate through the year instead of granting it all upfront. */
     accrueMonthly: { type: Boolean, default: true },
+    /** Yearly only: max unused days carried into the next year (0 = none). */
     carryForwardLimit: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, versionKey: false }

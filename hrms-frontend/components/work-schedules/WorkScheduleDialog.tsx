@@ -1,8 +1,8 @@
 "use client";
 import { useEffect } from "react";
-import { useForm, Controller, useFieldArray } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { workScheduleFormSchema, type WorkScheduleFormValues } from "@/lib/validations/workScheduleSchema";
 import { useCreateWorkSchedule, useUpdateWorkSchedule } from "@/hooks/useWorkSchedules";
 import { Switch } from "@/components/ui/switch";
-import { TIME_ZONES, WEEKDAYS, LEAVE_TYPE_LABELS, type LeaveType, type WorkSchedule, BUILTIN_LEAVE_TYPES } from "@/types";
+import { TIME_ZONES, WEEKDAYS, type WorkSchedule } from "@/types";
 
 interface Props {
   open: boolean;
@@ -34,19 +34,9 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
     defaultValues: {
       name: "", description: "", timeZone: "Asia/Dubai",
       loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10,
-      leavePolicies: [], status: "active",
+      status: "active",
     },
   });
-
-  const leave = useFieldArray({ control, name: "leavePolicies" });
-  const leaveRows = watch("leavePolicies") ?? [];
-  // Only offer types not already listed — one rule per type.
-  const unusedTypes = BUILTIN_LEAVE_TYPES.filter((t) => !leaveRows.some((r) => r.type === t));
-  const isCustom = (t: string) => !BUILTIN_LEAVE_TYPES.includes(t as never);
-
-  /** A name becomes the slug the request and payroll carry. */
-  const slugify = (name: string) =>
-    name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
 
   const workDays = watch("workDays");
   const halfDays = watch("halfDays");
@@ -77,11 +67,10 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
         workDays: schedule.workDays,
         halfDays: schedule.halfDays ?? [],
         graceMinutes: schedule.graceMinutes,
-        leavePolicies: schedule.leavePolicies ?? [],
         status: schedule.status,
       });
     } else {
-      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, leavePolicies: [], status: "active" });
+      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, status: "active" });
     }
   }, [open, schedule, reset]);
 
@@ -188,100 +177,12 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
             <Input id="description" placeholder="Optional" {...register("description")} />
           </div>
 
-          {/* Leave this schedule grants. Empty means no restriction, so an
-              existing schedule keeps behaving as it did until someone sets it. */}
-          <div className="col-span-2 space-y-2 rounded-xl border border-border p-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <Label>Leave allowance</Label>
-                <p className="text-xs text-muted-foreground">
-                  Types on this list are the only ones people on this schedule can request, up to the days
-                  shown each month. Unpaid types reduce pay; paid ones don&apos;t. Leave it empty to allow
-                  every type without a limit.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {unusedTypes.length > 0 && (
-                  <Button
-                    type="button" variant="outline" size="sm"
-                    onClick={() => leave.append({ type: unusedTypes[0], monthlyDays: 1, paid: true })}
-                  >
-                    <Plus className="h-3.5 w-3.5" />Add type
-                  </Button>
-                )}
-                <Button
-                  type="button" variant="outline" size="sm"
-                  onClick={() => leave.append({ type: "", label: "", monthlyDays: 1, paid: true })}
-                >
-                  <Plus className="h-3.5 w-3.5" />Custom type
-                </Button>
-              </div>
-            </div>
-
-            {leave.fields.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                No limits — every leave type is available.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {leave.fields.map((f, i) => (
-                  <div key={f.id} className="flex flex-wrap items-center gap-2">
-                    {/* A custom row is named freely; its slug is derived from
-                        the name, because that is what leave records carry. */}
-                    {isCustom(leaveRows[i]?.type ?? "") || leaveRows[i]?.type === "" ? (
-                      <Controller
-                        control={control}
-                        name={`leavePolicies.${i}.label`}
-                        render={({ field }) => (
-                          <Input
-                            className="w-40"
-                            placeholder="Leave type name"
-                            value={field.value ?? ""}
-                            onChange={(ev) => {
-                              field.onChange(ev.target.value);
-                              setValue(`leavePolicies.${i}.type`, slugify(ev.target.value), { shouldValidate: true });
-                            }}
-                          />
-                        )}
-                      />
-                    ) : (
-                      <Controller
-                        control={control}
-                        name={`leavePolicies.${i}.type`}
-                        render={({ field }) => (
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {BUILTIN_LEAVE_TYPES
-                                .filter((t) => t === field.value || !leaveRows.some((r) => r.type === t))
-                                .map((t) => <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                    )}
-                    <div className="flex items-center gap-1.5">
-                      <Input type="number" min={0} step="0.5" className="w-20" {...register(`leavePolicies.${i}.monthlyDays`)} />
-                      <span className="text-xs text-muted-foreground">days / month</span>
-                    </div>
-                    <Controller
-                      control={control}
-                      name={`leavePolicies.${i}.paid`}
-                      render={({ field }) => (
-                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                          {field.value ? "Paid" : "Unpaid"}
-                        </label>
-                      )}
-                    />
-                    <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={() => leave.remove(i)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Leave used to be configured here as well as in Leave → Balances,
+              so the same question had two answers. It lives in one place now. */}
+          <p className="col-span-2 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+            Leave entitlement is set under <span className="font-medium text-foreground">Leave → Balances</span>,
+            where a policy can apply to this schedule or to everyone.
+          </p>
 
           <ResponsiveDialogFooter className="col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

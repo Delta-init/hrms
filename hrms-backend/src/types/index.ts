@@ -624,8 +624,6 @@ export interface IWorkSchedule extends Document {
   halfDays: number[];
   /** Late tolerance (minutes) before an arrival is counted as late. */
   graceMinutes: number;
-  /** Leave this schedule grants, by type. Empty = no leave can be requested. */
-  leavePolicies: Array<{ type: LeaveType; label?: string; monthlyDays: number; paid: boolean }>;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
@@ -745,29 +743,41 @@ export interface ILeaveRequest extends Document {
   updatedAt: Date;
 }
 
-// ─── Leave policy (balances & accrual) ────────────────────────────────────────
+// ─── Leave policy (what a kind of leave grants) ───────────────────────────────
+export type LeavePeriod = "month" | "year";
+
 export interface ILeavePolicy extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
-  type: LeaveType;
+  /** Open slug — an organization can name leave the built-in set doesn't cover. */
+  type: string;
+  /** Display name for a type the built-in list doesn't cover. */
+  label?: string;
   /** The work schedule this covers; null applies to the whole organization. */
   workSchedule?: Types.ObjectId | { _id: Types.ObjectId; name?: string } | null;
-  /** Full-year entitlement in days. */
-  annualDays: number;
-  /** Days off track are pro-rated monthly through the year; if false, the
-   *  full annualDays is available from the start (subject to joining date). */
+  /** How many days `period` grants. */
+  days: number;
+  period: LeavePeriod;
+  /** Unpaid leave becomes Loss of Pay on the payslip; paid leave does not. */
+  paid: boolean;
+  /** Yearly only: pro-rate through the year instead of granting it all upfront. */
   accrueMonthly: boolean;
-  /** Max unused days that carry into the next year (0 = no carry-forward). */
+  /** Yearly only: max unused days carried into the next year (0 = none). */
   carryForwardLimit: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
-/** Computed — not persisted. One employee's balance for one leave type/year. */
+/** Computed — not persisted. One employee's balance for one leave type/period. */
 export interface ILeaveBalance {
-  type: LeaveType;
+  type: string;
+  label: string;
   year: number;
-  annualDays: number;
+  period: LeavePeriod;
+  paid: boolean;
+  /** Days the policy grants per its own period. */
+  days: number;
+  /** What the period in question has granted so far (accrual applied). */
   accrued: number;
   carriedForward: number;
   used: number;

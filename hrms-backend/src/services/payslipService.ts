@@ -16,6 +16,7 @@ import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtim
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
+import { policiesForUser } from "./leavePolicyResolver.js";
 import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -48,7 +49,6 @@ interface Line { label: string; amount: number }
 interface ScheduleShape {
   timeZone?: string;
   workDays?: number[];
-  leavePolicies?: Array<{ type: string; monthlyDays: number; paid: boolean }>;
 }
 interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
 
@@ -422,8 +422,8 @@ export class PayslipService {
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
   async summary(employeeId: string, month: string) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays leavePolicies" } })
-      .populate({ path: "workSchedule", select: "timeZone workDays leavePolicies" })
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
+      .populate({ path: "workSchedule", select: "timeZone workDays" })
       .lean<IEmployee & {
         user?: { _id?: unknown; workSchedule?: ScheduleShape } | null;
         workSchedule?: ScheduleShape | null;
@@ -500,10 +500,11 @@ export class PayslipService {
       else if (a.status === "half_day") { base.half++; halfSet.add(key); }
       else if (a.status === "absent") { base.absent++; lopFull.add(key); }
     }
-    // Which leave types cost pay is the schedule's decision, not the type name:
+    // Which leave types cost pay is the policy's decision, not the type name:
     // an organization may run casual leave paid or unpaid. Falls back to the
-    // literal "unpaid" type for schedules with no policies yet.
-    const paidByType = new Map((schedule?.leavePolicies ?? []).map((p) => [p.type, p.paid !== false]));
+    // literal "unpaid" type where nothing is configured yet.
+    const policies = await policiesForUser(userId);
+    const paidByType = new Map(policies.map((p) => [p.type, p.paid]));
     const isUnpaidLeave = (type: string) =>
       paidByType.size ? paidByType.get(type) === false : type === "unpaid";
 

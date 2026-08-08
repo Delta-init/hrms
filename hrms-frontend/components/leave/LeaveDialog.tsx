@@ -17,7 +17,7 @@ import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
 import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeaves";
 import { useUser } from "@/hooks/useUsers";
-import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType, BUILTIN_LEAVE_TYPES } from "@/types";
+import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
  *  the list display (avoids a silent off-by-one for zones ahead of UTC). */
@@ -55,14 +55,16 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
   const selectedUserId = watch("user");
   const startDate = watch("startDate");
 
-  // What this person may actually request. Types outside their schedule are not
-  // offered at all, and the remaining balance is shown so the limit is visible
-  // before the form is filled in rather than after it is rejected.
-  const { data: leaveOptions } = useLeaveOptions(
+  // What this person may actually request. Only types a policy grants them are
+  // offered, and the remaining balance is shown so the limit is visible before
+  // the form is filled in rather than after it is rejected. Comp-off is earned
+  // rather than granted, so it is always available.
+  const { data: leaveOptions, isLoading: optionsLoading } = useLeaveOptions(
     lockToUserId ?? selectedUserId ?? "",
     startDate ? startDate.slice(0, 7) : undefined
   );
-  const allowed = leaveOptions && !leaveOptions.unrestricted ? leaveOptions.options : null;
+  const allowed = leaveOptions?.options ?? [];
+  const nothingAvailable = !!leaveOptions && allowed.length === 0;
   const { data: selectedUser } = useUser(isEditing ? "" : selectedUserId || "");
   useEffect(() => {
     if (isEditing) return;
@@ -138,21 +140,27 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               control={control}
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue placeholder="Select leave type" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder={optionsLoading ? "Loading…" : "Select leave type"} />
+                  </SelectTrigger>
                   <SelectContent>
-                    {allowed
-                      ? allowed.map((o) => (
-                          <SelectItem key={o.type} value={o.type} disabled={o.remaining <= 0}>
-                            {o.label} · {o.remaining}/{o.monthlyDays} left{o.paid ? "" : " · unpaid"}
-                          </SelectItem>
-                        ))
-                      : BUILTIN_LEAVE_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</SelectItem>
-                        ))}
+                    {allowed.map((o) => (
+                      <SelectItem key={o.type} value={o.type} disabled={o.remaining <= 0}>
+                        {o.label} · {o.remaining}/{o.days} left {o.period === "month" ? "this month" : "this year"}{o.paid ? "" : " · unpaid"}
+                      </SelectItem>
+                    ))}
+                    {/* Earned by working extra rather than granted by a policy. */}
+                    <SelectItem value="comp_off">{LEAVE_TYPE_LABELS.comp_off}</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
+            {nothingAvailable && (
+              <p className="text-[11px] text-amber-600">
+                No leave policies cover {leaveOptions?.scheduleName ? `the ${leaveOptions.scheduleName} schedule` : "this employee"} yet.
+                Only comp-off can be requested until one is added under Leave → Balances.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Time Region</Label>

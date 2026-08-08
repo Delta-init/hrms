@@ -48,11 +48,17 @@ export function LeaveBalances({ canManage }: Props) {
               {policies.map((p) => (
                 <div key={p._id} className="group flex items-start justify-between gap-2 rounded-lg border border-border p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{leaveTypeLabel(p.type)}</p>
+                    <p className="text-sm font-medium">
+                      {p.label?.trim() || leaveTypeLabel(p.type)}
+                      {!p.paid && <span className="ml-1.5 text-[11px] font-normal text-amber-600">unpaid</span>}
+                    </p>
                     <p className="text-[11px] font-medium text-primary">
                       {p.workSchedule && typeof p.workSchedule === "object" ? p.workSchedule.name : "All employees"}
                     </p>
-                    <p className="text-xs text-muted-foreground">{p.annualDays}d/yr · {p.accrueMonthly ? "accrues monthly" : "granted upfront"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.days}d {p.period === "month" ? "a month" : "a year"}
+                      {p.period === "year" && ` · ${p.accrueMonthly ? "accrues monthly" : "granted upfront"}`}
+                    </p>
                     {p.carryForwardLimit > 0 && <p className="text-xs text-muted-foreground">Carries up to {p.carryForwardLimit}d forward</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -76,10 +82,16 @@ export function LeaveBalances({ canManage }: Props) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {balances.map((b) => (
               <div key={b.type} className="rounded-xl border border-border p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{leaveTypeLabel(b.type)}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {b.label || leaveTypeLabel(b.type)}
+                  {!b.paid && <span className="ml-1.5 normal-case text-amber-600">unpaid</span>}
+                </p>
                 <p className={cn("mt-1 text-2xl font-bold tabular-nums", b.balance < 0 ? "text-red-500" : "text-primary")}>{b.balance}<span className="ml-1 text-sm font-normal text-muted-foreground">days left</span></p>
                 <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                  <div className="flex justify-between"><span>Accrued</span><span className="tabular-nums">{b.accrued}</span></div>
+                  {/* Says which window the figures below cover — a monthly
+                      allowance resets, a yearly one accrues. */}
+                  <div className="flex justify-between"><span>Allowance</span><span className="tabular-nums">{b.days}d {b.period === "month" ? "a month" : "a year"}</span></div>
+                  <div className="flex justify-between"><span>{b.period === "month" ? "This month" : "Accrued"}</span><span className="tabular-nums">{b.accrued}</span></div>
                   {b.carriedForward > 0 && <div className="flex justify-between"><span>Carried forward</span><span className="tabular-nums">+{b.carriedForward}</span></div>}
                   <div className="flex justify-between"><span>Used</span><span className="tabular-nums">−{b.used}</span></div>
                 </div>
