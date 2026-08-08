@@ -993,12 +993,36 @@ export interface AttendanceCalendarEmployee {
   employee: { _id: string; name: string; employeeCode?: string; designation?: string };
   days: Record<string, AttendanceCalendarDay>;
   summary: Record<string, number>;
+  /** When they were on the payroll — days outside it are nobody's to account for. */
+  employment: { from: string | null; to: string | null };
 }
 export interface AttendanceCalendarData {
   month: string;
   year: number;
   daysInMonth: number;
   employees: AttendanceCalendarEmployee[];
+}
+
+// ─── One day, everybody ──────────────────────────────────────────────────────
+/**
+ * A blank day means two different things, so the day view names both: nobody
+ * marked it (`not_marked`), or the person was not employed yet (`not_employed`).
+ */
+export type DayViewStatus = AttendanceStatus | "not_marked" | "not_employed";
+
+export interface DailyAttendanceRow extends Omit<AttendanceCalendarDay, "status"> {
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  status: DayViewStatus;
+}
+export interface DailyAttendanceData {
+  date: string;
+  isToday: boolean;
+  isFuture: boolean;
+  timeZone: string;
+  /** Headcount per status, over the people the day applies to. */
+  counts: Partial<Record<DayViewStatus, number>>;
+  total: number;
+  employees: DailyAttendanceRow[];
 }
 
 // ─── Department report ───────────────────────────────────────────────────────

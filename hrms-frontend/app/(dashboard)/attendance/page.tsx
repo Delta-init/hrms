@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange } from "lucide-react";
+import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays } from "lucide-react";
 import { useAttendance, useDeleteAttendance } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -9,6 +9,7 @@ import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
 import { AttendanceCalendar } from "@/components/attendance/AttendanceCalendar";
+import { AttendanceDayView } from "@/components/attendance/AttendanceDayView";
 import { AttendanceStatsBar } from "@/components/attendance/AttendanceStatsBar";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { useOrgTimeZone } from "@/hooks/useOrgTimeZone";
@@ -65,6 +66,7 @@ export default function AttendancePage() {
   const [tab, setTab] = useState("records");
   const tabs = [
     { key: "records", label: "Records", icon: ListChecks },
+    { key: "day", label: "Day view", icon: CalendarDays },
     { key: "calendar", label: "Calendar", icon: CalendarRange },
   ];
 
@@ -147,7 +149,9 @@ export default function AttendancePage() {
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
-      {tab === "calendar" ? (
+      {tab === "day" ? (
+        <AttendanceDayView canManage={canManage} />
+      ) : tab === "calendar" ? (
         <AttendanceCalendar />
       ) : (
         <>

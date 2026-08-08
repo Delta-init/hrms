@@ -8,6 +8,7 @@ import {
   getTodayAttendance,
   getMyAttendance,
   getAttendanceCalendar,
+  getAttendanceDaily,
   clockIn,
   clockOut,
 } from "../controllers/attendanceController.js";
@@ -26,6 +27,7 @@ router.post("/clock-out", clockOut);
 
 router.get("/", checkPermission("attendance", "view"), getAttendance);
 router.get("/calendar", checkPermission("attendance", "view"), getAttendanceCalendar);
+router.get("/daily", checkPermission("attendance", "view"), getAttendanceDaily);
 // Recording attendance for an arbitrary employee (vs. self-service clock-in
 // above) and looking up a record by id are manager-only actions.
 router.post("/", checkPermission("attendance", "edit"), createAttendance);

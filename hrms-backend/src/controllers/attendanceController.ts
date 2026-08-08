@@ -59,6 +59,22 @@ export const getAttendanceCalendar = async (req: AuthenticatedRequest, res: Resp
   } catch (error) { next(error); }
 };
 
+export const getAttendanceDaily = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const date = String(req.query.date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { sendError(res, "date (YYYY-MM-DD) is required", 400); return; }
+
+    // Same scoping as the calendar: this view shows everybody's check-in times,
+    // so somebody without the manager flag only ever sees their own row.
+    let employee = req.query.employee ? String(req.query.employee) : undefined;
+    if (!canManage(req)) {
+      const own = await Employee.findOne(scoped({ user: req.user!.userId })).select("_id");
+      employee = own ? String(own._id) : "000000000000000000000000";
+    }
+    sendSuccess(res, "Daily attendance", await service.daily(date, employee));
+  } catch (error) { next(error); }
+};
+
 export const getAttendanceById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const record = await service.getById(req.params.id);

@@ -393,9 +393,48 @@ export class AttendanceService {
         employee: { _id: e._id, name: e.name, employeeCode: e.employeeCode, designation: e.designation },
         days,
         summary,
+        // Reported so a caller looking at one day can tell a day nobody marked
+        // from a day this person was not on the payroll for. Both are blank.
+        employment: window,
       };
     });
 
     return { month, year, daysInMonth, employees: employeesOut };
+  }
+
+  /**
+   * Everybody's status on a single day.
+   *
+   * A slice of the month calendar rather than its own set of rules: the two
+   * would otherwise drift, and one screen calling a day absent while another
+   * calls it blank is exactly the confusion this is meant to settle.
+   */
+  async daily(date: string, employeeId?: string) {
+    const { employees } = await this.calendar(date.slice(0, 7), employeeId);
+    const orgTz = await this.orgTimeZone();
+    const todayKey = todayInTz(orgTz);
+
+    const rows = employees.map((e) => {
+      const day = e.days[date];
+      // A blank day means one of two different things, and saying which is the
+      // whole point of this view.
+      const status = day?.status ?? (employedOn(e.employment, date) ? "not_marked" : "not_employed");
+      return { ...(day ?? {}), employee: e.employee, status };
+    });
+
+    // Only over people the day actually applies to — counting somebody who had
+    // not joined yet as "not marked" would put a permanent gap in the figures.
+    const counts: Record<string, number> = {};
+    for (const r of rows) if (r.status !== "not_employed") counts[r.status] = (counts[r.status] ?? 0) + 1;
+
+    return {
+      date,
+      isToday: date === todayKey,
+      isFuture: date > todayKey,
+      timeZone: orgTz,
+      counts,
+      total: rows.filter((r) => r.status !== "not_employed").length,
+      employees: rows,
+    };
   }
 }

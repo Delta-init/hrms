@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Attendance, AttendanceCalendarData } from "@/types";
+import type { ApiResponse, Attendance, AttendanceCalendarData, DailyAttendanceData } from "@/types";
 
 const KEY = ["attendance"] as const;
 
@@ -15,6 +15,16 @@ export const useAttendanceCalendar = (month: string, employee?: string) =>
     queryKey: [...KEY, "calendar", month, employee ?? "all"],
     queryFn: async () => (await api.get<ApiResponse<AttendanceCalendarData>>("/attendance/calendar", { params: { month, ...(employee ? { employee } : {}) } })).data.data!,
     enabled: !!month,
+  });
+
+/** Everybody's status on one day. Kept fresh — it is a "right now" screen. */
+export const useAttendanceDaily = (date: string, employee?: string) =>
+  useQuery({
+    queryKey: [...KEY, "daily", date, employee ?? "all"],
+    queryFn: async () => (await api.get<ApiResponse<DailyAttendanceData>>("/attendance/daily", { params: { date, ...(employee ? { employee } : {}) } })).data.data!,
+    enabled: !!date,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
 export const useAttendance = (params?: Record<string, string>) => {
