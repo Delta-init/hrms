@@ -35,12 +35,23 @@ export const usePayslip = (id?: string) =>
     enabled: !!id,
   });
 
+/**
+ * Payroll figures are re-fetched whenever the tab regains focus.
+ *
+ * The app-wide default leaves them alone, which is right for most screens but
+ * wrong here: a payroll page left open kept showing whatever it loaded, so a
+ * figure that had since changed — by a regeneration, an approved reimbursement,
+ * anyone else's edit — stayed on screen with nothing to suggest it was old.
+ * These are the numbers people act on.
+ */
+const LIVE_FIGURES = { staleTime: 30_000, refetchOnWindowFocus: true } as const;
+
 export const usePayslipSummary = (employee?: string, month?: string) =>
   useQuery({
     queryKey: [...KEY, "summary", employee, month],
     queryFn: async () => (await api.get<ApiResponse<PayslipSummary>>("/payslips/summary", { params: { employee: employee!, month: month! } })).data.data!,
     enabled: !!employee && !!month,
-    staleTime: 60_000,
+    ...LIVE_FIGURES,
   });
 
 export const usePayrollRun = (month?: string, enabled = true) =>
@@ -48,6 +59,7 @@ export const usePayrollRun = (month?: string, enabled = true) =>
     queryKey: [...KEY, "run", month],
     queryFn: async () => (await api.get<ApiResponse<PayrollRun>>("/payslips/run", { params: { month: month! } })).data.data!,
     enabled: !!month && enabled,
+    ...LIVE_FIGURES,
   });
 
 export const useSalaryRegister = (month?: string, enabled = true) =>
@@ -55,6 +67,7 @@ export const useSalaryRegister = (month?: string, enabled = true) =>
     queryKey: [...KEY, "register", month],
     queryFn: async () => (await api.get<ApiResponse<SalaryRegister>>("/payslips/register", { params: { month: month! } })).data.data!,
     enabled: !!month && enabled,
+    ...LIVE_FIGURES,
   });
 
 export const useGeneratePayroll = () => {
