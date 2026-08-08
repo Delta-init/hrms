@@ -4,6 +4,7 @@ import { LogOut, Plus, MoreHorizontal, Check, X, UserMinus, Undo2, Trash2, Clock
 import { useResignations, useReviewResignation, useWithdrawResignation, useRelieveResignation, useDeleteResignation } from "@/hooks/useResignations";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
+import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -136,6 +137,15 @@ export default function ResignationsPage() {
         tableId={`resignations-${active.key}`} columns={columns} rows={data?.data ?? []} rowKey={(r) => r._id}
         loading={isLoading || isFetching} pagination={data?.pagination} query={query}
         searchable={false} rowLabel="resignations" minWidth={820}
+        quickFilters={
+          <DateRangeFilter
+            from={query.filters.dateFrom}
+            to={query.filters.dateTo}
+            onChange={({ from, to }) => query.setFilters({ dateFrom: from, dateTo: to })}
+            onClear={() => query.setFilters({ dateFrom: undefined, dateTo: undefined })}
+            label="Last working day"
+          />
+        }
         emptyText={active.key === "pending" ? "No pending resignations." : active.key === "notice" ? "Nobody is serving notice." : "Nothing here yet."}
         exportName="resignations"
         exportMapper={(r) => ({ Employee: empOf(r)?.name ?? "", Code: empOf(r)?.employeeCode ?? "", "Resigned on": fmtDate(r.resignationDate), Notice: r.noticePeriodDays, "Last working day": fmtDate(r.lastWorkingDay), Status: RESIGNATION_STATUS_LABELS[r.status] })}

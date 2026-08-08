@@ -101,7 +101,10 @@ export interface Organization {
   createdAt: string;
   updatedAt: string;
 }
-export type OrganizationSimple = Pick<Organization, "_id" | "name" | "code" | "logo">;
+/** `settings` is partial here: sign-in populates only currency and timeZone. */
+export type OrganizationSimple = Pick<Organization, "_id" | "name" | "code" | "logo"> & {
+  settings?: Partial<OrganizationSettings>;
+};
 
 export type PermissionsMap = Partial<Record<HrmsModule, ModulePermissions>>;
 

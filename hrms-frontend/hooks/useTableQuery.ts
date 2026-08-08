@@ -21,7 +21,7 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState(opts.defaultSortBy ?? "createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(opts.defaultSortOrder ?? "desc");
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters_] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -34,7 +34,7 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
   const setLimit = useCallback((n: number) => { setLimitState(n); setPage(1); }, []);
 
   const setFilter = useCallback((key: string, value: string) => {
-    setFilters((prev) => {
+    setFilters_((prev) => {
       const next = { ...prev };
       if (!value || value === ALL) delete next[key];
       else next[key] = value;
@@ -43,8 +43,22 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
     setPage(1);
   }, []);
 
+  /** Apply several filters at once. Setting them one by one re-rendered — and
+   *  refetched — between each, so a date range briefly queried a half-range. */
+  const setFilters = useCallback((patch: Record<string, string | undefined>) => {
+    setFilters_((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of Object.entries(patch)) {
+        if (!value || value === ALL) delete next[key];
+        else next[key] = value;
+      }
+      return next;
+    });
+    setPage(1);
+  }, []);
+
   const clearFilters = useCallback(() => {
-    setFilters({});
+    setFilters_({});
     setSearch("");
     setDebouncedSearch("");
     setPage(1);
@@ -81,7 +95,7 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
     search, setSearch,
     debouncedSearch,
     sortBy, sortOrder, toggleSort,
-    filters, setFilter, clearFilters,
+    filters, setFilter, setFilters, clearFilters,
     params,
     activeFilterCount,
   };

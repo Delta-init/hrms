@@ -10,6 +10,9 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
 import { AttendanceCalendar } from "@/components/attendance/AttendanceCalendar";
 import { AttendanceStatsBar } from "@/components/attendance/AttendanceStatsBar";
+import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
+import { useOrgTimeZone } from "@/hooks/useOrgTimeZone";
+import { dayKeyIn } from "@/lib/dateRange";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,8 +51,11 @@ export default function AttendancePage() {
 
   const query = useTableQuery({ defaultSortBy: "date", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useAttendance(query.params);
-  // Separate snapshot of *today's* records for the animated stats band.
-  const today = new Date().toISOString().slice(0, 10);
+  // Separate snapshot of *today's* records for the animated stats band. Today
+  // is the organization's day, not the viewer's — asking in UTC returned an
+  // empty band for anyone east of Greenwich.
+  const orgTz = useOrgTimeZone();
+  const today = dayKeyIn(new Date(), orgTz);
   const { data: todayData, isLoading: todayLoading } = useAttendance({ dateFrom: today, dateTo: today, limit: "500" });
   const { mutate: remove, isPending: deleting } = useDeleteAttendance();
 
@@ -157,6 +163,14 @@ export default function AttendancePage() {
             query={query}
             searchable={false}
             filters={filters}
+            quickFilters={
+              <DateRangeFilter
+                from={query.filters.dateFrom}
+                to={query.filters.dateTo}
+                onChange={({ from, to }) => query.setFilters({ dateFrom: from, dateTo: to })}
+                onClear={() => query.setFilters({ dateFrom: undefined, dateTo: undefined })}
+              />
+            }
             rowLabel="records"
             emptyText="No attendance records yet."
             minWidth={820}

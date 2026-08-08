@@ -4,6 +4,7 @@ import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash
 import { useRegularizations, useMyRegularizations, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
+import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -188,6 +189,14 @@ export default function RegularizationPage() {
           tableId="regularizations" columns={columns} rows={allData?.data ?? []} rowKey={(r) => r._id}
           loading={allLoading || isFetching} pagination={allData?.pagination} query={query}
           searchable={false} filters={filters} rowLabel="requests" emptyText="No regularization requests." minWidth={780}
+            quickFilters={
+              <DateRangeFilter
+                from={query.filters.dateFrom}
+                to={query.filters.dateTo}
+                onChange={({ from, to }) => query.setFilters({ dateFrom: from, dateTo: to })}
+                onClear={() => query.setFilters({ dateFrom: undefined, dateTo: undefined })}
+              />
+            }
           exportName="regularizations"
           exportMapper={(r) => ({
             Employee: r.user && typeof r.user === "object" ? r.user.name : "",

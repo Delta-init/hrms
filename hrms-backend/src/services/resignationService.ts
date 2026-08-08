@@ -8,6 +8,9 @@ import { parsePagination } from "../utils/query.js";
 
 interface ResignationQuery extends PaginationQuery {
   employee?: string;
+  /** Range over the last working day — the date the list is usually read by. */
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 const POP = [
@@ -94,6 +97,14 @@ export class ResignationService {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
     if (query.employee) filter.employee = query.employee;
+    // Stored as a date-only value at UTC midnight, so the bounds compare
+    // directly. `$lt` the day after keeps the end date inclusive.
+    if (query.dateFrom || query.dateTo) {
+      const range: Record<string, Date> = {};
+      if (query.dateFrom) range.$gte = new Date(`${query.dateFrom}T00:00:00.000Z`);
+      if (query.dateTo) range.$lt = new Date(new Date(`${query.dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
+      filter.lastWorkingDay = range;
+    }
 
     const sortable = new Set(["resignationDate", "lastWorkingDay", "status", "createdAt"]);
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "createdAt";

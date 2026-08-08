@@ -50,8 +50,10 @@ export class RegularizationService {
     if (query.type) filter.type = query.type;
     if (query.dateFrom || query.dateTo) {
       const range: Record<string, Date> = {};
-      if (query.dateFrom) range.$gte = new Date(query.dateFrom);
-      if (query.dateTo) range.$lte = new Date(query.dateTo);
+      if (query.dateFrom) range.$gte = new Date(`${query.dateFrom}T00:00:00.000Z`);
+      // `$lt` the following day, so a bare end date covers the whole day
+      // rather than only its first instant.
+      if (query.dateTo) range.$lt = new Date(new Date(`${query.dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
       filter.date = range;
     }
 

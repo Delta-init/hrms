@@ -8,6 +8,7 @@ import {
 import { useLeaves, useMyLeaves, useReviewLeave, useDeleteLeave, useWithdrawLeave, useHolidays, useDeleteHoliday } from "@/hooks/useLeaves";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
+import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -219,6 +220,14 @@ export default function LeavePage() {
           tableId="leave-requests" columns={columns} rows={reqData?.data ?? []} rowKey={(l) => l._id}
           loading={reqLoading || isFetching} pagination={reqData?.pagination} query={query}
           searchable={false} filters={filters} rowLabel="requests" emptyText="No leave requests match the filters." minWidth={720}
+            quickFilters={
+              <DateRangeFilter
+                from={query.filters.dateFrom}
+                to={query.filters.dateTo}
+                onChange={({ from, to }) => query.setFilters({ dateFrom: from, dateTo: to })}
+                onClear={() => query.setFilters({ dateFrom: undefined, dateTo: undefined })}
+              />
+            }
           exportName="leave-requests"
           exportMapper={(l) => ({
             Employee: l.user && typeof l.user === "object" ? l.user.name : "",

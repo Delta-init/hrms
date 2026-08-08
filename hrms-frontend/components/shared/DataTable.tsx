@@ -40,6 +40,9 @@ export interface DataTableProps<T> {
   searchable?: boolean;
   searchPlaceholder?: string;
   filters?: React.ReactNode;
+  /** Always-visible controls in the toolbar, beside Filters — quick pickers
+   *  that are worth a click rather than a trip through the filter panel. */
+  quickFilters?: React.ReactNode;
   actions?: React.ReactNode;
   emptyText?: string;
   rowLabel?: string;
@@ -51,7 +54,7 @@ export interface DataTableProps<T> {
 
 export function DataTable<T>({
   tableId, columns, rows, rowKey, loading, pagination, query,
-  searchable = true, searchPlaceholder = "Search…", filters, actions,
+  searchable = true, searchPlaceholder = "Search…", filters, quickFilters, actions,
   emptyText = "No records found.", rowLabel = "rows", minWidth = 720,
   exportMapper, exportName = "export",
 }: DataTableProps<T>) {
@@ -140,6 +143,8 @@ export function DataTable<T>({
               {query.activeFilterCount > 0 && <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{query.activeFilterCount}</span>}
             </Button>
           )}
+
+          {quickFilters}
 
           {/* Columns */}
           <DropdownMenu>

@@ -84,7 +84,9 @@ export class OrganizationService {
 
   /** Lightweight list for the switcher. */
   async listAll() {
-    return Organization.find({ status: "active" }).select("name code logo").sort({ name: 1 });
+    // timeZone rides along so the switcher knows what "today" means in the
+    // organization a Super Admin has selected — they belong to none themselves.
+    return Organization.find({ status: "active" }).select("name code logo settings.timeZone").sort({ name: 1 });
   }
 
   async getById(id: string) {
