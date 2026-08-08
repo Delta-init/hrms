@@ -30,6 +30,30 @@ export function employedOn(w: EmploymentWindow, day: string): boolean {
 }
 
 /**
+ * How much of `month` (YYYY-MM) somebody was on the payroll for, 0 to 1.
+ *
+ * Counted in calendar days rather than working days, which is what a monthly
+ * salary is quoted against: somebody who joins on the 20th has had a fifth of
+ * the month, whichever days of it their schedule happens to fall on. Dividing
+ * by the month's own length rather than a fixed thirty means a full February
+ * comes out at exactly 1 instead of quietly short.
+ */
+export function employedFraction(w: EmploymentWindow, month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const first = `${month}-01`;
+  const last = `${month}-${String(days).padStart(2, "0")}`;
+
+  const from = w.from && w.from > first ? w.from : first;
+  const to = w.to && w.to < last ? w.to : last;
+  // Joined after the month ended, or left before it began.
+  if (from > to) return 0;
+
+  const employed = Number(to.slice(8)) - Number(from.slice(8)) + 1;
+  return Math.min(1, employed / days);
+}
+
+/**
  * Windows for a set of employees, keyed by employee id. Resolved in one query
  * rather than per person: a calendar or a payroll run walks everybody.
  */

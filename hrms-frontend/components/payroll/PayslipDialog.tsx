@@ -99,14 +99,19 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
   const prefill = () => {
     if (!summary) { toast.info("Select an employee & month first"); return; }
-    if (summary.salary > 0) {
-      const first = earnings.fields[0];
-      if (first) setValue(`earnings.0.label`, "Basic"), setValue(`earnings.0.amount`, summary.salary);
-      else earnings.append({ label: "Basic", amount: summary.salary });
-    }
+    // The breakup's own lines, not one collapsed "Basic": a structure with
+    // allowances was flattened into a single figure, and the amount used was
+    // the full monthly salary even for somebody who joined halfway through it.
+    const lines = summary.earnings?.length ? summary.earnings : summary.salary > 0 ? [{ label: "Basic", amount: summary.salary }] : [];
+    if (!lines.length) { toast.info("This employee has no salary to fill from"); return; }
+    earnings.replace(lines);
     // Loss of pay and late penalties are no longer appended here — the payslip
     // derives them itself, so adding them would double them.
-    toast.success("Earnings filled from the salary breakup");
+    toast.success(
+      summary.employedShare && summary.employedShare < 1
+        ? "Earnings filled, cut to the part of the month they were employed"
+        : "Earnings filled from the salary breakup"
+    );
   };
 
   const onSubmit = (data: PayslipFormValues) => {
@@ -224,6 +229,16 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                 {summary.lopDays > 0 && <span className="text-red-600">Loss of pay {summary.lopDays}d</span>}
                 {summary.latePenaltyDays > 0 && <span className="text-amber-600">Late penalty {summary.latePenaltyDays}d</span>}
                 {summary.lopDays === 0 && summary.latePenaltyDays === 0 && <span className="text-emerald-600">No unpaid days</span>}
+              </div>
+            )}
+            {!isEditing && !!summary?.employedShare && summary.employedShare < 1 && (
+              /* A part month is the difference between a right and a very wrong
+                 figure, and nothing else on the form says the salary was cut. */
+              <div className="mb-2 rounded-lg bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-700 dark:text-sky-400">
+                On the payroll for {Math.round(summary.employedShare * 100)}% of this month
+                {summary.employment?.from && <> — from {summary.employment.from}</>}
+                {summary.employment?.to && <> until {summary.employment.to}</>}.
+                Salary is cut to that share; a full month would be {money(summary.salary)}.
               </div>
             )}
             {!isEditing && !!summary?.unrecordedDays && (

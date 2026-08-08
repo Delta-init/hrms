@@ -18,7 +18,7 @@ import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { policiesForUser } from "./leavePolicyResolver.js";
-import { employmentWindowFor, employedOn, type EmploymentWindow } from "./employmentWindow.js";
+import { employmentWindowFor, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -127,7 +127,15 @@ function countWorkingDays(month: string, workDays?: number[], employment?: Emplo
  */
 function attendanceDeductions(
   summary: { lopDays: number; latePenaltyDays: number },
-  salary: number
+  salary: number,
+  /**
+   * The most this month can lose — the payable gross, which is smaller than
+   * `salary` for a joiner or a leaver. A day is still priced against the full
+   * monthly salary; you simply cannot be docked more than you were owed. Without
+   * this a three-day leaver came out at minus ten fils, because the month was
+   * prorated over its own 31 days while a day off costs a flat thirtieth.
+   */
+  cap: number = salary
 ): Line[] {
   if (salary <= 0) return [];
   // A flat 30 every month, the standard Gulf/India convention: a day off costs
@@ -141,8 +149,8 @@ function attendanceDeductions(
 
   // Rounding the daily rate can still overshoot by pennies across a whole month.
   const total = lines.reduce((a, l) => a + l.amount, 0);
-  if (total > salary && total > 0) {
-    const scale = salary / total;
+  if (total > cap && total > 0) {
+    const scale = cap / total;
     for (const l of lines) l.amount = r2(l.amount * scale);
   }
   return lines;
@@ -267,7 +275,7 @@ export class PayslipService {
     // what the payroll run and the salary register do, so all four paths now
     // put the same number on the screen.
     const att = await this.summary(input.employee, input.month);
-    const attLines = attendanceDeductions(att, att.salary);
+    const attLines = attendanceDeductions(att, att.salary, att.proratedGross);
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
@@ -360,7 +368,7 @@ export class PayslipService {
         .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
-      const manual = [...typed, ...attendanceDeductions(att, att.salary)];
+      const manual = [...typed, ...attendanceDeductions(att, att.salary, att.proratedGross)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -462,6 +470,21 @@ export class PayslipService {
     // earnings) is the LOP base.
     const breakup = await resolveSalaryBreakup(employeeId, month, emp.salary ?? 0);
 
+    // A monthly salary buys a whole month. Somebody who joined on the 20th, or
+    // left on the 8th, has not had one, and paying the full amount and then
+    // docking the days they were absent could never reach the right figure —
+    // loss of pay can only charge days inside their window, so a leaver kept
+    // most of a month's pay for a week on the books. The contractual figures
+    // are cut to the part of the month that was theirs.
+    //
+    // `salary` deliberately stays the full monthly gross: it is what a day is
+    // priced against, and a missed day costs a full day whether or not the
+    // month was a whole one.
+    const employedShare = employedFraction(employment, month);
+    const cut = (lines: Line[]) => lines.map((l) => ({ ...l, amount: r2(l.amount * employedShare) }));
+    const earnings = employedShare < 1 ? cut(breakup.earnings) : breakup.earnings;
+    const structureDeductions = employedShare < 1 ? cut(breakup.deductions) : breakup.deductions;
+
     // Lines the payslip will pick up on its own — reimbursements, overtime and
     // one-time items. Reported so the form can preview the figure it is going
     // to produce: without them it showed a net pay lower than the payslip it
@@ -475,9 +498,14 @@ export class PayslipService {
     const base = {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
       salary: breakup.gross,
-      earnings: breakup.earnings,
-      structureDeductions: breakup.deductions,
+      earnings,
+      structureDeductions,
       structureName: breakup.structureName,
+      /** Contractual gross cut to the part of the month they were employed. */
+      proratedGross: r2(earnings.reduce((t, l) => t + l.amount, 0)),
+      /** 1 unless they joined or left mid-month. Reported so the form can say so. */
+      employedShare,
+      employment,
       currency: emp.currency ?? "AED", loanDeductions,
       // Read-only: the payslip re-derives all of these, so sending them back
       // with the form would count them twice.
@@ -589,7 +617,7 @@ export class PayslipService {
     // so without them the preview quietly under-reported the deductions and
     // promised a net pay the payslip was never going to produce.
     base.autoDeductions = [
-      ...attendanceDeductions(base, base.salary),
+      ...attendanceDeductions(base, base.salary, base.proratedGross),
       ...loanDeductions,
       ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
     ];
@@ -633,10 +661,15 @@ export class PayslipService {
     const rows = [];
     for (const emp of employees) {
       const s = await this.summary(String(emp._id), month);
+      // Two different numbers, and the row needs both. `base` is the
+      // contractual monthly gross, which prices a day off. `payable` is what
+      // this month actually owes — the same figure cut to a joiner's or
+      // leaver's part of the month, so the row and the payslip agree.
       const base = s.salary || 0;
+      const payable = s.proratedGross ?? base;
       // Same helper the payslip uses, so the preview row and the generated
       // payslip cannot disagree about what a day is worth.
-      const attLines = attendanceDeductions(s, base);
+      const attLines = attendanceDeductions(s, base, payable);
       const lopAmount = round(attLines.find((l) => l.label.startsWith(LOP_PREFIX))?.amount ?? 0);
       // Sent rather than re-derived on the client: the row should quote the
       // rate the deduction was actually priced at, not one worked backwards
@@ -688,15 +721,15 @@ export class PayslipService {
             netPay: round(slip.netPay),
           }
         : {
-            salary: base,
-            earnings: s.earnings ?? [{ label: "Basic", amount: base }],
+            salary: payable,
+            earnings: s.earnings ?? [{ label: "Basic", amount: payable }],
             lopAmount,
             latePenaltyAmount,
             loanTotal,
             reimbursements,
             overtime,
             totalDeductions,
-            netPay: round(base + oneTimePayments + reimbursements + overtime - totalDeductions),
+            netPay: round(payable + oneTimePayments + reimbursements + overtime - totalDeductions),
           };
 
       rows.push({
@@ -744,7 +777,7 @@ export class PayslipService {
 
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
-      deductions.push(...attendanceDeductions(s, s.salary || 0));
+      deductions.push(...attendanceDeductions(s, s.salary || 0, s.proratedGross));
       for (const l of s.loanDeductions ?? []) deductions.push(l);
       deductions.push(...oneTime.deductions);
 

@@ -750,6 +750,10 @@ export interface PayslipSummary {
    */
   autoEarnings?: PayComponentLine[];
   autoDeductions?: PayComponentLine[];
+  /** The salary breakup in force — Basic plus any structure components. */
+  earnings?: PayComponentLine[];
+  structureDeductions?: PayComponentLine[];
+  structureName?: string | null;
   /** Scheduled working days in the month, and those left after unpaid days. */
   workingDays?: number;
   paidDays?: number;
@@ -760,6 +764,12 @@ export interface PayslipSummary {
   unrecordedFutureDays?: number;
   /** Whether the organization charges those days as loss of pay. */
   unrecordedDaysUnpaid?: boolean;
+  /** Contractual gross cut to the part of the month they were employed. */
+  proratedGross?: number;
+  /** 1 unless they joined or left mid-month, when it is their share of it. */
+  employedShare?: number;
+  /** First and last day on the payroll, when either falls inside the month. */
+  employment?: { from: string | null; to: string | null };
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────
