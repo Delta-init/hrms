@@ -10,7 +10,8 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import {
   computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
 } from "./loanService.js";
-import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries } from "./oneTimeAdjustmentService.js";
+import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries, releaseOneTimePayments } from "./oneTimeAdjustmentService.js";
+import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
 import { computeReimbursements, markReimbursementsPaid, releaseReimbursements } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
@@ -55,6 +56,9 @@ interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Labels the attendance deductions carry, so a resubmitted form can't double them. */
+/** Days a month is worth for pay purposes, whatever the calendar says. */
+export const STANDARD_MONTH_DAYS = 30;
+
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
 const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
@@ -99,22 +103,13 @@ function countWorkingDays(month: string, workDays?: number[]): number {
   return workingDayKeys(month, workDays).length;
 }
 
-/** Calendar days in a YYYY-MM month. */
-export function daysInMonth(month: string): number {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
-}
-
 /**
- * Attendance-driven deductions for a month.
+ * Loss of pay and late penalties, priced off a 30-day month.
  *
- * Derived here rather than by the form, so loss of pay applies itself the way
- * loans and reimbursements already did instead of waiting for a button.
- *
- * A day is worth the salary divided by the days actually worked in the month,
- * so missing every one of them costs exactly a month's pay. Dividing by
- * calendar days instead made a full month of absence cost only the working
- * fraction of the salary, and made weekends look chargeable.
+ * Thirty is a convention, not a count: it makes a day off cost the same in
+ * February as in July. Pricing by the month's own length, or by its working
+ * days, moved the value of one absent day around by up to a tenth with nothing
+ * on the payslip to explain why.
  *
  * `salary` is contractual pay, deliberately not the gross. A day away costs a
  * day of salary; reimbursements and overtime paid in the same month are not
@@ -122,13 +117,14 @@ export function daysInMonth(month: string): number {
  */
 function attendanceDeductions(
   summary: { lopDays: number; latePenaltyDays: number },
-  salary: number,
-  month: string,
-  workingDays?: number
+  salary: number
 ): Line[] {
   if (salary <= 0) return [];
-  const divisor = workingDays && workingDays > 0 ? workingDays : daysInMonth(month);
-  const perDay = r2(salary / divisor);
+  // A flat 30 every month, the standard Gulf/India convention: a day off costs
+  // the same in February as in July. Dividing by the month's own length, or by
+  // its working days, made the price of one absent day wander month to month
+  // for no reason the payslip could explain.
+  const perDay = r2(salary / STANDARD_MONTH_DAYS);
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
@@ -227,6 +223,9 @@ async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind
   if (record._id) {
     await releaseReimbursements(String(record._id));
     await releaseOvertime(String(record._id));
+    // A one-time payment is paid, never recovered, so it is not in recoveries
+    // and needs releasing by payslip like the other two.
+    await releaseOneTimePayments(String(record._id));
   }
 }
 
@@ -258,7 +257,7 @@ export class PayslipService {
     // what the payroll run and the salary register do, so all four paths now
     // put the same number on the screen.
     const att = await this.summary(input.employee, input.month);
-    const attLines = attendanceDeductions(att, att.salary, input.month, att.workingDays);
+    const attLines = attendanceDeductions(att, att.salary);
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
@@ -351,7 +350,7 @@ export class PayslipService {
         .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
-      const manual = [...typed, ...attendanceDeductions(att, att.salary, month, att.workingDays)];
+      const manual = [...typed, ...attendanceDeductions(att, att.salary)];
 
       const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -564,7 +563,7 @@ export class PayslipService {
     // so without them the preview quietly under-reported the deductions and
     // promised a net pay the payslip was never going to produce.
     base.autoDeductions = [
-      ...attendanceDeductions(base, base.salary, month, base.workingDays),
+      ...attendanceDeductions(base, base.salary),
       ...loanDeductions,
       ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
     ];
@@ -586,6 +585,24 @@ export class PayslipService {
     const existing = await Payslip.find(scoped({ month }));
     const existMap = new Map(existing.map((p) => [String(p.employee), p]));
 
+    // What each existing payslip actually paid as a one-time payment. Read back
+    // from the adjustments it consumed, because by now they are marked applied
+    // and recomputing returns nothing — which is what folded a bonus silently
+    // into "base salary" and emptied the add-ons column.
+    const paidOneTime = new Map<string, number>();
+    if (existing.length) {
+      const ids = existing.map((p) => p._id);
+      const consumed = await OneTimeAdjustment.find({
+        // Rows written before the id was cast properly hold a string.
+        payslip: { $in: [...ids, ...ids.map(String)] as never[] },
+        kind: "payment",
+      }).select("payslip appliedAmount amount").lean();
+      for (const a of consumed) {
+        const key = String(a.payslip);
+        paidOneTime.set(key, r2((paidOneTime.get(key) ?? 0) + (a.appliedAmount ?? a.amount ?? 0)));
+      }
+    }
+
     const round = (n: number) => Math.round(n * 100) / 100;
     const rows = [];
     for (const emp of employees) {
@@ -593,7 +610,7 @@ export class PayslipService {
       const base = s.salary || 0;
       // Same helper the payslip uses, so the preview row and the generated
       // payslip cannot disagree about what a day is worth.
-      const attLines = attendanceDeductions(s, base, month, s.workingDays);
+      const attLines = attendanceDeductions(s, base);
       const lopAmount = round(attLines.find((l) => l.label.startsWith(LOP_PREFIX))?.amount ?? 0);
       const latePenaltyAmount = round(attLines.find((l) => l.label.startsWith(PENALTY_PREFIX))?.amount ?? 0);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
@@ -616,9 +633,21 @@ export class PayslipService {
       const sum = (lines: Array<{ label: string; amount: number }>, match: (l: string) => boolean) =>
         round(lines.filter((l) => match(l.label)).reduce((a, l) => a + l.amount, 0));
 
+      // For a generated payslip these come from the slip, not from a fresh
+      // computation: the adjustments it consumed are closed, so recomputing
+      // reports zero for work the payslip plainly did.
+      const slipOneTimePayments = slip ? (paidOneTime.get(String(slip._id)) ?? 0) : oneTimePayments;
+      const slipOneTimeDeductions = slip
+        ? round((slip.recoveries ?? []).filter((r) => r.kind === "adjustment").reduce((a, r) => a + r.amount, 0))
+        : oneTimeDeductions;
+
       const row = slip
         ? {
-            salary: round(sum(slip.earnings, (l) => !l.startsWith("Reimbursement") && !l.startsWith("Overtime"))),
+            // Everything that is not a reimbursement, overtime or a one-time
+            // payment — those have columns of their own.
+            salary: round(
+              sum(slip.earnings, (l) => !l.startsWith("Reimbursement") && !l.startsWith("Overtime")) - slipOneTimePayments
+            ),
             earnings: slip.earnings,
             lopAmount: sum(slip.deductions, (l) => l.startsWith(LOP_PREFIX)),
             latePenaltyAmount: sum(slip.deductions, (l) => l.startsWith(PENALTY_PREFIX)),
@@ -650,8 +679,8 @@ export class PayslipService {
         // count gave no clue whether it was calendar days or working ones.
         workingDays: slip ? (slip.workingDays || s.workingDays) : s.workingDays,
         latePenaltyDays: s.latePenaltyDays,
-        oneTimePayments,
-        oneTimeDeductions,
+        oneTimePayments: slipOneTimePayments,
+        oneTimeDeductions: slipOneTimeDeductions,
         ...row,
         payslipId: slip ? String(slip._id) : null,
         status: slip?.status ?? null, // null → not generated yet
@@ -684,7 +713,7 @@ export class PayslipService {
 
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
-      deductions.push(...attendanceDeductions(s, s.salary || 0, month, s.workingDays));
+      deductions.push(...attendanceDeductions(s, s.salary || 0));
       for (const l of s.loanDeductions ?? []) deductions.push(l);
       deductions.push(...oneTime.deductions);
 

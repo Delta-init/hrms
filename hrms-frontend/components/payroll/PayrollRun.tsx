@@ -236,13 +236,14 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
         {r.structureName && <p className="text-[11px] font-normal text-muted-foreground" title="Salary structure in force">{r.structureName}</p>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
-        {/* Out of the month's working days, not its calendar days — a bare
-            count left it ambiguous which one it meant. */}
+        {/* Days lost are counted against the month's working days; each one is
+            priced at a thirtieth of salary. Saying only "3 of 26" invited the
+            reader to divide by 26. */}
         {r.lopAmount > 0 && (
-          <div>
+          <div title={`${r.lopDays} day(s) at 1/30 of salary`}>
             -{money(r.lopAmount, r.currency)}
             <span className="ml-1 text-[11px] text-muted-foreground">
-              ({r.lopDays}{r.workingDays ? ` of ${r.workingDays}` : ""} working day{r.lopDays === 1 ? "" : "s"})
+              ({r.lopDays}{r.workingDays ? ` of ${r.workingDays}` : ""} working day{r.lopDays === 1 ? "" : "s"} · 1/30 each)
             </span>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
 import { Employee } from "../models/Employee.js";
 import type { CreateOneTimeInput, UpdateOneTimeInput } from "../validations/oneTimeAdjustmentValidation.js";
@@ -106,8 +107,22 @@ export async function computeOneTimeAdjustments(
   employeeId: string,
   month: string
 ): Promise<{ earnings: Line[]; deductions: Array<Line & { adjustmentId: string }>; ids: string[] }> {
+  // A payment belongs to the month it was entered for. A bonus for August is
+  // an August bonus; if August's payslip never ran, it stays waiting for
+  // August rather than quietly appearing in September's pay.
+  //
+  // A deduction is money owed, so it does carry: what one month's pay could
+  // not absorb is collected by the next. That is why the two are matched
+  // differently rather than by one rule.
   const items = await OneTimeAdjustment.find(
-    scoped({ employee: employeeId, month: { $lte: month }, applied: false })
+    scoped({
+      employee: employeeId,
+      applied: false,
+      $or: [
+        { kind: "payment", month },
+        { kind: "deduction", month: { $lte: month } },
+      ],
+    })
   ).sort({ month: 1, createdAt: 1 });
 
   const earnings: Line[] = [];
@@ -129,9 +144,28 @@ export async function computeOneTimeAdjustments(
 /** Mark one-time payments as fully applied to a payslip so they aren't reused. */
 export async function markOneTimeApplied(ids: string[], payslipId: string): Promise<void> {
   if (!ids.length) return;
+  // An aggregation-pipeline update skips Mongoose casting, so the id has to be
+  // converted here. Left as a string it was written as one, and every later
+  // lookup by payslip quietly matched nothing.
   await OneTimeAdjustment.updateMany(
     { _id: { $in: ids } },
-    [{ $set: { applied: true, appliedAmount: "$amount", payslip: payslipId } }]
+    [{ $set: { applied: true, appliedAmount: "$amount", payslip: new Types.ObjectId(payslipId) } }]
+  );
+}
+
+/**
+ * Hand back one-time payments a payslip had consumed, so they are pending again.
+ *
+ * Deductions come back through reverseAdjustmentRecoveries, which works off the
+ * payslip's recoveries. Payments are never recovered — they are simply paid —
+ * so nothing released them, and deleting a payslip left a bonus marked as paid
+ * by a payslip that no longer existed. It could never be paid again.
+ */
+export async function releaseOneTimePayments(payslipId: string): Promise<void> {
+  await OneTimeAdjustment.updateMany(
+    // Both forms: rows written before the cast above hold a string.
+    { kind: "payment", payslip: { $in: [new Types.ObjectId(payslipId), payslipId as never] } },
+    { $set: { applied: false, appliedAmount: 0, payslip: null } }
   );
 }
 
