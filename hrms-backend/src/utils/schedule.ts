@@ -37,6 +37,17 @@ export function todayInTz(tz: string, now = new Date()): string {
   }).format(now);
 }
 
+/**
+ * The calendar day an instant falls on, seen from `tz`.
+ *
+ * Attendance stores a day as its local midnight expressed in UTC, so a Dubai
+ * day of the 8th is 20:00Z on the 7th. Reading that back with the UTC date
+ * lands it on the wrong day; this reads it in the timezone it was written for.
+ */
+export function localDayKey(instant: Date | string | number, tz: string): string {
+  return todayInTz(tz, new Date(instant));
+}
+
 /** Convert a wall-clock date+time in `tz` to the corresponding UTC instant. */
 export function zonedTimeToUtc(dateStr: string, timeStr: string, tz: string): Date {
   const naiveUtc = new Date(`${dateStr}T${timeStr}:00.000Z`);

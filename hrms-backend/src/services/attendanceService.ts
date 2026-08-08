@@ -4,13 +4,23 @@ import { Employee } from "../models/Employee.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
+import { Organization } from "../models/Organization.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
-import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
+import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
+
+/**
+ * Start of `value` as a local day in `tz`. A bare YYYY-MM-DD is a calendar day
+ * and has to be anchored somewhere; anything more specific is already an
+ * instant and is left alone.
+ */
+function dayBoundary(value: string, tz: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? zonedTimeToUtc(value, "00:00", tz) : new Date(value);
+}
 
 interface AttendanceQuery extends PaginationQuery {
   user?: string;
@@ -60,6 +70,12 @@ export class AttendanceService {
     return Attendance.findById(attendance._id).populate("user", "name email designation");
   }
 
+  /** The organization's timezone — what "a day" means for this tenant. */
+  private async orgTimeZone(): Promise<string> {
+    const org = await Organization.findById(getOrgId()).select("settings.timeZone").lean<{ settings?: { timeZone?: string } } | null>();
+    return org?.settings?.timeZone || DEFAULT_SCHEDULE.timeZone;
+  }
+
   async list(query: AttendanceQuery) {
     const { page, limit, skip } = parsePagination(query, 50, 200);
 
@@ -67,9 +83,14 @@ export class AttendanceService {
     if (query.user) filter.user = query.user;
     if (query.status) filter.status = query.status;
     if (query.dateFrom || query.dateTo) {
+      // A day here means a local day, not a UTC instant. Comparing a bare
+      // YYYY-MM-DD against the stored local-midnight-in-UTC missed every
+      // record east of Greenwich — asking for today returned nothing at all —
+      // and `$lte` on the end date cut the last day off at its first second.
+      const tz = await this.orgTimeZone();
       const range: Record<string, Date> = {};
-      if (query.dateFrom) range.$gte = new Date(query.dateFrom);
-      if (query.dateTo) range.$lte = new Date(query.dateTo);
+      if (query.dateFrom) range.$gte = dayBoundary(query.dateFrom, tz);
+      if (query.dateTo) range.$lt = new Date(dayBoundary(query.dateTo, tz).getTime() + 86_400_000);
       filter.date = range;
     }
 
@@ -225,20 +246,34 @@ export class AttendanceService {
     const year = start.getUTCFullYear();
     const monthIndex = start.getUTCMonth();
     const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-    const todayKey = new Date().toISOString().slice(0, 10);
+
+    // Attendance stores a day as its local midnight in UTC, so the first day of
+    // the month sits before this window and the first of the next month sits
+    // inside it. Widen by a day at each end and let the local-day key below
+    // decide what actually belongs to the month — that works whatever timezone
+    // each person's schedule is in, without picking one for the whole query.
+    const DAY = 86_400_000;
+    const scanStart = new Date(start.getTime() - DAY);
+    const scanEnd = new Date(end.getTime() + DAY);
+
+    // Whose "today" it is depends on where the organization is, not on UTC.
+    // This decides whether a blank past day is drawn as absent, so in the hours
+    // either side of midnight the UTC date marks the wrong day.
+    const orgTz = await this.orgTimeZone();
+    const todayKey = todayInTz(orgTz);
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = employeeId;
     const employees = await Employee.find(empFilter)
       .select("name employeeCode designation user")
-      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays leavePolicies" } })
+      .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays leavePolicies timeZone" } })
       .sort({ name: 1 })
       .lean();
 
     const userIds = employees.map((e) => (e.user as { _id?: unknown } | null)?._id).filter(Boolean);
 
     const [att, monthLeaves, holidays, rosterMap, regs] = await Promise.all([
-      Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } })
+      Attendance.find({ user: { $in: userIds }, date: { $gte: scanStart, $lt: scanEnd } })
         .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
         .select("user startDate endDate type halfDay").lean(),
@@ -263,7 +298,10 @@ export class AttendanceService {
     const attByUser = new Map<string, Record<string, DayEntry>>();
     for (const a of att) {
       const uid = String(a.user);
-      const key = new Date(a.date).toISOString().slice(0, 10);
+      // Read the day back in the timezone it was written for. The record
+      // carries its own; fall back to the org's for rows written before that
+      // field existed. Days either side of the month simply never match a key.
+      const key = localDayKey(a.date, a.timeZone || orgTz);
       if (!attByUser.has(uid)) attByUser.set(uid, {});
       attByUser.get(uid)![key] = {
         status: a.status as string, workedMinutes: a.workedMinutes ?? 0,

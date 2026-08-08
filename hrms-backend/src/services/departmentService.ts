@@ -2,11 +2,13 @@ import { Department } from "../models/Department.js";
 import { Employee } from "../models/Employee.js";
 import { Attendance } from "../models/Attendance.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Organization } from "../models/Organization.js";
 import type { CreateDepartmentInput, UpdateDepartmentInput } from "../validations/departmentValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
+import { localDayKey, DEFAULT_SCHEDULE } from "../utils/schedule.js";
 
 const POP = [
   { path: "leader", select: "name email employeeCode" },
@@ -210,8 +212,16 @@ export class DepartmentService {
       .lean();
     const userIds = employees.map((e) => e.user).filter(Boolean);
 
+    // Attendance stores a day as its local midnight in UTC, so the month's
+    // first day sits before this window. Widen by a day at each end and let the
+    // local-day key decide what belongs to the month. See attendanceService.
+    const DAY = 86_400_000;
+    const org = await Organization.findById(getOrgId()).select("settings.timeZone").lean<{ settings?: { timeZone?: string } } | null>();
+    const orgTz = org?.settings?.timeZone || DEFAULT_SCHEDULE.timeZone;
+
     const [att, leaves, monthLeaves] = await Promise.all([
-      Attendance.find({ user: { $in: userIds }, date: { $gte: start, $lt: end } }).select("user date status").lean(),
+      Attendance.find({ user: { $in: userIds }, date: { $gte: new Date(start.getTime() - DAY), $lt: new Date(end.getTime() + DAY) } })
+        .select("user date status timeZone").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: yearEnd }, endDate: { $gte: yearStart } }).select("user days").lean(),
       // Approved leaves that intersect the report month — used to paint the calendar.
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("user startDate endDate type").lean(),
@@ -220,7 +230,7 @@ export class DepartmentService {
     const attByUser = new Map<string, Record<string, string>>();
     for (const a of att) {
       const uid = String(a.user);
-      const key = new Date(a.date).toISOString().slice(0, 10);
+      const key = localDayKey(a.date, a.timeZone || orgTz);
       if (!attByUser.has(uid)) attByUser.set(uid, {});
       attByUser.get(uid)![key] = a.status as string;
     }
