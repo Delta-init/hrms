@@ -15,7 +15,7 @@ export const leavePolicyFormSchema = z
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]),
     paid: z.boolean(),
-    accrueMonthly: z.boolean(),
+    eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366),
   })
   .superRefine((v, ctx) => {

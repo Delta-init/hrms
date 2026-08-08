@@ -21,7 +21,8 @@ export interface EffectivePolicy {
   days: number;
   period: LeavePeriod;
   paid: boolean;
-  accrueMonthly: boolean;
+  /** Months of service before this leave can be taken. 0 = from day one. */
+  eligibleAfterMonths: number;
   carryForwardLimit: number;
   /** Which schedule granted it — null when it is the organization-wide one. */
   workSchedule: string | null;
@@ -40,7 +41,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 
 function shape(p: {
   _id: unknown; type: string; label?: string | null; days: number; period?: LeavePeriod;
-  paid?: boolean; accrueMonthly?: boolean; carryForwardLimit?: number; workSchedule?: unknown;
+  paid?: boolean; eligibleAfterMonths?: number; carryForwardLimit?: number; workSchedule?: unknown;
 }): EffectivePolicy {
   return {
     _id: p._id,
@@ -49,7 +50,7 @@ function shape(p: {
     days: p.days,
     period: p.period ?? "year",
     paid: p.paid !== false,
-    accrueMonthly: p.accrueMonthly !== false,
+    eligibleAfterMonths: p.eligibleAfterMonths ?? 0,
     carryForwardLimit: p.carryForwardLimit ?? 0,
     workSchedule: p.workSchedule ? String(p.workSchedule) : null,
   };
@@ -111,38 +112,69 @@ export function periodWindow(period: LeavePeriod, on: Date): { start: Date; end:
   return { start: new Date(Date.UTC(y, 0, 1)), end: new Date(Date.UTC(y + 1, 0, 1)), year: y };
 }
 
+/** The date someone becomes eligible under `policy`, or null if there is no
+ *  joining date to measure from. */
+export function eligibleOnFor(
+  policy: Pick<EffectivePolicy, "eligibleAfterMonths">,
+  joiningDate: Date | null
+): Date | null {
+  if (!joiningDate) return null;
+  if (!policy.eligibleAfterMonths) return joiningDate;
+  const d = new Date(joiningDate);
+  d.setUTCMonth(d.getUTCMonth() + policy.eligibleAfterMonths);
+  return d;
+}
+
+export interface Eligibility {
+  eligible: boolean;
+  /** When they qualify, or null if already qualified or unknowable. */
+  eligibleOn: Date | null;
+  /** True when there is no joining date to measure service from. */
+  joiningDateMissing: boolean;
+}
+
 /**
- * What the policy has granted by now for the period containing `on`.
+ * Whether `policy` is open to somebody by `on`.
  *
- * - No joining date on record, or not joined yet → nothing.
- * - Monthly policies grant their days whole at the start of each month; there
- *   is nothing to pro-rate inside a month.
- * - Yearly policies with accrueMonthly build up a twelfth a month from the
- *   later of January and the joining month; otherwise the full amount lands as
- *   soon as the person has joined.
+ * Measured from the joining date, so "eligible after 3 months" is a fact about
+ * the person rather than a rule someone has to remember. A policy with no
+ * waiting period is open from day one and needs no joining date at all.
+ *
+ * With a waiting period and no joining date on record we cannot tell, and we
+ * grant it: an active employee silently earning nothing, with nothing on screen
+ * explaining why, is the worse of the two mistakes. The caller is told so it
+ * can say as much.
+ */
+export function eligibilityFor(
+  policy: Pick<EffectivePolicy, "eligibleAfterMonths">,
+  joiningDate: Date | null,
+  on: Date
+): Eligibility {
+  if (!policy.eligibleAfterMonths) return { eligible: true, eligibleOn: null, joiningDateMissing: !joiningDate };
+  if (!joiningDate) return { eligible: true, eligibleOn: null, joiningDateMissing: true };
+  const eligibleOn = eligibleOnFor(policy, joiningDate)!;
+  const eligible = on >= eligibleOn;
+  return { eligible, eligibleOn: eligible ? null : eligibleOn, joiningDateMissing: false };
+}
+
+/**
+ * What the policy grants for the period containing `on`: the full days once
+ * eligible, nothing before that.
+ *
+ * Entitlement used to be pro-rated month by month across the year, which meant
+ * a yearly allowance was never really "20 days" — it was however many twelfths
+ * had gone by. A waiting period says the same thing more plainly: nothing until
+ * you qualify, the whole allowance afterwards.
  */
 export function accruedFor(
-  policy: Pick<EffectivePolicy, "days" | "period" | "accrueMonthly">,
+  policy: Pick<EffectivePolicy, "days" | "period" | "eligibleAfterMonths">,
   joiningDate: Date | null,
-  on: Date,
-  now = new Date()
+  on: Date
 ): number {
-  if (!joiningDate) return 0;
-  const { start, end, year } = periodWindow(policy.period, on);
-  if (joiningDate >= end) return 0;
-
-  if (policy.period === "month") return round(policy.days);
-  if (!policy.accrueMonthly) return round(policy.days);
-
-  const yearEnd = new Date(Date.UTC(year, 11, 31));
-  const periodStart = joiningDate > start ? joiningDate : start;
-  const periodEnd = now < yearEnd ? now : yearEnd;
-  if (periodEnd < periodStart) return 0;
-
-  const startMonth = periodStart.getUTCFullYear() === year ? periodStart.getUTCMonth() : 0;
-  const endMonth = periodEnd.getUTCFullYear() === year ? periodEnd.getUTCMonth() : 11;
-  const months = Math.min(12, Math.max(0, endMonth - startMonth + 1));
-  return round(Math.min(policy.days, (policy.days / 12) * months));
+  const { end } = periodWindow(policy.period, on);
+  // Joined after this period had already finished — nothing for it.
+  if (joiningDate && joiningDate >= end) return 0;
+  return eligibilityFor(policy, joiningDate, on).eligible ? round(policy.days) : 0;
 }
 
 /** Days of `type` already booked in the period containing `on`. */
@@ -167,7 +199,7 @@ export async function usedInPeriod(
 
 /** Unused days brought forward from last year. Yearly policies only. */
 export function carriedForward(
-  policy: Pick<EffectivePolicy, "days" | "period" | "accrueMonthly" | "carryForwardLimit">,
+  policy: Pick<EffectivePolicy, "days" | "period" | "eligibleAfterMonths" | "carryForwardLimit">,
   joiningDate: Date | null,
   year: number,
   usedLastYear: number

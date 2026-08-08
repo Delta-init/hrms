@@ -15,6 +15,18 @@ interface Props {
   canManage: boolean;
 }
 
+/** "3 months" / "1 year" / "18 months" — whole years read better as years. */
+function monthsLabel(months: number): string {
+  if (months >= 12 && months % 12 === 0) {
+    const y = months / 12;
+    return `${y} year${y === 1 ? "" : "s"}`;
+  }
+  return `${months} month${months === 1 ? "" : "s"}`;
+}
+
+const fmtDay = (iso: string) =>
+  new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(iso));
+
 export function LeaveBalances({ canManage }: Props) {
   const { data: policies, isLoading: policiesLoading } = useLeavePolicies(canManage);
   const { data: balances, isLoading: balancesLoading } = useMyLeaveBalances();
@@ -57,7 +69,7 @@ export function LeaveBalances({ canManage }: Props) {
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {p.days}d {p.period === "month" ? "a month" : "a year"}
-                      {p.period === "year" && ` · ${p.accrueMonthly ? "accrues monthly" : "granted upfront"}`}
+                      {p.eligibleAfterMonths > 0 && ` · after ${monthsLabel(p.eligibleAfterMonths)}`}
                     </p>
                     {p.carryForwardLimit > 0 && <p className="text-xs text-muted-foreground">Carries up to {p.carryForwardLimit}d forward</p>}
                   </div>
@@ -89,12 +101,23 @@ export function LeaveBalances({ canManage }: Props) {
                 <p className={cn("mt-1 text-2xl font-bold tabular-nums", b.balance < 0 ? "text-red-500" : "text-primary")}>{b.balance}<span className="ml-1 text-sm font-normal text-muted-foreground">days left</span></p>
                 <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                   {/* Says which window the figures below cover — a monthly
-                      allowance resets, a yearly one accrues. */}
+                      allowance resets, a yearly one runs to December. */}
                   <div className="flex justify-between"><span>Allowance</span><span className="tabular-nums">{b.days}d {b.period === "month" ? "a month" : "a year"}</span></div>
-                  <div className="flex justify-between"><span>{b.period === "month" ? "This month" : "Accrued"}</span><span className="tabular-nums">{b.accrued}</span></div>
+                  <div className="flex justify-between"><span>{b.period === "month" ? "This month" : "Granted"}</span><span className="tabular-nums">{b.accrued}</span></div>
                   {b.carriedForward > 0 && <div className="flex justify-between"><span>Carried forward</span><span className="tabular-nums">+{b.carriedForward}</span></div>}
                   <div className="flex justify-between"><span>Used</span><span className="tabular-nums">−{b.used}</span></div>
                 </div>
+                {/* A zero with no explanation is what sends people to support. */}
+                {!b.eligible && b.eligibleOn && (
+                  <p className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
+                    Opens up after {monthsLabel(b.eligibleAfterMonths)} of service — from {fmtDay(b.eligibleOn)}.
+                  </p>
+                )}
+                {b.joiningDateMissing && b.eligibleAfterMonths > 0 && (
+                  <p className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
+                    Needs {monthsLabel(b.eligibleAfterMonths)} of service, but this employee has no joining date on record — granted for now.
+                  </p>
+                )}
               </div>
             ))}
           </div>

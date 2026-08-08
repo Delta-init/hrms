@@ -760,8 +760,8 @@ export interface ILeavePolicy extends Document {
   period: LeavePeriod;
   /** Unpaid leave becomes Loss of Pay on the payslip; paid leave does not. */
   paid: boolean;
-  /** Yearly only: pro-rate through the year instead of granting it all upfront. */
-  accrueMonthly: boolean;
+  /** Months of service before this leave can be taken. 0 = from day one. */
+  eligibleAfterMonths: number;
   /** Yearly only: max unused days carried into the next year (0 = none). */
   carryForwardLimit: number;
   createdAt: Date;
@@ -777,11 +777,19 @@ export interface ILeaveBalance {
   paid: boolean;
   /** Days the policy grants per its own period. */
   days: number;
-  /** What the period in question has granted so far (accrual applied). */
+  /** What this period grants them — the full days once eligible, else 0. */
   accrued: number;
   carriedForward: number;
   used: number;
   balance: number;
+  /** Months of service the policy asks for before this leave opens up. */
+  eligibleAfterMonths: number;
+  /** Whether they have served that long yet. */
+  eligible: boolean;
+  /** The date they become eligible, or null if already or unknown. */
+  eligibleOn: string | null;
+  /** True when there is no joining date to measure service from. */
+  joiningDateMissing: boolean;
 }
 
 // ─── Card ───────────────────────────────────────────────────────────────────

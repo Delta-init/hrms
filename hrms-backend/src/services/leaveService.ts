@@ -12,7 +12,7 @@ import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from ".
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 import {
-  policiesForUser, accruedFor, usedInPeriod, carriedForward, periodWindow, leaveLabel,
+  policiesForUser, accruedFor, usedInPeriod, carriedForward, periodWindow, leaveLabel, eligibilityFor,
   type EffectivePolicy,
 } from "./leavePolicyResolver.js";
 
@@ -116,6 +116,20 @@ async function assertLeaveAllowed(
   if (!policy) {
     throw Object.assign(
       new Error(`${leaveLabel(type)} isn't available ${where}`),
+      { statusCode: 400 }
+    );
+  }
+
+  // Not yet served long enough: say when they qualify rather than reporting
+  // zero days left, which reads like they have spent an allowance they never had.
+  const eligibility = eligibilityFor(policy, await joiningDateFor(userId), startDate);
+  if (!eligibility.eligible) {
+    const on = eligibility.eligibleOn!.toISOString().slice(0, 10);
+    const months = policy.eligibleAfterMonths;
+    throw Object.assign(
+      new Error(
+        `${policy.label} opens up after ${months} month${months === 1 ? "" : "s"} of service — from ${on}`
+      ),
       { statusCode: 400 }
     );
   }
@@ -383,6 +397,7 @@ export async function leaveOptionsFor(userId: string, month?: string) {
       ? carriedForward(p, joiningDate, on.getUTCFullYear(),
           await usedInPeriod(userId, p.type, "year", new Date(Date.UTC(on.getUTCFullYear() - 1, 0, 1))))
       : 0;
+    const eligibility = eligibilityFor(p, joiningDate, on);
     options.push({
       type: p.type,
       label: p.label,
@@ -391,6 +406,9 @@ export async function leaveOptionsFor(userId: string, month?: string) {
       paid: p.paid,
       used,
       remaining: Math.max(0, Math.round((accrued + carried - used) * 100) / 100),
+      eligible: eligibility.eligible,
+      eligibleOn: eligibility.eligibleOn ? eligibility.eligibleOn.toISOString() : null,
+      eligibleAfterMonths: p.eligibleAfterMonths,
     });
   }
 

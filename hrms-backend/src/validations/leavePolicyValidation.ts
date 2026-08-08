@@ -16,7 +16,7 @@ export const createLeavePolicySchema = z
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]).default("year"),
     paid: z.boolean().default(true),
-    accrueMonthly: z.boolean().default(true),
+    eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600).default(0),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366).default(0),
   })
   .superRefine((v, ctx) => {
@@ -40,7 +40,7 @@ export const updateLeavePolicySchema = z
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]),
     paid: z.boolean(),
-    accrueMonthly: z.boolean(),
+    eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366),
   })
   .partial()

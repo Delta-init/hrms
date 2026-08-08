@@ -33,6 +33,10 @@ interface Props {
   lockToUserId?: string;
 }
 
+/** A not-yet-eligible type says when it opens rather than reading as "0 left". */
+const fmtDay = (iso: string | null) =>
+  iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(iso)) : "later";
+
 export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) {
   const isEditing = !!leave;
   const selfMode = !!lockToUserId && !isEditing;
@@ -145,8 +149,12 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                   </SelectTrigger>
                   <SelectContent>
                     {allowed.map((o) => (
-                      <SelectItem key={o.type} value={o.type} disabled={o.remaining <= 0}>
-                        {o.label} · {o.remaining}/{o.days} left {o.period === "month" ? "this month" : "this year"}{o.paid ? "" : " · unpaid"}
+                      <SelectItem key={o.type} value={o.type} disabled={!o.eligible || o.remaining <= 0}>
+                        {o.label}
+                        {o.eligible
+                          ? ` · ${o.remaining}/${o.days} left ${o.period === "month" ? "this month" : "this year"}`
+                          : ` · from ${fmtDay(o.eligibleOn)}`}
+                        {o.paid ? "" : " · unpaid"}
                       </SelectItem>
                     ))}
                     {/* Earned by working extra rather than granted by a policy. */}

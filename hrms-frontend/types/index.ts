@@ -286,7 +286,7 @@ export interface LeaveOptions {
   /** True when no schedule policy applies — every type stays available. */
   /** Retained for compatibility; always false — nothing is offered without a policy. */
   unrestricted: boolean;
-  options: Array<{ type: string; label: string; days: number; period: LeavePeriod; paid: boolean; used: number; remaining: number }>;
+  options: Array<{ type: string; label: string; days: number; period: LeavePeriod; paid: boolean; used: number; remaining: number; eligible: boolean; eligibleOn: string | null; eligibleAfterMonths: number }>;
 }
 
 export interface DocumentsResponse {
@@ -617,8 +617,8 @@ export interface LeavePolicy {
   period: LeavePeriod;
   /** Unpaid leave becomes Loss of Pay on the payslip. */
   paid: boolean;
-  /** Yearly only. */
-  accrueMonthly: boolean;
+  /** Months of service before this leave can be taken. 0 = from day one. */
+  eligibleAfterMonths: number;
   carryForwardLimit: number;
   createdAt: string;
   updatedAt: string;
@@ -631,11 +631,17 @@ export interface LeaveBalance {
   paid: boolean;
   /** Days the policy grants per its own period. */
   days: number;
-  /** What the period has granted so far (accrual applied). */
+  /** What this period grants them — the full days once eligible, else 0. */
   accrued: number;
   carriedForward: number;
   used: number;
   balance: number;
+  eligibleAfterMonths: number;
+  eligible: boolean;
+  /** The date they qualify, or null if already or unknown. */
+  eligibleOn: string | null;
+  /** True when there is no joining date to measure service from. */
+  joiningDateMissing: boolean;
 }
 
 // Common IANA time zones for the pickers.

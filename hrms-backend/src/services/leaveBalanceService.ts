@@ -4,7 +4,7 @@ import type { CreateLeavePolicyInput, UpdateLeavePolicyInput } from "../validati
 import type { ILeaveBalance } from "../types/index.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import {
-  leavePolicyIndex, scheduleIdFor, accruedFor, usedInPeriod, carriedForward, leaveLabel,
+  leavePolicyIndex, scheduleIdFor, accruedFor, usedInPeriod, carriedForward, leaveLabel, eligibilityFor,
 } from "./leavePolicyResolver.js";
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -77,19 +77,21 @@ export class LeaveBalanceService {
     const joiningDate = employee?.joiningDate ? new Date(employee.joiningDate) : null;
     const policies = index.for(scheduleId);
 
-    // Monthly allowances are about the month you are in; yearly ones about the
-    // year being asked for. Showing a monthly figure against a past year would
-    // be meaningless.
+    // Read each policy as of the latest moment of `year` that has actually
+    // happened. Anchoring a yearly policy to 1 January made someone who
+    // qualified in April still read as ineligible in August.
     const now = new Date();
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const asOf = now < yearStart ? yearStart : now > yearEnd ? yearEnd : now;
     const onFor = (period: string) =>
-      period === "month"
-        ? (year === now.getUTCFullYear() ? now : new Date(Date.UTC(year, 11, 1)))
-        : new Date(Date.UTC(year, 0, 1));
+      period === "month" && year !== now.getUTCFullYear() ? new Date(Date.UTC(year, 11, 1)) : asOf;
 
     const results: ILeaveBalance[] = [];
     for (const policy of policies) {
       const on = onFor(policy.period);
       const accrued = accruedFor(policy, joiningDate, on);
+      const eligibility = eligibilityFor(policy, joiningDate, on);
       const used = await usedInPeriod(userId, policy.type, policy.period, on);
 
       const carried = policy.period === "year"
@@ -108,6 +110,10 @@ export class LeaveBalanceService {
         carriedForward: carried,
         used,
         balance: round(accrued + carried - used),
+        eligibleAfterMonths: policy.eligibleAfterMonths,
+        eligible: eligibility.eligible,
+        eligibleOn: eligibility.eligibleOn ? eligibility.eligibleOn.toISOString() : null,
+        joiningDateMissing: eligibility.joiningDateMissing,
       });
     }
     return results;

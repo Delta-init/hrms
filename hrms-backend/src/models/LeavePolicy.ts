@@ -40,8 +40,13 @@ const leavePolicySchema = new Schema<ILeavePolicy>(
     period: { type: String, enum: ["month", "year"], default: "year" },
     /** Unpaid leave becomes Loss of Pay on the payslip; paid leave does not. */
     paid: { type: Boolean, default: true },
-    /** Yearly only: pro-rate through the year instead of granting it all upfront. */
-    accrueMonthly: { type: Boolean, default: true },
+    /**
+     * Months of service before this leave can be taken at all. 0 = from day
+     * one. Counted from the employee's joining date, so an entitlement that
+     * only opens up after probation is a number here rather than a rule
+     * somebody has to remember.
+     */
+    eligibleAfterMonths: { type: Number, default: 0, min: 0, max: 600 },
     /** Yearly only: max unused days carried into the next year (0 = none). */
     carryForwardLimit: { type: Number, default: 0, min: 0 },
   },

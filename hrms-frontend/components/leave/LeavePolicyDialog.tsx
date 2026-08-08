@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
@@ -31,8 +31,29 @@ interface Props {
 
 const EMPTY: LeavePolicyFormValues = {
   type: "annual", label: "", workSchedule: ORG_WIDE, days: 0,
-  period: "year", paid: true, accrueMonthly: true, carryForwardLimit: 0,
+  period: "year", paid: true, eligibleAfterMonths: 0, carryForwardLimit: 0,
 };
+
+/** Waiting periods people actually write down, in months. */
+const ELIGIBILITY_CHOICES = [
+  { months: 0, label: "From day one" },
+  { months: 1, label: "After 1 month" },
+  { months: 3, label: "After 3 months" },
+  { months: 6, label: "After 6 months" },
+  { months: 12, label: "After 1 year" },
+  { months: 24, label: "After 2 years" },
+];
+/** Anything the presets don't cover — 45 days' notice, 18 months, and so on. */
+const CUSTOM_MONTHS = "__custom__";
+
+/** "3 months" / "1 year" / "18 months" — whole years read better as years. */
+function monthsLabel(months: number): string {
+  if (months >= 12 && months % 12 === 0) {
+    const y = months / 12;
+    return `${y} year${y === 1 ? "" : "s"}`;
+  }
+  return `${months} month${months === 1 ? "" : "s"}`;
+}
 
 const scheduleIdOf = (p: LeavePolicy) =>
   !p.workSchedule ? ORG_WIDE : typeof p.workSchedule === "string" ? p.workSchedule : p.workSchedule._id;
@@ -52,6 +73,14 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
   const currentType = watch("type");
   const selectedSchedule = watch("workSchedule");
   const period = watch("period");
+  const eligibleAfterMonths = Number(watch("eligibleAfterMonths") ?? 0);
+  // A value the presets don't offer keeps the custom inputs open, so editing a
+  // policy set to 18 months doesn't silently snap it to the nearest preset.
+  const isPreset = ELIGIBILITY_CHOICES.some((c) => c.months === eligibleAfterMonths);
+  const [customEligibility, setCustomEligibility] = useState(false);
+  const [customUnit, setCustomUnit] = useState<"months" | "years">("months");
+  const showCustom = customEligibility || !isPreset;
+  const customValue = customUnit === "years" ? eligibleAfterMonths / 12 : eligibleAfterMonths;
   const isCustom = !BUILTIN_LEAVE_TYPES.includes(currentType as never);
 
   // A type is free if nothing covers it on the schedule being edited — the same
@@ -67,7 +96,7 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
       reset({
         type: policy.type, label: policy.label ?? "", workSchedule: scheduleIdOf(policy),
         days: policy.days, period: policy.period, paid: policy.paid,
-        accrueMonthly: policy.accrueMonthly, carryForwardLimit: policy.carryForwardLimit,
+        eligibleAfterMonths: policy.eligibleAfterMonths, carryForwardLimit: policy.carryForwardLimit,
       });
     } else {
       reset({ ...EMPTY, type: availableTypes[0] ?? CUSTOM });
@@ -83,6 +112,14 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
     if (!availableTypes.includes(currentType as never) && availableTypes.length) setValue("type", availableTypes[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEditing, isCustom, selectedSchedule, currentType]);
+
+  // Reopen on the unit the saved value reads best in.
+  useEffect(() => {
+    if (!open) return;
+    const m = Number(policy?.eligibleAfterMonths ?? 0);
+    setCustomUnit(m > 0 && m % 12 === 0 ? "years" : "months");
+    setCustomEligibility(false);
+  }, [open, policy]);
 
   // A month is granted whole and never rolls over.
   useEffect(() => {
@@ -195,25 +232,71 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
             )} />
           </div>
 
-          {/* Accrual and carry-forward only mean anything across a year. */}
-          {period === "year" && (
-            <>
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="pr-3">
-                  <p className="text-sm font-medium">Accrue monthly</p>
-                  <p className="text-[11px] text-muted-foreground">Pro-rate through the year instead of granting it all upfront.</p>
-                </div>
-                <Controller name="accrueMonthly" control={control} render={({ field }) => (
-                  <Switch checked={field.value} onCheckedChange={field.onChange} />
-                )} />
-              </div>
+          <div className="space-y-1.5">
+            <Label>Eligible</Label>
+            <Controller name="eligibleAfterMonths" control={control} render={({ field }) => (
+              <>
+                <Select
+                  value={showCustom ? CUSTOM_MONTHS : String(field.value ?? 0)}
+                  onValueChange={(v) => {
+                    if (v === CUSTOM_MONTHS) { setCustomEligibility(true); return; }
+                    setCustomEligibility(false);
+                    field.onChange(Number(v));
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ELIGIBILITY_CHOICES.map((c) => (
+                      <SelectItem key={c.months} value={String(c.months)}>{c.label}</SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_MONTHS}>Custom…</SelectItem>
+                  </SelectContent>
+                </Select>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="carryForwardLimit">Carry-forward limit (days)</Label>
-                <Input id="carryForwardLimit" type="number" min="0" step="0.5" {...register("carryForwardLimit")} />
-                <p className="text-[11px] text-muted-foreground">Max unused days that roll into next year. 0 = no carry-forward.</p>
-              </div>
-            </>
+                {showCustom && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Input
+                      type="number" min="0" step="1" aria-label="Waiting period"
+                      value={Number.isFinite(customValue) ? customValue : 0}
+                      onChange={(e) => {
+                        const n = Math.max(0, Number(e.target.value) || 0);
+                        field.onChange(customUnit === "years" ? n * 12 : n);
+                      }}
+                    />
+                    <Select
+                      value={customUnit}
+                      onValueChange={(u) => {
+                        const unit = u as "months" | "years";
+                        setCustomUnit(unit);
+                        // Keep the number the person typed, reinterpreted.
+                        const shown = customUnit === "years" ? eligibleAfterMonths / 12 : eligibleAfterMonths;
+                        field.onChange(unit === "years" ? shown * 12 : shown);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="months">Months</SelectItem>
+                        <SelectItem value="years">Years</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            )} />
+            <p className="text-[11px] text-muted-foreground">
+              {eligibleAfterMonths > 0
+                ? `Nobody can take this leave until they have served ${monthsLabel(eligibleAfterMonths)}, counted from their joining date.`
+                : "Available from an employee's first day."}
+            </p>
+          </div>
+
+          {/* Carry-forward only means anything across a year. */}
+          {period === "year" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="carryForwardLimit">Carry-forward limit (days)</Label>
+              <Input id="carryForwardLimit" type="number" min="0" step="0.5" {...register("carryForwardLimit")} />
+              <p className="text-[11px] text-muted-foreground">Max unused days that roll into next year. 0 = no carry-forward.</p>
+            </div>
           )}
 
           <ResponsiveDialogFooter>
