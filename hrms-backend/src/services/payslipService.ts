@@ -18,6 +18,7 @@ import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { policiesForUser } from "./leavePolicyResolver.js";
+import { employmentWindowFor, employedOn, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -90,21 +91,26 @@ function dayRange(from: Date, to: Date, start: Date, end: Date, tz: string): str
  * than counting every calendar day. Treating Sundays as working days inflated
  * the month and made the two disagree about the same person.
  */
-function workingDayKeys(month: string, workDays?: number[]): string[] {
+function workingDayKeys(month: string, workDays?: number[], employment?: EmploymentWindow): string[] {
   const days = workDays?.length ? workDays : DEFAULT_WORK_DAYS;
   const [y, m] = month.split("-").map(Number);
   const total = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const keys: string[] = [];
   for (let d = 1; d <= total; d++) {
     const dt = new Date(Date.UTC(y, m - 1, d));
-    if (days.includes(dt.getUTCDay())) keys.push(dt.toISOString().slice(0, 10));
+    if (!days.includes(dt.getUTCDay())) continue;
+    const key = dt.toISOString().slice(0, 10);
+    // Days either side of somebody's employment are not theirs to work. A
+    // joiner mid-month owed attendance for the whole month before this.
+    if (employment && !employedOn(employment, key)) continue;
+    keys.push(key);
   }
   return keys;
 }
 
 /** Days in `month` that fall on the schedule's working weekdays. */
-function countWorkingDays(month: string, workDays?: number[]): number {
-  return workingDayKeys(month, workDays).length;
+function countWorkingDays(month: string, workDays?: number[], employment?: EmploymentWindow): number {
+  return workingDayKeys(month, workDays, employment).length;
 }
 
 /**
@@ -432,6 +438,9 @@ export class PayslipService {
         workSchedule?: ScheduleShape | null;
       }>();
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    // Named `employment`: `window` is a DOM global here and would type-check
+    // against that instead of failing.
+    const employment = await employmentWindowFor(emp as never);
 
     // Bound the month in the employee's timezone so local days at the month
     // edges bucket correctly (attendance is stored as local-midnight-UTC).
@@ -526,7 +535,7 @@ export class PayslipService {
       for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) paidLeaveDays.add(k);
     }
     const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
-    const workingSet = new Set(workingDayKeys(month, workDays));
+    const workingSet = new Set(workingDayKeys(month, workDays, employment));
     const chargeable = (k: string) => workingSet.has(k) && !paidLeaveDays.has(k) && !holidayDays.has(k);
 
     let halfCount = 0;
@@ -541,7 +550,7 @@ export class PayslipService {
     // Working days come from the schedule's week pattern; without one every day
     // of the month counts, which is the honest answer when nobody has said
     // which days this person is expected to work.
-    base.workingDays = countWorkingDays(month, workDays);
+    base.workingDays = countWorkingDays(month, workDays, employment);
 
     // Working days nothing accounts for — no attendance, no approved leave, no
     // holiday. A payslip is only as good as its attendance coverage, and one
@@ -551,7 +560,7 @@ export class PayslipService {
     for (const h of holidays) accounted.add(dayKey(h.date, tz));
     for (const l of anyLeave) for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) accounted.add(k);
 
-    const workingKeys = workingDayKeys(month, workDays);
+    const workingKeys = workingDayKeys(month, workDays, employment);
     base.unrecordedDays = workingKeys.filter((k) => !accounted.has(k)).length;
     base.recordedDays = base.workingDays - base.unrecordedDays;
 

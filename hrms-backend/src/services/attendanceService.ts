@@ -6,6 +6,7 @@ import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
 import { Organization } from "../models/Organization.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
+import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -265,12 +266,17 @@ export class AttendanceService {
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = employeeId;
     const employees = await Employee.find(empFilter)
-      .select("name employeeCode designation user")
+      .select("name employeeCode designation user joiningDate")
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays timeZone" } })
       .sort({ name: 1 })
       .lean();
 
     const userIds = employees.map((e) => (e.user as { _id?: unknown } | null)?._id).filter(Boolean);
+    // Days before somebody joined, or after their last working day, are not
+    // theirs to account for. Without this a mid-month joiner was marked absent
+    // for every working day before they existed as an employee.
+    const windows = await employmentWindows(employees as never);
+
 
     const [att, monthLeaves, holidays, rosterMap, regs] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: scanStart, $lt: scanEnd } })
@@ -351,6 +357,7 @@ export class AttendanceService {
         return { type, label: p?.label ?? leaveLabel(type), paid: p ? p.paid : type !== "unpaid" };
       };
 
+      const window = windows.get(String(e._id)) ?? { from: null, to: null };
       const days: Record<string, DayEntry> = {};
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
       let workedTotal = 0, workedDays = 0;
@@ -362,9 +369,12 @@ export class AttendanceService {
         const workDays = workDaysForDate(rosterWindows, dayDate) ?? staticWorkDays;
         let entry: DayEntry | null;
         if (recs[key]) {
+          // A real record always shows, even out of window — the data exists
+          // and hiding it would make the month impossible to reconcile.
           entry = recs[key];
           if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
-        } else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
+        } else if (!employedOn(window, key)) entry = null;
+        else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
         else if (holidayMap.has(key)) entry = { status: "holiday", note: holidayMap.get(key) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
         else if (key < todayKey) entry = { status: "absent" };
