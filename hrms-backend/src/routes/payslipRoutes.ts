@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createPayslip, getPayslips, getMyPayslips, getPayslipSummary,
   getPayrollRun, getSalaryRegister, runPayroll, getPayslipById, updatePayslip, deletePayslip,
+  bulkUpdatePayslipStatus, bulkDeletePayslips,
 } from "../controllers/payslipController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -19,6 +20,9 @@ router.get("/register", checkPermission("payroll", "view"), getSalaryRegister);
 router.post("/run", checkPermission("payroll", "create"), runPayroll);
 router.get("/", checkPermission("payroll", "view"), getPayslips);
 router.post("/", checkPermission("payroll", "create"), createPayslip);
+// Ahead of "/:id" so these paths are not swallowed as an identifier.
+router.patch("/bulk/status", checkPermission("payroll", "edit"), bulkUpdatePayslipStatus);
+router.post("/bulk/delete", checkPermission("payroll", "delete"), bulkDeletePayslips);
 router.get("/:id", checkPermission("payroll", "view"), getPayslipById);
 router.put("/:id", checkPermission("payroll", "edit"), updatePayslip);
 router.delete("/:id", checkPermission("payroll", "delete"), deletePayslip);

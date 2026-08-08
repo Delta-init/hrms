@@ -1,7 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { PayslipService } from "../services/payslipService.js";
-import { createPayslipSchema, updatePayslipSchema } from "../validations/payslipValidation.js";
+import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema } from "../validations/payslipValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new PayslipService();
@@ -75,6 +75,24 @@ export const updatePayslip = async (req: AuthenticatedRequest, res: Response, ne
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const record = await service.update(req.params.id, parsed.data, req.user!.userId);
     sendSuccess(res, "Payslip updated successfully", record);
+  } catch (error) { next(error); }
+};
+
+export const bulkUpdatePayslipStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = bulkPayslipStatusSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const result = await service.bulkSetStatus(parsed.data.ids, parsed.data.status);
+    sendSuccess(res, result.message, result);
+  } catch (error) { next(error); }
+};
+
+export const bulkDeletePayslips = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = bulkPayslipSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const result = await service.bulkRemove(parsed.data.ids);
+    sendSuccess(res, result.message, result);
   } catch (error) { next(error); }
 };
 

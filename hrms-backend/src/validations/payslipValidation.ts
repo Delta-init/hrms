@@ -30,5 +30,18 @@ export const updatePayslipSchema = z.object({
   notes: z.string().max(500).optional().nullable(),
 });
 
+/** Acting on a selection of rows at once. Capped so one request cannot be
+ *  turned into an unbounded write loop. */
+export const bulkPayslipSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, "Select at least one payslip").max(500),
+});
+
+export const bulkPayslipStatusSchema = bulkPayslipSchema.extend({
+  status: z.enum(["draft", "issued", "paid"]),
+});
+
+export type BulkPayslipInput = z.infer<typeof bulkPayslipSchema>;
+export type BulkPayslipStatusInput = z.infer<typeof bulkPayslipStatusSchema>;
+
 export type CreatePayslipInput = z.infer<typeof createPayslipSchema>;
 export type UpdatePayslipInput = z.infer<typeof updatePayslipSchema>;

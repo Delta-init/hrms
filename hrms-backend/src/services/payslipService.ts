@@ -384,6 +384,31 @@ export class PayslipService {
     return Payslip.findById(id).populate(POP);
   }
 
+  /**
+   * Move a selection of payslips to one status. Only the status moves — the
+   * amounts and everything recovered against them are left alone, so this is
+   * safe to run over a whole month at once.
+   */
+  async bulkSetStatus(ids: string[], status: "draft" | "issued" | "paid") {
+    const result = await Payslip.updateMany(scoped({ _id: { $in: ids } }), { $set: { status } });
+    return { message: `${result.modifiedCount} payslip(s) marked ${status}`, matched: result.matchedCount, modified: result.modifiedCount };
+  }
+
+  /**
+   * Delete a selection, returning each to "not generated".
+   *
+   * One at a time rather than deleteMany: every slip has to hand back what it
+   * collected against loans and adjustments first, and that is per-record work.
+   */
+  async bulkRemove(ids: string[]) {
+    const records = await Payslip.find(scoped({ _id: { $in: ids } }));
+    for (const record of records) {
+      await undoRecoveries(record);
+      await Payslip.deleteOne({ _id: record._id });
+    }
+    return { message: `${records.length} payslip(s) reverted to not generated`, deleted: records.length };
+  }
+
   async remove(id: string) {
     const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });

@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Payslip, PayslipSummary, PayrollRun, SalaryRegister } from "@/types";
+import type { ApiResponse, Payslip, PayslipStatus, PayslipSummary, PayrollRun, SalaryRegister } from "@/types";
 
 const KEY = ["payslips"] as const;
 function errMsg(e: unknown, f: string) {
@@ -93,5 +93,27 @@ export const useDeletePayslip = () => {
     mutationFn: async (id: string) => { await api.delete(`/payslips/${id}`); },
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Payslip deleted"); },
     onError: (e) => toast.error(errMsg(e, "Failed to delete payslip")),
+  });
+};
+
+/** Move a selection of payslips to one status in a single request. */
+export const useBulkPayslipStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, status }: { ids: string[]; status: PayslipStatus }) =>
+      (await api.patch<ApiResponse<{ modified: number }>>("/payslips/bulk/status", { ids, status })).data,
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message); },
+    onError: (e) => toast.error(errMsg(e, "Failed to update payslips")),
+  });
+};
+
+/** Delete a selection, returning each row to "not generated". */
+export const useBulkDeletePayslips = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) =>
+      (await api.post<ApiResponse<{ deleted: number }>>("/payslips/bulk/delete", { ids })).data,
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message); },
+    onError: (e) => toast.error(errMsg(e, "Failed to revert payslips")),
   });
 };

@@ -1,8 +1,8 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Wand2, Undo2 } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -13,8 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
 import { payslipFormSchema, type PayslipFormValues } from "@/lib/validations/payslipSchema";
-import { useCreatePayslip, useUpdatePayslip, usePayslipSummary } from "@/hooks/usePayslips";
+import { useCreatePayslip, useUpdatePayslip, usePayslipSummary, useDeletePayslip } from "@/hooks/usePayslips";
 import { toast } from "@/lib/toast";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import type { Payslip } from "@/types";
 
@@ -39,6 +41,10 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   const isEditing = !!payslip;
   const locked = !!preset;
   const { mutate: create, isPending: creating } = useCreatePayslip();
+  const { hasPermission } = useAuth();
+  const { mutate: remove, isPending: reverting } = useDeletePayslip();
+  const [revertOpen, setRevertOpen] = useState(false);
+  const canDelete = hasPermission("payroll", "delete");
   const { mutate: update, isPending: updating } = useUpdatePayslip();
   const isPending = creating || updating;
 
@@ -263,10 +269,31 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           </div>
 
           <ResponsiveDialogFooter>
+            {/* There is no "not generated" status to pick — the row reads that
+                way when no payslip exists, so going back means deleting it. */}
+            {isEditing && canDelete && (
+              <Button type="button" variant="ghost" className="mr-auto gap-2 text-destructive hover:text-destructive"
+                disabled={reverting} onClick={() => setRevertOpen(true)}>
+                {reverting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                Back to not generated
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}{isEditing ? "Save Changes" : "Generate"}</Button>
           </ResponsiveDialogFooter>
         </form>
+
+        <ConfirmDialog
+          open={revertOpen}
+          onOpenChange={(o) => { if (!o) setRevertOpen(false); }}
+          title="Back to not generated?"
+          description={
+            "This payslip is deleted and the row goes back to not generated. Anything collected against loans, " +
+            "advances and one-time adjustments is handed back, so those balances return to what they were before payroll ran."
+          }
+          isPending={reverting}
+          onConfirm={() => payslip && remove(payslip._id, { onSuccess: () => { setRevertOpen(false); onOpenChange(false); } })}
+        />
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
