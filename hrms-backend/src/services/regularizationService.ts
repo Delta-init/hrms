@@ -10,6 +10,7 @@ import { zonedTimeToUtc } from "../utils/schedule.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
+import { notifyReviewed } from "./reviewNotifier.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -22,6 +23,18 @@ const POP = [
   { path: "user", select: "name email designation" },
   { path: "reviewedBy", select: "name email" },
 ];
+
+// Wording for the notification email. The client has its own copy for the UI;
+// an email is read outside the app and cannot borrow it.
+const TYPE_LABELS: Record<string, string> = {
+  missing_checkin: "Missing check-in",
+  missing_checkout: "Missing check-out",
+  wrong_time: "Wrong time",
+  absent_correction: "Absent correction",
+};
+const STATUS_LABELS: Record<string, string> = {
+  present: "Present", half_day: "Half day", wfh: "Work from home",
+};
 
 export class RegularizationService {
   async create(input: CreateRegularizationInput) {
@@ -167,6 +180,32 @@ export class RegularizationService {
     }
 
     await record.save();
+
+    // Only once the decision is final — an intermediate approval step is not an
+    // outcome, and telling somebody twice about one request is worse than late.
+    if (!outcome.advance) {
+      const tz = record.timeZone || "Asia/Dubai";
+      const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(record.date);
+      const time = (d?: Date | null) =>
+        d ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(d) : "—";
+      const details = [
+        { label: "Date", value: day },
+        { label: "Correction", value: TYPE_LABELS[record.type] ?? record.type },
+      ];
+      if (record.status === "approved") {
+        details.push({ label: "Marked as", value: STATUS_LABELS[record.resultingStatus ?? "present"] ?? "Present" });
+        details.push({ label: "Times applied", value: `${time(record.requestedCheckIn)} – ${time(record.requestedCheckOut)}` });
+      }
+      await notifyReviewed({
+        userId: record.user,
+        subject: "Regularization request",
+        approved: record.status === "approved",
+        details,
+        note: record.reviewNote,
+        path: "/regularization",
+      });
+    }
+
     return Regularization.findById(id).populate(POP);
   }
 

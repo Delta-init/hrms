@@ -71,6 +71,9 @@ export async function runBirthdayCheck(now = new Date()) {
     totalRecipients += recipients.length;
 
     const emailed = await sendMail({
+      // A cron run has no request scope, so the tenant is named explicitly —
+      // each organization's mail goes out through its own SMTP.
+      organization: org._id,
       to: recipients,
       subject: `🎂 ${birthdays.length} birthday${birthdays.length === 1 ? "" : "s"} today — ${dateLabel}`,
       html: buildHtml(birthdays, dateLabel),
