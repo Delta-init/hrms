@@ -217,7 +217,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                  deduction lines the form never shows as editable. */
               <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border pb-2 text-xs text-muted-foreground">
                 <span>Working days <span className="font-medium text-foreground">{summary.workingDays ?? "—"}</span></span>
-                <span>Paid <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span></span>
+                {/* "Paid" alone read as "days he turned up for" next to Present.
+                    It is the month minus whatever was charged. */}
+                <span>Paid days <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span></span>
                 <span>Present <span className="font-medium text-foreground">{summary.present}</span></span>
                 {summary.lopDays > 0 && <span className="text-red-600">Loss of pay {summary.lopDays}d</span>}
                 {summary.latePenaltyDays > 0 && <span className="text-amber-600">Late penalty {summary.latePenaltyDays}d</span>}
@@ -227,11 +229,25 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
             {!isEditing && !!summary?.unrecordedDays && (
               /* A payslip is only as good as its attendance coverage. Without
                  this, one record in a 31-day month reads exactly like a full
-                 one — the figures look complete when they are not. */
-              <div className="mb-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                 one — the figures look complete when they are not.
+                 Unrecorded days cover the whole month, so a run started early
+                 counts days that have not happened. That is worth saying out
+                 loud rather than leaving somebody to work out why the figure
+                 moved between two runs of the same month. */
+              <div className={cn(
+                "mb-2 rounded-lg px-2.5 py-1.5 text-xs",
+                summary.unrecordedDaysUnpaid
+                  ? "bg-red-500/10 text-red-700 dark:text-red-400"
+                  : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              )}>
                 Attendance recorded for {summary.recordedDays} of {summary.workingDays} working days.
-                The remaining {summary.unrecordedDays} have no attendance, leave or holiday against them and are
-                being paid in full — check the month is complete before generating.
+                The other {summary.unrecordedDays} have no attendance, leave or holiday against them
+                {!!summary.unrecordedFutureDays && (
+                  <> — {summary.unrecordedFutureDays} of which {summary.unrecordedFutureDays === 1 ? "has" : "have"} not happened yet</>
+                )}.{" "}
+                {summary.unrecordedDaysUnpaid
+                  ? `All ${summary.unrecordedDays} are charged as loss of pay. Generate once the month is complete, or the figure will be higher than it should be.`
+                  : "They are being paid in full — check the month is complete before generating."}
               </div>
             )}
             <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Gross</span><span className="font-medium text-emerald-600">{money(gross)}</span></div>

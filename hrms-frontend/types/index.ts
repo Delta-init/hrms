@@ -756,6 +756,10 @@ export interface PayslipSummary {
   /** Working days with attendance, leave or a holiday — and those with none. */
   recordedDays?: number;
   unrecordedDays?: number;
+  /** How many of the unrecorded days are still to come this month. */
+  unrecordedFutureDays?: number;
+  /** Whether the organization charges those days as loss of pay. */
+  unrecordedDaysUnpaid?: boolean;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────

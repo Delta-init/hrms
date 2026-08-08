@@ -487,6 +487,9 @@ export class PayslipService {
       paidDays: 0,
       recordedDays: 0,
       unrecordedDays: 0,
+      unrecordedFutureDays: 0,
+      // Whether those days cost pay. The form warns very differently either way.
+      unrecordedDaysUnpaid: false,
     };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
@@ -561,10 +564,20 @@ export class PayslipService {
     for (const l of anyLeave) for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) accounted.add(k);
 
     const workingKeys = workingDayKeys(month, workDays, employment);
-    base.unrecordedDays = workingKeys.filter((k) => !accounted.has(k)).length;
-    base.recordedDays = base.workingDays - base.unrecordedDays;
+    const unrecordedKeys = workingKeys.filter((k) => !accounted.has(k));
+    base.unrecordedDays = unrecordedKeys.length;
+    base.recordedDays = workingKeys.length - base.unrecordedDays;
+
+    // The whole month counts, days still to come included: a payslip covers the
+    // month, and a day nobody ever marks is a day nobody worked. Generating
+    // mid-month therefore prices the month as it stands — every remaining day
+    // unaccounted for — so the figure is only final once the month is. Split
+    // out rather than hidden, so the form can say which part has not happened.
+    const today = dayKey(new Date(), tz);
+    base.unrecordedFutureDays = unrecordedKeys.filter((k) => k >= today).length;
 
     // Only docked when the organization has said attendance is mandatory.
+    base.unrecordedDaysUnpaid = penaltyPolicy.unrecordedDaysUnpaid;
     if (penaltyPolicy.unrecordedDaysUnpaid && base.unrecordedDays > 0) {
       base.lopDays = Math.round((base.lopDays + base.unrecordedDays) * 100) / 100;
     }

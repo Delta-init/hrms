@@ -81,8 +81,10 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
             <p className="text-sm font-medium">Days with no attendance are unpaid</p>
             <p className="text-[11px] text-muted-foreground">
               A working day with no attendance record, no approved leave and no holiday against it.
-              Leave this off unless attendance is captured every day — a gap in the data usually means
-              nobody ran attendance, not that the person stayed away.
+              Every such day in the month counts, including days still to come, so run payroll once
+              the month is complete or people will be docked for days they have not worked yet. Leave
+              this off unless attendance is captured every day: a gap in the data usually means nobody
+              ran attendance, not that the person stayed away.
             </p>
           </div>
           <Controller name="unrecordedDaysUnpaid" control={control} render={({ field }) => (
@@ -92,8 +94,10 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
 
         {unrecordedUnpaid && (
           <p className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-            Every unaccounted working day will now reduce pay. Make sure attendance is complete before
-            each payroll run, or people will be docked for days nobody recorded.
+            Every unaccounted working day will now reduce pay — the whole month&apos;s, not only the days
+            gone by. A payslip generated on the 8th charges the remaining three weeks as well, so run
+            payroll at month end with attendance complete, or people will be docked for days nobody
+            recorded and days nobody has worked yet.
           </p>
         )}
 
