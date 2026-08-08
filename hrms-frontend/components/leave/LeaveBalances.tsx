@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { LeavePolicyDialog } from "@/components/leave/LeavePolicyDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
-import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType, leaveTypeLabel } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeavePolicy, leaveTypeLabel } from "@/types";
 
-const ALL_TYPES: PolicyLeaveType[] = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"];
 
 interface Props {
   /** Whether the caller can manage policies (leave.edit / leave.create). */
@@ -25,8 +24,10 @@ export function LeaveBalances({ canManage }: Props) {
   const [selected, setSelected] = useState<LeavePolicy | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LeavePolicy | null>(null);
 
-  const configuredTypes = new Set((policies ?? []).map((p) => p.type));
-  const availableTypes = ALL_TYPES.filter((t) => !configuredTypes.has(t));
+  // A type can now hold several policies — one per work schedule, plus an
+  // organization-wide one — so "all configured" is only true when every type is
+  // taken org-wide AND on every schedule. The dialog works the rest out.
+  const allPolicies = policies ?? [];
 
   return (
     <div className="space-y-4">
@@ -34,7 +35,7 @@ export function LeaveBalances({ canManage }: Props) {
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Leave Policies</h3></div>
-            <Button size="sm" variant="outline" className="h-8" onClick={() => { setSelected(null); setDialogOpen(true); }} disabled={availableTypes.length === 0}>
+            <Button size="sm" variant="outline" className="h-8" onClick={() => { setSelected(null); setDialogOpen(true); }}>
               <Plus className="h-3.5 w-3.5" />Add Policy
             </Button>
           </div>
@@ -48,6 +49,9 @@ export function LeaveBalances({ canManage }: Props) {
                 <div key={p._id} className="group flex items-start justify-between gap-2 rounded-lg border border-border p-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{leaveTypeLabel(p.type)}</p>
+                    <p className="text-[11px] font-medium text-primary">
+                      {p.workSchedule && typeof p.workSchedule === "object" ? p.workSchedule.name : "All employees"}
+                    </p>
                     <p className="text-xs text-muted-foreground">{p.annualDays}d/yr · {p.accrueMonthly ? "accrues monthly" : "granted upfront"}</p>
                     {p.carryForwardLimit > 0 && <p className="text-xs text-muted-foreground">Carries up to {p.carryForwardLimit}d forward</p>}
                   </div>
@@ -87,7 +91,7 @@ export function LeaveBalances({ canManage }: Props) {
 
       {canManage && (
         <>
-          <LeavePolicyDialog open={dialogOpen} onOpenChange={setDialogOpen} policy={selected} availableTypes={selected ? [selected.type] : availableTypes} />
+          <LeavePolicyDialog open={dialogOpen} onOpenChange={setDialogOpen} policy={selected} policies={allPolicies} />
           <ConfirmDialog
             open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}
             title="Delete leave policy" description="Employees will no longer accrue or see a balance for this leave type." isPending={deleting}

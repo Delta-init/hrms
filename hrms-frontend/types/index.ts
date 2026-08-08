@@ -605,6 +605,8 @@ export type PolicyLeaveType = Exclude<BuiltinLeaveType, "comp_off">;
 export interface LeavePolicy {
   _id: string;
   type: PolicyLeaveType;
+  /** The work schedule this covers; null applies to everyone in the org. */
+  workSchedule?: { _id: string; name: string } | string | null;
   annualDays: number;
   accrueMonthly: boolean;
   carryForwardLimit: number;

@@ -750,6 +750,8 @@ export interface ILeavePolicy extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
   type: LeaveType;
+  /** The work schedule this covers; null applies to the whole organization. */
+  workSchedule?: Types.ObjectId | { _id: Types.ObjectId; name?: string } | null;
   /** Full-year entitlement in days. */
   annualDays: number;
   /** Days off track are pro-rated monthly through the year; if false, the

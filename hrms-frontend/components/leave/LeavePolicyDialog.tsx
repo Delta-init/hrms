@@ -13,41 +13,70 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { leavePolicyFormSchema, type LeavePolicyFormValues } from "@/lib/validations/leavePolicySchema";
 import { useCreateLeavePolicy, useUpdateLeavePolicy } from "@/hooks/useLeaveBalances";
+import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { LEAVE_TYPE_LABELS, type LeavePolicy, type PolicyLeaveType, leaveTypeLabel } from "@/types";
+
+/** The org-wide option. Empty string, so the Select has a real value to hold. */
+const ORG_WIDE = "";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   policy?: LeavePolicy | null;
-  /** Leave types with no policy yet — only these are offered when creating. */
-  availableTypes: PolicyLeaveType[];
+  /** Every policy already configured, so a type can be offered per schedule. */
+  policies: LeavePolicy[];
 }
 
-const EMPTY: LeavePolicyFormValues = { type: "annual", annualDays: 0, accrueMonthly: true, carryForwardLimit: 0 };
+const ALL_TYPES: PolicyLeaveType[] = ["annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh"];
+const EMPTY: LeavePolicyFormValues = { type: "annual", workSchedule: ORG_WIDE, annualDays: 0, accrueMonthly: true, carryForwardLimit: 0 };
+const scheduleIdOf = (p: LeavePolicy) =>
+  !p.workSchedule ? ORG_WIDE : typeof p.workSchedule === "string" ? p.workSchedule : p.workSchedule._id;
 
-export function LeavePolicyDialog({ open, onOpenChange, policy, availableTypes }: Props) {
+export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Props) {
   const isEditing = !!policy;
+  const { data: schedules = [] } = useWorkSchedulesSimple();
   const { mutate: create, isPending: creating } = useCreateLeavePolicy();
   const { mutate: update, isPending: updating } = useUpdateLeavePolicy();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<LeavePolicyFormValues>({
+  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm<LeavePolicyFormValues>({
     resolver: zodResolver(leavePolicyFormSchema),
     defaultValues: EMPTY,
   });
+  const currentType = watch("type");
+
+  const selectedSchedule = watch("workSchedule");
+
+  // A type is free if nothing covers it on the schedule being edited — the same
+  // type can have one policy per schedule plus an organization-wide one.
+  const takenHere = new Set(
+    policies.filter((p) => scheduleIdOf(p) === (selectedSchedule ?? ORG_WIDE) && p._id !== policy?._id).map((p) => p.type)
+  );
+  const availableTypes = ALL_TYPES.filter((t) => !takenHere.has(t));
 
   useEffect(() => {
     if (!open) return;
     if (policy) {
-      reset({ type: policy.type, annualDays: policy.annualDays, accrueMonthly: policy.accrueMonthly, carryForwardLimit: policy.carryForwardLimit });
+      reset({
+        type: policy.type, workSchedule: scheduleIdOf(policy), annualDays: policy.annualDays,
+        accrueMonthly: policy.accrueMonthly, carryForwardLimit: policy.carryForwardLimit,
+      });
     } else {
-      reset({ ...EMPTY, type: availableTypes[0] ?? "annual" });
+      reset(EMPTY);
     }
-  }, [open, policy, availableTypes, reset]);
+  }, [open, policy, reset]);
+
+  // Changing the schedule can retire the chosen type if that pair is taken.
+  useEffect(() => {
+    if (!open || isEditing) return;
+    if (!availableTypes.includes(currentType) && availableTypes.length) setValue("type", availableTypes[0]);
+  }, [open, isEditing, selectedSchedule, availableTypes, currentType, setValue]);
 
   const onSubmit = (data: LeavePolicyFormValues) => {
-    if (isEditing) update({ id: policy._id, data }, { onSuccess: () => onOpenChange(false) });
-    else create(data, { onSuccess: () => onOpenChange(false) });
+    // "" is the org-wide option; the server stores that as no schedule.
+    const payload = { ...data, workSchedule: data.workSchedule || null };
+    if (isEditing) update({ id: policy._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    else create(payload, { onSuccess: () => onOpenChange(false) });
   };
 
   return (
@@ -58,6 +87,24 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, availableTypes }
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
+          <div className="space-y-1.5">
+            <Label>Applies to</Label>
+            <Controller name="workSchedule" control={control} render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger><SelectValue placeholder="All employees" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ORG_WIDE}>All employees</SelectItem>
+                  {schedules.map((w) => <SelectItem key={w._id} value={w._id}>{w.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )} />
+            <p className="text-[11px] text-muted-foreground">
+              {selectedSchedule
+                ? "Only employees on this work schedule earn this leave. It overrides any organization-wide policy for the same type."
+                : "Everyone in the organization, unless their work schedule has its own policy for this type."}
+            </p>
+          </div>
+
           <div className="space-y-1.5">
             <Label>Leave type *</Label>
             {isEditing ? (
