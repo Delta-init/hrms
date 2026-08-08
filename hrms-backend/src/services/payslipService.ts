@@ -59,6 +59,10 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 /** Days a month is worth for pay purposes, whatever the calendar says. */
 export const STANDARD_MONTH_DAYS = 30;
 
+/** What one day away costs. The single place this is decided. */
+export const dailyRate = (salary: number): number =>
+  Math.round((salary / STANDARD_MONTH_DAYS) * 100) / 100;
+
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
 const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
@@ -124,7 +128,7 @@ function attendanceDeductions(
   // the same in February as in July. Dividing by the month's own length, or by
   // its working days, made the price of one absent day wander month to month
   // for no reason the payslip could explain.
-  const perDay = r2(salary / STANDARD_MONTH_DAYS);
+  const perDay = dailyRate(salary);
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
@@ -612,6 +616,10 @@ export class PayslipService {
       // payslip cannot disagree about what a day is worth.
       const attLines = attendanceDeductions(s, base);
       const lopAmount = round(attLines.find((l) => l.label.startsWith(LOP_PREFIX))?.amount ?? 0);
+      // Sent rather than re-derived on the client: the row should quote the
+      // rate the deduction was actually priced at, not one worked backwards
+      // from a rounded total.
+      const lopPerDay = dailyRate(base);
       const latePenaltyAmount = round(attLines.find((l) => l.label.startsWith(PENALTY_PREFIX))?.amount ?? 0);
       const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
@@ -679,6 +687,7 @@ export class PayslipService {
         // count gave no clue whether it was calendar days or working ones.
         workingDays: slip ? (slip.workingDays || s.workingDays) : s.workingDays,
         latePenaltyDays: s.latePenaltyDays,
+        lopPerDay,
         oneTimePayments: slipOneTimePayments,
         oneTimeDeductions: slipOneTimeDeductions,
         ...row,

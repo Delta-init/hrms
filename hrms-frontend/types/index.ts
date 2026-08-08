@@ -778,6 +778,8 @@ export interface PayrollRunRow {
   /** Scheduled working days in the month — what lopDays is out of. */
   workingDays?: number;
   lopAmount: number;
+  /** What one lost day costs (salary ÷ 30), as the server priced it. */
+  lopPerDay?: number;
   latePenaltyDays: number;
   latePenaltyAmount: number;
   loanTotal: number;

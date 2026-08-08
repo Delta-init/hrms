@@ -236,14 +236,22 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
         {r.structureName && <p className="text-[11px] font-normal text-muted-foreground" title="Salary structure in force">{r.structureName}</p>}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
-        {/* Days lost are counted against the month's working days; each one is
-            priced at a thirtieth of salary. Saying only "3 of 26" invited the
-            reader to divide by 26. */}
+        {/* Two different denominators used to sit side by side here — days lost
+            "of 26", priced at "1/30" — which read as one sum and is two. The
+            rate is shown as money instead, so the line multiplies out by eye. */}
         {r.lopAmount > 0 && (
-          <div title={`${r.lopDays} day(s) at 1/30 of salary`}>
+          <div
+            title={
+              r.lopPerDay
+                ? `${r.lopDays} day(s) × ${money(r.lopPerDay, r.currency)} (salary ÷ 30)` +
+                  (r.workingDays ? ` · ${r.workingDays} working days this month` : "")
+                : `${r.lopDays} day(s) lost`
+            }
+          >
             -{money(r.lopAmount, r.currency)}
             <span className="ml-1 text-[11px] text-muted-foreground">
-              ({r.lopDays}{r.workingDays ? ` of ${r.workingDays}` : ""} working day{r.lopDays === 1 ? "" : "s"} · 1/30 each)
+              ({r.lopDays} day{r.lopDays === 1 ? "" : "s"}
+              {r.lopPerDay ? ` × ${money(r.lopPerDay, r.currency)}` : ""})
             </span>
           </div>
         )}
