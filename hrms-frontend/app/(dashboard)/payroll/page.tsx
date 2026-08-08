@@ -36,7 +36,11 @@ const statusStyles: Record<PayslipStatus, string> = {
 };
 const fmtMonth = (m: string) => { const [y, mm] = m.split("-"); return `${MONTHS[Number(mm) - 1]} ${y}`; };
 const money = (n: number, c: string) => `${c} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const empName = (p: Payslip) => (typeof p.employee === "object" ? p.employee.name : "—");
+/** `typeof null` is "object", so a payslip whose employee has since been
+ *  deleted took the populated branch and crashed the whole tab on `.name`. */
+const emp = (p: Payslip) => (p.employee && typeof p.employee === "object" ? p.employee : null);
+const empName = (p: Payslip) => emp(p)?.name ?? "—";
+const empCode = (p: Payslip) => emp(p)?.employeeCode ?? "";
 
 export default function PayrollPage() {
   const { hasPermission } = useAuth();
@@ -72,7 +76,7 @@ export default function PayrollPage() {
       render: (p) => (
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(empName(p))}</div>
-          <div className="min-w-0"><p className="truncate font-medium">{empName(p)}</p><p className="truncate text-xs text-muted-foreground">{typeof p.employee === "object" ? p.employee.employeeCode : ""}</p></div>
+          <div className="min-w-0"><p className="truncate font-medium">{empName(p)}</p><p className="truncate text-xs text-muted-foreground">{empCode(p)}</p></div>
         </div>
       ),
     },
@@ -148,7 +152,7 @@ export default function PayrollPage() {
           loading={isLoading || isFetching} pagination={data?.pagination} query={query}
           searchable={false} filters={filters} rowLabel="payslips" emptyText="No payslips yet." minWidth={760}
           exportName="payslips"
-          exportMapper={(p) => ({ Employee: empName(p), Code: typeof p.employee === "object" ? p.employee.employeeCode : "", Month: fmtMonth(p.month), Currency: p.currency, Gross: p.grossPay, Deductions: p.totalDeductions, Net: p.netPay, Status: PAYSLIP_STATUS_LABELS[p.status] })}
+          exportMapper={(p) => ({ Employee: empName(p), Code: empCode(p), Month: fmtMonth(p.month), Currency: p.currency, Gross: p.grossPay, Deductions: p.totalDeductions, Net: p.netPay, Status: PAYSLIP_STATUS_LABELS[p.status] })}
         />
       )}
 
