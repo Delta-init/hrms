@@ -18,7 +18,7 @@ import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import type { Payslip } from "@/types";
+import type { Payslip, PayslipSummary } from "@/types";
 
 interface Preset {
   employeeId: string;
@@ -36,6 +36,82 @@ interface Props {
 }
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
+
+/**
+ * Where the month's figures come from, day by day.
+ *
+ * The one-line strip could not be reconciled by looking at it: "working days
+ * 26 · paid days 7.5 · present 2" are three counts against three different
+ * denominators, and nothing said how they met. Attendance is now separated
+ * from pay, and the arithmetic that turns one into the other is written out
+ * rather than left to be inferred.
+ */
+function DayBreakdown({ summary, money }: { summary: PayslipSummary; money: (n: number) => string }) {
+  const salaryDays = summary.salaryDays ?? 0;
+  const paidDays = summary.paidDays ?? 0;
+  const lop = summary.lopDays ?? 0;
+  const penalty = summary.latePenaltyDays ?? 0;
+  // The same sum the payslip does, spelled out. Pennies apart from the line
+  // below it at worst: both sides round to the fils independently.
+  const salaryForMonth = salaryDays ? (summary.salary * paidDays) / 30 : 0;
+
+  const attendance: Array<{ label: string; value: string; note?: string; tone?: string }> = [];
+  if (summary.present) attendance.push({ label: "Present", value: String(summary.present) });
+  if (summary.late) attendance.push({ label: "Late", value: String(summary.late), tone: "text-amber-600" });
+  if (summary.half) attendance.push({ label: "Half day", value: String(summary.half), note: `counts ${summary.half * 0.5} unpaid`, tone: "text-amber-600" });
+  if (summary.paidLeaveDays) attendance.push({ label: "On leave", value: String(summary.paidLeaveDays), note: "paid" });
+  if (summary.unpaidLeaveDays) attendance.push({ label: "Unpaid leave", value: String(summary.unpaidLeaveDays), tone: "text-red-600" });
+  if (summary.holidayDays) attendance.push({ label: "Holiday", value: String(summary.holidayDays), note: "paid" });
+  if (summary.absent) attendance.push({ label: "Marked absent", value: String(summary.absent), tone: "text-red-600" });
+  if (summary.unrecordedDays)
+    attendance.push({
+      label: "Not marked",
+      value: String(summary.unrecordedDays),
+      note: summary.unrecordedFutureDays ? `${summary.unrecordedFutureDays} not yet happened` : undefined,
+      tone: summary.unrecordedDaysUnpaid ? "text-red-600" : "text-muted-foreground",
+    });
+
+  const Row = ({ label, value, note, tone, strong }: { label: string; value: string; note?: string; tone?: string; strong?: boolean }) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className={cn("truncate", strong && "font-medium text-foreground")}>
+        {label}
+        {note && <span className="ml-1.5 text-[10px] text-muted-foreground">({note})</span>}
+      </span>
+      <span className={cn("shrink-0 tabular-nums", strong ? "font-semibold text-foreground" : tone ?? "text-foreground")}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="mb-3 grid grid-cols-1 gap-x-6 gap-y-3 border-b border-border pb-3 text-xs text-muted-foreground sm:grid-cols-2">
+      <div className="space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Attendance</p>
+        {attendance.length ? attendance.map((r) => <Row key={r.label} {...r} />) : <p className="text-[11px]">Nothing recorded this month.</p>}
+        <div className="mt-1 border-t border-border pt-1">
+          <Row label="Working days" value={String(summary.workingDays ?? 0)} strong />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Pay</p>
+        <Row label="Days of salary" value={String(salaryDays)} note={salaryDays !== 30 ? "part month" : undefined} />
+        {lop > 0 && <Row label="Loss of pay" value={`− ${lop}`} tone="text-red-600" />}
+        {penalty > 0 && <Row label="Late penalty" value={`− ${penalty}`} tone="text-amber-600" />}
+        {lop === 0 && penalty === 0 && <Row label="Nothing unpaid" value="− 0" tone="text-emerald-600" />}
+        <div className="mt-1 border-t border-border pt-1">
+          <Row label="Paid days" value={`${paidDays} / ${salaryDays}`} strong />
+        </div>
+        {/* The sum itself. Somebody checking a payslip should not have to
+            reconstruct it from three numbers on a different line. */}
+        {salaryDays > 0 && summary.salary > 0 && (
+          <p className="mt-1.5 rounded-md bg-muted px-2 py-1 text-[11px] leading-relaxed text-foreground">
+            {money(summary.salary)} × {paidDays} ÷ 30 = <span className="font-semibold">{money(salaryForMonth)}</span>
+            <span className="block text-[10px] text-muted-foreground">salary for the month, before anything added or recovered</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   const isEditing = !!payslip;
@@ -121,6 +197,33 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   };
 
   const money = (n: number) => `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  /** Bare number — the currency is already on the total these sit under. */
+  const amount = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // What each total is made of. Zero lines are dropped: a row of 0.00 for every
+  // allowance nobody claimed buries the figures that matter.
+  const grossLines = [...(watchedEarnings ?? []), ...autoEarnings].filter((l) => Number(l.amount) !== 0);
+  const dedLines = [...(watchedDeductions ?? []), ...autoDeductions].filter((l) => Number(l.amount) !== 0);
+
+  /**
+   * The components of a total, as a column that adds up.
+   *
+   * Written inline as "Basic AED 2,000.00 + bonus AED 100.00 + …" first, which
+   * repeated the currency on every term, truncated any label longer than a few
+   * words and wrapped onto three lines. A column needs none of that: the labels
+   * can run their natural length and the figures line up under the total.
+   */
+  const Parts = ({ lines, tone }: { lines: Array<{ label: string; amount: number }>; tone: string }) => (
+    <ul className="mb-1.5 space-y-0.5 pl-3 text-[11px] text-muted-foreground">
+      {lines.map((l, i) => (
+        <li key={`${l.label}-${i}`} className="flex items-baseline justify-between gap-3">
+          <span className="truncate">{l.label}</span>
+          <span className={cn("shrink-0 tabular-nums", tone)}>{amount(Number(l.amount) || 0)}</span>
+        </li>
+      ))}
+    </ul>
+  );
 
   /**
    * Lines the payslip derives itself, shown in the column they belong to.
@@ -220,21 +323,7 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
               /* The attendance behind the figures. Loss of pay and late
                  penalties are applied by the payslip itself, so this explains
                  deduction lines the form never shows as editable. */
-              <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border pb-2 text-xs text-muted-foreground">
-                <span>Working days <span className="font-medium text-foreground">{summary.workingDays ?? "—"}</span></span>
-                {/* Shown over its own denominator, because paid days count
-                    against the thirty the salary buys and can therefore exceed
-                    the working days sitting next to them — a full month is 30
-                    paid days against 26 working ones. */}
-                <span>
-                  Paid days <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span>
-                  {summary.salaryDays ? <span className="text-muted-foreground"> / {summary.salaryDays}</span> : null}
-                </span>
-                <span>Present <span className="font-medium text-foreground">{summary.present}</span></span>
-                {summary.lopDays > 0 && <span className="text-red-600">Loss of pay {summary.lopDays}d</span>}
-                {summary.latePenaltyDays > 0 && <span className="text-amber-600">Late penalty {summary.latePenaltyDays}d</span>}
-                {summary.lopDays === 0 && summary.latePenaltyDays === 0 && <span className="text-emerald-600">No unpaid days</span>}
-              </div>
+              <DayBreakdown summary={summary} money={money} />
             )}
             {!isEditing && !!summary?.employedShare && summary.employedShare < 1 && (
               /* A part month is the difference between a right and a very wrong
@@ -271,7 +360,12 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
               </div>
             )}
             <div className="flex items-center justify-between text-sm"><span className="text-muted-foreground">Gross</span><span className="font-medium text-emerald-600">{money(gross)}</span></div>
+            {/* What the total is made of. Everything here is visible above as a
+                row or an AUTO chip, but nobody should have to add up two
+                columns by eye to see where a figure came from. */}
+            {grossLines.length > 0 && <Parts lines={grossLines} tone="text-emerald-600" />}
             <div className="mt-1 flex items-center justify-between text-sm"><span className="text-muted-foreground">Deductions</span><span className="font-medium text-red-600">− {money(totalDed)}</span></div>
+            {dedLines.length > 0 && <Parts lines={dedLines} tone="text-red-500" />}
             <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base font-bold">
               <span>Net Pay</span>
               <span className="text-primary">{money(Math.max(0, net))}</span>

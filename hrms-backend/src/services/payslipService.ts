@@ -521,6 +521,8 @@ export class PayslipService {
 
     const base = {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
+      /** Approved leave falling on working days — paid, and holidays likewise. */
+      paidLeaveDays: 0, holidayDays: 0,
       salary: breakup.gross,
       earnings,
       structureDeductions,
@@ -594,6 +596,10 @@ export class PayslipService {
     const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
     const workingSet = new Set(workingDayKeys(month, workDays, employment));
     const chargeable = (k: string) => workingSet.has(k) && !paidLeaveDays.has(k) && !holidayDays.has(k);
+    // Only the working days of it — leave spanning a weekend is not two days
+    // off work — so the figure sits beside "present" and "half day" and adds up.
+    base.paidLeaveDays = [...paidLeaveDays].filter((k) => workingSet.has(k)).length;
+    base.holidayDays = [...holidayDays].filter((k) => workingSet.has(k)).length;
 
     let halfCount = 0;
     for (const k of halfSet) if (!lopFull.has(k) && chargeable(k)) halfCount++;

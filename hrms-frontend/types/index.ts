@@ -743,6 +743,9 @@ export interface Payslip {
 export interface PayslipSummary {
   present: number; late: number; half: number; absent: number;
   unpaidLeaveDays: number; lopDays: number; latePenaltyDays: number; salary: number; currency: string;
+  /** Approved leave and holidays falling on working days — both paid. */
+  paidLeaveDays?: number;
+  holidayDays?: number;
   /**
    * Lines the payslip adds by itself — reimbursements, overtime, one-time
    * items. Shown so the form previews the payslip it will actually create;
