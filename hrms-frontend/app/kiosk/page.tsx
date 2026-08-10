@@ -134,6 +134,45 @@ type CameraState =
  * call in the background leaves them stuck with the screen insisting they fix
  * a permission that was never the issue.
  */
+/**
+ * A one-line technical account of why the camera didn't start.
+ *
+ * Three separate layers can refuse — the operating system, the browser's
+ * site permission, and the device itself — and they produce nearly identical
+ * symptoms. "NotAllowedError · permission: prompt" means the OS or an embedding
+ * frame refused before the site was ever asked; "permission: denied" means the
+ * site is blocked; "no camera visible" means neither got that far.
+ */
+async function describeFailure(error: unknown): Promise<string> {
+  const parts: string[] = [];
+  const name = (error as { name?: string })?.name;
+  const message = (error as { message?: string })?.message;
+  parts.push(name ? `${name}${message ? ` (${message})` : ""}` : "unknown error");
+
+  try {
+    const status = await navigator.permissions?.query({ name: "camera" as PermissionName });
+    if (status) parts.push(`permission: ${status.state}`);
+  } catch {
+    /* Firefox and Safari don't expose the camera permission this way */
+  }
+
+  try {
+    const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(
+      (d) => d.kind === "videoinput"
+    );
+    parts.push(cameras.length ? `${cameras.length} camera(s) visible` : "no camera visible");
+  } catch {
+    /* nothing to add */
+  }
+
+  if (typeof window !== "undefined" && window.self !== window.top) {
+    // An iframe without allow="camera" is refused outright, with no prompt —
+    // which looks exactly like a permission the user swears they granted.
+    parts.push("page is inside an iframe");
+  }
+  return parts.join(" · ");
+}
+
 function cameraFailure(error: unknown): CameraState {
   const name = (error as { name?: string })?.name ?? "";
   if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
@@ -159,6 +198,10 @@ function CheckInScreen({
   const [result, setResult] = useState<KioskPunchResult | null>(null);
   const [prompt, setPrompt] = useState<LivenessStep | null>(null);
   const [now, setNow] = useState<Date | null>(null);
+  // Exact browser error, the permission state, and whether a camera is even
+  // visible. Shown on screen because "it just says blocked" is impossible to
+  // act on — whoever is installing the kiosk needs to know which layer said no.
+  const [diagnosis, setDiagnosis] = useState<string | null>(null);
 
   // Rendered only after mount: a server-rendered clock would mismatch the
   // client's and produce a hydration error on every load.
@@ -209,6 +252,7 @@ function CheckInScreen({
         if (name !== "OverconstrainedError" && name !== "ConstraintNotSatisfiedError") break;
       }
     }
+    setDiagnosis(await describeFailure(lastError));
     setCamera(cameraFailure(lastError));
   }, []);
 
@@ -326,7 +370,7 @@ function CheckInScreen({
 
         <div className="flex flex-1 flex-col items-center justify-center gap-8 py-8">
           {camera !== "ready" ? (
-            <CameraProblem state={camera} onRetry={() => void startCamera()} />
+            <CameraProblem state={camera} diagnosis={diagnosis} onRetry={() => void startCamera()} />
           ) : prompt ? (
             <Prompt step={prompt} />
           ) : result ? (
@@ -455,7 +499,13 @@ const CAMERA_MESSAGES: Record<Exclude<CameraState, "ready">, { message: string; 
   },
 };
 
-function CameraProblem({ state, onRetry }: { state: CameraState; onRetry: () => void }) {
+function CameraProblem({
+  state, diagnosis, onRetry,
+}: {
+  state: CameraState;
+  diagnosis: string | null;
+  onRetry: () => void;
+}) {
   const { message, fix } = CAMERA_MESSAGES[state as Exclude<CameraState, "ready">];
 
   return (
@@ -471,6 +521,9 @@ function CameraProblem({ state, onRetry }: { state: CameraState; onRetry: () => 
       </div>
       {state !== "starting" && (
         <Button variant="outline" onClick={onRetry}>Try again</Button>
+      )}
+      {diagnosis && state !== "starting" && (
+        <p className="max-w-lg font-mono text-xs text-neutral-600">{diagnosis}</p>
       )}
     </div>
   );
