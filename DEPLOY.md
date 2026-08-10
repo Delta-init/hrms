@@ -1,10 +1,19 @@
 # Deployment (CI/CD)
 
-The backend auto-deploys to the VPS on every push to `main` that touches
-`hrms-backend/**`. The pipeline SSHes into the VPS, pulls `main`, installs
-dependencies, and reloads the app with pm2.
+Two services auto-deploy to the VPS on every push to `main`. Each pipeline SSHes
+in, pulls `main`, installs dependencies, and reloads its app with pm2.
 
-Workflow: [`.github/workflows/deploy-backend.yml`](.github/workflows/deploy-backend.yml)
+| Service                                     | Deploys when this changes | pm2 app      | Workflow                                                                             |
+| ------------------------------------------- | ------------------------- | ------------ | ------------------------------------------------------------------------------------ |
+| Backend API (`hrms-backend`)                | `hrms-backend/**`         | `hrms-api`   | [`deploy-backend.yml`](.github/workflows/deploy-backend.yml)                          |
+| Face service (`hrms-face-ditector`)         | `hrms-face-ditector/**`   | `hrms-face`  | [`deploy-face.yml`](.github/workflows/deploy-face.yml)                                |
+
+The path filters don't overlap, so a backend change never restarts the face
+service and vice versa. Both share one concurrency group (`deploy-vps`) because
+both run `git reset --hard` against the same checkout — a push touching both
+queues them rather than letting them collide.
+
+The frontend is not deployed by CI.
 
 ---
 
@@ -96,6 +105,45 @@ pm2 startup
 ```
 
 After this, every push to `main` redeploys automatically.
+
+### Face service (one-time, in addition to the above)
+
+The face service is Python, not Bun, and needs a compiler and two shared
+libraries OpenCV links against. `deploy-face.yml` assumes all of this is already
+in place — it stops with the install command if `uv` is missing.
+
+```bash
+# System libraries. insightface builds from source; libgl1/libglib2.0-0 are what
+# opencv-python-headless still links against on a bare server.
+apt-get update
+apt-get install -y build-essential cmake python3-dev libgl1 libglib2.0-0
+
+# uv (Python package manager) — the workflow refuses to run without it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc
+
+cd /root/hrms/hrms-face-ditector
+
+# Production .env (NOT in git). FACE_SERVICE_KEY must match the backend's.
+cp .env.example .env
+nano .env
+
+# First install. The workflow does this too, but doing it by hand once means
+# the ~300 MB model download isn't happening inside a CI timeout.
+uv venv --python 3.11
+uv pip install -e . --python .venv/bin/python
+.venv/bin/python scripts/warm_models.py
+
+pm2 startOrReload ecosystem.config.cjs --update-env
+pm2 save
+```
+
+Python must be 3.10–3.12: ONNX Runtime has no 3.13+ wheels.
+
+The downloaded `buffalo_l` pack under `models/` is gitignored, so the
+`git reset --hard` in each deploy leaves it alone — it is fetched once, not
+every push. The 3.3 MB anti-spoof weights are the exception: they ship in git
+(`models/antispoof/`) and are restored by the reset like any tracked file.
 
 ### If pm2 can't find `bun`
 The pm2 daemon may not have `~/.bun/bin` on its PATH. Fix once:

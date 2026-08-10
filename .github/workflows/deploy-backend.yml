@@ -10,9 +10,12 @@ on:
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch: {}
 
-# Never run two deploys at once; cancel an in-flight one if a newer push lands.
+# Shared with deploy-face: both reset the same checkout on the VPS, so a push
+# touching both would otherwise have two jobs running `git reset --hard` in the
+# same directory at once. Queued, never cancelled — half a deploy is worse than
+# a late one.
 concurrency:
-  group: deploy-backend
+  group: deploy-vps
   cancel-in-progress: false
 
 jobs:

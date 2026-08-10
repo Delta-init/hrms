@@ -1,0 +1,90 @@
+name: Deploy Face Service
+
+# Deploys hrms-face-ditector to the VPS over SSH.
+# Runs on every push to main that touches the service, and can be triggered manually.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hrms-face-ditector/**"
+      - ".github/workflows/deploy-face.yml"
+  workflow_dispatch: {}
+
+# Shared with deploy-backend: both reset the same checkout on the VPS, so a push
+# touching both would otherwise have two jobs running `git reset --hard` in the
+# same directory at once. Queued, never cancelled — half a deploy is worse than
+# a late one.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH (password auth)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}          # VPS IP
+          username: ${{ secrets.VPS_USERNAME }}  # e.g. root
+          password: ${{ secrets.VPS_PASSWORD }}  # VPS login password
+          port: ${{ secrets.VPS_PORT }}          # usually 22
+          script_stop: true                      # abort on first failed command
+          # A cold install compiles insightface and pulls a ~300 MB model pack.
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            # uv installs to ~/.local/bin, pm2 lives with node. Neither is on a
+            # non-interactive shell's PATH by default.
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+            APP_ROOT="${{ secrets.VPS_APP_PATH }}"   # repo root on the VPS, e.g. /root/hrms
+            echo "▶ Deploying face service from: $APP_ROOT"
+
+            # Fail with the fix rather than "uv: command not found". See the
+            # face service section of DEPLOY.md for the one-time server prep.
+            if ! command -v uv >/dev/null 2>&1; then
+              echo "✖ uv is not installed on this server."
+              echo "  Install it once, then re-run this workflow:"
+              echo "    curl -LsSf https://astral.sh/uv/install.sh | sh"
+              exit 1
+            fi
+
+            cd "$APP_ROOT"
+
+            # Pull latest main. reset --hard guarantees the deploy matches origin
+            # exactly. Untracked files (like hrms-face-ditector/.env and the
+            # downloaded models/ directory) are preserved.
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            cd hrms-face-ditector
+
+            # First deploy only: `uv venv` clears an existing environment, which
+            # would throw away a working install on every push.
+            if [ ! -x .venv/bin/python ]; then
+              echo "▶ Creating virtualenv (Python 3.11)"
+              uv venv --python 3.11
+            fi
+
+            # Install exactly what pyproject pins. --python names the venv rather
+            # than trusting uv to infer it from the working directory.
+            uv pip install -e . --python .venv/bin/python
+
+            # Fetch the model pack before pm2 ever sees the process. Cheap once
+            # the pack is on disk; skipping it means the first request stalls on
+            # a ~300 MB download and pm2 restarts the process thinking it hung.
+            .venv/bin/python scripts/warm_models.py
+
+            # startOrReload rather than restart: this also covers the first
+            # deploy, when there is no hrms-face process to restart yet.
+            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 save
+
+            # Prove it came back up rather than trusting pm2's exit code.
+            sleep 5
+            pm2 describe hrms-face | grep -q "status.*online" \
+              || { echo "✖ hrms-face is not online after reload"; pm2 logs hrms-face --lines 40 --nostream; exit 1; }
+            echo "✔ hrms-face online"
