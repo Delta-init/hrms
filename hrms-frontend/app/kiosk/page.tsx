@@ -421,7 +421,12 @@ function CheckInScreen({
           )}
         </header>
 
-        <div className="flex flex-1 flex-col items-center justify-center gap-8 py-8">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 py-6">
+          {/* Where to stand. The whole screen is a mirror, so without a target
+              people drift to one side or stand too far back, and the first they
+              hear of it is a refusal. */}
+          {camera === "ready" && !result && <FaceGuide busy={busy} />}
+
           {camera !== "ready" ? (
             <CameraProblem state={camera} diagnosis={diagnosis} onRetry={() => void startCamera()} />
           ) : prompt ? (
@@ -430,7 +435,7 @@ function CheckInScreen({
             <Result result={result} />
           ) : (
             <p className="max-w-md text-center text-lg text-neutral-300">
-              Stand in front of the camera and tap below.
+              Put your face in the outline, then tap below.
             </p>
           )}
 
@@ -455,6 +460,38 @@ function CheckInScreen({
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * The "stand here" outline.
+ *
+ * Corner brackets rather than a full ring: they mark the frame without drawing
+ * a hard line across the person's face, and they read as a viewfinder, which is
+ * a shape everyone already understands. It brightens while a punch is in
+ * flight so there is some sign the tablet is doing something.
+ */
+function FaceGuide({ busy }: { busy: boolean }) {
+  const corner = "absolute h-10 w-10 border-white/70 transition-colors sm:h-14 sm:w-14";
+  return (
+    <div
+      className={cn(
+        "relative aspect-[3/4] h-[38vh] max-h-[420px] min-h-[220px] transition-opacity",
+        busy ? "opacity-100" : "opacity-80"
+      )}
+      aria-hidden
+    >
+      <div
+        className={cn(
+          "absolute inset-0 rounded-[50%] border-2 transition-colors",
+          busy ? "animate-pulse border-sky-400/80" : "border-white/25"
+        )}
+      />
+      <div className={cn(corner, "left-0 top-0 rounded-tl-xl border-l-2 border-t-2")} />
+      <div className={cn(corner, "right-0 top-0 rounded-tr-xl border-r-2 border-t-2")} />
+      <div className={cn(corner, "bottom-0 left-0 rounded-bl-xl border-b-2 border-l-2")} />
+      <div className={cn(corner, "bottom-0 right-0 rounded-br-xl border-b-2 border-r-2")} />
+    </div>
   );
 }
 
