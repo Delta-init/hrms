@@ -94,11 +94,21 @@ export class FacePunchService {
     // photograph was good enough — and would leave a "recognised" reading in
     // the logs for a punch that never should have been possible.
     if (steps && !result.liveness.live) {
-      return {
-        status: "not_live",
-        reason: result.liveness.reason,
-        hint: LIVENESS_HINTS[result.liveness.reason] || "That didn't work. Try again.",
-      };
+      if (result.liveness.reason === "NOT_REQUESTED") {
+        // We asked for a check and the service says it never ran one. That is
+        // the two sides disagreeing, not a person failing — treating it as a
+        // failed check would blame whoever is standing there for a bug. Fall
+        // through and let the recognition reason speak instead.
+        console.warn(
+          "[face] liveness was requested but the service reported NOT_REQUESTED; check the service version"
+        );
+      } else {
+        return {
+          status: "not_live",
+          reason: result.liveness.reason,
+          hint: LIVENESS_HINTS[result.liveness.reason] || "That didn't work. Try again.",
+        };
+      }
     }
 
     if (!result.matched || !result.best) {

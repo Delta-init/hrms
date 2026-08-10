@@ -86,15 +86,6 @@ async def recognize(
             loaded_version=gallery.version,
             expected_version=payload.expected_version,
         )
-    if gallery.users == 0:
-        return RecognizeResponse(
-            matched=False,
-            reason="EMPTY_GALLERY",
-            gallery_version=gallery.version,
-            thresholds=thresholds,
-            liveness=NOT_REQUESTED,
-        )
-
     frames = payload.frames()
     if len(frames) > settings.max_frames:
         raise bad_image(
@@ -109,6 +100,19 @@ async def recognize(
     ]
 
     liveness = _check_liveness(results, payload, settings)
+
+    # Checked after the frames, not before them. Liveness is a fact about what
+    # the camera saw and has nothing to do with who is enrolled — reporting it
+    # as "not requested" here once told the kiosk a live person had failed a
+    # check that never ran, when the real answer was that nobody is enrolled.
+    if gallery.users == 0:
+        return RecognizeResponse(
+            matched=False,
+            reason="EMPTY_GALLERY",
+            gallery_version=gallery.version,
+            thresholds=thresholds,
+            liveness=liveness,
+        )
 
     scored = [r for r in results if r.candidates]
     if not scored:
