@@ -11,6 +11,7 @@ import {
   scheduleInterview, getInterviews, getInterviewById, updateInterview,
   cancelInterview, deleteInterview, getConflicts, submitFeedback, deleteFeedback,
 } from "../controllers/interviewController.js";
+import { getHirePrefill, hireApplicant, unlinkHire } from "../controllers/hireController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadSingle } from "../middleware/upload.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -57,5 +58,13 @@ router.delete("/interviews/:id", checkPermission("hiring", "delete"), deleteInte
 // and the service refuses anyone not on it.
 router.post("/interviews/:id/feedback", checkPermission("hiring", "view"), submitFeedback);
 router.delete("/feedback/:id", checkPermission("hiring", "view"), deleteFeedback);
+
+// ── Hiring somebody ──────────────────────────────────────────────────────────
+// Creating an employee is an employees-module action, so it is gated on that
+// rather than on `hiring` — recruiting rights should not confer the ability to
+// add people to the payroll.
+router.get("/applications/:id/hire", checkPermission("employees", "create"), getHirePrefill);
+router.post("/applications/:id/hire", checkPermission("employees", "create"), hireApplicant);
+router.delete("/applications/:id/hire", checkPermission("employees", "edit"), unlinkHire);
 
 export default router;

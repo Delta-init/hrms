@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft, Plus, FileText, Loader2, XCircle, ChevronRight, Users, AlertTriangle,
-  CalendarPlus, CalendarCheck, Video, MapPin,
+  CalendarPlus, CalendarCheck, Video, MapPin, UserPlus,
 } from "lucide-react";
 import { useRequisitions } from "@/hooks/useHiring";
 import { usePipeline, useCandidates, useApplyCandidate, useMoveApplication } from "@/hooks/useCandidates";
@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { CandidateDialog } from "@/components/hiring/CandidateDialog";
 import { ScheduleInterviewDialog } from "@/components/hiring/ScheduleInterviewDialog";
+import { HireDialog } from "@/components/hiring/HireDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,6 +57,7 @@ export default function RequisitionDetailPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [scheduling, setScheduling] = useState<Application | null>(null);
+  const [hiring, setHiring] = useState<Application | null>(null);
   const [rejecting, setRejecting] = useState<Application | null>(null);
   const [reason, setReason] = useState("");
 
@@ -203,7 +205,13 @@ export default function RequisitionDetailPage() {
                                   ? <CalendarCheck className="h-3.5 w-3.5 text-sky-600" />
                                   : <CalendarPlus className="h-3.5 w-3.5" />}
                               </Button>
-                              {next && next !== "hired" && (
+                              {app.stage === "accepted" && (
+                                <Button size="sm" className="h-7 flex-1 text-[11px]" disabled={moving}
+                                  onClick={() => setHiring(app)}>
+                                  <UserPlus className="h-3 w-3" />Hire
+                                </Button>
+                              )}
+                              {app.stage !== "accepted" && next && next !== "hired" && (
                                 <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]" disabled={moving}
                                   onClick={() => move({ id: app._id, stage: next })}>
                                   {STAGE_LABELS[next]}<ChevronRight className="h-3 w-3" />
@@ -253,6 +261,15 @@ export default function RequisitionDetailPage() {
       )}
 
       <AddToPipeline open={addOpen} onOpenChange={setAddOpen} requisitionId={requisitionId} />
+
+      {hiring && (
+        <HireDialog
+          open={!!hiring}
+          onOpenChange={(o) => !o && setHiring(null)}
+          applicationId={hiring._id}
+          candidateName={asCandidate(hiring.candidate)?.name}
+        />
+      )}
 
       {scheduling && (
         <ScheduleInterviewDialog
