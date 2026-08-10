@@ -32,6 +32,7 @@ import {
   GitBranch,
   Settings,
   X,
+  FolderOpen,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,7 @@ export const navItems: {
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance" },
+  { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
   { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
   { href: "/salary-increments", label: "Salary Increments", icon: TrendingUp, permModule: "salaryIncrements" },

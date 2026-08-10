@@ -245,6 +245,8 @@ export const LOCATION_LABELS: Record<EmployeeLocation, string> = { india: "India
 export type DocumentType =
   | "passport"
   | "visa_copy"
+  | "emirates_id"
+  | "labour_card"
   | "aadhaar"
   | "photo"
   | "education_certificate"
@@ -1763,4 +1765,43 @@ export interface KioskPunchResult {
   reason?: string;
   hint?: string;
   message?: string;
+}
+
+// ─── Documents overview ──────────────────────────────────────────────────────
+/**
+ * `missing` is a required slot with nothing filed; `not_uploaded` the same for
+ * an optional one. Both are absences — the distinction is whether anyone has to
+ * do something about it.
+ */
+export type DocumentStatus = "missing" | "expired" | "expiring" | "valid" | "not_uploaded";
+
+export interface DocumentRow {
+  employee: {
+    _id: string;
+    name: string;
+    employeeCode?: string;
+    designation?: string;
+    department: string | null;
+    location: EmployeeLocation | null;
+  };
+  /** Requirement key, or `other:<id>` for a free-form entry. */
+  slot: string;
+  label: string;
+  required: boolean;
+  number: string;
+  issueDate: string | null;
+  expiryDate: string | null;
+  /** Negative once expired. Null when the document has no expiry to track. */
+  daysToExpiry: number | null;
+  file: { fileName: string; url: string; uploadedAt: string | null; mimeType?: string; size?: number } | null;
+  status: DocumentStatus;
+}
+
+export interface DocumentsOverview {
+  rows: DocumentRow[];
+  /** Bucket sizes over every slot, not just the ones currently filtered in. */
+  counts: Partial<Record<DocumentStatus, number>>;
+  total: number;
+  within: number;
+  employees: number;
 }

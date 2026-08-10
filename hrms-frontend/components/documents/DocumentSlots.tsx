@@ -10,6 +10,8 @@ import type { DocRequirement, DocumentType, EmployeeDocument } from "@/types";
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   passport: "Passport",
   visa_copy: "Visa copy",
+  emirates_id: "Emirates ID",
+  labour_card: "Labour card",
   aadhaar: "Aadhaar",
   photo: "Photo",
   education_certificate: "Educational certificate",

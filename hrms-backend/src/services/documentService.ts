@@ -15,6 +15,8 @@ import type { DocumentType, IEmployee } from "../types/index.js";
 const DOC_TYPES: DocumentType[] = [
   "passport",
   "visa_copy",
+  "emirates_id",
+  "labour_card",
   "aadhaar",
   "photo",
   "education_certificate",

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import fileRoutes from "./fileRoutes.js";
+import documentRoutes from "./documentRoutes.js";
 import authRoutes from "./authRoutes.js";
 import userRoutes from "./userRoutes.js";
 import roleRoutes from "./roleRoutes.js";
@@ -40,6 +41,7 @@ import kioskRoutes from "./kioskRoutes.js";
 const router = Router();
 
 router.use("/files", fileRoutes);
+router.use("/documents", documentRoutes);
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cards", cardRoutes);

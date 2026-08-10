@@ -48,7 +48,7 @@ export function HrDashboard() {
     { label: "Working from home", value: c.workingFromHomeToday, icon: Home, tint: "text-teal-600 bg-teal-500/10", href: "/attendance" },
     { label: "Pending leave", value: c.pendingLeaves, icon: CalendarClock, tint: "text-amber-600 bg-amber-500/10", href: "/leave" },
     { label: "Pending regularizations", value: c.pendingRegularizations, icon: ClipboardCheck, tint: "text-sky-600 bg-sky-500/10", href: "/regularization" },
-    { label: "Docs expiring", value: c.expiringDocuments, icon: FileWarning, tint: "text-rose-600 bg-rose-500/10", href: "/employees" },
+    { label: "Docs expiring", value: c.expiringDocuments, icon: FileWarning, tint: "text-rose-600 bg-rose-500/10", href: "/documents?status=expiring&within=90" },
     { label: "Serving notice", value: c.servingNotice, icon: LogOut, tint: "text-orange-600 bg-orange-500/10", href: "/resignations" },
     { label: "Confirmation due", value: c.dueConfirmations, icon: ShieldCheck, tint: "text-emerald-600 bg-emerald-500/10", href: undefined },
   ];

@@ -1,3 +1,4 @@
+import { documentsOverview } from "../services/documentOverviewService.js";
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import {
@@ -169,4 +170,12 @@ export const deleteOtherDoc = async (
   } catch (error) {
     next(error);
   }
+};
+
+/** Every document the organization should hold, present or missing. */
+export const getDocumentsOverview = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = await documentsOverview(req.query as Record<string, string>);
+    sendSuccess(res, "Documents overview", data);
+  } catch (error) { next(error); }
 };

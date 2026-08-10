@@ -467,6 +467,8 @@ export type EmployeeLocation = "india" | "dubai";
 export type DocumentType =
   | "passport"
   | "visa_copy"
+  | "emirates_id"
+  | "labour_card"
   | "aadhaar"
   | "photo"
   | "education_certificate"
