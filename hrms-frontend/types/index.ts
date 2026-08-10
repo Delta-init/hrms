@@ -770,6 +770,8 @@ export interface PayslipSummary {
   employedShare?: number;
   /** First and last day on the payroll, when either falls inside the month. */
   employment?: { from: string | null; to: string | null };
+  /** Days of salary this month is worth for them — 30, or their share of it. */
+  salaryDays?: number;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────

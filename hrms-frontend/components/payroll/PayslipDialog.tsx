@@ -222,9 +222,14 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                  deduction lines the form never shows as editable. */
               <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border pb-2 text-xs text-muted-foreground">
                 <span>Working days <span className="font-medium text-foreground">{summary.workingDays ?? "—"}</span></span>
-                {/* "Paid" alone read as "days he turned up for" next to Present.
-                    It is the month minus whatever was charged. */}
-                <span>Paid days <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span></span>
+                {/* Shown over its own denominator, because paid days count
+                    against the thirty the salary buys and can therefore exceed
+                    the working days sitting next to them — a full month is 30
+                    paid days against 26 working ones. */}
+                <span>
+                  Paid days <span className="font-medium text-foreground">{summary.paidDays ?? "—"}</span>
+                  {summary.salaryDays ? <span className="text-muted-foreground"> / {summary.salaryDays}</span> : null}
+                </span>
                 <span>Present <span className="font-medium text-foreground">{summary.present}</span></span>
                 {summary.lopDays > 0 && <span className="text-red-600">Loss of pay {summary.lopDays}d</span>}
                 {summary.latePenaltyDays > 0 && <span className="text-amber-600">Late penalty {summary.latePenaltyDays}d</span>}
