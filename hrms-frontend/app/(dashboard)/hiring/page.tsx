@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings } from "lucide-react";
+import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users } from "lucide-react";
 import Link from "next/link";
 import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition } from "@/hooks/useHiring";
 import { useAuth } from "@/hooks/useAuth";
@@ -56,12 +56,12 @@ export default function HiringPage() {
     {
       id: "role", label: "Role", alwaysVisible: true,
       render: (r) => (
-        <div className="min-w-0">
+        <Link href={`/hiring/${r._id}`} className="block min-w-0 hover:underline">
           <div className="truncate font-medium">{r.title}</div>
           <div className="truncate text-xs text-muted-foreground">
             {nameOf(r.department)}{r.headcount > 1 ? ` · ${r.headcount} positions` : ""}
           </div>
-        </div>
+        </Link>
       ),
     },
     {
@@ -146,7 +146,12 @@ export default function HiringPage() {
         title="Hiring"
         description="Requests to fill a role, and the approvals they clear before recruiting starts."
         icon={Briefcase}
-        action={canCreate && <Button onClick={() => setDialogOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Raise requisition</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline"><Link href="/hiring/candidates"><Users className="h-4 w-4" />Candidates</Link></Button>
+            {canCreate && <Button onClick={() => setDialogOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Raise requisition</Button>}
+          </div>
+        }
       />
 
       {/* Without a configured chain every approvable module falls back to

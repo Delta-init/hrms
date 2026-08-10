@@ -1407,3 +1407,69 @@ export interface IJobRequisition extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Where an application has reached.
+ *
+ * Ordered: the index is the pipeline position, so a move is a comparison rather
+ * than a table of allowed transitions. `rejected` and `withdrawn` sit outside
+ * it — they can happen from anywhere and lead nowhere.
+ */
+export const APPLICATION_STAGES = [
+  "applied",
+  "screening",
+  "shortlisted",
+  "interview",
+  "offer",
+  "accepted",
+  "hired",
+] as const;
+export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
+export type ApplicationStatus = "active" | "rejected" | "withdrawn";
+
+export interface ICandidate extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  email: string;
+  phone?: string;
+  /** Where they came from — referral, agency, a job board, walk-in. */
+  source?: string;
+  currentCompany?: string;
+  currentDesignation?: string;
+  totalExperienceYears?: number;
+  noticePeriodDays?: number;
+  expectedSalary?: number;
+  currency?: string;
+  location?: string;
+  resumeKey?: string;
+  resumeFileName?: string;
+  links?: string[];
+  notes?: string;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IApplication extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  requisition: Types.ObjectId | IJobRequisition;
+  candidate: Types.ObjectId | ICandidate;
+  stage: ApplicationStage;
+  status: ApplicationStatus;
+  rating?: number | null;
+  offeredSalary?: number | null;
+  rejectionReason?: string;
+  /** Set once the offer is accepted and they become an employee. */
+  movedToEmployee?: Types.ObjectId | IEmployee | null;
+  /** Every stage this application has been through, and who moved it. */
+  stageHistory?: Array<{
+    stage: ApplicationStage | ApplicationStatus;
+    by?: Types.ObjectId | IUser | null;
+    at: Date;
+    note?: string;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}

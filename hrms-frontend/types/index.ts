@@ -1855,3 +1855,58 @@ export interface HiringWorkflowState {
   configured: boolean;
   steps: { order: number; when: string; roleName: string; label?: string }[];
 }
+
+export const APPLICATION_STAGES = ["applied","screening","shortlisted","interview","offer","accepted","hired"] as const;
+export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
+export type ApplicationStatus = "active" | "rejected" | "withdrawn";
+
+export const STAGE_LABELS: Record<ApplicationStage, string> = {
+  applied: "Applied", screening: "Screening", shortlisted: "Shortlisted",
+  interview: "Interview", offer: "Offer", accepted: "Accepted", hired: "Hired",
+};
+
+export interface Candidate {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  source?: string;
+  currentCompany?: string;
+  currentDesignation?: string;
+  totalExperienceYears?: number;
+  noticePeriodDays?: number;
+  expectedSalary?: number;
+  currency?: string;
+  location?: string;
+  /** Signed and short-lived — minted per response, never stored. */
+  resumeUrl?: string;
+  resumeFileName?: string;
+  links?: string[];
+  notes?: string;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Present on the single-candidate response. */
+  applications?: Application[];
+}
+
+export interface Application {
+  _id: string;
+  requisition: { _id: string; title: string; status?: string } | string;
+  candidate: Candidate | string;
+  stage: ApplicationStage;
+  status: ApplicationStatus;
+  rating?: number | null;
+  offeredSalary?: number | null;
+  rejectionReason?: string;
+  stageHistory?: { stage: string; by?: { _id: string; name: string } | string; at: string; note?: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Pipeline {
+  columns: { stage: ApplicationStage; applications: Application[] }[];
+  /** Rejected and withdrawn, kept visible — a pipeline that hides them looks healthier than it is. */
+  closed: Application[];
+  total: number;
+}
