@@ -34,6 +34,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "hiring",
   "confirmations",
   "letters",
   "announcements",
@@ -66,6 +67,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   reimbursements: "Reimbursements",
   assets: "Assets",
   onboardingTasks: "Onboarding Tasks",
+  hiring: "Hiring",
   confirmations: "Confirmations",
   letters: "Letters",
   announcements: "Announcements",
@@ -1804,4 +1806,52 @@ export interface DocumentsOverview {
   total: number;
   within: number;
   employees: number;
+}
+
+// ─── Hiring ──────────────────────────────────────────────────────────────────
+export type RequisitionType = "replacement" | "new_headcount";
+export type RequisitionStatus = "draft" | "pending" | "approved" | "rejected" | "on_hold" | "filled" | "cancelled";
+
+export const REQUISITION_TYPE_LABELS: Record<RequisitionType, string> = {
+  replacement: "Replacement",
+  new_headcount: "New headcount",
+};
+export const REQUISITION_STATUS_LABELS: Record<RequisitionStatus, string> = {
+  draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected",
+  on_hold: "On hold", filled: "Filled", cancelled: "Cancelled",
+};
+
+export interface JobRequisition {
+  _id: string;
+  type: RequisitionType;
+  replacing?: { _id: string; name: string; employeeCode?: string; designation?: string; salary?: number } | string | null;
+  replacingSalary?: number | null;
+  /** Whether Finance had to sign off — frozen when the request was raised. */
+  budgetApprovalRequired: boolean;
+  title: string;
+  department?: { _id: string; name: string } | string | null;
+  designation?: string;
+  location?: EmployeeLocation;
+  employmentType?: EmploymentType;
+  headcount: number;
+  salaryMin?: number;
+  salaryMax?: number;
+  currency?: string;
+  justification?: string;
+  targetStartDate?: string | null;
+  raisedBy?: { _id: string; name: string; email?: string } | string | null;
+  status: RequisitionStatus;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: { order: number; roleName: string; label?: string }[];
+  approvalTrail?: { step: number; roleName?: string; by?: { _id: string; name: string } | string; action: string; note?: string; at: string }[];
+  reviewNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Whether the organization has actually configured a hiring approval chain. */
+export interface HiringWorkflowState {
+  configured: boolean;
+  steps: { order: number; when: string; roleName: string; label?: string }[];
 }

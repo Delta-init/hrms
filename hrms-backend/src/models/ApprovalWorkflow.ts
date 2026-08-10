@@ -4,6 +4,10 @@ import type { IApprovalWorkflow } from "../types/index.js";
 const approvalStepSchema = new Schema(
   {
     order: { type: Number, required: true, min: 1 },
+    // A step that only applies sometimes — a budget sign-off is needed for new
+    // headcount and for a replacement that costs more, and is pure friction for
+    // a like-for-like backfill. Default keeps every existing step unconditional.
+    when: { type: String, enum: ["always", "budget_increase"], default: "always" },
     role: { type: Schema.Types.ObjectId, ref: "Role", required: true },
     label: { type: String, trim: true, maxlength: 60 },
   },
@@ -17,7 +21,7 @@ const approvalStepSchema = new Schema(
 const approvalWorkflowSchema = new Schema<IApprovalWorkflow>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
-    module: { type: String, enum: ["leave", "regularization", "reimbursements", "confirmations"], required: true },
+    module: { type: String, enum: ["leave", "regularization", "reimbursements", "confirmations", "hiring"], required: true },
     enabled: { type: Boolean, default: false },
     steps: { type: [approvalStepSchema], default: [] },
   },

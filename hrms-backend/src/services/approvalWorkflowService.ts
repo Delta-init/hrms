@@ -1,6 +1,6 @@
 import { ApprovalWorkflow } from "../models/ApprovalWorkflow.js";
 import type {
-  ApprovableModule, IApprovalStepSnapshot, IApprovalTrailEntry, IRole,
+  ApprovableModule, ApprovalStepCondition, IApprovalStepSnapshot, IApprovalTrailEntry, IRole,
 } from "../types/index.js";
 import type { UpsertApprovalWorkflowInput } from "../validations/approvalWorkflowValidation.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -39,17 +39,32 @@ export class ApprovalWorkflowService {
  * (falls back to today's single-step approve/reject).
  */
 export async function beginWorkflowState(
-  module: ApprovableModule
+  module: ApprovableModule,
+  /**
+   * Conditions this particular record meets. A step marked `when: "x"` is only
+   * snapshotted onto it if `conditions.x` is true, which is how one configured
+   * chain covers both a replacement that costs no more than the person leaving
+   * and one that does. Omitted entirely by every caller that has no conditions.
+   */
+  conditions: Partial<Record<Exclude<ApprovalStepCondition, "always">, boolean>> = {}
 ): Promise<{ workflowStep: number | null; workflowTotalSteps: number | null; approvalSteps: IApprovalStepSnapshot[] }> {
   const workflow = await ApprovalWorkflow.findOne(scoped({ module, enabled: true }))
-    .populate<{ steps: { order: number; role: IRole; label?: string }[] }>("steps.role", "roleName")
+    .populate<{ steps: { order: number; when?: ApprovalStepCondition; role: IRole; label?: string }[] }>("steps.role", "roleName")
     .sort({ createdAt: -1 });
   if (!workflow || workflow.steps.length === 0) {
     return { workflowStep: null, workflowTotalSteps: null, approvalSteps: [] };
   }
-  const approvalSteps: IApprovalStepSnapshot[] = workflow.steps
+  const applicable = workflow.steps
     .sort((a, b) => a.order - b.order)
-    .map((s) => ({ order: s.order, role: s.role._id, roleName: s.role.roleName, label: s.label }));
+    .filter((s) => !s.when || s.when === "always" || conditions[s.when] === true);
+  if (applicable.length === 0) {
+    return { workflowStep: null, workflowTotalSteps: null, approvalSteps: [] };
+  }
+  // Renumbered from 1: dropping a conditional step must not leave a gap the
+  // review logic would read as a step nobody can act on.
+  const approvalSteps: IApprovalStepSnapshot[] = applicable.map((s, i) => ({
+    order: i + 1, role: s.role._id, roleName: s.role.roleName, label: s.label,
+  }));
   return { workflowStep: 1, workflowTotalSteps: approvalSteps.length, approvalSteps };
 }
 

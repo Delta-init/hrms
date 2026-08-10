@@ -1,6 +1,7 @@
 import { Router } from "express";
 import fileRoutes from "./fileRoutes.js";
 import documentRoutes from "./documentRoutes.js";
+import hiringRoutes from "./hiringRoutes.js";
 import authRoutes from "./authRoutes.js";
 import userRoutes from "./userRoutes.js";
 import roleRoutes from "./roleRoutes.js";
@@ -42,6 +43,7 @@ const router = Router();
 
 router.use("/files", fileRoutes);
 router.use("/documents", documentRoutes);
+router.use("/hiring", hiringRoutes);
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cards", cardRoutes);

@@ -31,6 +31,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "onboardingTasks",
+  "hiring",
   "confirmations",
   "letters",
   "announcements",
@@ -763,10 +764,18 @@ export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 // ─── Approval workflow (configurable multi-step approval chains) ────────────
 /** Approvable modules that can have a configurable multi-step chain — the
  *  ones sharing the same pending → approved/rejected + reviewedBy shape. */
-export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations";
+export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations" | "hiring";
+
+/**
+ * When a step applies. `always` is every record; anything else names a
+ * condition the record must meet, so one configured chain can cover both a
+ * replacement that costs no more than the person leaving and one that does.
+ */
+export type ApprovalStepCondition = "always" | "budget_increase";
 
 export interface IApprovalStep {
   order: number;
+  when?: ApprovalStepCondition;
   role: Types.ObjectId | IRole;
   label?: string;
 }
@@ -1346,4 +1355,55 @@ export interface IConsumedTicket extends Document {
   jti: string;
   expiresAt: Date;
   createdAt: Date;
+}
+
+// ─── Hiring ──────────────────────────────────────────────────────────────────
+/**
+ * Why a role is being filled. A replacement backfills somebody who has left or
+ * is leaving; new headcount is a position that did not exist. The distinction
+ * decides who has to approve it — see requiresBudgetApproval().
+ */
+export type RequisitionType = "replacement" | "new_headcount";
+
+export type RequisitionStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "on_hold"
+  | "filled"
+  | "cancelled";
+
+export interface IJobRequisition extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  type: RequisitionType;
+  /** Who is being backfilled. Required for a replacement, null otherwise. */
+  replacing?: Types.ObjectId | IEmployee | null;
+  title: string;
+  department?: Types.ObjectId | IDepartment | null;
+  designation?: string;
+  location?: EmployeeLocation;
+  employmentType?: EmploymentType;
+  headcount: number;
+  salaryMin?: number;
+  salaryMax?: number;
+  currency?: string;
+  /** What the person being replaced was paid, frozen when the request is
+   *  raised — the comparison that decides whether Finance sees this at all. */
+  replacingSalary?: number | null;
+  /** Whether the budget step applied, stored so the trail explains itself
+   *  later even if salaries change afterwards. */
+  budgetApprovalRequired: boolean;
+  justification?: string;
+  targetStartDate?: Date | null;
+  raisedBy: Types.ObjectId | IUser;
+  status: RequisitionStatus;
+  workflowStep?: number | null;
+  workflowTotalSteps?: number | null;
+  approvalSteps?: IApprovalStepSnapshot[];
+  approvalTrail?: IApprovalTrailEntry[];
+  reviewNote?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
