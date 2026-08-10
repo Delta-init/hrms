@@ -1709,6 +1709,8 @@ export interface FaceSettings {
   maxCaptures: number;
   /** Exact wording the employee must agree to before enrollment. */
   consentText: string;
+  /** False when kiosks punch from a single frame — a photo will then work. */
+  livenessRequired?: boolean;
 }
 
 export interface FaceStatus {

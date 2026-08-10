@@ -5,6 +5,7 @@ import {
   FaceEnrollmentService,
 } from "../services/faceEnrollmentService.js";
 import { faceServiceEnabled } from "../services/faceClient.js";
+import { livenessRequired } from "../services/livenessService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { sendError, sendSuccess } from "../utils/response.js";
@@ -50,6 +51,9 @@ export const getFaceSettings = async (
     minCaptures: service.minCaptures,
     maxCaptures: service.maxCaptures,
     consentText: FACE_CONSENT_TEXT,
+    // Surfaced so whoever manages kiosks can see that anti-spoofing is off,
+    // rather than it being a setting on a server nobody looks at.
+    livenessRequired,
   });
 };
 

@@ -28,7 +28,7 @@ import type { Kiosk, PairedKiosk } from "@/types";
  * someone close it before they have copied it.
  */
 export default function KiosksPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isLoading: sessionLoading } = useAuth();
   const { data: faceSettings } = useFaceSettings();
   const canView = hasPermission("attendance", "view");
   const canEdit = hasPermission("attendance", "edit");
@@ -42,6 +42,13 @@ export default function KiosksPage() {
   const [pairOpen, setPairOpen] = useState(false);
   const [paired, setPaired] = useState<PairedKiosk | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Kiosk | null>(null);
+
+  // Permissions can't be judged until the session resolves, and answering
+  // "you don't have access" in the meantime accuses people of something that
+  // isn't true and flashes away a moment later.
+  if (sessionLoading) {
+    return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
 
   if (!canView) {
     return <Card className="p-12 text-center text-sm text-muted-foreground">You don&apos;t have access to kiosks.</Card>;
@@ -63,6 +70,23 @@ export default function KiosksPage() {
           </Button>
         )}
       </div>
+
+      {/* Liveness off means a punch is one straight-on frame, which a printed
+          photo or a phone screen satisfies. That is a deliberate choice, but it
+          has to stay visible to whoever runs these devices. */}
+      {faceSettings?.enabled && faceSettings.livenessRequired === false && (
+        <Card className="mb-4 border-amber-500/30 bg-amber-500/5 p-4">
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-500">
+            Anti-spoofing is off — a photo can clock someone in
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Kiosks punch from a single frame, so holding up a photo of an enrolled
+            employee will check them in. Keep these devices where someone can see them.
+            To turn it back on, set <span className="font-mono">FACE_LIVENESS_MODE=required</span>{" "}
+            on the server.
+          </p>
+        </Card>
+      )}
 
       {!faceSettings?.enabled && (
         <Card className="mb-4 border-amber-500/30 bg-amber-500/5 p-4">

@@ -14,9 +14,13 @@ import type { KioskPunchResult } from "@/types";
 
 /** How long a result stays on screen before the kiosk resets for the next person. */
 const RESULT_MS = 5000;
-/** Frames sent per punch when liveness is off — a blink then costs nothing. */
-const FRAMES = 3;
-const FRAME_GAP_MS = 220;
+/**
+ * Frames per punch when liveness is off. Two rather than one so a blink costs
+ * nothing, and no more than two because every extra frame is another round of
+ * inference between the person and the door.
+ */
+const FRAMES = 2;
+const FRAME_GAP_MS = 180;
 /** How long each prompt is shown before its frame is taken. */
 const PROMPT_MS = 1300;
 
