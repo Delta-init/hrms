@@ -35,7 +35,28 @@ const FAILURE_LABELS: Record<string, string> = {
   LOW_DETECTION_CONFIDENCE: "face not clear enough",
 };
 
-type CameraState = "idle" | "starting" | "ready" | "denied" | "insecure" | "unavailable";
+type CameraState =
+  | "idle"
+  | "starting"
+  | "ready"
+  | "denied"
+  | "insecure"
+  | "unavailable"
+  | "busy"
+  | "unusable";
+
+/** "Blocked" and "another app has it" need opposite fixes — see the kiosk screen. */
+function cameraFailure(error: unknown): CameraState {
+  const name = (error as { name?: string })?.name ?? "";
+  if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
+    return "denied";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") return "unavailable";
+  if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
+    return "busy";
+  }
+  return "unusable";
+}
 
 export function FaceCaptureDialog({
   open, onOpenChange, userId, userName, settings,
@@ -75,21 +96,32 @@ export function FaceCaptureDialog({
       return;
     }
     setCamera("starting");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+    stopCamera();
+
+    const attempts: MediaStreamConstraints[] = [
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    let lastError: unknown;
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCamera("ready");
+        return;
+      } catch (error) {
+        lastError = error;
+        const name = (error as { name?: string })?.name ?? "";
+        if (name !== "OverconstrainedError" && name !== "ConstraintNotSatisfiedError") break;
       }
-      setCamera("ready");
-    } catch {
-      setCamera("denied");
     }
-  }, []);
+    setCamera(cameraFailure(lastError));
+  }, [stopCamera]);
 
   useEffect(() => {
     if (open) void startCamera();
@@ -164,12 +196,13 @@ export function FaceCaptureDialog({
                 ) : (
                   <>
                     <AlertTriangle className="h-6 w-6 text-amber-500" />
-                    <p className="text-sm font-medium">{cameraMessage(camera)}</p>
-                    {(camera === "denied" || camera === "unavailable") && (
-                      <Button size="sm" variant="outline" onClick={() => void startCamera()}>
-                        Try again
-                      </Button>
+                    <p className="text-sm font-medium">{CAMERA_MESSAGES[camera]?.message}</p>
+                    {CAMERA_MESSAGES[camera]?.fix && (
+                      <p className="text-xs text-muted-foreground">{CAMERA_MESSAGES[camera]!.fix}</p>
                     )}
+                    <Button size="sm" variant="outline" onClick={() => void startCamera()}>
+                      Try again
+                    </Button>
                   </>
                 )}
               </div>
@@ -261,10 +294,22 @@ export function FaceCaptureDialog({
   );
 }
 
-function cameraMessage(state: CameraState): string {
-  if (state === "insecure")
-    return "The camera needs HTTPS. Open this page over https:// or on localhost.";
-  if (state === "denied") return "Camera access was blocked. Allow it in your browser and try again.";
-  if (state === "unavailable") return "No camera is available on this device.";
-  return "";
-}
+const CAMERA_MESSAGES: Partial<Record<CameraState, { message: string; fix?: string }>> = {
+  insecure: {
+    message: "The camera needs a secure connection.",
+    fix: "Open this page over https://, or on localhost.",
+  },
+  denied: {
+    message: "Camera access is blocked for this site.",
+    fix: "Click the camera icon in the address bar, allow access, then try again.",
+  },
+  busy: {
+    message: "Another app is using the camera.",
+    fix: "Close anything else using it — a video call, or another tab — then try again.",
+  },
+  unavailable: {
+    message: "No camera is connected to this device.",
+    fix: "Plug one in, or use a device with a front camera.",
+  },
+  unusable: { message: "The camera couldn't be started.", fix: "Try again, or reload the page." },
+};

@@ -117,7 +117,34 @@ function PairingScreen({ onPaired }: { onPaired: (session: KioskSession) => void
 
 // ─── Check-in ────────────────────────────────────────────────────────────────
 
-type CameraState = "starting" | "ready" | "insecure" | "denied" | "unavailable";
+type CameraState =
+  | "starting"
+  | "ready"
+  | "insecure"
+  | "denied"
+  | "unavailable"
+  | "busy"
+  | "unusable";
+
+/**
+ * Why the camera wouldn't start.
+ *
+ * Worth separating: "blocked" and "another app has it" need opposite actions,
+ * and sending somebody to browser settings when the real problem is a video
+ * call in the background leaves them stuck with the screen insisting they fix
+ * a permission that was never the issue.
+ */
+function cameraFailure(error: unknown): CameraState {
+  const name = (error as { name?: string })?.name ?? "";
+  if (name === "NotAllowedError" || name === "SecurityError" || name === "PermissionDeniedError") {
+    return "denied";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") return "unavailable";
+  if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
+    return "busy";
+  }
+  return "unusable";
+}
 
 function CheckInScreen({
   session, onUnpaired,
@@ -151,20 +178,38 @@ function CheckInScreen({
       return;
     }
     setCamera("starting");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+    // Release anything we already hold before asking again, or a retry hits
+    // our own stream and reports the camera as busy.
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+
+    const attempts: MediaStreamConstraints[] = [
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false },
+      // Fall back to whatever the device will give us: a webcam that can't do
+      // 720p should still run the kiosk.
+      { video: true, audio: false },
+    ];
+
+    let lastError: unknown;
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCamera("ready");
+        return;
+      } catch (error) {
+        lastError = error;
+        // Only a constraints failure is worth retrying; a denied permission or
+        // a camera in use will fail the same way again.
+        const name = (error as { name?: string })?.name ?? "";
+        if (name !== "OverconstrainedError" && name !== "ConstraintNotSatisfiedError") break;
       }
-      setCamera("ready");
-    } catch {
-      setCamera("denied");
     }
+    setCamera(cameraFailure(lastError));
   }, []);
 
   useEffect(() => {
@@ -386,15 +431,32 @@ function Result({ result }: { result: KioskPunchResult }) {
   );
 }
 
+const CAMERA_MESSAGES: Record<Exclude<CameraState, "ready">, { message: string; fix?: string }> = {
+  starting: { message: "Starting the camera…" },
+  insecure: {
+    message: "The camera needs a secure connection.",
+    fix: "Open this page over https://, or on localhost.",
+  },
+  denied: {
+    message: "Camera access is blocked for this site.",
+    fix: "Click the camera icon in the address bar and allow access, then try again.",
+  },
+  busy: {
+    message: "Another app is using the camera.",
+    fix: "Close anything else using it — a video call, or another tab — then try again.",
+  },
+  unavailable: {
+    message: "No camera is connected to this device.",
+    fix: "Plug one in, or use a device with a front camera.",
+  },
+  unusable: {
+    message: "The camera couldn't be started.",
+    fix: "Try again, or reload the page.",
+  },
+};
+
 function CameraProblem({ state, onRetry }: { state: CameraState; onRetry: () => void }) {
-  const message =
-    state === "insecure"
-      ? "The camera needs a secure connection. Open this page over https://."
-      : state === "denied"
-        ? "Camera access is blocked. Allow it in the browser settings for this site."
-        : state === "unavailable"
-          ? "No camera is available on this device."
-          : "Starting the camera…";
+  const { message, fix } = CAMERA_MESSAGES[state as Exclude<CameraState, "ready">];
 
   return (
     <div className="flex flex-col items-center gap-4 text-center">
@@ -403,7 +465,10 @@ function CameraProblem({ state, onRetry }: { state: CameraState; onRetry: () => 
       ) : (
         <AlertTriangle className="h-8 w-8 text-amber-400" />
       )}
-      <p className="max-w-md text-lg text-neutral-300">{message}</p>
+      <div>
+        <p className="max-w-md text-lg text-neutral-300">{message}</p>
+        {fix && <p className="mt-1 max-w-md text-sm text-neutral-500">{fix}</p>}
+      </div>
       {state !== "starting" && (
         <Button variant="outline" onClick={onRetry}>Try again</Button>
       )}
