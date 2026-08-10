@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
-import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users } from "lucide-react";
+import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition } from "@/hooks/useHiring";
+import { usePendingOffers, useDecideOffer } from "@/hooks/useCandidates";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -48,6 +49,8 @@ export default function HiringPage() {
   const { data: workflow } = useHiringWorkflow();
   const { mutate: review, isPending: reviewing } = useReviewRequisition();
   const { mutate: remove, isPending: deleting } = useDeleteRequisition();
+  const { data: pendingOffers = [] } = usePendingOffers();
+  const { mutate: decideOffer, isPending: deciding } = useDecideOffer();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<JobRequisition | null>(null);
@@ -182,6 +185,44 @@ export default function HiringPage() {
               </span>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* An approval nobody can find is an approval that does not happen — the
+          candidate simply waits. So it sits above the list, not inside a card. */}
+      {pendingOffers.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+            <ShieldAlert className="h-4 w-4" />
+            {pendingOffers.length} offer{pendingOffers.length === 1 ? "" : "s"} waiting on management
+          </p>
+          <div className="space-y-2">
+            {pendingOffers.map((o) => {
+              const cand = o.candidate && typeof o.candidate === "object" ? o.candidate : null;
+              const req = o.requisition && typeof o.requisition === "object" ? o.requisition : null;
+              return (
+                <div key={o._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{cand?.name ?? "—"}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {req?.title ?? "—"}
+                      {o.offeredSalary ? ` · offering ${cand?.currency ?? ""} ${o.offeredSalary}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="outline" disabled={deciding}
+                      onClick={() => decideOffer({ id: o._id, approve: true })}>
+                      <Check className="h-3.5 w-3.5" />Release offer
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" disabled={deciding}
+                      onClick={() => decideOffer({ id: o._id, approve: false })}>
+                      <X className="h-3.5 w-3.5" />Refuse
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

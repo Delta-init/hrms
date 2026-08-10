@@ -1425,7 +1425,15 @@ export const APPLICATION_STAGES = [
   "hired",
 ] as const;
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
-export type ApplicationStatus = "active" | "rejected" | "withdrawn";
+/**
+ * `waitlisted` is a parking space, not an ending: a good candidate with no
+ * vacancy right now. Kept distinct from rejected so it can be pulled back, and
+ * so a pipeline does not have to pretend they were turned down.
+ */
+export type ApplicationStatus = "active" | "waitlisted" | "rejected" | "withdrawn";
+
+/** Whether an offer has been released. Management sign off before it goes out. */
+export type OfferApprovalStatus = "not_requested" | "pending" | "approved" | "rejected";
 
 export interface ICandidate extends Document {
   _id: Types.ObjectId;
@@ -1463,6 +1471,18 @@ export interface IApplication extends Document {
   rejectionReason?: string;
   /** Set once the offer is accepted and they become an employee. */
   movedToEmployee?: Types.ObjectId | IEmployee | null;
+  /**
+   * Management's sign-off on releasing an offer. Reaching the offer stage asks
+   * for it; accepting cannot happen until it is given.
+   */
+  offerApproval?: {
+    status: OfferApprovalStatus;
+    requestedBy?: Types.ObjectId | IUser | null;
+    requestedAt?: Date | null;
+    decidedBy?: Types.ObjectId | IUser | null;
+    decidedAt?: Date | null;
+    note?: string;
+  };
   /** Every stage this application has been through, and who moved it. */
   stageHistory?: Array<{
     stage: ApplicationStage | ApplicationStatus;

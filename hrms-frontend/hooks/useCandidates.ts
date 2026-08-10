@@ -75,3 +75,36 @@ export const useDeleteCandidate = () => {
     onError: (e) => toast.error(errMsg(e, "Could not delete the candidate")),
   });
 };
+
+/** Offers waiting on management, surfaced as their own list. */
+export const usePendingOffers = () =>
+  useQuery({
+    queryKey: [...KEY, "pending-offers"],
+    queryFn: async () => (await api.get<ApiResponse<Application[]>>("/hiring/offers/pending")).data.data ?? [],
+  });
+
+export const useDecideOffer = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, approve, note }: { id: string; approve: boolean; note?: string }) =>
+      (await api.patch<ApiResponse<Application>>(`/hiring/applications/${id}/offer`, { approve, note })).data.data!,
+    onSuccess: (_d, v) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(v.approve ? "Offer approved" : "Offer refused"); },
+    onError: (e) => toast.error(errMsg(e, "Could not record the decision")),
+  });
+};
+
+/** Attach a CV to somebody already on file. */
+export const useUploadResume = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return (await api.post<ApiResponse<Candidate>>(`/hiring/candidates/${id}/resume`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })).data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("CV attached"); },
+    onError: (e) => toast.error(errMsg(e, "Could not upload the CV")),
+  });
+};

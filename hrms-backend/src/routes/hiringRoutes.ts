@@ -6,6 +6,7 @@ import {
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
   uploadResume, applyCandidate, getPipeline, getApplications, moveApplication, deleteApplication,
+  getPendingOffers, decideOffer,
 } from "../controllers/candidateController.js";
 import {
   scheduleInterview, getInterviews, getInterviewById, updateInterview,
@@ -41,6 +42,10 @@ router.delete("/candidates/:id", checkPermission("hiring", "delete"), deleteCand
 
 // ── Applications ─────────────────────────────────────────────────────────────
 router.get("/applications", checkPermission("hiring", "view"), getApplications);
+// Offers waiting on management. Visible to anyone who can see hiring; the
+// decision itself is checked against the role in the controller.
+router.get("/offers/pending", checkPermission("hiring", "view"), getPendingOffers);
+router.patch("/applications/:id/offer", checkPermission("hiring", "view"), decideOffer);
 router.post("/applications", checkPermission("hiring", "create"), applyCandidate);
 router.patch("/applications/:id", checkPermission("hiring", "edit"), moveApplication);
 router.delete("/applications/:id", checkPermission("hiring", "delete"), deleteApplication);

@@ -2,9 +2,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  ArrowLeft, Loader2, FileText, Mail, Phone, Building2, Clock, Video, MapPin, Link2,
+  ArrowLeft, Loader2, FileText, Mail, Phone, Building2, Clock, Video, MapPin, Link2, Upload, CheckCircle2, XCircle,
 } from "lucide-react";
-import { useCandidate } from "@/hooks/useCandidates";
+import { useCandidate, useUploadResume } from "@/hooks/useCandidates";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { useRef } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { getInitials, cn } from "@/lib/utils";
 import {
@@ -40,6 +43,10 @@ const statusTone: Record<string, string> = {
 export default function CandidateDetailPage() {
   const { id } = useParams();
   const { data: c, isLoading } = useCandidate(String(id));
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission("hiring", "edit");
+  const { mutate: upload, isPending: uploading } = useUploadResume();
+  const fileInput = useRef<HTMLInputElement>(null);
 
   if (isLoading) {
     return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -50,6 +57,8 @@ export default function CandidateDetailPage() {
 
   const applications = c.applications ?? [];
   const allInterviews = applications.flatMap((a) => a.interviews ?? []);
+  const hired = applications.find((a) => a.stage === "hired");
+  const anyLive = applications.some((a) => a.status === "active" && a.stage !== "hired");
 
   const facts: Array<[React.ElementType, string, string | undefined]> = [
     [Mail, "Email", c.email],
@@ -73,6 +82,22 @@ export default function CandidateDetailPage() {
           <p className="text-sm text-muted-foreground">
             {c.source ? `via ${c.source} · ` : ""}added {fmtDate(c.createdAt)}
           </p>
+          {/* Outcome, stated rather than inferred from a row of stage chips. */}
+          <div className="mt-1.5">
+            {hired ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" />Hired
+              </span>
+            ) : anyLive ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-600">
+                Still in play
+              </span>
+            ) : applications.length ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                <XCircle className="h-3.5 w-3.5" />Not hired
+              </span>
+            ) : null}
+          </div>
           <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             {facts.filter(([, , v]) => v).map(([Icon, label, value]) => (
               <div key={label} className="flex items-center gap-2 text-muted-foreground">
@@ -88,12 +113,34 @@ export default function CandidateDetailPage() {
             )}
           </div>
         </div>
-        {c.resumeUrl && (
-          <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted">
-            <FileText className="h-4 w-4" />{c.resumeFileName || "CV"}
-          </a>
-        )}
+        <div className="flex flex-col items-end gap-2">
+          {c.resumeUrl ? (
+            <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted">
+              <FileText className="h-4 w-4" />{c.resumeFileName || "CV"}
+            </a>
+          ) : (
+            <span className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              No CV on file
+            </span>
+          )}
+          {canEdit && (
+            <>
+              <input ref={fileInput} type="file" className="hidden" accept=".pdf,.doc,.docx,image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) upload({ id: String(id), file });
+                  e.target.value = "";
+                }} />
+              <Button size="sm" variant="outline" disabled={uploading} onClick={() => fileInput.current?.click()}>
+                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                {c.resumeUrl ? "Replace CV" : "Upload CV"}
+              </Button>
+              {/* The same 10 MB ceiling every document goes through. */}
+              <span className="text-[10px] text-muted-foreground">PDF or Word, up to 10 MB</span>
+            </>
+          )}
+        </div>
       </div>
 
       {c.notes && (

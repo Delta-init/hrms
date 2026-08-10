@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { CandidateService } from "../services/candidateService.js";
 import {
-  createCandidateSchema, updateCandidateSchema, applySchema, moveStageSchema,
+  createCandidateSchema, updateCandidateSchema, applySchema, moveStageSchema, decideOfferSchema,
 } from "../validations/candidateValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
@@ -91,4 +91,26 @@ export const moveApplication = async (req: AuthenticatedRequest, res: Response, 
 export const deleteApplication = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Application removed", await service.removeApplication(req.params.id)); }
   catch (error) { next(error); }
+};
+
+/** Offers waiting on management, as their own list. */
+export const getPendingOffers = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Offers awaiting approval", await service.pendingOffers()); }
+  catch (error) { next(error); }
+};
+
+export const decideOffer = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = decideOfferSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    // Releasing an offer is management's call, not the recruiter's — the same
+    // people who own the headcount decision own the number that goes with it.
+    const role = req.user!.role as unknown as { roleName?: string; isSystemRole?: boolean };
+    if (!(role?.isSystemRole && role.roleName === "Super Admin")) {
+      sendError(res, "Only management can release an offer", 403);
+      return;
+    }
+    const result = await service.decideOffer(req.params.id, parsed.data.approve, parsed.data.note, req.user!.userId);
+    sendSuccess(res, parsed.data.approve ? "Offer approved" : "Offer refused", result);
+  } catch (error) { next(error); }
 };

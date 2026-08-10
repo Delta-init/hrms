@@ -1858,7 +1858,13 @@ export interface HiringWorkflowState {
 
 export const APPLICATION_STAGES = ["applied","screening","shortlisted","interview","offer","accepted","hired"] as const;
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number];
-export type ApplicationStatus = "active" | "rejected" | "withdrawn";
+/** `waitlisted` is a parking space, not an ending — it can be pulled back. */
+export type ApplicationStatus = "active" | "waitlisted" | "rejected" | "withdrawn";
+export type OfferApprovalStatus = "not_requested" | "pending" | "approved" | "rejected";
+
+export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  active: "In play", waitlisted: "Waiting list", rejected: "Rejected", withdrawn: "Withdrew",
+};
 
 export const STAGE_LABELS: Record<ApplicationStage, string> = {
   applied: "Applied", screening: "Screening", shortlisted: "Shortlisted",
@@ -1903,6 +1909,16 @@ export interface Application {
   /** Attached by the pipeline and candidate endpoints so a card can say whether
    *  anyone has actually spoken to them. */
   interviews?: Interview[];
+  movedToEmployee?: string | null;
+  /** Management's sign-off on releasing the offer. */
+  offerApproval?: {
+    status: OfferApprovalStatus;
+    requestedBy?: { _id: string; name: string } | string | null;
+    requestedAt?: string | null;
+    decidedBy?: { _id: string; name: string } | string | null;
+    decidedAt?: string | null;
+    note?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

@@ -31,7 +31,7 @@ export const applySchema = z.object({
 export const moveStageSchema = z
   .object({
     stage: z.enum(APPLICATION_STAGES).optional(),
-    status: z.enum(["active", "rejected", "withdrawn"]).optional(),
+    status: z.enum(["active", "waitlisted", "rejected", "withdrawn"]).optional(),
     rating: z.coerce.number().int().min(1).max(5).nullish(),
     offeredSalary: z.coerce.number().min(0).nullish(),
     reason: z.string().trim().max(500).optional(),
@@ -45,9 +45,19 @@ export const moveStageSchema = z
     if (v.status === "rejected" && !v.reason) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Say why they were rejected" });
     }
+    // A waitlist entry with no note is indistinguishable from being forgotten.
+    if (v.status === "waitlisted" && !v.reason && !v.note) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Say why they are being waitlisted" });
+    }
   });
 
 export type CreateCandidateInput = z.infer<typeof createCandidateSchema>;
 export type UpdateCandidateInput = z.infer<typeof updateCandidateSchema>;
 export type ApplyInput = z.infer<typeof applySchema>;
 export type MoveStageInput = z.infer<typeof moveStageSchema>;
+
+export const decideOfferSchema = z.object({
+  approve: z.boolean(),
+  note: z.string().trim().max(500).optional(),
+});
+export type DecideOfferInput = z.infer<typeof decideOfferSchema>;

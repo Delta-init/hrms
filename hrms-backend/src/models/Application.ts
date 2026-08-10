@@ -10,11 +10,22 @@ const applicationSchema = new Schema<IApplication>(
     candidate: { type: Schema.Types.ObjectId, ref: "Candidate", required: true, index: true },
 
     stage: { type: String, enum: APPLICATION_STAGES, default: "applied" },
-    status: { type: String, enum: ["active", "rejected", "withdrawn"], default: "active", index: true },
+    status: { type: String, enum: ["active", "waitlisted", "rejected", "withdrawn"], default: "active", index: true },
     rating: { type: Number, min: 1, max: 5, default: null },
     offeredSalary: { type: Number, min: 0, default: null },
     rejectionReason: { type: String, trim: true, maxlength: 500 },
     movedToEmployee: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+
+    // An offer is the first irreversible thing anybody says to a candidate, so
+    // it is the point management sign off on rather than the hire afterwards.
+    offerApproval: {
+      status: { type: String, enum: ["not_requested", "pending", "approved", "rejected"], default: "not_requested" },
+      requestedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      requestedAt: { type: Date, default: null },
+      decidedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      decidedAt: { type: Date, default: null },
+      note: { type: String, trim: true, maxlength: 500 },
+    },
 
     // Kept rather than derived: "how long did this sit in screening" is the
     // question a hiring process gets judged on, and a single current stage

@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { CandidateDialog } from "@/components/hiring/CandidateDialog";
 import { ScheduleInterviewDialog } from "@/components/hiring/ScheduleInterviewDialog";
 import { HireDialog } from "@/components/hiring/HireDialog";
+import { PipelineBoard } from "@/components/hiring/PipelineBoard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,7 +59,7 @@ export default function RequisitionDetailPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [scheduling, setScheduling] = useState<Application | null>(null);
   const [hiring, setHiring] = useState<Application | null>(null);
-  const [rejecting, setRejecting] = useState<Application | null>(null);
+  const [closing, setClosing] = useState<{ app: Application; kind: "rejected" | "waitlisted" } | null>(null);
   const [reason, setReason] = useState("");
 
   const approved = requisition?.status === "approved";
@@ -136,127 +137,18 @@ export default function RequisitionDetailPage() {
         <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 overflow-x-auto pb-2 md:grid-cols-3 xl:grid-cols-6">
-            {(pipeline?.columns ?? [])
-              // Hired is reached by creating the employee record, not by moving a card.
-              .filter((c) => c.stage !== "hired")
-              .map((col) => (
-                <div key={col.stage} className="min-w-[210px] rounded-2xl border border-border bg-card p-3 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{STAGE_LABELS[col.stage]}</span>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums">{col.applications.length}</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {col.applications.map((app) => {
-                      const c = asCandidate(app.candidate);
-                      const next = APPLICATION_STAGES[APPLICATION_STAGES.indexOf(app.stage) + 1];
-                      return (
-                        <div key={app._id} className="rounded-xl border border-border bg-background p-2.5">
-                          <div className="flex items-start gap-2">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                              {getInitials(c?.name ?? "?")}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <Link href={`/hiring/candidates/${c?._id}`} className="truncate text-sm font-medium hover:underline">
-                                {c?.name ?? "—"}
-                              </Link>
-                              <div className="truncate text-[11px] text-muted-foreground">{c?.currentCompany || c?.email}</div>
-                            </div>
-                          </div>
-
-                          {(c?.expectedSalary || c?.noticePeriodDays != null) && (
-                            <div className="mt-1.5 flex flex-wrap gap-x-3 text-[10px] text-muted-foreground">
-                              {c?.expectedSalary ? <span>wants {c.currency} {c.expectedSalary}</span> : null}
-                              {c?.noticePeriodDays != null ? <span>{c.noticePeriodDays}d notice</span> : null}
-                            </div>
-                          )}
-
-                          {c?.resumeUrl && (
-                            <a href={c.resumeUrl} target="_blank" rel="noopener noreferrer"
-                              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
-                              <FileText className="h-3 w-3" />CV
-                            </a>
-                          )}
-
-                          {/* Whether anyone has actually spoken to them — the
-                              question a board is scanned for. */}
-                          {(() => {
-                            const live = (app.interviews ?? []).filter((i) => i.status !== "cancelled");
-                            const next = live.find((i) => new Date(i.scheduledAt) >= new Date()) ?? live.at(-1);
-                            return next ? (
-                              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-sky-600">
-                                {next.mode === "video" ? <Video className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
-                                <span className="truncate">
-                                  R{next.round} {INTERVIEW_STATUS_LABELS[next.status].toLowerCase()} ·{" "}
-                                  {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(next.scheduledAt))}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="mt-1.5 text-[10px] text-muted-foreground">No interview scheduled</div>
-                            );
-                          })()}
-
-                          {canEdit && (
-                            <div className="mt-2 flex items-center gap-1">
-                              <Button size="sm" variant="ghost" className="h-7 px-2" disabled={moving}
-                                onClick={() => setScheduling(app)} aria-label="Schedule an interview">
-                                {(app.interviews ?? []).some((i) => i.status !== "cancelled")
-                                  ? <CalendarCheck className="h-3.5 w-3.5 text-sky-600" />
-                                  : <CalendarPlus className="h-3.5 w-3.5" />}
-                              </Button>
-                              {app.stage === "accepted" && (
-                                <Button size="sm" className="h-7 flex-1 text-[11px]" disabled={moving}
-                                  onClick={() => setHiring(app)}>
-                                  <UserPlus className="h-3 w-3" />Hire
-                                </Button>
-                              )}
-                              {app.stage !== "accepted" && next && next !== "hired" && (
-                                <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]" disabled={moving}
-                                  onClick={() => move({ id: app._id, stage: next })}>
-                                  {STAGE_LABELS[next]}<ChevronRight className="h-3 w-3" />
-                                </Button>
-                              )}
-                              <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" disabled={moving}
-                                onClick={() => { setRejecting(app); setReason(""); }} aria-label="Reject">
-                                <XCircle className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {col.applications.length === 0 && (
-                      <p className="py-3 text-center text-[11px] text-muted-foreground">Nobody here</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-          </div>
-
-          {/* Kept on screen: a pipeline that hides its rejections looks healthier
-              than it is, and the reason is the useful part months later. */}
-          {!!pipeline?.closed.length && (
-            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Out of the running ({pipeline.closed.length})
-              </p>
-              <div className="space-y-1.5">
-                {pipeline.closed.map((app) => {
-                  const c = asCandidate(app.candidate);
-                  return (
-                    <div key={app._id} className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                      <span className="font-medium">{c?.name ?? "—"}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {app.status === "rejected" ? "Rejected" : "Withdrew"} at {STAGE_LABELS[app.stage]}
-                        {app.rejectionReason ? ` — ${app.rejectionReason}` : ""}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <PipelineBoard
+            columns={pipeline?.columns ?? []}
+            closed={pipeline?.closed ?? []}
+            canEdit={canEdit}
+            busy={moving}
+            onMove={(id, stage) => move({ id, stage })}
+            onReject={(app) => { setClosing({ app, kind: "rejected" }); setReason(""); }}
+            onWaitlist={(app) => { setClosing({ app, kind: "waitlisted" }); setReason(""); }}
+            onRestore={(id) => move({ id, status: "active" })}
+            onSchedule={setScheduling}
+            onHire={setHiring}
+          />
         </>
       )}
 
@@ -281,27 +173,33 @@ export default function RequisitionDetailPage() {
         />
       )}
 
-      <ResponsiveDialog open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)}>
+      <ResponsiveDialog open={!!closing} onOpenChange={(o) => !o && setClosing(null)}>
         <ResponsiveDialogContent desktopClassName="max-w-md">
-          <ResponsiveDialogHeader><ResponsiveDialogTitle>Reject this candidate?</ResponsiveDialogTitle></ResponsiveDialogHeader>
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>
+              {closing?.kind === "waitlisted" ? "Move to the waiting list?" : "Reject this candidate?"}
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
           <div className="space-y-3 px-4 sm:px-0">
             <div className="space-y-1.5">
               <Label htmlFor="reason">Why? *</Label>
               <Textarea id="reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
-                placeholder="Salary expectations, notice period, experience…" />
-              {/* Without it, a rejection six months later is a dead end nobody
-                  can explain — and the same person may well apply again. */}
-              <p className="text-[11px] text-muted-foreground">Recorded against the candidate, and shown if they apply again.</p>
+                placeholder={closing?.kind === "waitlisted" ? "Strong, but no vacancy right now…" : "Salary expectations, notice period, experience…"} />
+              <p className="text-[11px] text-muted-foreground">
+                {closing?.kind === "waitlisted"
+                  ? "They stay on the waiting list and can be brought back at any time."
+                  : "Recorded against the candidate, and shown if they apply again. They can still be brought back."}
+              </p>
             </div>
           </div>
           <ResponsiveDialogFooter>
-            <Button variant="outline" onClick={() => setRejecting(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={!reason.trim() || moving}
-              onClick={() => rejecting && move(
-                { id: rejecting._id, status: "rejected", reason: reason.trim() },
-                { onSuccess: () => setRejecting(null) }
+            <Button variant="outline" onClick={() => setClosing(null)}>Cancel</Button>
+            <Button variant={closing?.kind === "waitlisted" ? "default" : "destructive"} disabled={!reason.trim() || moving}
+              onClick={() => closing && move(
+                { id: closing.app._id, status: closing.kind, reason: reason.trim() },
+                { onSuccess: () => setClosing(null) }
               )}>
-              Reject
+              {closing?.kind === "waitlisted" ? "Waiting list" : "Reject"}
             </Button>
           </ResponsiveDialogFooter>
         </ResponsiveDialogContent>

@@ -231,18 +231,43 @@ export class CandidateService {
   async moveStage(id: string, input: MoveStageInput, by: string) {
     const record = await Application.findOne(scoped({ _id: id }));
     if (!record) throw new CandidateError("Application not found", 404);
-    if (record.status !== "active") {
-      throw new CandidateError(`This application was already ${record.status} and cannot be moved`);
+
+    // Closed once meant closed for good. A rejection is often reconsidered and a
+    // waitlisted candidate is parked precisely so they can come back, so the way
+    // out is an explicit restore rather than a silent stage change.
+    const restoring = input.status === "active";
+    if (record.status !== "active" && !restoring) {
+      throw new CandidateError(`This application is ${record.status}. Restore it first to move them again.`);
     }
 
     if (input.status && input.status !== "active") {
       record.status = input.status;
       record.rejectionReason = input.reason ?? undefined;
-    } else if (input.stage) {
+    } else if (restoring) {
+      record.status = "active";
+      record.rejectionReason = undefined;
+    }
+
+    if (input.stage) {
       // Becoming an employee is its own step, with a record to create and
       // onboarding to seed. It is not a column somebody drags a card into.
       if (input.stage === "hired") {
         throw new CandidateError("Marking somebody hired happens when their employee record is created, not here");
+      }
+      // An offer is the first irreversible thing anybody says to a candidate.
+      if (input.stage === "offer" && record.offerApproval?.status !== "approved") {
+        record.offerApproval = {
+          status: "pending",
+          requestedBy: by as never,
+          requestedAt: new Date(),
+          decidedBy: null,
+          decidedAt: null,
+        } as never;
+      }
+      if (input.stage === "accepted" && record.offerApproval?.status !== "approved") {
+        throw new CandidateError(
+          "The offer has not been approved yet. Management sign off before it goes out, and before it can be accepted."
+        );
       }
       record.stage = input.stage as ApplicationStage;
     }
@@ -251,7 +276,59 @@ export class CandidateService {
 
     record.stageHistory = [
       ...(record.stageHistory ?? []),
-      { stage: (input.status && input.status !== "active" ? input.status : record.stage) as never, by: by as never, at: new Date(), note: input.reason ?? input.note },
+      {
+        stage: (input.status && input.status !== "active" ? input.status : record.stage) as never,
+        by: by as never,
+        at: new Date(),
+        note: input.reason ?? input.note ?? (restoring ? "restored" : undefined),
+      },
+    ];
+    await record.save();
+    return Application.findById(id).populate(APPLICATION_POP);
+  }
+
+  /**
+   * Offers waiting on management.
+   *
+   * Surfaced as a list of its own because an approval nobody can find is an
+   * approval that does not happen — the candidate simply waits.
+   */
+  async pendingOffers() {
+    return Application.find(scoped({ "offerApproval.status": "pending" }))
+      .populate(APPLICATION_POP)
+      .populate({ path: "offerApproval.requestedBy", select: "name email" })
+      .sort({ "offerApproval.requestedAt": 1 })
+      .lean();
+  }
+
+  /**
+   * Release an offer, or refuse it.
+   *
+   * Management only — the same people who own the headcount decision own the
+   * number that goes out with it.
+   */
+  async decideOffer(id: string, approve: boolean, note: string | undefined, by: string) {
+    const record = await Application.findOne(scoped({ _id: id }));
+    if (!record) throw new CandidateError("Application not found", 404);
+    if (record.offerApproval?.status !== "pending") {
+      throw new CandidateError("There is no offer waiting for a decision on this application");
+    }
+
+    record.offerApproval = {
+      ...(record.offerApproval as object),
+      status: approve ? "approved" : "rejected",
+      decidedBy: by,
+      decidedAt: new Date(),
+      note,
+    } as never;
+
+    // A refused offer does not reject the candidate — the number was wrong, not
+    // the person — so they go back a stage rather than out of the process.
+    if (!approve) record.stage = "interview";
+
+    record.stageHistory = [
+      ...(record.stageHistory ?? []),
+      { stage: (approve ? "offer approved" : "offer refused") as never, by: by as never, at: new Date(), note },
     ];
     await record.save();
     return Application.findById(id).populate(APPLICATION_POP);
