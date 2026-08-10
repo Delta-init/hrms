@@ -176,6 +176,9 @@ export interface RecognizeResult {
   reason: RecognizeReason;
   best: { user_id: string; score: number } | null;
   runner_up: { user_id: string; score: number } | null;
+  /** Top scorers, highest first — needed to spot a clash with anyone, not just
+   *  whoever happened to come first. */
+  candidates: { user_id: string; score: number }[];
   margin: number | null;
   quality: FaceQuality | null;
   frame_index: number | null;

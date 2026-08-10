@@ -67,6 +67,10 @@ const envSchema = z.object({
   FACE_LIVENESS_MODE: z.enum(["required", "off"]).default("required"),
   // How long somebody has to follow the prompts before the challenge lapses.
   FACE_LIVENESS_TTL_SECONDS: z.string().default("30"),
+  // How far below the match threshold still counts as "too alike to enrol".
+  // Two faces this close cannot be told apart at the kiosk, so enrolling the
+  // second would break both.
+  FACE_DUPLICATE_MARGIN: z.string().default("0.1"),
 });
 
 const parsed = envSchema.safeParse(process.env);

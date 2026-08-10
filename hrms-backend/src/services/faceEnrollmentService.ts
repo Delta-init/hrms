@@ -7,6 +7,7 @@ import type { FaceQuality } from "./faceClient.js";
 import {
   FaceServiceError,
   embedFaces,
+  recognize,
   faceServiceEnabled,
   getGallery,
   replaceGallery,
@@ -133,6 +134,14 @@ export class FaceEnrollmentService {
     }
     const modelPack = await serviceModelPack();
 
+    // Checked before anything is written, so a clash leaves the database as it
+    // was and the admin is still standing there to sort it out.
+    await this.assertNobodyElseHasThisFace(
+      this.galleryKey(target.organization),
+      input.images,
+      String(target._id)
+    );
+
     const existing = await FaceProfile.findOne({ user: target._id });
     const referenceKey = await this.storeReference(
       input.images[0]!,
@@ -203,6 +212,65 @@ export class FaceEnrollmentService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Refuse to enrol a face that already belongs to somebody else.
+   *
+   * Without this the mistake is silent and lands weeks later at the door: two
+   * people who look the same to the model score the same, the kiosk cannot tell
+   * them apart, and it refuses *both* of them with no idea why. Catching it here
+   * puts the problem in front of the person who can still fix it.
+   *
+   * Two ways to fail, because they need different answers:
+   *  - the face IS someone else's, which is usually the wrong account open;
+   *  - the face is merely too alike — twins — where enrolling the second would
+   *    break the first, and one of them needs a PIN instead.
+   */
+  private async assertNobodyElseHasThisFace(
+    orgKey: string,
+    images: string[],
+    targetUserId: string
+  ): Promise<void> {
+    let result;
+    try {
+      // The search is only as good as what the service currently holds.
+      await this.syncGallery(orgKey);
+      result = await recognize(orgKey, images);
+    } catch (error) {
+      // A check that cannot run must not block an enrolment: recognition still
+      // refuses an ambiguous pair at the kiosk, so the mistake stays safe even
+      // when it slips through here.
+      console.warn("[face] could not check for a duplicate face:", error);
+      return;
+    }
+
+    const threshold = result.thresholds?.min_score ?? 0.45;
+    const band = Number(env.FACE_DUPLICATE_MARGIN) || 0.1;
+
+    const clash = (result.candidates ?? [])
+      .filter((c) => c.user_id !== targetUserId)
+      .sort((a, b) => b.score - a.score)[0];
+    if (!clash || clash.score < threshold - band) return;
+
+    const owner = await User.findById(clash.user_id).select("name");
+    const who = owner?.name ?? "another employee";
+
+    if (clash.score >= threshold) {
+      throw new FaceEnrollmentError(
+        `This face is already enrolled for ${who}. Delete that enrolment first if this is the same person.`,
+        409,
+        "FACE_ALREADY_ENROLLED",
+        { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score }
+      );
+    }
+
+    throw new FaceEnrollmentError(
+      `This face is too similar to ${who}'s for the kiosk to tell them apart. Enrolling it would stop both of them checking in, so use a login and password for one of them.`,
+      409,
+      "FACE_TOO_SIMILAR",
+      { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score }
+    );
   }
 
   /** Delete an employee's face data — offboarding, or a withdrawal of consent. */
