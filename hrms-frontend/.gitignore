@@ -7,6 +7,9 @@ out
 .DS_Store
 next-env.d.ts
 
+# TypeScript's incremental build cache (rewritten by every `tsc` run)
+*.tsbuildinfo
+
 # next-pwa generated service worker (build output, regenerated on `next build`)
 public/sw.js
 public/sw.js.map
