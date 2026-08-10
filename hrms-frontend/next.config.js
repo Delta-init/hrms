@@ -44,8 +44,22 @@ const csp = [
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
+/**
+ * Where the build output goes.
+ *
+ * `next dev` and `next build` both write to `.next`, so building while the dev
+ * server is running corrupts whichever finishes second — the dev server starts
+ * serving half a production build, or the build fails partway through. Giving
+ * the production build its own directory means the two can run at once, which
+ * they routinely do.
+ *
+ * `start` reads the same variable, so the pair stays consistent.
+ */
+const distDir = process.env.NEXT_DIST_DIR || ".next";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir,
   // Disabled: React Strict Mode's dev double-mount makes framer-motion skip
   // entrance (mount) animations, leaving `initial` states (opacity:0) stuck.
   reactStrictMode: false,
