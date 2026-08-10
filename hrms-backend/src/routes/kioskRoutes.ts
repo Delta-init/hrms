@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   deleteKiosk,
+  kioskChallenge,
   kioskPunch,
   kioskSession,
   listKiosks,
@@ -20,6 +21,7 @@ const router = Router();
 // signed in at a kiosk. Registered before the `authenticate` guard below so the
 // tablet never needs a login of its own.
 router.get("/session", authenticateKiosk, kioskSession);
+router.post("/challenge", kioskPunchLimiter, authenticateKiosk, kioskChallenge);
 router.post("/punch", kioskPunchLimiter, authenticateKiosk, kioskPunch);
 
 // ─── Management side ─────────────────────────────────────────────────────────

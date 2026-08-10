@@ -1,21 +1,31 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Clock, Loader2, LogIn, LogOut, ScanFace,
+  AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Clock, Loader2, LogIn, LogOut, ScanFace,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  fetchKioskSession, getKioskToken, setKioskToken, submitPunch, type KioskSession,
+  fetchChallenge, fetchKioskSession, getKioskToken, setKioskToken, submitPunch,
+  type KioskSession, type LivenessStep,
 } from "@/lib/kioskClient";
 import { cn } from "@/lib/utils";
 import type { KioskPunchResult } from "@/types";
 
 /** How long a result stays on screen before the kiosk resets for the next person. */
 const RESULT_MS = 5000;
-/** Frames sent per punch — a blink or half-turn then costs nothing. */
+/** Frames sent per punch when liveness is off — a blink then costs nothing. */
 const FRAMES = 3;
 const FRAME_GAP_MS = 220;
+/** How long each prompt is shown before its frame is taken. */
+const PROMPT_MS = 1300;
+
+/** What the person is asked to do, per step the server picked. */
+const PROMPTS: Record<LivenessStep, { title: string; hint: string }> = {
+  center: { title: "Look at the camera", hint: "Face straight ahead" },
+  left: { title: "Turn your head left", hint: "Your left — just a small turn" },
+  right: { title: "Turn your head right", hint: "Your right — just a small turn" },
+};
 
 /**
  * The check-in screen, for a shared tablet by the door.
@@ -120,6 +130,7 @@ function CheckInScreen({
   const [camera, setCamera] = useState<CameraState>("starting");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<KioskPunchResult | null>(null);
+  const [prompt, setPrompt] = useState<LivenessStep | null>(null);
   const [now, setNow] = useState<Date | null>(null);
 
   // Rendered only after mount: a server-rendered clock would mismatch the
@@ -184,20 +195,39 @@ function CheckInScreen({
     setBusy(true);
     setResult(null);
     try {
-      // A short burst rather than one frame: people blink, and the service
-      // keeps whichever frame scores best.
       const frames: string[] = [];
-      for (let i = 0; i < FRAMES; i += 1) {
-        const frame = grab();
-        if (frame) frames.push(frame);
-        if (i < FRAMES - 1) await new Promise((resolve) => setTimeout(resolve, FRAME_GAP_MS));
+      let challengeId: string | null = null;
+
+      if (session.livenessRequired) {
+        // The server picks the sequence; this screen only performs it. One
+        // frame per prompt keeps the whole thing to about four seconds, which
+        // is as long as anyone will stand at a door for.
+        const challenge = await fetchChallenge();
+        challengeId = challenge.id;
+        for (const step of challenge.steps) {
+          setPrompt(step);
+          await new Promise((resolve) => setTimeout(resolve, PROMPT_MS));
+          const frame = grab();
+          if (frame) frames.push(frame);
+        }
+        setPrompt(null);
+      } else {
+        // A short burst rather than one frame: people blink, and the service
+        // keeps whichever frame scores best.
+        for (let i = 0; i < FRAMES; i += 1) {
+          const frame = grab();
+          if (frame) frames.push(frame);
+          if (i < FRAMES - 1) await new Promise((resolve) => setTimeout(resolve, FRAME_GAP_MS));
+        }
       }
+
       if (frames.length === 0) {
         setResult({ status: "refused", message: "The camera isn't ready yet." });
         return;
       }
-      setResult(await submitPunch(frames));
+      setResult(await submitPunch(frames, challengeId));
     } catch (error) {
+      setPrompt(null);
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status === 401) {
         // The device was removed or its token rotated — back to pairing.
@@ -213,6 +243,7 @@ function CheckInScreen({
             : "Couldn't reach the server. Try again.",
       });
     } finally {
+      setPrompt(null);
       setBusy(false);
     }
   };
@@ -251,6 +282,8 @@ function CheckInScreen({
         <div className="flex flex-1 flex-col items-center justify-center gap-8 py-8">
           {camera !== "ready" ? (
             <CameraProblem state={camera} onRetry={() => void startCamera()} />
+          ) : prompt ? (
+            <Prompt step={prompt} />
           ) : result ? (
             <Result result={result} />
           ) : (
@@ -268,7 +301,7 @@ function CheckInScreen({
             {busy ? (
               <>
                 <Loader2 className="h-6 w-6 animate-spin" />
-                Checking…
+                {prompt ? "Follow the prompts…" : "Checking…"}
               </>
             ) : (
               <>
@@ -280,6 +313,26 @@ function CheckInScreen({
         </div>
       </div>
     </main>
+  );
+}
+
+/**
+ * The current instruction, big enough to read while standing back from a
+ * tablet. The arrow points the way the person should physically turn — the
+ * preview beside it is mirrored, so words alone get read as their reflection.
+ */
+function Prompt({ step }: { step: LivenessStep }) {
+  const { title, hint } = PROMPTS[step];
+  return (
+    <div className="flex flex-col items-center gap-4 text-center">
+      <div className="flex items-center gap-4">
+        {step === "left" && <ArrowLeft className="h-12 w-12 animate-pulse text-sky-400" />}
+        {step === "center" && <ScanFace className="h-12 w-12 animate-pulse text-sky-400" />}
+        {step === "right" && <ArrowRight className="h-12 w-12 animate-pulse text-sky-400" />}
+      </div>
+      <p className="text-4xl font-semibold">{title}</p>
+      <p className="text-lg text-neutral-400">{hint}</p>
+    </div>
   );
 }
 

@@ -2,12 +2,14 @@ import type { NextFunction, Response } from "express";
 import type { KioskRequest } from "../middleware/kioskAuth.js";
 import { FacePunchService } from "../services/facePunchService.js";
 import { KioskService } from "../services/kioskService.js";
+import { LivenessError, LivenessService, livenessRequired } from "../services/livenessService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import { kioskPunchSchema, registerKioskSchema } from "../validations/kioskValidation.js";
 
 const kiosks = new KioskService();
 const punches = new FacePunchService();
+const liveness = new LivenessService();
 
 // ─── Device management (HR side) ─────────────────────────────────────────────
 
@@ -87,7 +89,32 @@ export const kioskSession = async (req: KioskRequest, res: Response): Promise<vo
     id: String(req.kiosk!._id),
     name: req.kiosk!.name,
     location: req.kiosk!.location ?? null,
+    // The screen needs to know whether to run the prompts before capturing.
+    livenessRequired,
   });
+};
+
+/**
+ * Ask for a sequence to prompt the person with.
+ *
+ * The server picks it, not the tablet — a device choosing its own challenge
+ * proves nothing, since anyone who can replay frames can also choose the
+ * challenge those frames happen to satisfy.
+ */
+export const kioskChallenge = async (
+  req: KioskRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!livenessRequired) {
+      sendSuccess(res, "Liveness is disabled on this server", { id: null, steps: [] });
+      return;
+    }
+    sendSuccess(res, "Liveness challenge", await liveness.issue(req.kiosk!));
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const kioskPunch = async (
@@ -102,7 +129,12 @@ export const kioskPunch = async (
       return;
     }
 
-    const outcome = await punches.punch(req.kiosk!, parsed.data.images, req.ip);
+    const outcome = await punches.punch(
+      req.kiosk!,
+      parsed.data.images,
+      req.ip,
+      parsed.data.challengeId
+    );
 
     // Everything here is a 200. "Not recognised" and "you just punched" are
     // ordinary states of a working kiosk, and the screen renders them from
@@ -110,6 +142,12 @@ export const kioskPunch = async (
     // generic failure instead of the instruction the person needs.
     sendSuccess(res, "Punch processed", outcome);
   } catch (error) {
+    // An expired or reused challenge is the person having been too slow, not a
+    // failure — the screen tells them to start again.
+    if (error instanceof LivenessError) {
+      sendSuccess(res, "Challenge expired", { status: "challenge_expired", message: error.message });
+      return;
+    }
     // A refused clock-in — outside the shift window, or already clocked in
     // today — arrives as a thrown error from the attendance service.
     const err = error as { statusCode?: number; message?: string };

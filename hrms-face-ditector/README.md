@@ -1,8 +1,9 @@
 # HRMS Face Detector
 
-Face enrollment and 1:N recognition for kiosk attendance. Phase 1 of the
-biometric check-in work: this service turns a photo into an identity guess and
-a confidence score. It does not touch MongoDB, and it never records attendance.
+Face enrollment, 1:N recognition and liveness for kiosk attendance. This
+service turns frames into an identity guess, a confidence score, and a verdict
+on whether somebody was really standing there. It does not touch MongoDB, and
+it never records attendance — the backend decides what those answers mean.
 
 ```
 Kiosk tablet ──frame──▶ hrms-backend ──frame──▶ hrms-face-ditector
@@ -130,8 +131,9 @@ tell who is punching in. `AMBIGUOUS_MATCH` means two employees scored within
 `margin` of each other. Both refuse rather than guess — the PIN fallback exists
 for these.
 
-Send several frames as `images` and the best-scoring one wins, which is what the
-liveness challenge in Phase 4 will use.
+Send several frames as `images` and the best-scoring one wins. Add a `liveness`
+block to have those same frames checked against a prompt sequence — see
+**Liveness** below.
 
 ## Calibration
 
@@ -160,6 +162,7 @@ Measured on an M-series laptop, `det_size=640`, CPU only:
 | Operation | Time |
 | --- | --- |
 | Single-face 1280×720 frame (detect + embed) | ~220 ms |
+| A three-prompt liveness challenge (three frames) | ~0.7 s |
 | Six-face group photo | ~1.0 s |
 | 1:N search, 2,000 employees × 5 captures | ~2.4 ms |
 | Model load at startup | ~11 s |
@@ -174,16 +177,56 @@ numpy matrix and not a vector database.
 .venv/bin/python -m pytest tests -q
 ```
 
-22 tests over the real HTTP surface, using the sample photos bundled with
-insightface — no employee data required. They relax the enrollment gates for the
-run, because those samples are ~110 px faces at awkward angles; production keeps
-the strict defaults.
+37 tests: the HTTP surface, plus the liveness pose and ordering rules tested
+directly with constructed faces. Both use the sample photos bundled with
+insightface — no employee data required. The run relaxes the enrollment gates,
+because those samples are ~110 px faces at awkward angles; production keeps the
+strict defaults.
+
+One gap worth knowing: no photo set here contains one person turning their
+head, so the successful-turn path is proven at the rule level and against a
+real turned face for the sign convention, but not end to end. Check that on the
+real kiosk during rollout.
+
+## Liveness
+
+Send `liveness: {"steps": ["center", "left"]}` with a recognition request and
+the frames are also checked against those prompts. The response carries a
+separate `liveness` block; recognition and liveness never override each other,
+and the backend needs both to record a punch.
+
+The checks, in the order they run:
+
+1. **Same person throughout** — otherwise a colleague's photo could supply the
+   frame that gets recognised while your own face performs the poses.
+2. **Frames actually differ** — one image uploaded several times is the
+   laziest replay there is.
+3. **The prompts were followed, in order** — a photograph cannot turn its head.
+
+`live` is false unless all of them pass, and false is also what you get when no
+liveness was requested (`NOT_REQUESTED`), so a check that never ran can't be
+mistaken for one that passed.
+
+**Head-pose convention:** positive yaw is a head turned to the subject's own
+left. Established here by inspecting a known turned face and confirming the
+sign flips under mirroring, and pinned by a test. The kiosk preview is mirrored
+for the person standing at it, but the frame it uploads is not.
+
+### What this does and doesn't stop
+
+Stops: printed photos, a still on a phone screen, one frame replayed, a
+colleague's photo swapped in mid-sequence.
+
+Does not stop: a video of the right person performing the sequence the server
+happened to ask for. There are only four sequences, and they are not pretending
+to be more. Closing that gap needs a model trained on presentation attacks —
+`app/antispoof.py` is the slot for one, `FACE_ANTISPOOF_MODEL` turns it on, and
+`/health` reports `antispoof_loaded` so the rest of the stack can tell whether
+it is actually there. **No weights ship with this service and that scoring path
+has never been run**; validate it against known-live and known-spoof samples
+before relying on it.
 
 ## Not in this phase
 
-- **Liveness / anti-spoofing.** A printed photo or a phone screen will match
-  today. Phase 4 adds a passive spoof model plus a randomised blink/turn
-  challenge. Do not run unsupervised kiosks before then.
-- Attendance decisions, device tokens, audit images — all backend-side, Phase 3.
 - Auto-deploy. The backend workflow only fires on `hrms-backend/**`; a matching
   `deploy-face.yml` is a deliberate next step, not an accident.

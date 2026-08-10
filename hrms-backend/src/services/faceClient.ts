@@ -150,6 +150,27 @@ export type RecognizeReason =
   | "AMBIGUOUS_MATCH"
   | "EMPTY_GALLERY";
 
+export type LivenessReason =
+  | "OK"
+  | "NOT_REQUESTED"
+  | "NO_FACE_IN_FRAMES"
+  | "POSE_UNAVAILABLE"
+  | "DIFFERENT_PEOPLE"
+  | "IDENTICAL_FRAMES"
+  | "STEP_NOT_SEEN"
+  | "SPOOF_DETECTED";
+
+export interface LivenessResult {
+  live: boolean;
+  reason: LivenessReason;
+  required: string[];
+  matched_frames: (number | null)[];
+  same_person: boolean | null;
+  frame_difference: number | null;
+  spoof_score: number | null;
+  detail: string;
+}
+
 export interface RecognizeResult {
   matched: boolean;
   reason: RecognizeReason;
@@ -161,6 +182,7 @@ export interface RecognizeResult {
   faces_detected: number;
   gallery_version: string | null;
   thresholds: { min_score: number; min_margin: number };
+  liveness: LivenessResult;
 }
 
 /**
@@ -172,11 +194,15 @@ export interface RecognizeResult {
  */
 export async function recognize(
   orgKey: string,
-  images: string[]
+  images: string[],
+  steps?: string[]
 ): Promise<RecognizeResult> {
   const { data } = await request<RecognizeResult>("POST", "/v1/recognize", {
     org_id: orgKey,
     images,
+    // Omitted when liveness is off, and the service then reports
+    // NOT_REQUESTED rather than a passed check.
+    ...(steps?.length ? { liveness: { steps } } : {}),
   });
   return data;
 }

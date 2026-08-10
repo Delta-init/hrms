@@ -8,6 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .antispoof import SpoofDetector
 from .config import get_settings
 from .engine import FaceEngine
 from .gallery import GalleryNotLoaded, GalleryStore, GalleryTooLarge, InvalidEmbedding
@@ -30,9 +31,18 @@ async def lifespan(app: FastAPI):
     # during deploy to keep restarts fast.
     engine.load()
 
+    spoof = SpoofDetector(settings)
+    spoof.load()
+
     app.state.engine = engine
     app.state.gallery = GalleryStore(max_vectors=settings.max_gallery_vectors)
-    logger.info("Face service ready on %s:%d", settings.host, settings.port)
+    app.state.spoof = spoof
+    logger.info(
+        "Face service ready on %s:%d (spoof model: %s)",
+        settings.host,
+        settings.port,
+        "loaded" if spoof.available else "none — pose challenge only",
+    )
     yield
 
 

@@ -6,12 +6,14 @@ export const registerKioskSchema = z.object({
 });
 
 export const kioskPunchSchema = z.object({
-  // A few frames of the same moment. The recognition service scores each and
-  // keeps the best, which makes a blink or a half-turn cost nothing.
+  // One frame per prompt, plus room for a spare. The recognition service scores
+  // each and keeps the best, so a blink or a half-turn costs nothing.
   images: z
     .array(z.string().min(100, "Frame looks empty"))
     .min(1, "At least one frame is required")
-    .max(5, "Too many frames"),
+    .max(8, "Too many frames"),
+  // Required when liveness is on; the service rejects the punch without it.
+  challengeId: z.string().optional(),
 });
 
 export type RegisterKioskInput = z.infer<typeof registerKioskSchema>;

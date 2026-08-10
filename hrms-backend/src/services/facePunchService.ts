@@ -5,8 +5,9 @@ import { User } from "../models/User.js";
 import type { IKiosk } from "../types/index.js";
 import { scoped } from "../utils/orgContext.js";
 import { AttendanceService, type PunchSource } from "./attendanceService.js";
-import { FaceServiceError, recognize, type RecognizeReason } from "./faceClient.js";
+import { FaceServiceError, recognize, type LivenessReason, type RecognizeReason } from "./faceClient.js";
 import { FaceEnrollmentService } from "./faceEnrollmentService.js";
+import { LivenessService, livenessRequired } from "./livenessService.js";
 import { putObject } from "./uploadService.js";
 
 const COOLDOWN_MS = (Number(env.FACE_PUNCH_COOLDOWN_SECONDS) || 60) * 1000;
@@ -18,6 +19,7 @@ export type PunchOutcome =
   | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number }
   | { status: "cooldown"; user: { id: string; name: string }; at: Date }
   | { status: "not_recognised"; reason: RecognizeReason; hint: string }
+  | { status: "not_live"; reason: LivenessReason; hint: string }
   | { status: "refused"; message: string };
 
 /**
@@ -36,9 +38,29 @@ const HINTS: Record<RecognizeReason, string> = {
   EMPTY_GALLERY: "Nobody is enrolled for face check-in yet.",
 };
 
+/**
+ * What to say when the prompts weren't followed.
+ *
+ * Vague on purpose where being specific would coach an attacker. Somebody
+ * holding up a photograph doesn't need to be told which check caught them;
+ * somebody who simply moved too slowly needs to know to try again, and both
+ * read the same sentence.
+ */
+const LIVENESS_HINTS: Record<LivenessReason, string> = {
+  OK: "",
+  NOT_REQUESTED: "",
+  NO_FACE_IN_FRAMES: "Step in front of the camera.",
+  POSE_UNAVAILABLE: "Couldn't see you clearly. Try again.",
+  DIFFERENT_PEOPLE: "Only one person at a time, please.",
+  IDENTICAL_FRAMES: "That didn't work. Follow the prompts and try again.",
+  STEP_NOT_SEEN: "Follow the prompts — turn your head when asked.",
+  SPOOF_DETECTED: "That didn't work. Try again.",
+};
+
 export class FacePunchService {
   private attendance = new AttendanceService();
   private enrollment = new FaceEnrollmentService();
+  private liveness = new LivenessService();
 
   /**
    * Identify whoever is at the kiosk and record their punch.
@@ -49,12 +71,35 @@ export class FacePunchService {
    * about their day. A kiosk cannot punch a chosen employee even if someone
    * rewrites its request.
    */
-  async punch(kiosk: IKiosk, images: string[], ip?: string | null): Promise<PunchOutcome> {
+  async punch(
+    kiosk: IKiosk,
+    images: string[],
+    ip?: string | null,
+    challengeId?: string
+  ): Promise<PunchOutcome> {
     const orgKey = kiosk.organization ? String(kiosk.organization) : "global";
 
-    const result = await this.recognizeWithResync(orgKey, images);
+    // Redeemed before anything is looked at, so a failed attempt burns it.
+    // Throws if it is expired, already used, or was issued to another device.
+    const steps = livenessRequired
+      ? await this.liveness.consume(String(challengeId ?? ""), kiosk)
+      : undefined;
+
+    const result = await this.recognizeWithResync(orgKey, images, steps);
 
     void this.touch(kiosk, ip);
+
+    // Liveness first. Someone holding up a photograph will often be recognised
+    // perfectly well, and saying so before refusing would tell them the
+    // photograph was good enough — and would leave a "recognised" reading in
+    // the logs for a punch that never should have been possible.
+    if (steps && !result.liveness.live) {
+      return {
+        status: "not_live",
+        reason: result.liveness.reason,
+        hint: LIVENESS_HINTS[result.liveness.reason] || "That didn't work. Try again.",
+      };
+    }
 
     if (!result.matched || !result.best) {
       return { status: "not_recognised", reason: result.reason, hint: HINTS[result.reason] };
@@ -108,13 +153,13 @@ export class FacePunchService {
    * almost every time — let the first punch after a restart fail, fix it, and
    * retry. The person at the kiosk sees a slightly slow punch, not an error.
    */
-  private async recognizeWithResync(orgKey: string, images: string[]) {
+  private async recognizeWithResync(orgKey: string, images: string[], steps?: string[]) {
     try {
-      return await recognize(orgKey, images);
+      return await recognize(orgKey, images, steps);
     } catch (error) {
       if (!(error instanceof FaceServiceError) || error.code !== "GALLERY_NOT_LOADED") throw error;
       await this.enrollment.syncGallery(orgKey, true);
-      return recognize(orgKey, images);
+      return recognize(orgKey, images, steps);
     }
   }
 

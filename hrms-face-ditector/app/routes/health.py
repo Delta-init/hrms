@@ -1,6 +1,6 @@
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ..config import Settings, get_settings
 from ..deps import get_engine, get_gallery
@@ -15,6 +15,7 @@ _STARTED_AT = time.time()
 
 @router.get("/health", response_model=HealthResponse)
 async def health(
+    request: Request,
     engine: FaceEngine = Depends(get_engine),
     gallery: GalleryStore = Depends(get_gallery),
     settings: Settings = Depends(get_settings),
@@ -31,6 +32,9 @@ async def health(
         status="ok" if engine.is_loaded else "loading",
         model_pack=settings.model_pack,
         model_loaded=engine.is_loaded,
+        # Reported so the backend can say plainly which liveness defences are
+        # actually in play, rather than assuming the strongest one is loaded.
+        antispoof_loaded=request.app.state.spoof.available,
         uptime_seconds=round(time.time() - _STARTED_AT, 3),
         galleries=[GalleryState(**summary) for summary in gallery.summaries()],
     )

@@ -1738,7 +1738,13 @@ export interface PairedKiosk {
   token: string;
 }
 
-export type PunchStatus = "punched" | "cooldown" | "not_recognised" | "refused";
+export type PunchStatus =
+  | "punched"
+  | "cooldown"
+  | "not_recognised"
+  | "not_live"
+  | "challenge_expired"
+  | "refused";
 
 export interface KioskPunchResult {
   status: PunchStatus;

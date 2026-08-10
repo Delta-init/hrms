@@ -39,6 +39,27 @@ export interface KioskSession {
   id: string;
   name: string;
   location: string | null;
+  /** False only when the server has liveness explicitly turned off. */
+  livenessRequired: boolean;
+}
+
+export type LivenessStep = "center" | "left" | "right";
+
+export interface LivenessChallenge {
+  id: string | null;
+  steps: LivenessStep[];
+  expiresAt?: string;
+}
+
+/**
+ * Ask the server which poses to prompt for.
+ *
+ * The tablet never picks its own — a device choosing the challenge it then
+ * satisfies proves nothing at all.
+ */
+export async function fetchChallenge(): Promise<LivenessChallenge> {
+  const res = await kioskApi.post<ApiResponse<LivenessChallenge>>("/kiosks/challenge");
+  return res.data.data!;
 }
 
 /** Confirm the stored token still works, and find out which device this is. */
@@ -49,8 +70,14 @@ export async function fetchKioskSession(token?: string): Promise<KioskSession> {
   return res.data.data!;
 }
 
-export async function submitPunch(images: string[]): Promise<KioskPunchResult> {
-  const res = await kioskApi.post<ApiResponse<KioskPunchResult>>("/kiosks/punch", { images });
+export async function submitPunch(
+  images: string[],
+  challengeId?: string | null
+): Promise<KioskPunchResult> {
+  const res = await kioskApi.post<ApiResponse<KioskPunchResult>>("/kiosks/punch", {
+    images,
+    ...(challengeId ? { challengeId } : {}),
+  });
   return res.data.data!;
 }
 

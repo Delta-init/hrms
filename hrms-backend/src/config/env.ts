@@ -61,6 +61,12 @@ const envSchema = z.object({
   // How long the frame a punch was made from is kept for dispute resolution.
   FACE_PROOF_RETENTION_DAYS: z.string().default("30"),
   FACE_PROOF_PURGE_CRON: z.string().default("30 3 * * *"),
+  // Liveness. "required" makes every kiosk punch prove somebody is actually
+  // standing there; "off" is an explicit opt-out for a supervised device and
+  // means a printed photo will punch someone in.
+  FACE_LIVENESS_MODE: z.enum(["required", "off"]).default("required"),
+  // How long somebody has to follow the prompts before the challenge lapses.
+  FACE_LIVENESS_TTL_SECONDS: z.string().default("30"),
 });
 
 const parsed = envSchema.safeParse(process.env);

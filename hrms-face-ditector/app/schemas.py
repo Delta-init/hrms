@@ -108,8 +108,38 @@ class GalleryState(BaseModel):
 # --- /v1/recognize ------------------------------------------------------------
 
 
+class LivenessRequest(BaseModel):
+    """The poses the caller asked the person to hold, in the order asked."""
+
+    steps: list[Literal["center", "left", "right"]] = Field(min_length=1, max_length=6)
+
+
+class LivenessResult(BaseModel):
+    live: bool
+    reason: Literal[
+        "OK",
+        "NOT_REQUESTED",
+        "NO_FACE_IN_FRAMES",
+        "POSE_UNAVAILABLE",
+        "DIFFERENT_PEOPLE",
+        "IDENTICAL_FRAMES",
+        "STEP_NOT_SEEN",
+        "SPOOF_DETECTED",
+    ]
+    required: list[str] = Field(default_factory=list)
+    matched_frames: list[int | None] = Field(default_factory=list)
+    same_person: bool | None = None
+    frame_difference: float | None = None
+    spoof_score: float | None = None
+    detail: str = ""
+
+
 class RecognizeRequest(FrameInput):
     org_id: str = Field(min_length=1)
+    # When present, the frames must also show the person following these
+    # prompts. Absent means no liveness check was asked for, and the response
+    # says so rather than implying one passed.
+    liveness: LivenessRequest | None = None
     # Per-request overrides, for calibration runs and for orgs that need a
     # stricter bar. Omitted means "use the configured default".
     min_score: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -149,6 +179,7 @@ class RecognizeResponse(BaseModel):
     faces_detected: int = 0
     gallery_version: str | None = None
     thresholds: dict[str, float]
+    liveness: LivenessResult
 
 
 # --- /health ------------------------------------------------------------------
@@ -160,5 +191,6 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "loading"]
     model_pack: str
     model_loaded: bool
+    antispoof_loaded: bool = False
     uptime_seconds: float
     galleries: list[GalleryState]

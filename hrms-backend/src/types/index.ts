@@ -236,6 +236,20 @@ export interface IKiosk extends Document {
   updatedAt: Date;
 }
 
+// ─── Liveness challenge (kiosk anti-spoofing) ───────────────────────────────
+/** A pose the kiosk asks somebody to hold. */
+export type LivenessStep = "center" | "left" | "right";
+
+export interface ILivenessChallenge extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  kiosk: Types.ObjectId | IKiosk;
+  steps: LivenessStep[];
+  expiresAt: Date;
+  consumedAt?: Date | null;
+  createdAt: Date;
+}
+
 // ─── Face enrollment (kiosk attendance) ─────────────────────────────────────
 export interface IFaceConsent {
   /** When the employee agreed to their face being used for attendance. */
