@@ -1,8 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FolderOpen, FileText, AlertTriangle } from "lucide-react";
+import { FolderOpen, FileText, AlertTriangle, Loader2 } from "lucide-react";
 import { useDocumentsOverview } from "@/hooks/useDocumentsOverview";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,7 +51,21 @@ function whenDue(days: number | null): string {
   return days > 0 ? `in ${days} day${days === 1 ? "" : "s"}` : `${-days} day${days === -1 ? "" : "s"} ago`;
 }
 
+const Spinner = () => <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+/**
+ * Suspense boundary for useSearchParams — without one Next refuses to
+ * prerender the route at build time. Same shape as the employee detail page.
+ */
 export default function DocumentsPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <Documents />
+    </Suspense>
+  );
+}
+
+function Documents() {
   const { hasPermission } = useAuth();
   const canView = hasPermission("employees", "view");
   const params = useSearchParams();
