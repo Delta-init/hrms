@@ -34,11 +34,22 @@ cp .env.example .env      # then set FACE_SERVICE_KEY
 uv run python scripts/warm_models.py
 ```
 
-On the VPS, if the `insightface` wheel has to build from source:
+On a headless Linux server, install the build tools and the two shared
+libraries OpenCV links against:
 
 ```bash
-apt-get install -y build-essential cmake python3-dev
+apt-get install -y build-essential cmake python3-dev libgl1 libglib2.0-0
 ```
+
+`libgl1` is not optional even though this service never draws anything:
+insightface depends on `opencv-python`, the desktop build, which links libGL
+whether or not a window is ever opened. Without it the first import dies with
+`ImportError: libGL.so.1: cannot open shared object file`.
+
+Do **not** try to fix that by uninstalling `opencv-python` — it and
+`opencv-python-headless` install into the same `cv2/` directory, so removing
+either one deletes the module both rely on and leaves you with no `cv2` at
+all.
 
 `warm_models.py` downloads the ~300 MB `buffalo_l` pack into `./models`. Run it
 during deploy — without it the first request after a fresh install stalls on the
