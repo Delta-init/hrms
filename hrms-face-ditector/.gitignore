@@ -1,0 +1,12 @@
+.venv
+.env
+*.egg-info/
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+.pytest_cache/
+# insightface model pack (~300 MB) — downloaded on first boot, never committed
+models/
+# local calibration images — these are biometric data, keep them out of git
+dataset/
