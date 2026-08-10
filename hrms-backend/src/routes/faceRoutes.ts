@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  checkFaceCapture,
   deleteFaceProfile,
   enrollFace,
   getFaceEnrollmentSummary,
@@ -20,6 +21,7 @@ router.get("/settings", getFaceSettings);
 // checks employees.edit before it will touch anybody else's.
 router.get("/profiles/:userId", getFaceStatus);
 router.post("/profiles/:userId", enrollFace);
+router.post("/profiles/:userId/check", checkFaceCapture);
 router.delete("/profiles/:userId", deleteFaceProfile);
 
 router.get("/enrolled", checkPermission("employees", "view"), getFaceEnrollmentSummary);

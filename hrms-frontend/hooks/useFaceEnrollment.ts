@@ -40,6 +40,26 @@ export const useFaceStatus = (userId: string, enabled = true) =>
     enabled: enabled && !!userId,
   });
 
+export interface CaptureVerdict {
+  ok: boolean;
+  message?: string;
+  failures?: string[];
+}
+
+/**
+ * Judge one capture the moment it is taken.
+ *
+ * Runs the same gates the save will, so anything accepted here will not be the
+ * frame that fails at the end — which is the difference between retaking one
+ * photo and redoing the whole sitting.
+ */
+export const useCheckCapture = (userId: string) =>
+  useMutation({
+    mutationFn: async (image: string) =>
+      (await api.post<ApiResponse<CaptureVerdict>>(`/face/profiles/${userId}/check`, { image }))
+        .data.data!,
+  });
+
 export const useEnrollFace = (userId: string) => {
   const qc = useQueryClient();
   return useMutation({

@@ -100,6 +100,29 @@ export const enrollFace = async (
   }
 };
 
+/** Judge one capture as it is taken, so a bad frame is caught at the camera. */
+export const checkFaceCapture = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const target = resolveTarget(req);
+    if (!assertAllowed(req, target)) {
+      sendError(res, "You can only enroll your own face", 403);
+      return;
+    }
+    const image = typeof req.body?.image === "string" ? req.body.image : "";
+    if (image.length < 100) {
+      sendError(res, "Capture looks empty", 400);
+      return;
+    }
+    sendSuccess(res, "Capture checked", await service.checkCapture(image));
+  } catch (error) {
+    handle(res, error, next);
+  }
+};
+
 export const deleteFaceProfile = async (
   req: AuthenticatedRequest,
   res: Response,

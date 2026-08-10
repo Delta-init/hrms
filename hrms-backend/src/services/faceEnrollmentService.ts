@@ -3,6 +3,7 @@ import { AuditLog } from "../models/AuditLog.js";
 import { FaceProfile } from "../models/FaceProfile.js";
 import { User } from "../models/User.js";
 import type { IFaceProfile } from "../types/index.js";
+import type { FaceQuality } from "./faceClient.js";
 import {
   FaceServiceError,
   embedFaces,
@@ -174,6 +175,36 @@ export class FaceEnrollmentService {
     return this.toStatus(profile, faces.length);
   }
 
+  /**
+   * Judge a single capture without storing anything.
+   *
+   * Runs the identical gates the enrolment will apply, so a capture that passes
+   * here cannot be the one that fails the save. That is the whole point: told
+   * at the end that "capture 3 was blurry", somebody has to redo the sitting;
+   * told immediately, they retake one frame and carry on.
+   */
+  async checkCapture(image: string): Promise<{
+    ok: boolean;
+    message?: string;
+    failures?: string[];
+    quality?: FaceQuality;
+  }> {
+    this.ensureEnabled();
+    try {
+      const [face] = await embedFaces([image]);
+      return { ok: true, quality: face?.quality };
+    } catch (error) {
+      // No "(capture 3)" suffix here — there is only one frame, and naming its
+      // position is enrolment wording that means nothing at the camera.
+      const translated = this.translate(error, { withFrame: false });
+      if (translated instanceof FaceEnrollmentError) {
+        const detail = translated.details as { failures?: string[] } | undefined;
+        return { ok: false, message: translated.message, failures: detail?.failures ?? [] };
+      }
+      throw error;
+    }
+  }
+
   /** Delete an employee's face data — offboarding, or a withdrawal of consent. */
   async remove(targetUserId: string, actorId: string): Promise<void> {
     const profile = await FaceProfile.findOne({ user: targetUserId });
@@ -282,7 +313,7 @@ export class FaceEnrollmentService {
   }
 
   /** Turn a face-service failure into something an admin can act on. */
-  private translate(error: unknown): Error {
+  private translate(error: unknown, options: { withFrame?: boolean } = {}): Error {
     if (!(error instanceof FaceServiceError)) return error as Error;
 
     const messages: Record<string, string> = {
@@ -295,7 +326,11 @@ export class FaceEnrollmentService {
     };
 
     const detail = error.details as { frame_index?: number; failures?: string[] } | undefined;
-    const which = typeof detail?.frame_index === "number" ? ` (capture ${detail.frame_index + 1})` : "";
+    const withFrame = options.withFrame ?? true;
+    const which =
+      withFrame && typeof detail?.frame_index === "number"
+        ? ` (capture ${detail.frame_index + 1})`
+        : "";
     const base = messages[error.code];
 
     return new FaceEnrollmentError(

@@ -1,13 +1,15 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Camera, Check, Loader2, RotateCcw } from "lucide-react";
+import { AlertTriangle, Camera, Check, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogDescription,
   ResponsiveDialogFooter, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { enrollError, useEnrollFace, type FaceEnrollFailure } from "@/hooks/useFaceEnrollment";
+import {
+  enrollError, useCheckCapture, useEnrollFace, type FaceEnrollFailure,
+} from "@/hooks/useFaceEnrollment";
 import { cn } from "@/lib/utils";
 import type { FaceSettings } from "@/types";
 
@@ -34,6 +36,15 @@ const FAILURE_LABELS: Record<string, string> = {
   HEAD_TILTED: "head tilted too far",
   LOW_DETECTION_CONFIDENCE: "face not clear enough",
 };
+
+/** A capture and what the server made of it. */
+interface Shot {
+  id: number;
+  data: string;
+  status: "checking" | "good" | "bad";
+  message?: string;
+  failures?: string[];
+}
 
 type CameraState =
   | "idle"
@@ -69,14 +80,21 @@ export function FaceCaptureDialog({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const captureId = useRef(0);
   const [camera, setCamera] = useState<CameraState>("idle");
-  const [shots, setShots] = useState<string[]>([]);
+  const [shots, setShots] = useState<Shot[]>([]);
   const [consented, setConsented] = useState(false);
   const [failure, setFailure] = useState<FaceEnrollFailure | null>(null);
 
   const { mutate: enroll, isPending } = useEnrollFace(userId);
+  const { mutateAsync: checkCapture } = useCheckCapture(userId);
+
   const target = Math.min(settings.maxCaptures, POSES.length);
-  const pose = POSES[Math.min(shots.length, POSES.length - 1)]!;
+  const accepted = shots.filter((s) => s.status === "good");
+  const checking = shots.some((s) => s.status === "checking");
+  // Prompts advance on accepted captures only — a rejected one should be
+  // retaken at the same angle, not skipped past.
+  const pose = POSES[Math.min(accepted.length, POSES.length - 1)]!;
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -160,10 +178,11 @@ export function FaceCaptureDialog({
       setConsented(false);
       setFailure(null);
       setCamera("idle");
+      captureId.current = 0;
     }
   }, [open]);
 
-  const capture = () => {
+  const capture = async () => {
     const video = videoRef.current;
     if (!video || camera !== "ready") return;
     const canvas = document.createElement("canvas");
@@ -174,24 +193,51 @@ export function FaceCaptureDialog({
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     // JPEG at 0.92 keeps the detail the embedder needs while staying inside the
     // API's body limit for five captures.
-    setShots((current) => [...current, canvas.toDataURL("image/jpeg", 0.92).split(",")[1]!]);
+    const data = canvas.toDataURL("image/jpeg", 0.92).split(",")[1]!;
+
+    const id = captureId.current++;
+    setShots((current) => [...current, { id, data, status: "checking" }]);
     setFailure(null);
+
+    // Checked against the same gates the save applies, so the verdict here is
+    // final — no capture accepted now can fail at the end.
+    try {
+      const verdict = await checkCapture(data);
+      setShots((current) =>
+        current.map((s) =>
+          s.id === id
+            ? verdict.ok
+              ? { ...s, status: "good" }
+              : { ...s, status: "bad", message: verdict.message, failures: verdict.failures }
+            : s
+        )
+      );
+    } catch {
+      // The checker being unreachable must not block an enrolment; let it
+      // through and the save will judge it.
+      setShots((current) =>
+        current.map((s) => (s.id === id ? { ...s, status: "good" } : s))
+      );
+    }
   };
 
-  const retake = (index: number) => {
-    setShots((current) => current.filter((_, i) => i !== index));
+  const retake = (id: number) => {
+    setShots((current) => current.filter((s) => s.id !== id));
     setFailure(null);
   };
 
   const submit = () => {
     setFailure(null);
-    enroll(shots, {
-      onSuccess: () => onOpenChange(false),
-      onError: (error) => setFailure(enrollError(error)),
-    });
+    enroll(
+      accepted.map((s) => s.data),
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: (error) => setFailure(enrollError(error)),
+      }
+    );
   };
 
-  const enough = shots.length >= settings.minCaptures;
+  const enough = accepted.length >= settings.minCaptures;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -213,6 +259,26 @@ export function FaceCaptureDialog({
               // mirror image than a true one.
               className={cn("h-full w-full scale-x-[-1] object-cover", camera !== "ready" && "invisible")}
             />
+
+            {/* Where to put your face. People centre themselves against a
+                visible target far more reliably than against a sentence. */}
+            {camera === "ready" && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div
+                  className={cn(
+                    "h-[78%] aspect-[3/4] rounded-[50%] border-2 border-dashed transition-colors",
+                    checking ? "border-white/70" : "border-white/40"
+                  )}
+                />
+              </div>
+            )}
+
+            {checking && (
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-black/60 py-1.5 text-xs text-white">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Checking that capture…
+              </div>
+            )}
             {camera !== "ready" && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6 text-center">
                 {camera === "starting" ? (
@@ -233,35 +299,67 @@ export function FaceCaptureDialog({
             )}
           </div>
 
-          {shots.length < target && camera === "ready" && (
+          {accepted.length < target && camera === "ready" && (
             <div className="rounded-lg bg-muted/50 px-3 py-2">
               <p className="text-sm font-medium">
-                Capture {shots.length + 1} of {target} · {pose.title}
+                Capture {Math.min(accepted.length + 1, target)} of {target} · {pose.title}
               </p>
               <p className="text-xs text-muted-foreground">{pose.hint}</p>
             </div>
           )}
 
+          {accepted.length >= target && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+              <p className="text-sm font-medium text-emerald-600">
+                All {target} captures look good — save to finish.
+              </p>
+            </div>
+          )}
+
           {shots.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {shots.map((shot, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "group relative h-16 w-16 overflow-hidden rounded-lg border",
-                    failure?.frame === index && "ring-2 ring-destructive"
-                  )}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`data:image/jpeg;base64,${shot}`} alt="" className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => retake(index)}
-                    className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-label={`Retake capture ${index + 1}`}
+              {shots.map((shot) => (
+                <div key={shot.id} className="w-16">
+                  <div
+                    className={cn(
+                      "group relative h-16 w-16 overflow-hidden rounded-lg border-2",
+                      shot.status === "good" && "border-emerald-500",
+                      shot.status === "bad" && "border-destructive",
+                      shot.status === "checking" && "border-muted"
+                    )}
                   >
-                    <RotateCcw className="h-4 w-4 text-white" />
-                  </button>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`data:image/jpeg;base64,${shot.data}`}
+                      alt=""
+                      className={cn(
+                        "h-full w-full object-cover",
+                        shot.status !== "good" && "opacity-60"
+                      )}
+                    />
+                    <div className="absolute inset-x-0 bottom-0 flex justify-center bg-black/55 py-0.5">
+                      {shot.status === "checking" && <Loader2 className="h-3 w-3 animate-spin text-white" />}
+                      {shot.status === "good" && <Check className="h-3 w-3 text-emerald-400" />}
+                      {shot.status === "bad" && <X className="h-3 w-3 text-red-400" />}
+                    </div>
+                    {shot.status !== "checking" && (
+                      <button
+                        type="button"
+                        onClick={() => retake(shot.id)}
+                        className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                        aria-label="Retake this capture"
+                      >
+                        <RotateCcw className="h-4 w-4 text-white" />
+                      </button>
+                    )}
+                  </div>
+                  {shot.status === "bad" && (
+                    <p className="mt-1 text-[10px] leading-tight text-destructive">
+                      {shot.failures?.length
+                        ? shot.failures.map((c) => FAILURE_LABELS[c] ?? c).join(", ")
+                        : "retake"}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -302,15 +400,15 @@ export function FaceCaptureDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
-          {shots.length < target ? (
-            <Button onClick={capture} disabled={camera !== "ready"}>
+          {accepted.length < target ? (
+            <Button onClick={capture} disabled={camera !== "ready" || checking}>
               <Camera className="h-4 w-4" />
               Capture
             </Button>
           ) : null}
-          <Button onClick={submit} disabled={!enough || !consented || isPending}>
+          <Button onClick={submit} disabled={!enough || !consented || isPending || checking}>
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Save {shots.length > 0 ? `${shots.length} capture${shots.length === 1 ? "" : "s"}` : ""}
+            Save {accepted.length > 0 ? `${accepted.length} capture${accepted.length === 1 ? "" : "s"}` : ""}
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
