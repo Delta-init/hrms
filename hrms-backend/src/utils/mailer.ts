@@ -81,13 +81,18 @@ export interface MailInput {
    * several tenants pass it explicitly.
    */
   organization?: unknown;
+  /**
+   * Files to send along. Used for calendar invites: an `.ics` part is what puts
+   * an interview into Outlook or Google without integrating with either.
+   */
+  attachments?: Array<{ filename: string; content: string | Buffer; contentType?: string }>;
 }
 
 /**
  * Send an email. With no SMTP configured this is a no-op that logs the intended
  * recipients, so every caller is safe to run before credentials exist.
  */
-export async function sendMail({ to, subject, html, text, organization }: MailInput): Promise<boolean> {
+export async function sendMail({ to, subject, html, text, organization, attachments }: MailInput): Promise<boolean> {
   const recipients = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
   if (recipients.length === 0) return false;
 
@@ -103,12 +108,12 @@ export async function sendMail({ to, subject, html, text, organization }: MailIn
       warnedNoConfig = true;
       console.warn("✉️  No SMTP configured — emails are logged, not sent. Set it per organization in Settings, or SMTP_HOST/USER/PASS in the environment.");
     }
-    console.log(`✉️  [dry-run] would email ${recipients.join(", ")} — "${subject}"`);
+    console.log(`✉️  [dry-run] would email ${recipients.join(", ")} — "${subject}"${attachments?.length ? ` (+${attachments.length} attachment)` : ""}`);
     return false;
   }
 
   try {
-    await transportFor(cfg).sendMail({ from: cfg.from, to: recipients.join(", "), subject, html, text });
+    await transportFor(cfg).sendMail({ from: cfg.from, to: recipients.join(", "), subject, html, text, attachments });
     console.log(`✉️  sent "${subject}" to ${recipients.length} recipient(s)`);
     return true;
   } catch (err) {

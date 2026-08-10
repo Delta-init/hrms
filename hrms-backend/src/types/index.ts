@@ -1473,3 +1473,46 @@ export interface IApplication extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type InterviewMode = "in_person" | "video" | "phone";
+export type InterviewStatus = "scheduled" | "completed" | "no_show" | "cancelled";
+/** Strong signals kept distinct from soft ones — an averaged "3/5" hides both. */
+export type Recommendation = "strong_yes" | "yes" | "no" | "strong_no";
+
+export interface IInterview extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  application: Types.ObjectId | IApplication;
+  /** 1 for the first conversation, 2 for the next, and so on. */
+  round: number;
+  title?: string;
+  mode: InterviewMode;
+  scheduledAt: Date;
+  durationMinutes: number;
+  timeZone: string;
+  location?: string;
+  meetingLink?: string;
+  /** A link to a recording held elsewhere. Nothing is stored here. */
+  recordingLink?: string;
+  panel: Array<Types.ObjectId | IUser>;
+  status: InterviewStatus;
+  notes?: string;
+  /** Bumped on every re-send so calendars treat it as an update, not a copy. */
+  inviteSequence: number;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IInterviewFeedback extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  interview: Types.ObjectId | IInterview;
+  panellist: Types.ObjectId | IUser;
+  recommendation: Recommendation;
+  scores?: Array<{ skill: string; rating: number }>;
+  notes?: string;
+  submittedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}

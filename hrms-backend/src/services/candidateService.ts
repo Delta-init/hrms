@@ -1,6 +1,7 @@
 import { Candidate } from "../models/Candidate.js";
 import { Application } from "../models/Application.js";
 import { JobRequisition } from "../models/JobRequisition.js";
+import { Interview } from "../models/Interview.js";
 import { APPLICATION_STAGES } from "../types/index.js";
 import type { ApplicationStage, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -89,9 +90,18 @@ export class CandidateService {
     const record = await Candidate.findOne(scoped({ _id: id })).populate(CANDIDATE_POP).lean();
     if (!record) throw new CandidateError("Candidate not found", 404);
     const applications = await Application.find(scoped({ candidate: id }))
-      .populate({ path: "requisition", select: "title status" })
+      .populate({ path: "requisition", select: "title status type department" })
       .sort({ createdAt: -1 })
       .lean();
+
+    const interviews = await Interview.find(scoped({ application: { $in: applications.map((a) => a._id) } }))
+      .select("application round mode scheduledAt durationMinutes status meetingLink location recordingLink panel")
+      .populate({ path: "panel", select: "name" })
+      .sort({ scheduledAt: 1 })
+      .lean();
+    for (const a of applications) {
+      (a as Record<string, unknown>).interviews = interviews.filter((iv) => String(iv.application) === String(a._id));
+    }
     return { ...shape(record), applications };
   }
 
@@ -157,12 +167,32 @@ export class CandidateService {
     return Application.findById(doc._id).populate(APPLICATION_POP);
   }
 
-  /** Every application on a requisition, grouped into the pipeline's columns. */
+  /**
+   * Every application on a requisition, grouped into the pipeline's columns.
+   *
+   * Each one carries its interviews, because "has anyone actually spoken to
+   * them" is the question a board is scanned for, and a card that cannot answer
+   * it sends you to another page to find out.
+   */
   async pipeline(requisitionId: string) {
     const applications = await Application.find(scoped({ requisition: requisitionId }))
       .populate(APPLICATION_POP)
       .sort({ updatedAt: -1 })
       .lean();
+
+    const interviews = await Interview.find(scoped({ application: { $in: applications.map((a) => a._id) } }))
+      .select("application round mode scheduledAt durationMinutes status meetingLink location recordingLink panel")
+      .populate({ path: "panel", select: "name" })
+      .sort({ scheduledAt: 1 })
+      .lean();
+    const byApplication = new Map<string, typeof interviews>();
+    for (const iv of interviews) {
+      const key = String(iv.application);
+      byApplication.set(key, [...(byApplication.get(key) ?? []), iv]);
+    }
+    for (const a of applications) {
+      (a as Record<string, unknown>).interviews = byApplication.get(String(a._id)) ?? [];
+    }
 
     const columns = APPLICATION_STAGES.map((stage) => ({
       stage,

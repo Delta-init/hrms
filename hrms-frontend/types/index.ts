@@ -1900,6 +1900,9 @@ export interface Application {
   offeredSalary?: number | null;
   rejectionReason?: string;
   stageHistory?: { stage: string; by?: { _id: string; name: string } | string; at: string; note?: string }[];
+  /** Attached by the pipeline and candidate endpoints so a card can say whether
+   *  anyone has actually spoken to them. */
+  interviews?: Interview[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1909,4 +1912,59 @@ export interface Pipeline {
   /** Rejected and withdrawn, kept visible — a pipeline that hides them looks healthier than it is. */
   closed: Application[];
   total: number;
+}
+
+export type InterviewMode = "in_person" | "video" | "phone";
+export type InterviewStatus = "scheduled" | "completed" | "no_show" | "cancelled";
+export type Recommendation = "strong_yes" | "yes" | "no" | "strong_no";
+
+export const INTERVIEW_MODE_LABELS: Record<InterviewMode, string> = {
+  in_person: "In person", video: "Video call", phone: "Phone",
+};
+export const INTERVIEW_STATUS_LABELS: Record<InterviewStatus, string> = {
+  scheduled: "Scheduled", completed: "Completed", no_show: "No show", cancelled: "Cancelled",
+};
+/** Kept distinct rather than averaged — a split panel is the useful signal. */
+export const RECOMMENDATION_LABELS: Record<Recommendation, string> = {
+  strong_yes: "Strong yes", yes: "Yes", no: "No", strong_no: "Strong no",
+};
+
+export interface Interview {
+  _id: string;
+  application: string | Application;
+  round: number;
+  title?: string;
+  mode: InterviewMode;
+  scheduledAt: string;
+  durationMinutes: number;
+  timeZone: string;
+  location?: string;
+  meetingLink?: string;
+  /** A pointer to a recording held wherever the meeting tool put it. */
+  recordingLink?: string;
+  panel: Array<{ _id: string; name: string; email?: string }> | string[];
+  status: InterviewStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Present on the single-interview response. */
+  feedback?: InterviewFeedback[];
+}
+
+export interface InterviewFeedback {
+  _id: string;
+  interview: string;
+  panellist: { _id: string; name: string; email?: string } | string;
+  recommendation: Recommendation;
+  scores?: { skill: string; rating: number }[];
+  notes?: string;
+  submittedAt: string;
+}
+
+/** Who on the panel is already booked. Advisory — the form warns, not refuses. */
+export interface PanelConflict {
+  user: string;
+  name: string;
+  clashesWith: string;
+  at: string;
 }

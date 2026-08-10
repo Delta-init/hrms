@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft, Plus, FileText, Loader2, XCircle, ChevronRight, Users, AlertTriangle,
+  CalendarPlus, CalendarCheck, Video, MapPin,
 } from "lucide-react";
 import { useRequisitions } from "@/hooks/useHiring";
 import { usePipeline, useCandidates, useApplyCandidate, useMoveApplication } from "@/hooks/useCandidates";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { CandidateDialog } from "@/components/hiring/CandidateDialog";
+import { ScheduleInterviewDialog } from "@/components/hiring/ScheduleInterviewDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +24,8 @@ import {
 import { getInitials, cn } from "@/lib/utils";
 import {
   APPLICATION_STAGES, STAGE_LABELS, REQUISITION_STATUS_LABELS, REQUISITION_TYPE_LABELS,
-  type Application, type ApplicationStage, type Candidate,
+  INTERVIEW_STATUS_LABELS,
+  type Application, type Candidate,
 } from "@/types";
 
 const nameOf = (v: unknown) => (v && typeof v === "object" ? (v as { name?: string }).name ?? "—" : "—");
@@ -52,6 +55,7 @@ export default function RequisitionDetailPage() {
   const { mutate: move, isPending: moving } = useMoveApplication();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [scheduling, setScheduling] = useState<Application | null>(null);
   const [rejecting, setRejecting] = useState<Application | null>(null);
   const [reason, setReason] = useState("");
 
@@ -91,6 +95,41 @@ export default function RequisitionDetailPage() {
         </div>
       )}
 
+      {requisition && (
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-2xl border border-border bg-card p-4 text-sm shadow-sm sm:grid-cols-4">
+          {([
+            ["Status", REQUISITION_STATUS_LABELS[requisition.status]],
+            ["Type", REQUISITION_TYPE_LABELS[requisition.type]],
+            ["Replacing", requisition.type === "replacement" ? nameOf(requisition.replacing) : "—"],
+            ["Headcount", String(requisition.headcount)],
+            ["Budget", requisition.salaryMax ? `${requisition.currency ?? ""} ${requisition.salaryMin ? `${requisition.salaryMin}–` : "up to "}${requisition.salaryMax}`.trim() : "—"],
+            ["Accounts", requisition.budgetApprovalRequired ? "Required" : "Not required"],
+            ["Raised by", nameOf(requisition.raisedBy)],
+            ["Wanted by", requisition.targetStartDate ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(requisition.targetStartDate)) : "—"],
+          ] as Array<[string, string]>).map(([k, v]) => (
+            <div key={k}>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</p>
+              <p className="truncate font-medium">{v}</p>
+            </div>
+          ))}
+          {!!requisition.approvalTrail?.length && (
+            <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Approval trail</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {requisition.approvalTrail.map((t, i) => (
+                  <span key={i} className="flex items-center gap-2">
+                    {i > 0 && <span className="opacity-40">→</span>}
+                    <span className={cn("rounded-full border px-2 py-0.5", t.action === "approved" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600" : "border-red-500/20 bg-red-500/10 text-red-600")}>
+                      {t.roleName ?? `Step ${t.step}`} {t.action}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
@@ -117,7 +156,9 @@ export default function RequisitionDetailPage() {
                               {getInitials(c?.name ?? "?")}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">{c?.name ?? "—"}</div>
+                              <Link href={`/hiring/candidates/${c?._id}`} className="truncate text-sm font-medium hover:underline">
+                                {c?.name ?? "—"}
+                              </Link>
                               <div className="truncate text-[11px] text-muted-foreground">{c?.currentCompany || c?.email}</div>
                             </div>
                           </div>
@@ -136,8 +177,32 @@ export default function RequisitionDetailPage() {
                             </a>
                           )}
 
+                          {/* Whether anyone has actually spoken to them — the
+                              question a board is scanned for. */}
+                          {(() => {
+                            const live = (app.interviews ?? []).filter((i) => i.status !== "cancelled");
+                            const next = live.find((i) => new Date(i.scheduledAt) >= new Date()) ?? live.at(-1);
+                            return next ? (
+                              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-sky-600">
+                                {next.mode === "video" ? <Video className="h-3 w-3" /> : <MapPin className="h-3 w-3" />}
+                                <span className="truncate">
+                                  R{next.round} {INTERVIEW_STATUS_LABELS[next.status].toLowerCase()} ·{" "}
+                                  {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(next.scheduledAt))}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="mt-1.5 text-[10px] text-muted-foreground">No interview scheduled</div>
+                            );
+                          })()}
+
                           {canEdit && (
                             <div className="mt-2 flex items-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 px-2" disabled={moving}
+                                onClick={() => setScheduling(app)} aria-label="Schedule an interview">
+                                {(app.interviews ?? []).some((i) => i.status !== "cancelled")
+                                  ? <CalendarCheck className="h-3.5 w-3.5 text-sky-600" />
+                                  : <CalendarPlus className="h-3.5 w-3.5" />}
+                              </Button>
                               {next && next !== "hired" && (
                                 <Button size="sm" variant="outline" className="h-7 flex-1 text-[11px]" disabled={moving}
                                   onClick={() => move({ id: app._id, stage: next })}>
@@ -188,6 +253,16 @@ export default function RequisitionDetailPage() {
       )}
 
       <AddToPipeline open={addOpen} onOpenChange={setAddOpen} requisitionId={requisitionId} />
+
+      {scheduling && (
+        <ScheduleInterviewDialog
+          open={!!scheduling}
+          onOpenChange={(o) => !o && setScheduling(null)}
+          applicationId={scheduling._id}
+          candidateName={asCandidate(scheduling.candidate)?.name}
+          nextRound={(scheduling.interviews ?? []).filter((i) => i.status !== "cancelled").length + 1}
+        />
+      )}
 
       <ResponsiveDialog open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)}>
         <ResponsiveDialogContent desktopClassName="max-w-md">
