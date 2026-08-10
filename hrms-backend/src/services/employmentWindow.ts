@@ -1,5 +1,6 @@
 import { Resignation } from "../models/Resignation.js";
 import { scoped } from "../utils/orgContext.js";
+import { STANDARD_MONTH_DAYS } from "../utils/payMonth.js";
 
 /**
  * When somebody was actually on the payroll.
@@ -32,11 +33,14 @@ export function employedOn(w: EmploymentWindow, day: string): boolean {
 /**
  * How much of `month` (YYYY-MM) somebody was on the payroll for, 0 to 1.
  *
- * Counted in calendar days rather than working days, which is what a monthly
- * salary is quoted against: somebody who joins on the 20th has had a fifth of
- * the month, whichever days of it their schedule happens to fall on. Dividing
- * by the month's own length rather than a fixed thirty means a full February
- * comes out at exactly 1 instead of quietly short.
+ * Counted in calendar days — holidays and rest days included, because a monthly
+ * salary already pays for those — over the same thirty a lost day is priced
+ * against. Splitting a part month by the month's own length instead left the two
+ * halves on different bases, so what a leaver kept after their absences was a
+ * number that reconciled against nothing.
+ *
+ * A whole month is a whole month whatever its length: February would otherwise
+ * come out at 28/30 and dock a full-time employee a fifteenth for nothing.
  */
 export function employedFraction(w: EmploymentWindow, month: string): number {
   const [y, m] = month.split("-").map(Number);
@@ -48,9 +52,10 @@ export function employedFraction(w: EmploymentWindow, month: string): number {
   const to = w.to && w.to < last ? w.to : last;
   // Joined after the month ended, or left before it began.
   if (from > to) return 0;
+  if (from === first && to === last) return 1;
 
   const employed = Number(to.slice(8)) - Number(from.slice(8)) + 1;
-  return Math.min(1, employed / days);
+  return Math.min(1, employed / STANDARD_MONTH_DAYS);
 }
 
 /**

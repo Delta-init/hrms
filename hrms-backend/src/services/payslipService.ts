@@ -17,6 +17,7 @@ import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtim
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
+import { dayValue, dailyRate } from "../utils/payMonth.js";
 import { policiesForUser } from "./leavePolicyResolver.js";
 import { employmentWindowFor, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
@@ -55,14 +56,6 @@ interface ScheduleShape {
 interface Recovery { kind: "loan" | "adjustment"; ref: unknown; amount: number }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-
-/** Labels the attendance deductions carry, so a resubmitted form can't double them. */
-/** Days a month is worth for pay purposes, whatever the calendar says. */
-export const STANDARD_MONTH_DAYS = 30;
-
-/** What one day away costs. The single place this is decided. */
-export const dailyRate = (salary: number): number =>
-  Math.round((salary / STANDARD_MONTH_DAYS) * 100) / 100;
 
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
@@ -138,11 +131,11 @@ function attendanceDeductions(
   cap: number = salary
 ): Line[] {
   if (salary <= 0) return [];
-  // A flat 30 every month, the standard Gulf/India convention: a day off costs
-  // the same in February as in July. Dividing by the month's own length, or by
-  // its working days, made the price of one absent day wander month to month
-  // for no reason the payslip could explain.
-  const perDay = dailyRate(salary);
+  // Unrounded, and each total rounded once. Rounding the rate first turned
+  // 100/30 into 3.33, so seven days cost 23.31 where the day counts said 23.33
+  // — two fils, but enough that a payslip would not reconcile against its own
+  // figures, and the residue on a part month read as an arbitrary number.
+  const perDay = dayValue(salary);
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
