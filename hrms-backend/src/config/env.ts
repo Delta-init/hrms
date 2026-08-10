@@ -24,6 +24,13 @@ const envSchema = z.object({
   SUPER_ADMIN_EMAIL: z.string().email("SUPER_ADMIN_EMAIL is required"),
   SUPER_ADMIN_PASSWORD: z.string().min(1, "SUPER_ADMIN_PASSWORD is required"),
   CLIENT_URL: z.string().default("http://localhost:3000"),
+  /**
+   * This API's own public origin, used to build the signed file links a browser
+   * loads directly. Must be set in production: the default is only right when
+   * the API is reached at localhost, and a wrong value here means every photo
+   * and document link points somewhere unreachable.
+   */
+  SERVER_URL: z.string().optional(),
 
   // SMTP (optional) — when unset, email sending is a logged no-op.
   SMTP_HOST: z.string().optional(),

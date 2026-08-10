@@ -30,7 +30,10 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  // Photos and documents come from the API's signed /files route, so this can
+  // name that origin instead of trusting every https host on the internet —
+  // which is what it took to load them straight off a public bucket.
+  `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",

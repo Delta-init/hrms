@@ -1,5 +1,6 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { env } from "./env.js";
+import { signedFileUrl } from "../utils/fileUrl.js";
 
 /**
  * Cloudflare R2 is S3-compatible, so we talk to it with the AWS S3 SDK pointed
@@ -16,7 +17,8 @@ export const r2Enabled = Boolean(
 
 export const R2_BUCKET = env.R2_BUCKET_NAME ?? "";
 
-/** Public base URL for serving objects (r2.dev or a custom domain), no trailing slash. */
+/** No longer used for serving — see publicUrl(). Kept so an existing .env
+ *  does not fail validation, and as the place to look when the bucket is locked. */
 export const R2_PUBLIC_URL = (env.R2_PUBLIC_URL ?? "").replace(/\/+$/, "");
 
 export const r2: S3Client | null = r2Enabled
@@ -31,12 +33,20 @@ export const r2: S3Client | null = r2Enabled
   : null;
 
 /**
- * Public URL for a stored object key.
+ * Serving URL for a stored object key.
  *
  * Lives here rather than in the upload service so models can serve a key
- * without depending on the S3 client. When object access moves behind signed
- * URLs, this is the one place that changes.
+ * without depending on the S3 client — and, as that always intended, this is
+ * the one place that changed when object access moved behind signed URLs.
+ *
+ * It used to return `${R2_PUBLIC_URL}/${key}`, which is a bucket hostname with
+ * no access control: the link to somebody's passport scan worked for anyone who
+ * ever saw it, signed in or not, and never expired. Links are now signed and
+ * short-lived, and served by this API. See utils/fileUrl.ts.
+ *
+ * `R2_PUBLIC_URL` is no longer read. The bucket must be made private — while it
+ * still answers on a public hostname the old URLs keep working regardless.
  */
 export function publicUrl(key: string): string {
-  return R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${key}` : key;
+  return key ? signedFileUrl(key) : "";
 }
