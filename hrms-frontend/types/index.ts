@@ -1715,3 +1715,39 @@ export interface FaceStatus {
   updatedAt?: string;
   consentAt?: string;
 }
+
+// ─── Kiosk devices (face check-in) ──────────────────────────────────────────
+export interface Kiosk {
+  _id: string;
+  name: string;
+  location?: string;
+  /** Last four characters of the device secret, to tell devices apart. */
+  tokenHint: string;
+  active: boolean;
+  lastSeenAt?: string | null;
+  lastSeenIp?: string | null;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Returned only at pairing or rotation — the token is never readable again. */
+export interface PairedKiosk {
+  id: string;
+  name: string;
+  token: string;
+}
+
+export type PunchStatus = "punched" | "cooldown" | "not_recognised" | "refused";
+
+export interface KioskPunchResult {
+  status: PunchStatus;
+  direction?: "in" | "out";
+  user?: { id: string; name: string };
+  at?: string;
+  score?: number;
+  lateMinutes?: number;
+  reason?: string;
+  hint?: string;
+  message?: string;
+}

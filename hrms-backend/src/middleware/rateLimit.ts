@@ -15,6 +15,22 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Ceiling on how fast one device can submit frames.
+ *
+ * A kiosk in a busy lobby is a few punches a minute, and each one costs about a
+ * second of CPU inference on a shared box. This is generous for real use and
+ * still stops a device — or anything holding its token — from turning the face
+ * service into a queue nobody else can get through.
+ */
+export const kioskPunchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Too many attempts. Wait a moment and try again." },
+});
+
+/**
  * Looser limit for token exchange/refresh: these run on a legitimate cadence
  * for active sessions, so they need headroom the login limiter shouldn't give.
  */

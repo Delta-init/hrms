@@ -10,6 +10,7 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import { sanitizeQuery } from "./middleware/sanitizeQuery.js";
 import { startBirthdayCron } from "./jobs/birthdayJob.js";
 import { startResignationCron } from "./jobs/resignationJob.js";
+import { startFaceProofPurgeCron } from "./jobs/facePurgeJob.js";
 
 const app = express();
 
@@ -44,6 +45,7 @@ const start = async () => {
   await connectDB();
   startBirthdayCron();
   startResignationCron();
+  startFaceProofPurgeCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);

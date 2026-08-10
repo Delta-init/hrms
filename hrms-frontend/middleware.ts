@@ -19,6 +19,9 @@ export const config = {
     "/regularization/:path*",
     "/payroll/:path*",
     "/work-schedules/:path*",
+    // Covers the admin page at /kiosks, not the tablet screen at /kiosk — that
+    // one has no login by design and authenticates as a device.
+    "/kiosks/:path*",
     "/resignations/:path*",
     "/loans/:path*",
     "/salary-increments/:path*",

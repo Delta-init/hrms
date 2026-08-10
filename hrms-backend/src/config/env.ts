@@ -55,6 +55,12 @@ const envSchema = z.object({
   // how someone happens to stand at the kiosk.
   FACE_ENROLL_MIN_CAPTURES: z.string().default("3"),
   FACE_ENROLL_MAX_CAPTURES: z.string().default("5"),
+  // Ignore a second recognition of the same person within this window, so
+  // lingering in front of the camera doesn't immediately undo the punch.
+  FACE_PUNCH_COOLDOWN_SECONDS: z.string().default("60"),
+  // How long the frame a punch was made from is kept for dispute resolution.
+  FACE_PROOF_RETENTION_DAYS: z.string().default("30"),
+  FACE_PROOF_PURGE_CRON: z.string().default("30 3 * * *"),
 });
 
 const parsed = envSchema.safeParse(process.env);

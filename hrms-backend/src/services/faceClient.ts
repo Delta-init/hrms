@@ -141,6 +141,46 @@ export async function getGallery(orgKey: string): Promise<GalleryState | null> {
   }
 }
 
+export type RecognizeReason =
+  | "MATCHED"
+  | "NO_FACE"
+  | "AMBIGUOUS_FRAME"
+  | "LOW_QUALITY"
+  | "BELOW_THRESHOLD"
+  | "AMBIGUOUS_MATCH"
+  | "EMPTY_GALLERY";
+
+export interface RecognizeResult {
+  matched: boolean;
+  reason: RecognizeReason;
+  best: { user_id: string; score: number } | null;
+  runner_up: { user_id: string; score: number } | null;
+  margin: number | null;
+  quality: FaceQuality | null;
+  frame_index: number | null;
+  faces_detected: number;
+  gallery_version: string | null;
+  thresholds: { min_score: number; min_margin: number };
+}
+
+/**
+ * Identify whoever is in these frames.
+ *
+ * An unreadable frame comes back as `matched: false` with a reason, not an
+ * error — someone standing slightly wrong is the normal case at a kiosk, and
+ * the caller turns the reason into "step closer".
+ */
+export async function recognize(
+  orgKey: string,
+  images: string[]
+): Promise<RecognizeResult> {
+  const { data } = await request<RecognizeResult>("POST", "/v1/recognize", {
+    org_id: orgKey,
+    images,
+  });
+  return data;
+}
+
 export async function replaceGallery(
   orgKey: string,
   version: string,

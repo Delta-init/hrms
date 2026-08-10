@@ -12,6 +12,7 @@ import {
   Network,
   CalendarCheck,
   CalendarClock,
+  MonitorSmartphone,
   Wallet,
   Clock,
   ClipboardCheck,
@@ -64,6 +65,7 @@ export const navItems: {
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
+  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
   { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
   { href: "/salary-increments", label: "Salary Increments", icon: TrendingUp, permModule: "salaryIncrements" },

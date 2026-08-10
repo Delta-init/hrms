@@ -168,9 +168,28 @@ export type AttendanceStatus =
   | "wfh";
 
 /** A single check-in / check-out punch pair within a day. */
+/** How a punch was made. Records predating face check-in read as "web". */
+export type PunchMethod = "web" | "face" | "manual";
+
+/**
+ * Provenance of a single punch. Recorded per punch rather than per session
+ * because the two ends can differ — recognised at the kiosk on the way in,
+ * clocked out from a desk on the way home.
+ */
+export interface IPunchSource {
+  method: PunchMethod;
+  kiosk?: Types.ObjectId | IKiosk | null;
+  /** Similarity score that identified them, for auditing a disputed punch. */
+  matchScore?: number | null;
+  /** R2 key of the frame this punch was made from; purged on a retention job. */
+  proofKey?: string | null;
+}
+
 export interface IAttendanceSession {
   checkIn: Date; // login instant (UTC)
   checkOut?: Date | null; // logout instant (UTC); null while still clocked in
+  checkInSource?: IPunchSource | null;
+  checkOutSource?: IPunchSource | null;
 }
 
 export interface IAttendance extends Document {
@@ -197,6 +216,24 @@ export interface IAttendance extends Document {
   createdAt: Date;
   updatedAt: Date;
   computeWorkedMinutes(): number;
+}
+
+// ─── Kiosk devices (face check-in) ──────────────────────────────────────────
+export interface IKiosk extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  location?: string;
+  /** SHA-256 of the device secret. The secret itself is shown once, at pairing. */
+  tokenHash: string;
+  /** Last four characters of the secret, so a device can be told apart in a list. */
+  tokenHint: string;
+  active: boolean;
+  lastSeenAt?: Date | null;
+  lastSeenIp?: string | null;
+  createdBy: Types.ObjectId | IUser;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ─── Face enrollment (kiosk attendance) ─────────────────────────────────────
