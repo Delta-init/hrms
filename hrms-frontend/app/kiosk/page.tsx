@@ -261,6 +261,55 @@ function CheckInScreen({
     return () => streamRef.current?.getTracks().forEach((track) => track.stop());
   }, [startCamera]);
 
+  /**
+   * Recover by itself once the camera becomes available.
+   *
+   * Somebody who fixes the permission in the browser's own panel gets no
+   * feedback from us otherwise — the screen sits there insisting it is blocked
+   * long after it isn't, and the obvious conclusion is that the kiosk is
+   * broken. Chrome fires a permission change; we take that as our cue.
+   */
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+
+    navigator.permissions
+      ?.query({ name: "camera" as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        result.onchange = () => {
+          if (result.state === "granted") void startCamera();
+        };
+      })
+      .catch(() => {
+        /* Safari and Firefox don't expose this; the focus handler covers them */
+      });
+
+    return () => {
+      cancelled = true;
+      if (status) status.onchange = null;
+    };
+  }, [startCamera]);
+
+  /**
+   * The same recovery for browsers with no permission events, and for the case
+   * the events don't cover: closing the video call that was holding the camera.
+   * Coming back to the tab is a good moment to try again.
+   */
+  useEffect(() => {
+    if (camera === "ready" || camera === "starting" || camera === "insecure") return;
+    const retry = () => {
+      if (document.visibilityState === "visible") void startCamera();
+    };
+    window.addEventListener("focus", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("focus", retry);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [camera, startCamera]);
+
   useEffect(() => {
     if (!result) return;
     const timer = setTimeout(() => setResult(null), RESULT_MS);

@@ -128,6 +128,30 @@ export function FaceCaptureDialog({
     return () => stopCamera();
   }, [open, startCamera, stopCamera]);
 
+  // Pick the camera up by itself once permission is granted, rather than
+  // leaving the dialog claiming it is blocked after the person has fixed it.
+  useEffect(() => {
+    if (!open) return;
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+
+    navigator.permissions
+      ?.query({ name: "camera" as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        result.onchange = () => {
+          if (result.state === "granted") void startCamera();
+        };
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (status) status.onchange = null;
+    };
+  }, [open, startCamera]);
+
   // Reset between openings so a previous attempt's shots and errors don't
   // reappear on the next employee.
   useEffect(() => {

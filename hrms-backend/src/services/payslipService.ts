@@ -17,9 +17,9 @@ import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtim
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
-import { dayValue, dailyRate } from "../utils/payMonth.js";
+import { STANDARD_MONTH_DAYS, dayValue, dailyRate } from "../utils/payMonth.js";
 import { policiesForUser } from "./leavePolicyResolver.js";
-import { employmentWindowFor, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
+import { employmentWindowFor, employmentWindows, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
 
 interface PayslipQuery extends PaginationQuery {
@@ -207,6 +207,37 @@ function allocateRecoveries(
   });
 
   return { lines, recoveries, deferred, taken };
+}
+
+/**
+ * The employees a payroll run for `month` should cover.
+ *
+ * Everybody still on the books, plus anybody who left during the month. A
+ * leaver's last month was falling through entirely: the run skipped every
+ * terminated employee, and the full-and-final settlement on their resignation
+ * pays gratuity, leave encashment and dues but never salary — so their final
+ * month had no automatic path at all and someone had to remember to raise it by
+ * hand. Nothing is paid twice: finalising a settlement consumes the
+ * reimbursements, one-time items and loans it settles.
+ *
+ * A leaver is only included for months their employment actually touched, and
+ * only when a last working day is on record. Without one there is no end to
+ * their window, and they would come back in every run for ever.
+ */
+async function payrollRosterFilter(month: string): Promise<Record<string, unknown>> {
+  const left = await Employee.find(scoped({ status: "terminated" })).select("_id joiningDate").lean();
+  if (!left.length) return { status: { $ne: "terminated" } };
+
+  const windows = await employmentWindows(left as never);
+  const stillOwed = left
+    .filter((e) => {
+      const w = windows.get(String(e._id));
+      return !!w?.to && employedFraction(w, month) > 0;
+    })
+    .map((e) => e._id);
+
+  if (!stillOwed.length) return { status: { $ne: "terminated" } };
+  return { $or: [{ status: { $ne: "terminated" } }, { _id: { $in: stillOwed } }] };
 }
 
 /** Credit the loans and one-time items with what the payslip actually took. */
@@ -490,6 +521,8 @@ export class PayslipService {
 
     const base = {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
+      /** Approved leave falling on working days — paid, and holidays likewise. */
+      paidLeaveDays: 0, holidayDays: 0,
       salary: breakup.gross,
       earnings,
       structureDeductions,
@@ -506,6 +539,8 @@ export class PayslipService {
       autoDeductions: [...loanDeductions, ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount }))],
       workingDays: 0,
       paidDays: 0,
+      /** Days of salary this month is worth for them — 30, or their share of it. */
+      salaryDays: 0,
       recordedDays: 0,
       unrecordedDays: 0,
       unrecordedFutureDays: 0,
@@ -561,6 +596,10 @@ export class PayslipService {
     const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
     const workingSet = new Set(workingDayKeys(month, workDays, employment));
     const chargeable = (k: string) => workingSet.has(k) && !paidLeaveDays.has(k) && !holidayDays.has(k);
+    // Only the working days of it — leave spanning a weekend is not two days
+    // off work — so the figure sits beside "present" and "half day" and adds up.
+    base.paidLeaveDays = [...paidLeaveDays].filter((k) => workingSet.has(k)).length;
+    base.holidayDays = [...holidayDays].filter((k) => workingSet.has(k)).length;
 
     let halfCount = 0;
     for (const k of halfSet) if (!lopFull.has(k) && chargeable(k)) halfCount++;
@@ -603,7 +642,13 @@ export class PayslipService {
       base.lopDays = Math.round((base.lopDays + base.unrecordedDays) * 100) / 100;
     }
 
-    base.paidDays = Math.max(0, Math.round((base.workingDays - base.lopDays) * 100) / 100);
+    // Counted against the thirty days the salary buys, not against the working
+    // days alone. Rest days and holidays are paid — nothing ever docks them —
+    // so leaving them out of the count made it disagree with the money beside
+    // it: somebody on 100 taking home 25 read as "paid days 3.5 of 26", which
+    // works out at 13.46. Against thirty it reads 7.5, which is the 25.
+    base.salaryDays = r2(employedShare * STANDARD_MONTH_DAYS);
+    base.paidDays = Math.max(0, r2(base.salaryDays - base.lopDays));
 
     // Everything the payslip will deduct on its own, now the attendance figures
     // are final. The form has no rows for these — they are derived on create —
@@ -624,7 +669,7 @@ export class PayslipService {
    * payslip (base = salary, LOP per-day = salary/30, loans from active loans).
    */
   async runPreview(month: string) {
-    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+    const employees = await Employee.find(scoped(await payrollRosterFilter(month)))
       .select("name employeeCode salary currency user")
       .sort({ name: 1 });
     // The whole payslip, not just its status: once one exists it is the record
@@ -754,7 +799,7 @@ export class PayslipService {
    * format WPS actually requires — see SalaryRegister.tsx.
    */
   async salaryRegister(month: string) {
-    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+    const employees = await Employee.find(scoped(await payrollRosterFilter(month)))
       .select("name employeeCode designation salary currency user bank")
       .sort({ name: 1 })
       .lean();
@@ -807,7 +852,7 @@ export class PayslipService {
 
   /** Bulk-create draft payslips for every active employee lacking one this month. */
   async runGenerate(month: string, issuerId: string) {
-    const employees = await Employee.find(scoped({ status: { $ne: "terminated" } })).select("_id salary");
+    const employees = await Employee.find(scoped(await payrollRosterFilter(month))).select("_id salary");
     const existing = await Payslip.find(scoped({ month })).select("employee");
     const existSet = new Set(existing.map((p) => String(p.employee)));
 

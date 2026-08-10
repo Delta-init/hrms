@@ -743,6 +743,9 @@ export interface Payslip {
 export interface PayslipSummary {
   present: number; late: number; half: number; absent: number;
   unpaidLeaveDays: number; lopDays: number; latePenaltyDays: number; salary: number; currency: string;
+  /** Approved leave and holidays falling on working days — both paid. */
+  paidLeaveDays?: number;
+  holidayDays?: number;
   /**
    * Lines the payslip adds by itself — reimbursements, overtime, one-time
    * items. Shown so the form previews the payslip it will actually create;
@@ -770,6 +773,8 @@ export interface PayslipSummary {
   employedShare?: number;
   /** First and last day on the payroll, when either falls inside the month. */
   employment?: { from: string | null; to: string | null };
+  /** Days of salary this month is worth for them — 30, or their share of it. */
+  salaryDays?: number;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────
