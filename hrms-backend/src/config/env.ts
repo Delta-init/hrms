@@ -42,6 +42,19 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(), // e.g. https://pub-xxxx.r2.dev or a custom domain
+
+  // Face recognition service (hrms-face-ditector). When unset, face enrollment
+  // and face attendance are disabled and their routes return a clear error —
+  // the rest of the API is unaffected.
+  FACE_SERVICE_URL: z.string().optional(), // e.g. http://127.0.0.1:8000
+  FACE_SERVICE_KEY: z.string().optional(), // must match the service's FACE_SERVICE_KEY
+  // How long to wait on the face service. Recognition is CPU inference, so this
+  // is seconds rather than the milliseconds a normal internal call would take.
+  FACE_SERVICE_TIMEOUT_MS: z.string().default("15000"),
+  // Captures required per employee. More angles make matching more forgiving of
+  // how someone happens to stand at the kiosk.
+  FACE_ENROLL_MIN_CAPTURES: z.string().default("3"),
+  FACE_ENROLL_MAX_CAPTURES: z.string().default("5"),
 });
 
 const parsed = envSchema.safeParse(process.env);

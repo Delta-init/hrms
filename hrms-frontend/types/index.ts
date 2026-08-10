@@ -1695,3 +1695,23 @@ export interface CompOffSuggestion {
   reason: "holiday" | "weekend";
   workedMinutes: number;
 }
+
+// ─── Face enrollment (kiosk attendance) ─────────────────────────────────────
+export interface FaceSettings {
+  /** False when the recognition service is not configured on the server. */
+  enabled: boolean;
+  minCaptures: number;
+  maxCaptures: number;
+  /** Exact wording the employee must agree to before enrollment. */
+  consentText: string;
+}
+
+export interface FaceStatus {
+  enrolled: boolean;
+  captures: number;
+  modelPack?: string;
+  referenceUrl?: string | null;
+  enrolledAt?: string;
+  updatedAt?: string;
+  consentAt?: string;
+}

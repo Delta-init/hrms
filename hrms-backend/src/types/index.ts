@@ -199,6 +199,36 @@ export interface IAttendance extends Document {
   computeWorkedMinutes(): number;
 }
 
+// ─── Face enrollment (kiosk attendance) ─────────────────────────────────────
+export interface IFaceConsent {
+  /** When the employee agreed to their face being used for attendance. */
+  at: Date;
+  /** Who recorded the consent — the employee, or the admin sitting with them. */
+  by: Types.ObjectId | IUser;
+  /** The wording they agreed to, kept verbatim so it can be shown back later. */
+  text: string;
+}
+
+export interface IFaceProfile extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  user: Types.ObjectId | IUser;
+  /**
+   * One 512-d unit-length vector per capture. These are what recognition
+   * compares against; the photos themselves are not kept.
+   */
+  embeddings: number[][];
+  /** Model pack the embeddings came from — they are not comparable across packs. */
+  modelPack: string;
+  /** R2 key of a single reference photo, retained so HR can audit a disputed match. */
+  referenceKey?: string | null;
+  consent: IFaceConsent;
+  enrolledBy: Types.ObjectId | IUser;
+  status: "active" | "disabled";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Leave Calendar: Holidays ───────────────────────────────────────────────
 export type HolidayType = "public" | "company" | "optional";
 
