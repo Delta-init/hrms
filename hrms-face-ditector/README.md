@@ -240,18 +240,25 @@ of one, from a single frame. That is what lets a kiosk be both fast and safe:
 with it loaded you can turn the pose prompts off entirely and a photo still
 fails.
 
-No weights are committed. Fetch and convert them once:
+The models ship with the repo, in `models/antispoof/` — 3.3 MB, Apache-2.0,
+attribution in [models/antispoof/NOTICE.md](models/antispoof/NOTICE.md). A
+`git pull` on the server is all that is needed; set
+`FACE_ANTISPOOF_DIR=models/antispoof` and restart, and `/health` lists what
+loaded.
+
+They are committed rather than fetched because converting them needs PyTorch —
+about 2 GB of dependencies to produce 3.3 MB — and a server should not carry a
+training framework to do that once. To regenerate or update them:
 
 ```bash
 uv pip install --group convert
 uv run python scripts/fetch_antispoof.py
 ```
 
-That downloads the MiniFASNet weights published with
-[minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing)
-(Apache-2.0), converts them to ONNX in `models/antispoof/`, and keeps nothing
-else — the architecture is fetched to a temp directory and discarded. Then set
-`FACE_ANTISPOOF_DIR=models/antispoof` and restart. `/health` lists what loaded.
+That pulls the weights published with
+[minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing),
+converts them, and keeps nothing else — the architecture is fetched to a temp
+directory and discarded.
 
 Both published models are used and their outputs averaged, which is how
 upstream uses them: each was trained on a different amount of the surrounding
