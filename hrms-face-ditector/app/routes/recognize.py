@@ -167,14 +167,25 @@ def _check_liveness(
     payload: RecognizeRequest,
     settings: Settings,
 ) -> LivenessResult:
-    if payload.liveness is None:
-        return NOT_REQUESTED
-
-    observations = [r.observation for r in results if r.observation is not None]
     # The worst frame decides. An attacker only needs one convincing frame to be
     # recognised from, so a single suspicious one is enough to refuse.
     scores = [r.spoof_score for r in results if r.spoof_score is not None]
     spoof_score = max(scores) if scores else None
+
+    if payload.liveness is None:
+        # No prompts asked for. If a spoof model is loaded it still has an
+        # opinion, and that opinion is the whole defence when the prompts are
+        # switched off — so it is reported rather than skipped.
+        if spoof_score is None:
+            return NOT_REQUESTED
+        spoofed = spoof_score >= settings.antispoof_threshold
+        return LivenessResult(
+            live=not spoofed,
+            reason="SPOOF_DETECTED" if spoofed else "OK",
+            spoof_score=spoof_score,
+        )
+
+    observations = [r.observation for r in results if r.observation is not None]
 
     verdict = verify(observations, list(payload.liveness.steps), settings, spoof_score)
     return LivenessResult(
@@ -214,7 +225,10 @@ async def _evaluate_frame(
         face=largest,
         observation=observation,
     )
-    if payload.liveness is not None and largest is not None and detector.available:
+    # Scored whenever a model is loaded, not only when prompts were asked for:
+    # with the pose challenge off this is the only thing standing between a
+    # photograph and an attendance record.
+    if largest is not None and detector.available:
         result.spoof_score = await run_in_threadpool(detector.score, image, largest)
 
     if not faces:

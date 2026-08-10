@@ -35,6 +35,7 @@ async def health(
         # Reported so the backend can say plainly which liveness defences are
         # actually in play, rather than assuming the strongest one is loaded.
         antispoof_loaded=request.app.state.spoof.available,
+        antispoof_models=request.app.state.spoof.model_names,
         uptime_seconds=round(time.time() - _STARTED_AT, 3),
         galleries=[GalleryState(**summary) for summary in gallery.summaries()],
     )

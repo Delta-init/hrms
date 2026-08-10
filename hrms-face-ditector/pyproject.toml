@@ -20,6 +20,9 @@ dependencies = [
 
 [dependency-groups]
 dev = ["httpx>=0.27.0", "pytest>=8.0.0"]
+# Only for scripts/fetch_antispoof.py, run once to convert the published
+# MiniFASNet weights to ONNX. The service never imports torch.
+convert = ["torch>=2.2", "onnxscript>=0.1"]
 
 [tool.ruff]
 line-length = 110

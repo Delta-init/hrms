@@ -208,7 +208,9 @@ def test_a_frontal_frame_satisfies_center(client, auth, known_face, gallery):
     assert body["liveness"]["matched_frames"] == [0]
 
 
-def test_health_reports_no_spoof_model(client):
-    """No weights ship with this service, and health says so rather than
-    implying a protection that isn't loaded."""
-    assert client.get("/health").json()["antispoof_loaded"] is False
+def test_health_reports_when_no_spoof_model_is_loaded(client):
+    """Health must state plainly that spoof scoring is not in play, so nothing
+    downstream assumes a protection that was never loaded."""
+    body = client.get("/health").json()
+    assert body["antispoof_loaded"] is False
+    assert body["antispoof_models"] == []

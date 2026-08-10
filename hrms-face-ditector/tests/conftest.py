@@ -20,6 +20,11 @@ os.environ["FACE_ENROLL_MIN_BLUR"] = "10"
 os.environ["FACE_ENROLL_MAX_YAW"] = "90"
 os.environ["FACE_ENROLL_MAX_PITCH"] = "90"
 os.environ["FACE_RECOGNIZE_MIN_FACE_PIXELS"] = "60"
+# No spoof model for the main suite, whatever the developer's .env says. These
+# tests are about the pose rules, and they must give the same answer on a fresh
+# clone where no weights have been fetched. app/antispoof.py is covered
+# separately in test_antispoof.py, which skips itself when the models are absent.
+os.environ["FACE_ANTISPOOF_DIR"] = ""
 
 import base64  # noqa: E402
 from pathlib import Path  # noqa: E402

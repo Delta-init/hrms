@@ -177,11 +177,12 @@ numpy matrix and not a vector database.
 .venv/bin/python -m pytest tests -q
 ```
 
-37 tests: the HTTP surface, plus the liveness pose and ordering rules tested
+41 tests: the HTTP surface, plus the liveness pose and ordering rules tested
 directly with constructed faces. Both use the sample photos bundled with
 insightface — no employee data required. The run relaxes the enrollment gates,
 because those samples are ~110 px faces at awkward angles; production keeps the
-strict defaults.
+strict defaults. The anti-spoof tests skip themselves until the weights are
+fetched, so the suite passes on a fresh clone.
 
 One gap worth knowing: no photo set here contains one person turning their
 head, so the successful-turn path is proven at the rule level and against a
@@ -217,14 +218,55 @@ for the person standing at it, but the frame it uploads is not.
 Stops: printed photos, a still on a phone screen, one frame replayed, a
 colleague's photo swapped in mid-sequence.
 
-Does not stop: a video of the right person performing the sequence the server
-happened to ask for. There are only four sequences, and they are not pretending
-to be more. Closing that gap needs a model trained on presentation attacks —
-`app/antispoof.py` is the slot for one, `FACE_ANTISPOOF_MODEL` turns it on, and
-`/health` reports `antispoof_loaded` so the rest of the stack can tell whether
-it is actually there. **No weights ship with this service and that scoring path
-has never been run**; validate it against known-live and known-spoof samples
-before relying on it.
+Does not stop, on its own: a video of the right person performing the sequence
+the server happened to ask for. There are only four sequences, and they are not
+pretending to be more. That is what the anti-spoof model below is for.
+
+## Anti-spoofing
+
+A trained presentation-attack model judges whether a face is real or a picture
+of one, from a single frame. That is what lets a kiosk be both fast and safe:
+with it loaded you can turn the pose prompts off entirely and a photo still
+fails.
+
+No weights are committed. Fetch and convert them once:
+
+```bash
+uv pip install --group convert
+uv run python scripts/fetch_antispoof.py
+```
+
+That downloads the MiniFASNet weights published with
+[minivision-ai/Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing)
+(Apache-2.0), converts them to ONNX in `models/antispoof/`, and keeps nothing
+else — the architecture is fetched to a temp directory and discarded. Then set
+`FACE_ANTISPOOF_DIR=models/antispoof` and restart. `/health` lists what loaded.
+
+Both published models are used and their outputs averaged, which is how
+upstream uses them: each was trained on a different amount of the surrounding
+scene (2.7x and 4.0x the face box), and a screen bezel or the edge of a print
+often shows in the wider crop when the tight one looks convincing. The crop
+scale lives in the filename because it is part of the model — rename the files
+and the scores quietly go wrong.
+
+Scoring runs on every recognition, whether or not pose prompts were requested,
+and the verdict comes back in the same `liveness` block.
+
+### Calibrate it
+
+**The shipped threshold is a starting point, not a measurement.** Spoof scores
+move with the camera, the lighting, and the attack — a matte print behaves
+nothing like a bright phone screen.
+
+```bash
+# dataset/live/*.jpg    real people at the kiosk
+# dataset/spoof/*.jpg   the kiosk camera looking at photos of them
+uv run python scripts/calibrate_antispoof.py --live dataset/live --spoof dataset/spoof
+```
+
+It prints, per threshold, how many live people get turned away and how many
+spoofs get through. A spoof let through is somebody clocking in a colleague who
+isn't there; a rejected live person loses five seconds.
 
 ## Not in this phase
 

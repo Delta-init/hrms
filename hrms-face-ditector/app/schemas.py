@@ -192,5 +192,6 @@ class HealthResponse(BaseModel):
     model_pack: str
     model_loaded: bool
     antispoof_loaded: bool = False
+    antispoof_models: list[str] = Field(default_factory=list)
     uptime_seconds: float
     galleries: list[GalleryState]

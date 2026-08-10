@@ -57,13 +57,16 @@ class Settings(BaseSettings):
     # Mean absolute difference, 0-255, below which frames are the same picture.
     liveness_min_frame_difference: float = 2.0
 
-    # Optional presentation-attack model. Unset means the pose challenge is the
-    # only liveness defence — see app/antispoof.py.
-    antispoof_model: str = ""
+    # Presentation-attack models. Point this at the directory produced by
+    # scripts/fetch_antispoof.py; unset means no spoof scoring at all. Input
+    # size and crop scale come from each filename, because they are properties
+    # of the model rather than things to configure.
+    antispoof_dir: str = ""
+    # Refuse at or above this spoof probability. MUST be measured against your
+    # own camera and lighting — see scripts/calibrate_antispoof.py.
     antispoof_threshold: float = 0.5
-    antispoof_input_size: int = 80
-    antispoof_margin: float = 0.4
-    antispoof_spoof_index: int = 0
+    # Which output class means "live". 1 for the published MiniFASNet models.
+    antispoof_live_index: int = 1
 
     max_image_bytes: int = 8 * 1024 * 1024
     max_image_dim: int = 1600

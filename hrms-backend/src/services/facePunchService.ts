@@ -93,6 +93,17 @@ export class FacePunchService {
     // perfectly well, and saying so before refusing would tell them the
     // photograph was good enough — and would leave a "recognised" reading in
     // the logs for a punch that never should have been possible.
+    // Not gated on `steps`: a spoof model has an opinion whether or not prompts
+    // were asked for, and when the prompts are off it is the only defence
+    // there is. NOT_REQUESTED alone means nothing ran.
+    if (!result.liveness.live && result.liveness.reason !== "NOT_REQUESTED") {
+      return {
+        status: "not_live",
+        reason: result.liveness.reason,
+        hint: LIVENESS_HINTS[result.liveness.reason] || "That didn't work. Try again.",
+      };
+    }
+
     if (steps && !result.liveness.live) {
       if (result.liveness.reason === "NOT_REQUESTED") {
         // We asked for a check and the service says it never ran one. That is

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -13,89 +14,165 @@ from .engine import DetectedFace
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class SpoofModel:
+    session: object  # onnxruntime.InferenceSession
+    input_name: str
+    height: int
+    width: int
+    # How much of the scene around the face this model was trained to see.
+    scale: float
+    name: str
+
+
+def _parse_model_name(name: str) -> tuple[int, int, float] | None:
+    """Read `<scale>_<h>x<w>_<Arch>.onnx`, upstream's own convention.
+
+    The scale is part of the filename because it is part of the model: each was
+    trained on a particular amount of surrounding scene, and cropping tighter or
+    wider than it expects quietly ruins the score rather than failing loudly.
+    """
+    try:
+        parts = name.rsplit(".", 1)[0].split("_")
+        height, width = parts[-2].split("x")
+        return int(height), int(width), float(parts[0])
+    except (ValueError, IndexError):
+        return None
+
+
 class SpoofDetector:
     """
-    Optional presentation-attack model, loaded from an ONNX file if one is set.
+    Presentation-attack detection: is this a live face, or a picture of one?
 
-    Nothing ships with weights. The pose challenge in `liveness.py` is what
-    defends this system out of the box, and it already defeats a printed photo
-    or a still on a screen. What it cannot do is tell a live face from a video
-    of the right person performing the right sequence — that needs a model
-    trained on presentation attacks, and those weights have their own licence
-    and have to be chosen deliberately rather than pulled in by a library.
+    Wraps the MiniFASNet models published with
+    minivision-ai/Silent-Face-Anti-Spoofing (Apache-2.0), converted to ONNX by
+    `scripts/fetch_antispoof.py`. No weights are committed here — point
+    FACE_ANTISPOOF_DIR at the converted directory and this loads whatever it
+    finds, or stays disabled and says so.
 
-    So this is a slot, not an implementation. Point FACE_ANTISPOOF_MODEL at an
-    ONNX classifier that takes an aligned face crop and returns a spoof
-    probability, set FACE_ANTISPOOF_THRESHOLD from your own measurements, and
-    the punch flow starts consulting it. Leave it unset and `available` is
-    False, which the API reports honestly rather than implying a protection
-    that isn't there.
-
-    UNTESTED PATH: with no weights available here, the scoring branch below has
-    never run. Validate it against known-live and known-spoof samples before
-    relying on it.
+    Every model in the directory is run and their probabilities averaged, which
+    is how upstream uses them. The two published models see different amounts of
+    the scene, and a screen edge or the border of a printed photo often shows in
+    the wider crop when the tight one looks convincing.
     """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._session = None
-        self._input_name: str | None = None
-        self._size = settings.antispoof_input_size
+        self._models: list[SpoofModel] = []
         self._lock = threading.Lock()
 
     @property
     def available(self) -> bool:
-        return self._session is not None
+        return bool(self._models)
+
+    @property
+    def model_names(self) -> list[str]:
+        return [m.name for m in self._models]
 
     def load(self) -> None:
-        path = self._settings.antispoof_model
-        if not path:
-            logger.info("No anti-spoof model configured; relying on the pose challenge alone")
+        directory = self._settings.antispoof_dir
+        if not directory:
+            logger.info("No anti-spoof model configured; the pose challenge is the only defence")
             return
-        if not os.path.exists(path):
-            logger.error("FACE_ANTISPOOF_MODEL is set to %s, which does not exist — spoof scoring is off", path)
+
+        path = Path(directory)
+        if not path.is_dir():
+            logger.error("FACE_ANTISPOOF_DIR=%s is not a directory — spoof scoring is off", path)
             return
 
         import onnxruntime as ort
 
-        self._session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-        self._input_name = self._session.get_inputs()[0].name
-        logger.info("Loaded anti-spoof model from %s", path)
+        for file in sorted(path.glob("*.onnx")):
+            parsed = _parse_model_name(file.name)
+            if parsed is None:
+                logger.error(
+                    "Ignoring %s: the filename must be <scale>_<h>x<w>_<Arch>.onnx, "
+                    "because the crop scale is part of the model",
+                    file.name,
+                )
+                continue
+            height, width, scale = parsed
+            session = ort.InferenceSession(str(file), providers=["CPUExecutionProvider"])
+            self._models.append(
+                SpoofModel(
+                    session=session,
+                    input_name=session.get_inputs()[0].name,
+                    height=height,
+                    width=width,
+                    scale=scale,
+                    name=file.name,
+                )
+            )
+            logger.info("Loaded anti-spoof model %s (scale %.1f, %dx%d)", file.name, scale, height, width)
+
+        if not self._models:
+            logger.error("No usable .onnx models in %s — spoof scoring is off", path)
 
     def score(self, image: np.ndarray, face: DetectedFace) -> float | None:
-        """Spoof probability for one face, or None when no model is loaded."""
-        if self._session is None:
+        """Probability that this face is a presentation attack, or None if off."""
+        if not self._models:
             return None
 
-        crop = self._crop(image, face)
-        if crop is None:
-            return None
+        probabilities = np.zeros(3, dtype=np.float64)
+        for model in self._models:
+            patch = self._crop(image, face, model)
+            if patch is None:
+                return None
+            # ToTensor() and nothing else, which is all upstream applies: HWC to
+            # CHW, scaled to 0-1, and left in BGR — the channel order OpenCV
+            # read it in and therefore the order these were trained on.
+            blob = patch.astype(np.float32) / 255.0
+            blob = np.transpose(blob, (2, 0, 1))[np.newaxis, ...]
 
-        blob = cv2.resize(crop, (self._size, self._size), interpolation=cv2.INTER_AREA)
-        blob = cv2.cvtColor(blob, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        blob = np.transpose(blob, (2, 0, 1))[np.newaxis, ...]
+            with self._lock:
+                logits = model.session.run(None, {model.input_name: blob})[0]
+            probabilities += _softmax(np.asarray(logits, dtype=np.float64).reshape(-1))
 
-        with self._lock:
-            outputs = self._session.run(None, {self._input_name: blob})
+        probabilities /= len(self._models)
+        live = float(probabilities[self._settings.antispoof_live_index])
+        return 1.0 - live
 
-        scores = np.asarray(outputs[0]).reshape(-1)
-        if scores.size == 1:
-            return float(scores[0])
-        # Two-class output: take the spoof class, after a softmax if the model
-        # emits logits rather than probabilities.
-        if not np.isclose(scores.sum(), 1.0, atol=1e-3):
-            exp = np.exp(scores - scores.max())
-            scores = exp / exp.sum()
-        return float(scores[self._settings.antispoof_spoof_index])
+    def _crop(self, image: np.ndarray, face: DetectedFace, model: SpoofModel) -> np.ndarray | None:
+        """Upstream's crop, reproduced exactly.
 
-    def _crop(self, image: np.ndarray, face: DetectedFace) -> np.ndarray | None:
-        """Face box with margin — spoof cues live in the border, not the face."""
-        margin = self._settings.antispoof_margin
+        The box is grown by the model's scale about its centre, then shifted
+        back inside the frame rather than clipped, so the face keeps its size
+        when somebody stands near the edge of the shot.
+        """
+        source_h, source_w = image.shape[:2]
         x1, y1, x2, y2 = face.bbox
-        pad_x, pad_y = (x2 - x1) * margin, (y2 - y1) * margin
-        height, width = image.shape[:2]
-        left, top = max(0, int(x1 - pad_x)), max(0, int(y1 - pad_y))
-        right, bottom = min(width, int(x2 + pad_x)), min(height, int(y2 + pad_y))
-        if right <= left or bottom <= top:
+        box_w, box_h = x2 - x1, y2 - y1
+        if box_w <= 0 or box_h <= 0:
             return None
-        return image[top:bottom, left:right]
+
+        scale = min((source_h - 1) / box_h, min((source_w - 1) / box_w, model.scale))
+        new_w, new_h = box_w * scale, box_h * scale
+        centre_x, centre_y = x1 + box_w / 2, y1 + box_h / 2
+
+        left = centre_x - new_w / 2
+        top = centre_y - new_h / 2
+        right = centre_x + new_w / 2
+        bottom = centre_y + new_h / 2
+
+        if left < 0:
+            right -= left
+            left = 0
+        if top < 0:
+            bottom -= top
+            top = 0
+        if right > source_w - 1:
+            left -= right - (source_w - 1)
+            right = source_w - 1
+        if bottom > source_h - 1:
+            top -= bottom - (source_h - 1)
+            bottom = source_h - 1
+
+        patch = image[int(top) : int(bottom) + 1, int(left) : int(right) + 1]
+        if patch.size == 0:
+            return None
+        return cv2.resize(patch, (model.width, model.height))
+
+
+def _softmax(values: np.ndarray) -> np.ndarray:
+    shifted = np.exp(values - values.max())
+    return shifted / shifted.sum()
