@@ -9,7 +9,8 @@
     "seed": "bun src/seeds/superAdmin.ts",
     "repair:logins": "bun src/seeds/repairEmployeeLogins.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
-    "repair:leave-policy-index": "bun src/seeds/repairLeavePolicyIndex.ts"
+    "repair:leave-policy-index": "bun src/seeds/repairLeavePolicyIndex.ts",
+    "faces:duplicates": "bun src/seeds/findDuplicateFaces.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",
