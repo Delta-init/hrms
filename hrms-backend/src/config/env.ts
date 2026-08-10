@@ -42,6 +42,31 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(), // e.g. https://pub-xxxx.r2.dev or a custom domain
+
+  // Face recognition service (hrms-face-ditector). When unset, face enrollment
+  // and face attendance are disabled and their routes return a clear error —
+  // the rest of the API is unaffected.
+  FACE_SERVICE_URL: z.string().optional(), // e.g. http://127.0.0.1:8000
+  FACE_SERVICE_KEY: z.string().optional(), // must match the service's FACE_SERVICE_KEY
+  // How long to wait on the face service. Recognition is CPU inference, so this
+  // is seconds rather than the milliseconds a normal internal call would take.
+  FACE_SERVICE_TIMEOUT_MS: z.string().default("15000"),
+  // Captures required per employee. More angles make matching more forgiving of
+  // how someone happens to stand at the kiosk.
+  FACE_ENROLL_MIN_CAPTURES: z.string().default("3"),
+  FACE_ENROLL_MAX_CAPTURES: z.string().default("5"),
+  // Ignore a second recognition of the same person within this window, so
+  // lingering in front of the camera doesn't immediately undo the punch.
+  FACE_PUNCH_COOLDOWN_SECONDS: z.string().default("60"),
+  // How long the frame a punch was made from is kept for dispute resolution.
+  FACE_PROOF_RETENTION_DAYS: z.string().default("30"),
+  FACE_PROOF_PURGE_CRON: z.string().default("30 3 * * *"),
+  // Liveness. "required" makes every kiosk punch prove somebody is actually
+  // standing there; "off" is an explicit opt-out for a supervised device and
+  // means a printed photo will punch someone in.
+  FACE_LIVENESS_MODE: z.enum(["required", "off"]).default("required"),
+  // How long somebody has to follow the prompts before the challenge lapses.
+  FACE_LIVENESS_TTL_SECONDS: z.string().default("30"),
 });
 
 const parsed = envSchema.safeParse(process.env);

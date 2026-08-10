@@ -8,7 +8,7 @@ import { Organization } from "../models/Organization.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
-import type { PaginationQuery } from "../types/index.js";
+import type { IPunchSource, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
@@ -23,6 +23,9 @@ import { parsePagination } from "../utils/query.js";
 function dayBoundary(value: string, tz: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? zonedTimeToUtc(value, "00:00", tz) : new Date(value);
 }
+
+/** Provenance passed in by whoever recorded the punch. */
+export type PunchSource = Omit<IPunchSource, "kiosk"> & { kiosk?: string | null };
 
 interface AttendanceQuery extends PaginationQuery {
   user?: string;
@@ -183,7 +186,13 @@ export class AttendanceService {
     return this.list({ ...query, user: userId } as never);
   }
 
-  async clockIn(userId: string) {
+  /**
+   * Record a login.
+   *
+   * `source` says how the punch was made; omitting it means the web app, which
+   * is what every punch was before the kiosk existed.
+   */
+  async clockIn(userId: string, source?: PunchSource) {
     const schedule = await this.scheduleFor(userId);
     const shift = resolveShift(schedule, new Date());
     const now = new Date();
@@ -206,12 +215,12 @@ export class AttendanceService {
     att.timeZone = schedule.timeZone;
     att.status = status;
     att.lateMinutes = lateMinutes;
-    att.sessions = [{ checkIn: now, checkOut: null }] as never;
+    att.sessions = [{ checkIn: now, checkOut: null, checkInSource: source ?? null }] as never;
     await att.save();
     return Attendance.findById(att._id).populate("user", "name email designation");
   }
 
-  async clockOut(userId: string) {
+  async clockOut(userId: string, source?: PunchSource) {
     const now = new Date();
 
     // Close the latest still-open session (checked in, not yet out) rather than
@@ -225,8 +234,13 @@ export class AttendanceService {
       throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
     }
 
-    if (att.sessions.length > 0) att.sessions[att.sessions.length - 1].checkOut = now;
-    else att.sessions = [{ checkIn: att.checkIn!, checkOut: now }] as never;
+    if (att.sessions.length > 0) {
+      const last = att.sessions[att.sessions.length - 1]!;
+      last.checkOut = now;
+      last.checkOutSource = (source ?? null) as never;
+    } else {
+      att.sessions = [{ checkIn: att.checkIn!, checkOut: now, checkOutSource: source ?? null }] as never;
+    }
     await att.save();
     return Attendance.findById(att._id).populate("user", "name email designation");
   }

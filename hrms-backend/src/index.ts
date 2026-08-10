@@ -10,6 +10,7 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 import { sanitizeQuery } from "./middleware/sanitizeQuery.js";
 import { startBirthdayCron } from "./jobs/birthdayJob.js";
 import { startResignationCron } from "./jobs/resignationJob.js";
+import { startFaceProofPurgeCron } from "./jobs/facePurgeJob.js";
 
 const app = express();
 
@@ -20,7 +21,10 @@ app.use(
     origin: [env.CLIENT_URL, "http://localhost:3000"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Org-Id"],
+    // X-Kiosk-Token is how a kiosk tablet authenticates as a device. Being a
+    // custom header it triggers a preflight, so leaving it out here blocks the
+    // kiosk in a browser while server-to-server calls carry on working.
+    allowedHeaders: ["Content-Type", "Authorization", "X-Org-Id", "X-Kiosk-Token"],
   })
 );
 app.use(express.json({ limit: "10mb" }));
@@ -44,6 +48,7 @@ const start = async () => {
   await connectDB();
   startBirthdayCron();
   startResignationCron();
+  startFaceProofPurgeCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);

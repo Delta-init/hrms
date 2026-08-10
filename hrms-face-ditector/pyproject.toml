@@ -1,0 +1,25 @@
+[project]
+name = "hrms-face-detector"
+version = "0.1.0"
+description = "Face recognition service for HRMS kiosk attendance"
+readme = "README.md"
+# onnxruntime has no wheels for 3.13+ yet, and insightface needs a C toolchain
+# on anything newer. 3.11 is what the VPS should run.
+requires-python = ">=3.10,<3.13"
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "numpy>=1.26,<2.0",
+    "opencv-python-headless>=4.10.0",
+    "onnxruntime>=1.18.0",
+    "insightface>=0.7.3",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.27.0", "pytest>=8.0.0"]
+
+[tool.ruff]
+line-length = 110

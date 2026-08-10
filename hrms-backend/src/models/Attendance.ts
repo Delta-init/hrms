@@ -1,10 +1,28 @@
 import mongoose, { Schema } from "mongoose";
-import type { IAttendance, IAttendanceSession } from "../types/index.js";
+import type { IAttendance, IAttendanceSession, IPunchSource } from "../types/index.js";
+
+/**
+ * Where a punch came from. Optional throughout: every record written before
+ * face check-in existed has none, and those are web punches by definition.
+ */
+const punchSourceSchema = new Schema<IPunchSource>(
+  {
+    method: { type: String, enum: ["web", "face", "manual"], default: "web" },
+    kiosk: { type: Schema.Types.ObjectId, ref: "Kiosk", default: null },
+    matchScore: { type: Number, default: null },
+    proofKey: { type: String, default: null },
+  },
+  { _id: false }
+);
 
 const sessionSchema = new Schema<IAttendanceSession>(
   {
     checkIn: { type: Date, required: true },
     checkOut: { type: Date, default: null },
+    // Recorded per punch, not per session: someone can be recognised at the
+    // kiosk on the way in and clock out from their desk on the way home.
+    checkInSource: { type: punchSourceSchema, default: null },
+    checkOutSource: { type: punchSourceSchema, default: null },
   },
   { _id: false }
 );

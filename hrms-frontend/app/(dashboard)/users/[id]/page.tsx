@@ -17,6 +17,7 @@ import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
 import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
+import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { OtherDocumentsPanel } from "@/components/documents/OtherDocumentsPanel";
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { cn } from "@/lib/utils";
@@ -117,6 +118,14 @@ export default function UserDetailPage() {
       </Card>
 
       <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
+
+      {/* Face enrollment hangs off the login rather than the employee record —
+          only people with a login have attendance for a face to be matched to. */}
+      {activeTab === "profile" && (
+        <div className="mb-6">
+          <FaceEnrollmentPanel userId={id} userName={user.name} />
+        </div>
+      )}
 
       {activeTab === "profile" && (
         empLoading ? (

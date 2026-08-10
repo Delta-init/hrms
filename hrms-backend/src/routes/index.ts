@@ -33,6 +33,8 @@ import surveyRoutes from "./surveyRoutes.js";
 import helpdeskRoutes from "./helpdeskRoutes.js";
 import reportRoutes from "./reportRoutes.js";
 import performanceRoutes from "./performanceRoutes.js";
+import faceRoutes from "./faceRoutes.js";
+import kioskRoutes from "./kioskRoutes.js";
 
 const router = Router();
 
@@ -62,6 +64,8 @@ router.use("/organizations", organizationRoutes);
 router.use("/users", userRoutes);
 router.use("/roles", roleRoutes);
 router.use("/attendance", attendanceRoutes);
+router.use("/face", faceRoutes);
+router.use("/kiosks", kioskRoutes);
 router.use("/leaves", leaveRoutes);
 router.use("/leave-balances", leaveBalanceRoutes);
 router.use("/holidays", holidayRoutes);
