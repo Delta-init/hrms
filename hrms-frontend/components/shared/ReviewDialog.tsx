@@ -15,13 +15,17 @@ interface Props {
   action: "approved" | "rejected";
   subject?: string;
   isPending?: boolean;
+  /** Bulk decisions insist on one: approving twenty things in a single click
+   *  without saying why is how twenty things get approved without being read. */
+  requireNote?: boolean;
   onConfirm: (note: string) => void;
 }
 
-export function ReviewDialog({ open, onOpenChange, action, subject, isPending, onConfirm }: Props) {
+export function ReviewDialog({ open, onOpenChange, action, subject, isPending, requireNote, onConfirm }: Props) {
   const [note, setNote] = useState("");
   useEffect(() => { if (open) setNote(""); }, [open]);
   const approving = action === "approved";
+  const missingNote = !!requireNote && !note.trim();
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -31,14 +35,14 @@ export function ReviewDialog({ open, onOpenChange, action, subject, isPending, o
           {subject && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">{subject}</ResponsiveDialogDescription>}
         </ResponsiveDialogHeader>
         <div className="space-y-2 px-4 sm:px-0">
-          <Label htmlFor="reviewNote">Note {approving ? "(optional)" : ""}</Label>
-          <Textarea id="reviewNote" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={approving ? "Add an optional note…" : "Reason for rejection…"} />
+          <Label htmlFor="reviewNote">Note {requireNote ? "(required)" : approving ? "(optional)" : ""}</Label>
+          <Textarea id="reviewNote" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={requireNote ? "Why — this goes on every record you are deciding…" : approving ? "Add an optional note…" : "Reason for rejection…"} />
         </div>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Cancel</Button>
           <Button
             onClick={() => onConfirm(note)}
-            disabled={isPending}
+            disabled={isPending || missingNote}
             className={approving ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}
           >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : approving ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}

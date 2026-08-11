@@ -1984,3 +1984,64 @@ export interface PanelConflict {
   clashesWith: string;
   at: string;
 }
+
+// ─── Approvals console ────────────────────────────────────────────────────────
+export const APPROVAL_MODULES = [
+  "leave", "regularization", "reimbursement", "confirmation",
+  "hiring", "offer", "resignation",
+] as const;
+export type ApprovalModule = (typeof APPROVAL_MODULES)[number];
+
+/** Where each row goes when you want the record in its own module. */
+export const APPROVAL_MODULE_HREF: Record<ApprovalModule, string> = {
+  leave: "/leave",
+  regularization: "/regularization",
+  reimbursement: "/reimbursements",
+  confirmation: "/confirmations",
+  hiring: "/hiring",
+  offer: "/hiring/candidates",
+  resignation: "/resignations",
+};
+
+export interface ApprovalDecision {
+  outcome: "approved" | "rejected";
+  at: string | null;
+  by: { id: string | null; name: string } | null;
+  note: string | null;
+}
+
+/** Seven record shapes, normalised to one row. */
+export interface ApprovalRow {
+  id: string;
+  module: ApprovalModule;
+  moduleLabel: string;
+  organization: { id: string | null; name: string | null };
+  title: string;
+  raisedBy: { id: string | null; name: string } | null;
+  raisedAt: string | null;
+  summary: Array<{ label: string; value: string }>;
+  chain: { step: number; total: number; waitingOn: string } | null;
+  href: string;
+  /** Only on the decided view. */
+  decided?: ApprovalDecision | null;
+}
+
+export interface ApprovalInbox {
+  rows: ApprovalRow[];
+  counts: Partial<Record<ApprovalModule, number>>;
+  total: number;
+  /** Modules whose queue hit the per-module cap, so the list is not all of it. */
+  capped: ApprovalModule[];
+  limit: number;
+}
+
+export interface ApprovalDetail {
+  row: ApprovalRow;
+  record: Record<string, unknown>;
+}
+
+export interface BulkDecideResult {
+  requested: number;
+  succeeded: number;
+  failed: Array<{ id: string; ok: false; error: string }>;
+}

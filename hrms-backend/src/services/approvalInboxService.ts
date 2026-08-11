@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { Organization } from "../models/Organization.js";
 import { runWithOrg } from "../utils/orgContext.js";
-import { ADAPTERS, adapterFor, chainOf, type ApprovalRow, type ApprovalModule } from "./approvalRegistry.js";
+import { ADAPTERS, adapterFor, chainOf, isDecided, type ApprovalRow, type ApprovalModule } from "./approvalRegistry.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 /**
@@ -28,13 +28,23 @@ class InboxError extends Error {
 }
 
 export interface InboxQuery {
+  /** "pending" (default) is the queue; "decided" is the history. */
+  view?: string;
   module?: string;
   organization?: string;
   search?: string;
-  /** ISO days, on when the request was raised. */
+  /** ISO days — on when it was raised, or when it was decided. */
   from?: string;
   to?: string;
 }
+
+/**
+ * Per module, so one busy queue cannot crowd out the other six.
+ *
+ * Reported back rather than applied quietly: a list that silently stops at 200
+ * reads as "that is everything", which is the one thing it is not.
+ */
+const PER_MODULE_LIMIT = 200;
 
 export class ApprovalInboxService {
   private async orgNames(): Promise<Map<string, string>> {
@@ -42,28 +52,46 @@ export class ApprovalInboxService {
     return new Map(orgs.map((o) => [String(o._id), o.name]));
   }
 
-  /** Everything still waiting, newest first, with per-module counts. */
+  /**
+   * One view over the seven, with per-module counts.
+   *
+   * The two views are ordered oppositely on purpose. Pending is a to-do list, so
+   * the thing that has waited longest comes first. Decided is a history, so the
+   * most recent decision comes first. That ordering is applied in the database
+   * as well as in memory — otherwise the per-module cap would keep the wrong
+   * end of each queue and quietly hide exactly the rows the sort says matter.
+   */
   async list(query: InboxQuery) {
+    const decidedView = query.view === "decided";
     const names = await this.orgNames();
     const wanted = query.module ? ADAPTERS.filter((a) => a.module === query.module) : ADAPTERS;
 
-    const raised: Record<string, Date> = {};
-    if (query.from) raised.$gte = new Date(`${query.from}T00:00:00.000Z`);
-    if (query.to) raised.$lt = new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 86_400_000);
+    const window: Record<string, Date> = {};
+    if (query.from) window.$gte = new Date(`${query.from}T00:00:00.000Z`);
+    if (query.to) window.$lt = new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 86_400_000);
 
     // Seven small queries in parallel. Cheaper than it looks, and it cannot
     // drift from the records the way a mirrored table would.
     const perModule = await Promise.all(
       wanted.map(async (a) => {
-        const filter: Record<string, unknown> = { ...a.pendingFilter };
+        const filter: Record<string, unknown> = { ...(decidedView ? a.decided.filter : a.pendingFilter) };
         if (query.organization) filter.organization = new mongoose.Types.ObjectId(query.organization);
-        if (Object.keys(raised).length) filter.createdAt = raised;
 
-        let q = a.model.find(filter as never).sort({ createdAt: -1 }).limit(200);
-        for (const p of a.populate) q = q.populate(p as never);
+        // On the history the dates people mean are when it was decided, not
+        // when it was raised — and each module dates that differently.
+        const dateField = decidedView ? a.decided.dateField : "createdAt";
+        if (Object.keys(window).length) filter[dateField] = window;
+
+        let q = a.model
+          .find(filter as never)
+          .sort({ [dateField]: decidedView ? -1 : 1 })
+          .limit(PER_MODULE_LIMIT);
+        for (const p of [...a.populate, ...(decidedView ? a.decided.populate : [])]) {
+          q = q.populate(p as never);
+        }
         const docs = await q.lean<Array<Record<string, never>>>();
 
-        return docs.map((d): ApprovalRow => {
+        const rows = docs.map((d): ApprovalRow => {
           const org = d.organization ? String(d.organization) : null;
           return {
             ...a.toRow(d),
@@ -71,12 +99,15 @@ export class ApprovalInboxService {
             moduleLabel: a.label,
             organization: { id: org, name: org ? names.get(org) ?? null : null },
             chain: chainOf(d),
+            decided: decidedView ? a.decided.outcome(d) : null,
           };
         });
+        return { module: a.module, rows, capped: docs.length === PER_MODULE_LIMIT };
       })
     );
 
-    let rows = perModule.flat();
+    let rows = perModule.flatMap((m) => m.rows);
+    const capped = perModule.filter((m) => m.capped).map((m) => m.module);
 
     // Counts are taken before the search so the chips keep reporting the size of
     // each queue rather than the size of the current view.
@@ -94,11 +125,10 @@ export class ApprovalInboxService {
       );
     }
 
-    // Oldest first: the queue is a to-do list, and the thing that has been
-    // waiting longest is the one somebody is waiting on.
-    rows.sort((a, b) => (a.raisedAt?.getTime() ?? 0) - (b.raisedAt?.getTime() ?? 0));
+    const at = (r: ApprovalRow) => (decidedView ? r.decided?.at : r.raisedAt)?.getTime() ?? 0;
+    rows.sort((x, y) => (decidedView ? at(y) - at(x) : at(x) - at(y)));
 
-    return { rows, counts, total: rows.length };
+    return { rows, counts, total: rows.length, capped, limit: PER_MODULE_LIMIT };
   }
 
   /** The whole record behind one row, for the view panel. */
@@ -107,12 +137,15 @@ export class ApprovalInboxService {
     if (!a) throw new InboxError(`Unknown approval type: ${module}`, 404);
 
     let q = a.model.findById(id);
-    for (const p of a.populate) q = q.populate(p as never);
+    for (const p of [...a.populate, ...a.decided.populate]) q = q.populate(p as never);
     const doc = await q.lean<Record<string, never> | null>();
     if (!doc) throw new InboxError("That request no longer exists", 404);
 
     const names = await this.orgNames();
     const org = doc.organization ? String(doc.organization) : null;
+    // Opened from either view, and from a stale list — so the panel reports what
+    // the record says now rather than what the row said when it was drawn.
+    const settled = isDecided(a.module, doc);
     return {
       row: {
         ...a.toRow(doc),
@@ -120,6 +153,7 @@ export class ApprovalInboxService {
         moduleLabel: a.label,
         organization: { id: org, name: org ? names.get(org) ?? null : null },
         chain: chainOf(doc),
+        decided: settled ? a.decided.outcome(doc) : null,
       },
       // Everything the record holds, for the detail panel to lay out.
       record: doc,

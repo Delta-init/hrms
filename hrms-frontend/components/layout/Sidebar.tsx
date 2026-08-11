@@ -34,6 +34,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
+  ShieldCheck,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -55,8 +56,11 @@ export const navItems: {
   label: string;
   icon: React.ElementType;
   permModule: HrmsModule | null;
+  /** Reads across every organisation, so no per-tenant permission can grant it. */
+  superAdminOnly?: boolean;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, superAdminOnly: true },
   { href: "/employees", label: "Employees", icon: UserRound, permModule: "employees" },
   { href: "/departments", label: "Departments", icon: Building2, permModule: "departments" },
   { href: "/org-chart", label: "Org Chart", icon: Network, permModule: "employees" },
@@ -95,13 +99,16 @@ export const navItems: {
 
 function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, superAdminOnly }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
-        const allowed = permModule === null ? true : hasPermission(permModule, "view");
+        const allowed = superAdminOnly
+          ? isSuperAdmin
+          : permModule === null ? true : hasPermission(permModule, "view");
         if (!allowed) return null;
 
         const linkEl = (
