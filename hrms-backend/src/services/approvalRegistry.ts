@@ -81,6 +81,16 @@ interface Adapter {
   model: Model<never>;
   /** What "still waiting" means for this module. */
   pendingFilter: Record<string, unknown>;
+  /**
+   * The field the request was raised on.
+   *
+   * `createdAt` for six of them. An offer is the exception: the record is the
+   * application, created when the candidate first applied, which may be months
+   * before anybody asked to release an offer. Sorting or date-filtering on that
+   * puts a day-old offer at the top of a queue ordered by how long things have
+   * waited — so the field the row displays has to be the field it is ordered on.
+   */
+  raisedField: string;
   populate: Array<Record<string, unknown>>;
   decided: DecidedConfig;
   /** One record to one row. */
@@ -133,6 +143,7 @@ export const ADAPTERS: Adapter[] = [
     module: "leave",
     label: "Leave",
     model: LeaveRequest as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "user", select: "name email" }],
     // Cancelled is the employee withdrawing it, not a decision anybody made.
@@ -157,6 +168,7 @@ export const ADAPTERS: Adapter[] = [
     module: "regularization",
     label: "Regularization",
     model: Regularization as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "user", select: "name email" }],
     decided: { filter: { status: { $in: ["approved", "rejected"] } }, ...reviewedDecision(["approved"]) },
@@ -180,6 +192,7 @@ export const ADAPTERS: Adapter[] = [
     module: "reimbursement",
     label: "Reimbursement",
     model: Reimbursement as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "user", select: "name email" }],
     // "Paid" is downstream of approval, so it belongs in the history too.
@@ -209,6 +222,7 @@ export const ADAPTERS: Adapter[] = [
     module: "confirmation",
     label: "Confirmation",
     model: Confirmation as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "employee", select: "name employeeCode" }],
     decided: {
@@ -241,6 +255,7 @@ export const ADAPTERS: Adapter[] = [
     module: "hiring",
     label: "Hiring requisition",
     model: JobRequisition as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "raisedBy", select: "name email" }, { path: "department", select: "name" }],
     // The only one with no `reviewedAt`: its decision lives in the trail, which
@@ -284,6 +299,7 @@ export const ADAPTERS: Adapter[] = [
     model: Application as never,
     // The only one keyed on a nested field rather than the record's own status.
     pendingFilter: { "offerApproval.status": "pending" },
+    raisedField: "offerApproval.requestedAt",
     populate: [
       { path: "candidate", select: "name email currency expectedSalary" },
       { path: "requisition", select: "title" },
@@ -324,6 +340,7 @@ export const ADAPTERS: Adapter[] = [
     module: "resignation",
     label: "Resignation",
     model: Resignation as never,
+    raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "employee", select: "name employeeCode" }],
     // Relieved is downstream of accepted; withdrawn is the employee changing

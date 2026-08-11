@@ -29,13 +29,14 @@ export const fmtDateTime = (iso?: string | null) =>
 /**
  * Anything waiting this long is not "in progress", it is stuck.
  *
- * A week is the point at which the person who raised it has usually chased it
- * once and given up, so the row says so instead of looking like every other row.
+ * The server owns this number and sends it with every response — it is the same
+ * threshold the daily digest leads with. This is only the fallback for the first
+ * paint, before that response has arrived.
  */
 export const STALE_AFTER_DAYS = 7;
 
-export const isStale = (iso: string | null | undefined): boolean =>
-  !!iso && Date.now() - new Date(iso).getTime() > STALE_AFTER_DAYS * 86_400_000;
+export const isStale = (iso: string | null | undefined, afterDays = STALE_AFTER_DAYS): boolean =>
+  !!iso && Date.now() - new Date(iso).getTime() > afterDays * 86_400_000;
 
 /** A colour per type, so the eye can group a mixed list without reading it. */
 export const MODULE_TONE: Record<ApprovalModule, string> = {

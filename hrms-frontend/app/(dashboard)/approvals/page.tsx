@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Loader2, ShieldCheck, Search, Inbox, History, Check, X, Info } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
@@ -33,12 +34,27 @@ type Intent = { approve: boolean; row?: ApprovalRow; bulk?: boolean };
  * and every row says that instead.
  */
 export default function ApprovalsPage() {
+  // useSearchParams needs a boundary or the whole page opts out of static
+  // rendering at build time — same shape as the documents page.
+  return (
+    <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+      <ApprovalsConsole />
+    </Suspense>
+  );
+}
+
+function ApprovalsConsole() {
   const { user } = useAuth();
   const role = user?.role;
   const isManagement = !!role?.isSystemRole && role.roleName === "Super Admin";
 
+  // The dashboard card links straight to one type, so arriving here from
+  // "Leave 3" opens on leave rather than on everything.
+  const params0 = useSearchParams();
   const [view, setView] = useState<View>("pending");
-  const [module, setModule] = useState<ApprovalModule | "">("");
+  const [module, setModule] = useState<ApprovalModule | "">(
+    (params0.get("module") as ApprovalModule | null) ?? ""
+  );
   const [org, setOrg] = useState("");
   const [search, setSearch] = useState("");
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
@@ -273,6 +289,7 @@ export default function ApprovalsPage() {
             <ApprovalRowCard
               key={`${row.module}:${row.id}`}
               row={row}
+              staleAfterDays={data?.staleAfterDays}
               selectable={view === "pending"}
               selected={selectedSet.has(row.id)}
               lockedOut={!!selected && selected.module !== row.module}

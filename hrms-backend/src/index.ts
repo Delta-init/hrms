@@ -11,6 +11,7 @@ import { sanitizeQuery } from "./middleware/sanitizeQuery.js";
 import { startBirthdayCron } from "./jobs/birthdayJob.js";
 import { startResignationCron } from "./jobs/resignationJob.js";
 import { startFaceProofPurgeCron } from "./jobs/facePurgeJob.js";
+import { startApprovalDigestCron } from "./jobs/approvalDigestJob.js";
 
 const app = express();
 
@@ -49,6 +50,7 @@ const start = async () => {
   startBirthdayCron();
   startResignationCron();
   startFaceProofPurgeCron();
+  startApprovalDigestCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);

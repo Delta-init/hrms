@@ -29,6 +29,14 @@ export const getApprovalInbox = async (req: AuthenticatedRequest, res: Response,
   } catch (error) { next(error); }
 };
 
+/** Counts only — cheap enough for the dashboard to ask on every load. */
+export const getApprovalSummary = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!requireManagement(req, res)) return;
+    sendSuccess(res, "Approvals summary", await service.summary());
+  } catch (error) { next(error); }
+};
+
 export const getApprovalModules = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!requireManagement(req, res)) return;

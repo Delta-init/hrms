@@ -8,6 +8,8 @@ import { MODULE_TONE, fmtDateTime, isStale, waitingFor } from "./shared";
 
 interface Props {
   row: ApprovalRow;
+  /** The server's threshold, so the console and the dashboard agree. */
+  staleAfterDays?: number;
   /** Only the waiting queue can be selected — you cannot re-decide history. */
   selectable: boolean;
   selected: boolean;
@@ -27,9 +29,9 @@ interface Props {
  * leave" means nothing until you know whose company it is.
  */
 export function ApprovalRowCard({
-  row, selectable, selected, lockedOut, onSelect, onView, onDecide, isPending,
+  row, staleAfterDays, selectable, selected, lockedOut, onSelect, onView, onDecide, isPending,
 }: Props) {
-  const stale = !row.decided && isStale(row.raisedAt);
+  const stale = !row.decided && isStale(row.raisedAt, staleAfterDays);
   const decided = row.decided ?? null;
 
   return (

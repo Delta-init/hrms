@@ -41,6 +41,9 @@ const envSchema = z.object({
   MAIL_FROM: z.string().optional(),   // e.g. "HRMS <no-reply@company.com>"
   // Cron expression for the daily birthday check (server local time).
   BIRTHDAY_CRON: z.string().default("0 8 * * *"),
+  // Daily "what is still waiting for a decision" digest to Super Admins.
+  // An hour after the birthday mail, so the two don't arrive together.
+  APPROVAL_DIGEST_CRON: z.string().default("0 9 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

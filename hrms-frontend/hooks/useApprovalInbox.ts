@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
 import type {
-  ApiResponse, ApprovalDetail, ApprovalInbox, ApprovalModule, BulkDecideResult,
+  ApiResponse, ApprovalDetail, ApprovalInbox, ApprovalModule, ApprovalSummary, BulkDecideResult,
 } from "@/types";
 
 const KEY = ["approvals"] as const;
@@ -27,6 +27,21 @@ export const useApprovalInbox = (params: Record<string, string>) =>
     // a stale row is the failure that matters here.
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  });
+
+/**
+ * Counts only, for the dashboard card.
+ *
+ * `enabled` because the dashboard renders for everyone and this endpoint is
+ * management-only — asking anyway would put a 403 in every other user's console
+ * on every page load.
+ */
+export const useApprovalSummary = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "summary"],
+    queryFn: async () => (await api.get<ApiResponse<ApprovalSummary>>("/approvals/summary")).data.data!,
+    enabled,
+    staleTime: 60_000,
   });
 
 /** The whole record behind one row, fetched only when the panel opens. */

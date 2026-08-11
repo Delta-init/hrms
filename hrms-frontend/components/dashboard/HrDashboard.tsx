@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getInitials, cn } from "@/lib/utils";
 import { ConfirmationDialog } from "@/components/confirmations/ConfirmationDialog";
+import { ApprovalsCard } from "@/components/dashboard/ApprovalsCard";
 import {
   LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS,
   type LeaveLite, type RegularizationLite, type DueConfirmation, leaveTypeLabel } from "@/types";
@@ -83,6 +84,10 @@ export function HrDashboard() {
       </motion.div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Everything waiting on management, across every organisation.
+            Renders nothing for anyone but a Super Admin — the card knows. */}
+        <ApprovalsCard />
+
         {/* Confirmation due — probation ending */}
         <Panel icon={ShieldCheck} title="Confirmation due (next month)" tint="text-emerald-600">
           {data?.dueConfirmations?.length ? (

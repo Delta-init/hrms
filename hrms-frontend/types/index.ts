@@ -2033,6 +2033,25 @@ export interface ApprovalInbox {
   /** Modules whose queue hit the per-module cap, so the list is not all of it. */
   capped: ApprovalModule[];
   limit: number;
+  /** Server-owned, so the console and the dashboard agree on "stuck". */
+  staleAfterDays: number;
+}
+
+/** Counts only — what the dashboard card needs, without the rows. */
+export interface ApprovalSummary {
+  total: number;
+  stale: number;
+  staleAfterDays: number;
+  oldestRaisedAt: string | null;
+  /** Organisations with something waiting, not organisations that exist. */
+  organizations: number;
+  byModule: Array<{
+    module: ApprovalModule;
+    label: string;
+    count: number;
+    oldest: string | null;
+    stale: number;
+  }>;
 }
 
 export interface ApprovalDetail {

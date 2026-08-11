@@ -46,6 +46,14 @@ export interface InboxQuery {
  */
 const PER_MODULE_LIMIT = 200;
 
+/**
+ * Past this, a request is not in progress — it is stuck.
+ *
+ * A week is roughly when the person who raised it has chased once and given up.
+ * The console draws these differently and the digest leads with them.
+ */
+export const STALE_AFTER_DAYS = 7;
+
 export class ApprovalInboxService {
   private async orgNames(): Promise<Map<string, string>> {
     const orgs = await Organization.find({}).select("name").lean<Array<{ _id: unknown; name: string }>>();
@@ -78,8 +86,8 @@ export class ApprovalInboxService {
         if (query.organization) filter.organization = new mongoose.Types.ObjectId(query.organization);
 
         // On the history the dates people mean are when it was decided, not
-        // when it was raised — and each module dates that differently.
-        const dateField = decidedView ? a.decided.dateField : "createdAt";
+        // when it was raised — and each module dates both differently.
+        const dateField = decidedView ? a.decided.dateField : a.raisedField;
         if (Object.keys(window).length) filter[dateField] = window;
 
         let q = a.model
@@ -128,7 +136,61 @@ export class ApprovalInboxService {
     const at = (r: ApprovalRow) => (decidedView ? r.decided?.at : r.raisedAt)?.getTime() ?? 0;
     rows.sort((x, y) => (decidedView ? at(y) - at(x) : at(x) - at(y)));
 
-    return { rows, counts, total: rows.length, capped, limit: PER_MODULE_LIMIT };
+    // Sent with the rows so the console and the dashboard agree on what counts
+    // as stuck, rather than each keeping its own copy of the number.
+    return { rows, counts, total: rows.length, capped, limit: PER_MODULE_LIMIT, staleAfterDays: STALE_AFTER_DAYS };
+  }
+
+  /**
+   * Just the numbers, for the dashboard.
+   *
+   * One aggregation per module rather than `list()`'s documents: a card that
+   * says "14 waiting" should not cost seven populated queries of up to 200 rows
+   * each, on a page that loads on every visit.
+   */
+  async summary() {
+    const cutoff = new Date(Date.now() - STALE_AFTER_DAYS * 86_400_000);
+
+    const perModule = await Promise.all(
+      ADAPTERS.map(async (a) => {
+        const [row] = await a.model.aggregate([
+          { $match: a.pendingFilter },
+          {
+            $group: {
+              _id: null,
+              count: { $sum: 1 },
+              oldest: { $min: `$${a.raisedField}` },
+              // Counted here rather than derived from a page of rows, so the
+              // number is the whole queue and not just the part that fitted.
+              stale: { $sum: { $cond: [{ $lt: [`$${a.raisedField}`, cutoff] }, 1, 0] } },
+              organizations: { $addToSet: "$organization" },
+            },
+          },
+        ]);
+        return {
+          module: a.module,
+          label: a.label,
+          count: (row?.count as number) ?? 0,
+          oldest: (row?.oldest as Date) ?? null,
+          stale: (row?.stale as number) ?? 0,
+          organizations: (row?.organizations as unknown[]) ?? [],
+        };
+      })
+    );
+
+    const waiting = perModule.filter((m) => m.count > 0);
+    const oldest = waiting.map((m) => m.oldest).filter(Boolean).sort((x, y) => x!.getTime() - y!.getTime())[0] ?? null;
+
+    return {
+      total: perModule.reduce((n, m) => n + m.count, 0),
+      stale: perModule.reduce((n, m) => n + m.stale, 0),
+      staleAfterDays: STALE_AFTER_DAYS,
+      /** Longest anything has been waiting — the number that says "act now". */
+      oldestRaisedAt: oldest,
+      /** How many organisations have something waiting, not how many exist. */
+      organizations: new Set(waiting.flatMap((m) => m.organizations.map(String))).size,
+      byModule: perModule.map(({ organizations, ...m }) => m),
+    };
   }
 
   /** The whole record behind one row, for the view panel. */

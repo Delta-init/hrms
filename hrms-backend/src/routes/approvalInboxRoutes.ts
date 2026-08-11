@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  getApprovalInbox, getApprovalModules, getApprovalDetail,
+  getApprovalInbox, getApprovalSummary, getApprovalModules, getApprovalDetail,
   decideApproval, decideApprovalsBulk,
 } from "../controllers/approvalInboxController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -13,6 +13,8 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/", getApprovalInbox);
+// Both above the "/:module/:id" pattern, which would otherwise swallow them.
+router.get("/summary", getApprovalSummary);
 router.get("/modules", getApprovalModules);
 router.post("/bulk", decideApprovalsBulk);
 router.get("/:module/:id", getApprovalDetail);
