@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { FileText, Plus, Pencil, Trash2, Loader2, Eye, Printer, Layers, ScrollText, Inbox } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, Loader2, Eye, Printer, Layers, ScrollText, Inbox, Sparkles } from "lucide-react";
 import {
   useGeneratedLetters, useMyGeneratedLetters, useDeleteGeneratedLetter,
   useLetterTemplates, useDeleteLetterTemplate,
@@ -17,6 +17,7 @@ import { LetterTemplateDialog } from "@/components/letters/LetterTemplateDialog"
 import { ViewLetterDialog } from "@/components/letters/ViewLetterDialog";
 import { printLetter } from "@/components/letters/printLetter";
 import { getInitials } from "@/lib/utils";
+import { LETTER_PRESETS } from "@/lib/letterPresets";
 import { LETTER_CATEGORY_LABELS, type GeneratedLetter, type LetterTemplate } from "@/types";
 
 const fmtDate = (iso?: string | null) => (iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
@@ -42,6 +43,8 @@ export default function LettersPage() {
   const [viewLetter, setViewLetter] = useState<GeneratedLetter | null>(null);
   const [deleteLetterTarget, setDeleteLetterTarget] = useState<GeneratedLetter | null>(null);
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<LetterTemplate | null>(null);
+  /** Which ready-written draft the template dialog should open on. */
+  const [presetKey, setPresetKey] = useState<string | null>(null);
 
   const tabs = [
     { key: "mine", label: "My Letters", icon: Inbox },
@@ -166,10 +169,7 @@ export default function LettersPage() {
         templatesLoading ? (
           <div className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : !templates?.length ? (
-          <Card className="p-16 text-center text-muted-foreground">
-            <Layers className="mx-auto mb-2 h-7 w-7" />
-            No templates yet — create one to start generating letters.
-          </Card>
+          <PresetGallery canEdit={canEdit} onPick={(key) => { setSelectedTemplate(null); setPresetKey(key); setTemplateDialog(true); }} />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {templates.map((t) => (
@@ -197,7 +197,12 @@ export default function LettersPage() {
       )}
 
       <GenerateLetterDialog open={generateDialog} onOpenChange={setGenerateDialog} onGenerated={(letter) => setViewLetter(letter)} />
-      <LetterTemplateDialog open={templateDialog} onOpenChange={setTemplateDialog} template={selectedTemplate} />
+      <LetterTemplateDialog
+        open={templateDialog}
+        onOpenChange={(o) => { setTemplateDialog(o); if (!o) setPresetKey(null); }}
+        template={selectedTemplate}
+        presetKey={presetKey}
+      />
       <ViewLetterDialog open={!!viewLetter} onOpenChange={(o) => !o && setViewLetter(null)} letter={viewLetter} />
 
       <ConfirmDialog
@@ -210,6 +215,49 @@ export default function LettersPage() {
         title="Delete template" description="Letters already generated from this template are unaffected." isPending={deletingTemplate}
         onConfirm={() => deleteTemplateTarget && removeTemplate(deleteTemplateTarget._id, { onSuccess: () => setDeleteTemplateTarget(null) })}
       />
+    </div>
+  );
+}
+
+/**
+ * What to show an organisation that has no templates yet.
+ *
+ * An empty page with a "create one" button asks somebody to write an offer
+ * letter from a blank box, which is why this section stays empty in practice.
+ * Naming the letters people actually need — and having one ready — is the
+ * difference between a feature and a feature nobody starts.
+ */
+function PresetGallery({ canEdit, onPick }: { canEdit: boolean; onPick: (key: string) => void }) {
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <div>
+          <p className="text-sm font-semibold">No templates yet — start from one of these</p>
+          <p className="text-xs text-muted-foreground">
+            Each one is a draft you edit and save. Nothing is created until you do.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {LETTER_PRESETS.map((p) => (
+          <Card key={p.key} className="flex flex-col p-4">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">{p.name}</p>
+              <Badge variant="secondary" className="capitalize">{LETTER_CATEGORY_LABELS[p.category]}</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{p.when}</p>
+            <p className="mt-3 line-clamp-4 flex-1 whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground">
+              {p.body}
+            </p>
+            {canEdit && (
+              <Button size="sm" variant="outline" className="mt-3 w-full" onClick={() => onPick(p.key)}>
+                Use this
+              </Button>
+            )}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

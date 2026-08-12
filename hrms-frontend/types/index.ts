@@ -1678,6 +1678,8 @@ export interface GeneratedLetter {
   subject: string;
   content: string;
   issuedBy?: { _id: string; name: string } | string | null;
+  /** Who issued it — printed as the letterhead. */
+  organization?: { _id: string; name: string } | string | null;
   issuedAt: string;
   notes?: string;
   createdAt: string;

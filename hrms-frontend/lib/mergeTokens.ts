@@ -11,6 +11,13 @@ export const MERGE_TOKENS: { token: string; label: string }[] = [
   { token: "{{employee.salary}}", label: "Salary" },
   { token: "{{employee.location}}", label: "Location" },
   { token: "{{employee.reportingTo}}", label: "Reporting manager" },
+  { token: "{{employee.employmentType}}", label: "Employment type" },
+  { token: "{{employee.probationDays}}", label: "Probation (days)" },
+  { token: "{{employee.confirmationDate}}", label: "Confirmation date" },
+  // Both read the employee's decided resignation, so they are blank for anyone
+  // still employed — which is the only time a relieving letter is wrong anyway.
+  { token: "{{employee.lastWorkingDay}}", label: "Last working day" },
+  { token: "{{employee.resignationDate}}", label: "Resignation date" },
   { token: "{{organization.name}}", label: "Company name" },
   { token: "{{organization.code}}", label: "Company code" },
   { token: "{{date.today}}", label: "Today's date" },

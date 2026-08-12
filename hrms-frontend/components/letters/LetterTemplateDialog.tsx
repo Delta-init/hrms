@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, ChevronDown } from "lucide-react";
+import { Loader2, ChevronDown, Sparkles } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -16,17 +16,20 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { letterTemplateFormSchema, type LetterTemplateFormValues } from "@/lib/validations/letterSchema";
 import { useCreateLetterTemplate, useUpdateLetterTemplate } from "@/hooks/useLetters";
 import { MERGE_TOKENS } from "@/lib/mergeTokens";
+import { LETTER_PRESETS, presetByKey } from "@/lib/letterPresets";
 import { LETTER_CATEGORY_LABELS, type LetterTemplate, type LetterCategory } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   template?: LetterTemplate | null;
+  /** Opened straight from a preset — the form starts on that draft. */
+  presetKey?: string | null;
 }
 
 const EMPTY: LetterTemplateFormValues = { name: "", category: "other", subject: "", body: "", status: "active" };
 
-export function LetterTemplateDialog({ open, onOpenChange, template }: Props) {
+export function LetterTemplateDialog({ open, onOpenChange, template, presetKey }: Props) {
   const isEditing = !!template;
   const { mutate: create, isPending: creating } = useCreateLetterTemplate();
   const { mutate: update, isPending: updating } = useUpdateLetterTemplate();
@@ -39,14 +42,26 @@ export function LetterTemplateDialog({ open, onOpenChange, template }: Props) {
   });
   const { ref: bodyFormRef, ...bodyField } = register("body");
 
+  const applyPreset = (key: string) => {
+    const p = presetByKey(key);
+    if (!p) return;
+    // Name included: a preset the user never renames still gets a sensible one,
+    // and the unique-name error makes it obvious when they already have it.
+    reset({ name: p.name, category: p.category, subject: p.subject, body: p.body, status: "active" });
+  };
+
   useEffect(() => {
     if (!open) return;
     if (template) {
       reset({ name: template.name, category: template.category, subject: template.subject ?? "", body: template.body, status: template.status });
+    } else if (presetKey) {
+      applyPreset(presetKey);
     } else {
       reset(EMPTY);
     }
-  }, [open, template, reset]);
+    // applyPreset closes over `reset`, which is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, template, presetKey, reset]);
 
   const insertToken = (token: string) => {
     const el = bodyRef.current;
@@ -73,6 +88,32 @@ export function LetterTemplateDialog({ open, onOpenChange, template }: Props) {
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
+          {/* Only when creating. Offering to overwrite a saved template with a
+              preset is a good way to lose somebody's wording by accident. */}
+          {!isEditing && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <div>
+                <p className="text-sm font-medium">Start from a preset</p>
+                <p className="text-xs text-muted-foreground">A ready-written draft you can edit before saving.</p>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="gap-1">
+                    <Sparkles className="h-3.5 w-3.5" />Choose<ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
+                  {LETTER_PRESETS.map((p) => (
+                    <DropdownMenuItem key={p.key} onSelect={() => applyPreset(p.key)} className="cursor-pointer flex-col items-start gap-0.5">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      <span className="text-xs text-muted-foreground">{p.when}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="name">Name *</Label>

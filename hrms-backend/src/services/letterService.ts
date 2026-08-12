@@ -2,6 +2,7 @@ import { LetterTemplate } from "../models/LetterTemplate.js";
 import { GeneratedLetter } from "../models/GeneratedLetter.js";
 import { Employee } from "../models/Employee.js";
 import { Organization } from "../models/Organization.js";
+import { Resignation } from "../models/Resignation.js";
 import type {
   CreateLetterTemplateInput, UpdateLetterTemplateInput, GenerateLetterInput, UpdateGeneratedLetterInput,
 } from "../validations/letterValidation.js";
@@ -11,6 +12,9 @@ import { searchRegex } from "../utils/query.js";
 const LETTER_POP = [
   { path: "employee", select: "name employeeCode designation department joiningDate" },
   { path: "issuedBy", select: "name" },
+  // The letterhead names whoever issued the letter, which is not necessarily
+  // whichever organisation the person printing it happens to have selected.
+  { path: "organization", select: "name" },
 ];
 
 interface GeneratedLetterQuery {
@@ -31,6 +35,16 @@ async function buildMergeContext(employeeId: string, orgId: string | null): Prom
 
   const org = orgId ? await Organization.findById(orgId).select("name code") : null;
 
+  // A relieving or experience letter has to state the day they actually left,
+  // and the employee record does not hold one — it lives on their resignation.
+  // Only decided resignations count: a pending one is not a leaving date yet.
+  const exit = await Resignation.findOne(
+    scoped({ employee: employee._id, status: { $in: ["accepted", "relieved"] } })
+  )
+    .sort({ lastWorkingDay: -1 })
+    .select("lastWorkingDay resignationDate")
+    .lean<{ lastWorkingDay?: Date; resignationDate?: Date } | null>();
+
   return {
     "employee.name": employee.name ?? "",
     "employee.employeeCode": employee.employeeCode ?? "",
@@ -42,6 +56,13 @@ async function buildMergeContext(employeeId: string, orgId: string | null): Prom
     "employee.salary": employee.salary ? `${employee.currency ?? "AED"} ${employee.salary.toLocaleString()}` : "",
     "employee.location": employee.location ?? "",
     "employee.reportingTo": (employee.reportingTo as { name?: string } | null)?.name ?? "",
+    // The rest of what a formal letter needs: confirmation and warning letters
+    // turn on the probation dates, relieving and experience letters on the exit.
+    "employee.employmentType": (employee.employmentType ?? "").replace(/_/g, " "),
+    "employee.probationDays": employee.probationPeriodDays ? String(employee.probationPeriodDays) : "",
+    "employee.confirmationDate": fmtDate(employee.confirmationDate),
+    "employee.lastWorkingDay": fmtDate(exit?.lastWorkingDay),
+    "employee.resignationDate": fmtDate(exit?.resignationDate),
     "organization.name": org?.name ?? "",
     "organization.code": org?.code ?? "",
     "date.today": fmtDate(new Date()),

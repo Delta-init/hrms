@@ -4,6 +4,11 @@ import { escapeHtml as e } from "@/lib/utils";
 /** Opens a print-ready letter in a new window (user saves as PDF). */
 export function printLetter(letter: GeneratedLetter) {
   const emp = typeof letter.employee === "object" ? letter.employee : null;
+  // The letterhead has to be the company that issued the letter. It was the
+  // product name, which meant every organisation on the system printed offer
+  // letters, experience certificates and NOCs headed with somebody else's name.
+  const org = typeof letter.organization === "object" ? letter.organization : null;
+  const issuer = org?.name || "Delta HRMS";
   const issued = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(letter.issuedAt));
   // Escape first, then turn newlines into <br> — so the only markup that
   // survives into the document is the line breaks we add ourselves.
@@ -26,12 +31,12 @@ export function printLetter(letter: GeneratedLetter) {
   </style></head><body>
     <div class="sheet">
       <div class="head">
-        <h1>Delta HRMS</h1>
+        <h1>${e(issuer)}</h1>
         <div class="date">${issued}</div>
       </div>
       <div class="subject">${e(letter.subject)}</div>
       <div class="content">${bodyHtml}</div>
-      <div class="foot">This is a system-generated letter · Delta HRMS${emp ? ` · ${e(emp.name)}${emp.employeeCode ? ` (${e(emp.employeeCode)})` : ""}` : ""}</div>
+      <div class="foot">This is a system-generated letter · ${e(issuer)}${emp ? ` · ${e(emp.name)}${emp.employeeCode ? ` (${e(emp.employeeCode)})` : ""}` : ""}</div>
     </div>
   </body></html>`;
 
