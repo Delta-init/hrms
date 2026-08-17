@@ -10,7 +10,8 @@
     "repair:logins": "bun src/seeds/repairEmployeeLogins.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "repair:leave-policy-index": "bun src/seeds/repairLeavePolicyIndex.ts",
-    "faces:duplicates": "bun src/seeds/findDuplicateFaces.ts"
+    "faces:duplicates": "bun src/seeds/findDuplicateFaces.ts",
+    "migrate:greythr": "bun src/seeds/migrateGreytHR/index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",
@@ -27,6 +28,7 @@
     "multer": "^2.2.0",
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.3",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
