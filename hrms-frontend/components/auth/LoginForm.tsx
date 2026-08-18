@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -16,19 +16,60 @@ import { AuthShell } from "./AuthShell";
 
 const enter = "animate-in fade-in-0 slide-in-from-bottom-3 duration-500 fill-mode-both ease-out";
 
-export function LoginForm() {
-  const router = useRouter();
+function LoginFormInner() {
+  const searchParams = useSearchParams();
   const login = useLogin();
   const { status } = useSession();
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // /login isn't behind the auth middleware, so an already-signed-in user would
-  // otherwise sit here looking signed out — which is what made a bounced first
-  // attempt read as "the click did nothing".
+  /**
+   * Where to go once signed in.
+   *
+   * The middleware appends `?callbackUrl=` when it bounces someone off a
+   * protected page, so honouring it puts people back where they were heading
+   * instead of always dumping them on the dashboard. Only same-origin paths are
+   * accepted — a callbackUrl is attacker-supplied, and following it anywhere
+   * else is an open redirect.
+   */
+  const target = (() => {
+    const raw = searchParams.get("callbackUrl");
+    if (!raw) return "/dashboard";
+    try {
+      const url = new URL(raw, window.location.origin);
+      if (url.origin !== window.location.origin) return "/dashboard";
+      return url.pathname === "/login" ? "/dashboard" : url.pathname + url.search;
+    } catch {
+      return "/dashboard";
+    }
+  })();
+
+  /**
+   * Leave the sign-in page with a full document load, not a client-side one.
+   *
+   * This is the fix for "I typed the wrong password, then the right one, and
+   * nothing happened until I reloaded". Next's client router caches the result
+   * of visiting a route, and a protected route visited without a session caches
+   * as the middleware's bounce back to /login. That happens whenever somebody's
+   * session dies while the app is open, or a stale session sends them at the
+   * dashboard before signing in. `router.replace("/dashboard")` afterwards is
+   * then answered from that cache and lands them straight back on the form,
+   * with a session that is perfectly valid — which is exactly why reloading
+   * "fixed" it.
+   *
+   * A full load cannot be served from that cache and re-runs the middleware
+   * against the cookie that now exists. One page load on sign-in is a fair
+   * price for it always working.
+   */
+  const leaveToApp = () => window.location.assign(target);
+
+  // /login isn't behind the middleware, so an already-signed-in user would
+  // otherwise sit here looking signed out.
   useEffect(() => {
-    if (status === "authenticated") router.replace("/dashboard");
-  }, [status, router]);
+    if (status === "authenticated") leaveToApp();
+    // leaveToApp closes over `target`, which is derived from the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   const {
     register,
@@ -45,19 +86,19 @@ export function LoginForm() {
     try {
       await login(data.email, data.password);
       toast.success("Welcome back!");
-      // No router.refresh() here: it refetches the *current* route, and firing
-      // it in the same tick as the push races the pending navigation — the
-      // refresh can resolve against /login and strand you on the form.
-      router.replace("/dashboard");
+      // Left spinning on purpose — no `finally` resetting it. The full load is
+      // already on its way, and flipping back to "Log In" makes a sign-in that
+      // worked look like one that failed for the half second before the page
+      // changes.
+      leaveToApp();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       if (message.toLowerCase().includes("set a new password")) {
         toast.info("Please activate your account first");
-        router.push(`/set-password?email=${encodeURIComponent(getValues("email"))}`);
+        window.location.assign(`/set-password?email=${encodeURIComponent(getValues("email"))}`);
         return;
       }
       toast.error(message);
-    } finally {
       setSubmitting(false);
     }
   };
@@ -139,5 +180,17 @@ export function LoginForm() {
         </form>
       </div>
     </AuthShell>
+  );
+}
+
+/**
+ * `useSearchParams` needs a Suspense boundary or Next refuses to prerender the
+ * route at build time — the same shape the documents and approvals pages use.
+ */
+export function LoginForm() {
+  return (
+    <Suspense fallback={<AuthShell><div /></AuthShell>}>
+      <LoginFormInner />
+    </Suspense>
   );
 }

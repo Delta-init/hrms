@@ -1,6 +1,8 @@
 node_modules
 .next
-.next-build
+# Every build output, including the throwaway dist dirs used when a
+# production build has to run alongside the dev server.
+.next-*
 out
 .env
 .env.local
