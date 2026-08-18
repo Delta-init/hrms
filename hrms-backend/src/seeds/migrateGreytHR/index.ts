@@ -10,6 +10,7 @@ import { Role } from "../../models/Role.js";
 import { SalaryIncrement } from "../../models/SalaryIncrement.js";
 import { LeaveRequest } from "../../models/LeaveRequest.js";
 import { EmploymentHistory } from "../../models/EmploymentHistory.js";
+import { MigrationJournal, MigrationRun } from "../../models/MigrationJournal.js";
 import { readSheet, parseDate, parseNumber, normalise, isEmployeeCode, type Row } from "./read.js";
 
 /**
@@ -44,6 +45,9 @@ const ORG_NAME = arg("org") ?? "Delta International Management Development Train
 const EMAIL_DOMAIN = arg("domain") ?? "deltainstitutions.com";
 
 const SOURCE = "greythr-migration";
+const MIGRATION = "greythr";
+/** One id for this run — everything it writes is undone together or not at all. */
+const RUN = `greythr-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 
 // ── Reporting ────────────────────────────────────────────────────────────────
 interface Tally { created: number; updated: number; skipped: number }
@@ -57,6 +61,45 @@ const warn = (s: string) => warnings.push(s);
 
 const log = (s = "") => console.log(s);
 const head = (s: string) => { log(); log(`── ${s} ${"─".repeat(Math.max(0, 60 - s.length))}`); };
+
+// ── Journal ──────────────────────────────────────────────────────────────────
+/**
+ * Every document this run touches, recorded once, with what it looked like
+ * first. One set guards both helpers, so a document created by this run can
+ * never later be snapshotted as though it pre-existed — which is the bug that
+ * would make a revert restore a record to a state it was never in.
+ */
+const journalled = new Set<string>();
+let journalCreated = 0;
+let journalUpdated = 0;
+
+async function journal(
+  model: { collection: { name: string } },
+  id: unknown,
+  before: Record<string, unknown> | null
+): Promise<void> {
+  const coll = model.collection.name;
+  const key = `${coll}:${String(id)}`;
+  if (journalled.has(key)) return;
+  journalled.add(key);
+  if (before) journalUpdated++; else journalCreated++;
+  await MigrationJournal.updateOne(
+    { run: RUN, collectionName: coll, documentId: id },
+    { $setOnInsert: { migration: MIGRATION, before } },
+    { upsert: true }
+  );
+}
+
+/** Snapshot a document that already existed, before it is changed. */
+async function recordBefore(
+  model: { collection: { name: string }; findById: (id: unknown) => { lean: () => Promise<unknown> } },
+  id: unknown
+): Promise<void> {
+  const key = `${model.collection.name}:${String(id)}`;
+  if (journalled.has(key)) return;
+  const before = (await model.findById(id).lean()) as Record<string, unknown> | null;
+  await journal(model, id, before);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const code = (r: Row) => (r["Employee Number"] ?? "").trim().toUpperCase();
@@ -80,6 +123,17 @@ async function main() {
 
   const employeeRole = await Role.findOne({ roleName: "Employee" });
   if (!employeeRole) throw new Error("No 'Employee' role — run the seed first");
+
+  // The header goes down before the first write, not after the last one: a run
+  // that dies halfway still has to be revertable, and it is the journal entries
+  // written so far that say how far it got.
+  if (APPLY) {
+    await MigrationRun.create({
+      run: RUN, migration: MIGRATION, organization: orgId,
+      organizationName: org.name, source: DIR,
+    });
+    log(`  run id : ${RUN}`);
+  }
 
   // ── Load ───────────────────────────────────────────────────────────────────
   const sheets = {
@@ -131,6 +185,7 @@ async function main() {
     note(`department + ${dn}`);
     if (APPLY) {
       const d = await Department.create({ organization: orgId, name: dn });
+      await journal(Department, d._id, null);
       deptByNorm.set(key, d);
     }
   }
@@ -163,6 +218,7 @@ async function main() {
         organization: orgId, name: s.slice(0, 80), timeZone: "Asia/Dubai",
         ...(t ? { loginTime: t.login, logoutTime: t.logout } : {}),
       });
+      await journal(WorkSchedule, ws._id, null);
       schedByNorm.set(normalise(s), ws);
     }
   }
@@ -186,6 +242,7 @@ async function main() {
         organization: orgId, type: spec.type, label: spec.label,
         days: spec.days, paid: spec.paid, period: "year",
       });
+      await journal(LeavePolicy, p._id, null);
       policyByType.set(spec.type, p);
     }
     void sheetName;
@@ -250,6 +307,7 @@ async function main() {
       tally("employees").created++;
       if (APPLY) {
         const created = await Employee.create({ employeeCode: p.code, email: makeEmail(p.name), ...fields });
+        await journal(Employee, created._id, null);
         byCode.set(p.code, created);
         employeeIdByCode.set(p.code, created._id as mongoose.Types.ObjectId);
       }
@@ -266,7 +324,10 @@ async function main() {
       fields.email = makeEmail(p.name);
     }
     tally("employees").updated++;
-    if (APPLY) await Employee.updateOne({ _id: found._id }, { $set: fields });
+    if (APPLY) {
+      await recordBefore(Employee, found._id);
+      await Employee.updateOne({ _id: found._id }, { $set: fields });
+    }
   }
   log(`  ${tally("employees").created} to create · ${tally("employees").updated} to enrich`);
   for (const c of conflicts) warn(`identity conflict — ${c}`);
@@ -307,6 +368,7 @@ async function main() {
       const email = (emp.email ?? "").toLowerCase();
       if (!email) { tally("logins").skipped++; continue; }
       const already = await User.findOne({ email });
+      if (already) await journal(User, already._id, already.toObject() as unknown as Record<string, unknown>);
       const user = already ?? await User.create({
         name: emp.name, email,
         // Never used to sign in: the account is invited and must reset.
@@ -315,6 +377,8 @@ async function main() {
         designation: emp.designation, workSchedule: emp.workSchedule ?? null,
         status: "invited", mustResetPassword: true,
       });
+      if (!already) await journal(User, user._id, null);
+      await recordBefore(Employee, emp._id);
       await Employee.updateOne({ _id: emp._id }, { $set: { user: user._id } });
       emp.user = user._id as never;
     }
@@ -340,6 +404,7 @@ async function main() {
       const id = idFor(c);
       if (!id) { tally("visa").skipped++; continue; }
       tally("visa").updated++;
+      if (APPLY) await recordBefore(Employee, id);
       if (APPLY) await Employee.updateOne({ _id: id }, {
         $set: { visa: {
           country: r["Current Visa Country"] || undefined,
@@ -382,6 +447,7 @@ async function main() {
       }));
       tally("cards").updated++;
       if (APPLY) {
+        await recordBefore(Employee, id);
         await Employee.updateOne({ _id: id }, {
           $set: {
             ...(labour ? { labourCard: {
@@ -403,6 +469,7 @@ async function main() {
         .filter(Boolean).join(", ");
       if (!id || (!line && !r["Permanent City"] && !r["Permanent Phone No"])) { tally("addresses").skipped++; continue; }
       tally("addresses").updated++;
+      if (APPLY) await recordBefore(Employee, id);
       if (APPLY) await Employee.updateOne({ _id: id }, {
         $set: {
           permanentAddress: {
@@ -420,6 +487,7 @@ async function main() {
       const id = c ? idFor(c) : null;
       if (!id || !r["Emergency Contact Name"]) { tally("emergency").skipped++; continue; }
       tally("emergency").updated++;
+      if (APPLY) await recordBefore(Employee, id);
       if (APPLY) await Employee.updateOne({ _id: id }, {
         $set: { emergencyContacts: [{
           name: r["Emergency Contact Name"], relation: r["Emergency Contact Relation"] || undefined,
@@ -448,7 +516,7 @@ async function main() {
       const id = idFor(c);
       if (!id) { tally("education").skipped++; continue; }
       tally("education").updated++;
-      if (APPLY) await Employee.updateOne({ _id: id }, { $set: { education: list } });
+      if (APPLY) { await recordBefore(Employee, id); await Employee.updateOne({ _id: id }, { $set: { education: list } }); }
     }
 
     // Reporting line — the open row in the org tree is the current manager.
@@ -458,7 +526,7 @@ async function main() {
       const managerId = idFor((r["Manager Employee Number"] ?? "").toUpperCase());
       if (!id || !managerId || String(id) === String(managerId)) { tally("reporting").skipped++; continue; }
       tally("reporting").updated++;
-      if (APPLY) await Employee.updateOne({ _id: id }, { $set: { reportingTo: managerId, reportingToKind: "Employee" } });
+      if (APPLY) { await recordBefore(Employee, id); await Employee.updateOne({ _id: id }, { $set: { reportingTo: managerId, reportingToKind: "Employee" } }); }
     }
 
     for (const k of ["visa", "cards", "addresses", "emergency", "education", "reporting"]) {
@@ -514,11 +582,14 @@ async function main() {
         ? employeeIdByCode.get(managerCodeByName.get(h.value) ?? "") ?? byCode.get(managerCodeByName.get(h.value) ?? "")?._id ?? null
         : null;
       const deptId = h.kind === "department" ? deptByNorm.get(normalise(h.value))?._id ?? null : null;
-      await EmploymentHistory.updateOne(
-        { organization: orgId, employee: employeeId, kind: h.kind, value: h.value, from: h.from },
+      const key = { organization: orgId, employee: employeeId, kind: h.kind, value: h.value, from: h.from };
+      const had = await EmploymentHistory.findOne(key).lean();
+      const saved = await EmploymentHistory.findOneAndUpdate(
+        key,
         { $set: { to: h.to, source: SOURCE, manager: managerId, department: deptId } },
-        { upsert: true }
+        { upsert: true, new: true }
       );
+      await journal(EmploymentHistory, saved!._id, (had as Record<string, unknown> | null) ?? null);
     }
     log(`  ${tally("history").created} history rows · ${tally("history").skipped} for unknown employees`);
   }
@@ -535,15 +606,19 @@ async function main() {
       tally("salary").updated++;
       if (!APPLY || !id) continue;
       const before = byCode.get(c)?.salary ?? 0;
+      await recordBefore(Employee, id);
       await Employee.updateOne({ _id: id }, { $set: { salary: ctc } });
-      await SalaryIncrement.updateOne(
-        { organization: orgId, employee: id, effectiveMonth: monthKey(effective) },
+      const incKey = { organization: orgId, employee: id, effectiveMonth: monthKey(effective) };
+      const hadInc = await SalaryIncrement.findOne(incKey).lean();
+      const inc = await SalaryIncrement.findOneAndUpdate(
+        incKey,
         { $set: {
           previousSalary: before, newSalary: ctc,
           reason: `Imported from GreytHR${r["Increment Percentage(%)"] ? ` (${r["Increment Percentage(%)"]}%)` : ""}`,
         } },
-        { upsert: true }
+        { upsert: true, new: true }
       );
+      await journal(SalaryIncrement, inc!._id, (hadInc as Record<string, unknown> | null) ?? null);
     }
     log(`  ${tally("salary").updated} salaries set · ${tally("salary").skipped} skipped (no CTC, or unknown employee)`);
   }
@@ -579,8 +654,10 @@ async function main() {
 
       tally("leave").created++;
       if (!APPLY) continue;
-      await LeaveRequest.updateOne(
-        { organization: orgId, user: emp.user, type, startDate: from, endDate: to },
+      const lvKey = { organization: orgId, user: emp.user, type, startDate: from, endDate: to };
+      const hadLv = await LeaveRequest.findOne(lvKey).lean();
+      const lv = await LeaveRequest.findOneAndUpdate(
+        lvKey,
         { $set: {
           days: Math.abs(parseNumber(r["Days"]) ?? 1),
           reason: (r["Reason"] || "Imported from GreytHR").slice(0, 500),
@@ -588,8 +665,9 @@ async function main() {
           reviewNote: r["Remarks"] ? r["Remarks"].slice(0, 500) : undefined,
           reviewedAt: parseDate(r["Approved Date"]),
         } },
-        { upsert: true }
+        { upsert: true, new: true }
       );
+      await journal(LeaveRequest, lv!._id, (hadLv as Record<string, unknown> | null) ?? null);
     }
     log(`  ${tally("leave").created} leave records · ${tally("leave").skipped} skipped`);
     if (noUser) {
@@ -623,7 +701,16 @@ async function main() {
     head(`Needs your attention (${warnings.length})`);
     for (const w of warnings) log(`  ! ${w}`);
   }
-  log(`\n${APPLY ? "Applied." : "Nothing was written. Re-run with --apply to commit."}\n`);
+  if (APPLY) {
+    await MigrationRun.updateOne(
+      { run: RUN },
+      { $set: { finishedAt: new Date(), stats: tallies, created: journalCreated, updated: journalUpdated } }
+    );
+    log(`\nApplied. ${journalCreated} documents created, ${journalUpdated} changed.`);
+    log(`Undo it with:  bun run migrate:greythr:revert -- --run=${RUN}\n`);
+  } else {
+    log(`\nNothing was written. Re-run with --apply to commit.\n`);
+  }
 
   await mongoose.disconnect();
 }
