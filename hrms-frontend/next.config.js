@@ -49,11 +49,14 @@ const csp = [
  *
  * `next dev` and `next build` both write to `.next`, so building while the dev
  * server is running corrupts whichever finishes second — the dev server starts
- * serving half a production build, or the build fails partway through. Giving
- * the production build its own directory means the two can run at once, which
- * they routinely do.
+ * serving half a production build, or the build fails partway through. Setting
+ * NEXT_DIST_DIR gives the production build its own directory so the two can run
+ * at once, which they routinely do locally: `bun run build:local`.
  *
- * `start` reads the same variable, so the pair stays consistent.
+ * It must stay opt-in. Baking it into the `build` script made every deploy fail
+ * — the build succeeded, wrote to `.next-build`, and the platform then looked
+ * in `.next` and found nothing. Anything reading this output (Vercel, Docker,
+ * a CI cache) expects Next's default unless told otherwise.
  */
 const distDir = process.env.NEXT_DIST_DIR || ".next";
 
