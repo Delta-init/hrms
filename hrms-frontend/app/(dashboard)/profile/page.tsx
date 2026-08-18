@@ -4,6 +4,8 @@ import { useMyEmployeeProfile } from "@/hooks/useEmployees";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
+import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
 import { EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS, type Employee } from "@/types";
@@ -19,6 +21,7 @@ const deptName = (e: Employee) => (e.department && typeof e.department === "obje
 
 export default function MyProfilePage() {
   const { data: e, isLoading, isError } = useMyEmployeeProfile();
+  const { user } = useAuth();
 
   if (isLoading) {
     return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -53,6 +56,15 @@ export default function MyProfilePage() {
           </div>
         </div>
       </Card>
+
+      {/* Your own face is yours to set up. It sat only on the admin's view of
+          a user before, so the one person who could always be trusted to
+          enrol it — you — was the one person with no way to. */}
+      {user?._id && (
+        <div className="mb-6">
+          <FaceEnrollmentPanel userId={user._id} userName={e.name} />
+        </div>
+      )}
 
       <EmployeeProfileSections employee={e} canEdit selfService />
     </div>

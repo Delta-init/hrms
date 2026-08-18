@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound } from "lucide-react";
+import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound, ScanFace } from "lucide-react";
 import { useEmployees, useDeleteEmployee } from "@/hooks/useEmployees";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useAuth, useImpersonate } from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { useFaceEnrolled, useFaceSettings } from "@/hooks/useFaceEnrollment";
 import { EmployeeDialog } from "@/components/employees/EmployeeDialog";
 import { CreateLoginDialog } from "@/components/employees/CreateLoginDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -50,6 +51,12 @@ export default function EmployeesPage() {
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useEmployees(query.params, { enabled: canView });
   const { data: departments = [] } = useDepartmentsSimple();
+  const { data: faceSettings } = useFaceSettings();
+  // Only the people on screen, and only when face check-in is switched on.
+  const userIdsOnPage = (data?.data ?? [])
+    .map((e) => (typeof e.user === "object" && e.user ? e.user._id : (e.user as string | undefined)))
+    .filter((id): id is string => !!id);
+  const { data: enrolledIds } = useFaceEnrolled(userIdsOnPage, !!faceSettings?.enabled);
   const { mutate: remove, isPending: deleting } = useDeleteEmployee();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -87,6 +94,27 @@ export default function EmployeesPage() {
     { id: "type", label: "Type", render: (e) => <span className="text-muted-foreground">{EMPLOYMENT_TYPE_LABELS[e.employmentType]}</span> },
     { id: "schedule", label: "Schedule", defaultVisible: false, render: (e) => <span className="text-muted-foreground">{typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "—"}</span> },
     { id: "joining", label: "Joining", defaultVisible: false, sortKey: "joiningDate", render: (e) => <span className="text-muted-foreground">{e.joiningDate ? new Date(e.joiningDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span> },
+    // Dropped entirely when the recognition service is off, rather than shown
+    // as a column of dashes for a feature the server cannot perform.
+    ...(faceSettings?.enabled ? [{
+      id: "face", label: "Face check-in",
+      render: (e: Employee) => {
+        const uid = typeof e.user === "object" && e.user ? e.user._id : (e.user as string | undefined);
+        // No login means no face: a punch is matched through the account, so
+        // "not set up" would read as their omission rather than the system's.
+        if (!uid) return <span className="text-xs text-muted-foreground">No login</span>;
+        if (!enrolledIds) return <span className="text-xs text-muted-foreground">—</span>;
+        return enrolledIds.has(uid) ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <ScanFace className="h-3 w-3" />Enrolled
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            Not set up
+          </span>
+        );
+      },
+    }] satisfies DataTableColumn<Employee>[] : []),
     { id: "status", label: "Status", sortKey: "status", render: (e) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span> },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
@@ -129,6 +157,20 @@ export default function EmployeesPage() {
           </SelectContent>
         </Select>
       </div>
+      {faceSettings?.enabled && (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Face check-in</Label>
+          <Select value={query.filters.faceEnrolled ?? ALL} onValueChange={(v) => query.setFilter("faceEnrolled", v)}>
+            <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Anyone" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Anyone</SelectItem>
+              <SelectItem value="yes">Enrolled</SelectItem>
+              <SelectItem value="no">Not set up</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}>

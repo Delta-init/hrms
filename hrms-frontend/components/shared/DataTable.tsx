@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, SlidersHorizontal, Columns3, GripVertical, ArrowUp, ArrowDown,
@@ -85,6 +85,44 @@ export function DataTable<T>({
     return defaultOrder;
   });
   const [showFilters, setShowFilters] = useState(false);
+
+  /**
+   * Take in columns that arrive after the first render.
+   *
+   * The order above is seeded once, on mount. A column whose existence depends
+   * on something fetched — a feature flag, a setting — is not in `columns` yet
+   * at that moment, so it never entered the order and could never be shown, no
+   * matter what the caller did. It is not enough to render it; the table has to
+   * notice it appeared.
+   */
+  useEffect(() => {
+    const known = new Set(order);
+    const added = columns.map((c) => c.id).filter((id) => !known.has(id));
+    if (!added.length) return;
+    setOrder((prev) => {
+      const next = [...prev];
+      for (const id of added) {
+        // Slotted where it sits among its neighbours, not appended. Appending
+        // puts it past the actions column, off the right edge of the table —
+        // present, correct, and invisible.
+        const idx = columns.findIndex((c) => c.id === id);
+        let at = next.length;
+        for (let i = idx - 1; i >= 0; i--) {
+          const p = next.indexOf(columns[i].id);
+          if (p !== -1) { at = p + 1; break; }
+        }
+        next.splice(at, 0, id);
+      }
+      return next;
+    });
+    setVisible((prev) => {
+      const next = new Set(prev);
+      for (const c of columns) {
+        if (added.includes(c.id) && c.defaultVisible !== false) next.add(c.id);
+      }
+      return next;
+    });
+  }, [columns, order]);
 
   const byId = useMemo(() => Object.fromEntries(columns.map((c) => [c.id, c])), [columns]);
   const orderedColumns = useMemo(() => order.map((id) => byId[id]).filter(Boolean) as DataTableColumn<T>[], [order, byId]);

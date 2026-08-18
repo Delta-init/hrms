@@ -40,6 +40,28 @@ export const useFaceStatus = (userId: string, enabled = true) =>
     enabled: enabled && !!userId,
   });
 
+/**
+ * Which of these people have enrolled, in one request.
+ *
+ * Asked per page rather than per row: a table of fifty would otherwise fire
+ * fifty requests to answer one column. The ids are sorted into the query key so
+ * paging back and forth reuses the answer instead of refetching it.
+ */
+export const useFaceEnrolled = (userIds: string[], enabled = true) => {
+  const ids = [...userIds].filter(Boolean).sort();
+  return useQuery({
+    queryKey: ["face", "enrolled", ids],
+    queryFn: async () =>
+      new Set(
+        (await api.get<ApiResponse<{ enrolled: string[] }>>("/face/enrolled", {
+          params: { users: ids.join(",") },
+        })).data.data?.enrolled ?? []
+      ),
+    enabled: enabled && ids.length > 0,
+    staleTime: 30_000,
+  });
+};
+
 export interface CaptureVerdict {
   ok: boolean;
   message?: string;

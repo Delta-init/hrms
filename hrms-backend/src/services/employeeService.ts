@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
 import { assertRoleAssignable } from "./roleService.js";
 import { Resignation } from "../models/Resignation.js";
+import { FaceProfile } from "../models/FaceProfile.js";
 import type { CreateEmployeeInput, UpdateEmployeeInput, UpdateMyProfileInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -17,6 +18,8 @@ interface EmployeeQuery extends PaginationQuery {
   excludeTerminated?: string;
   department?: string;
   employmentType?: string;
+  /** "yes" | "no" — whether the person has set up face check-in. */
+  faceEnrolled?: string;
 }
 
 const POP = [
@@ -115,6 +118,25 @@ export class EmployeeService {
     else if (query.excludeTerminated === "true") filter.status = { $ne: "terminated" };
     if (query.department) filter.department = query.department;
     if (query.employmentType) filter.employmentType = query.employmentType;
+
+    /**
+     * Who has set up face check-in, and who has not.
+     *
+     * Resolved into a `user` constraint rather than filtering the returned page,
+     * because a page-level filter drops people out of the middle of a paginated
+     * result and makes the total a lie — the same reason `excludeTerminated`
+     * above is done here.
+     *
+     * "Not enrolled" deliberately includes everybody without a login: a face is
+     * matched to a punch through the login account, so somebody who has none
+     * cannot enrol, and leaving them out would hide exactly the people an
+     * administrator is looking for.
+     */
+    if (query.faceEnrolled === "yes" || query.faceEnrolled === "no") {
+      const enrolled = await FaceProfile.find(orgFilter()).select("user").lean();
+      const ids = enrolled.map((p) => p.user);
+      filter.user = query.faceEnrolled === "yes" ? { $in: ids } : { $nin: ids };
+    }
 
     const sortable = new Set(["name", "employeeCode", "designation", "status", "joiningDate", "createdAt"]);
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "createdAt";

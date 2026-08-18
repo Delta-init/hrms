@@ -56,7 +56,12 @@ export function FaceEnrollmentPanel({ userId, userName }: { userId: string; user
                   (status.consentAt
                     ? ` · consent recorded ${new Date(status.consentAt).toLocaleDateString()}`
                     : "")
-                : "Enrol a face so this person can clock in and out at the kiosk."}
+                : isSelf
+                  // The same panel now appears on your own profile, where
+                  // "this person" is you and reads as though written about
+                  // somebody else.
+                  ? "Set up your face so you can clock in and out at the kiosk."
+                  : "Enrol a face so this person can clock in and out at the kiosk."}
             </p>
           </div>
         </div>
