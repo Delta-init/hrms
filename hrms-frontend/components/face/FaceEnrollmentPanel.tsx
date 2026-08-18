@@ -15,22 +15,52 @@ import { useDeleteFaceProfile, useFaceSettings, useFaceStatus } from "@/hooks/us
  * Keyed on the user rather than the employee record because attendance is —
  * only people with a login have punches to attach a face to.
  */
-export function FaceEnrollmentPanel({ userId, userName }: { userId: string; userName: string }) {
+export function FaceEnrollmentPanel({ userId, userName }: { userId: string | null; userName: string }) {
   const { user, hasPermission } = useAuth();
   const { data: settings } = useFaceSettings();
-  const { data: status, isLoading } = useFaceStatus(userId, !!settings?.enabled);
-  const { mutate: remove, isPending: deleting } = useDeleteFaceProfile(userId);
+  const { data: status, isLoading } = useFaceStatus(userId ?? "", !!settings?.enabled && !!userId);
+  const { mutate: remove, isPending: deleting } = useDeleteFaceProfile(userId ?? "");
   const [captureOpen, setCaptureOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Enrolling somebody else is an HR action; your own face is your own to
   // manage. Same rule the API enforces.
-  const isSelf = user?._id === userId;
+  const isSelf = !!userId && user?._id === userId;
   const canManage = isSelf || hasPermission("employees", "edit");
 
   // Hidden entirely when the recognition service isn't configured — an empty
   // panel offering a feature the server can't perform helps nobody.
   if (!settings?.enabled) return null;
+
+  /**
+   * Somebody with no login cannot enrol.
+   *
+   * A face is matched to a punch through the account, so there is nothing to
+   * attach one to yet. Said here rather than hiding the panel: an employee page
+   * with no mention of face check-in reads as "this person is done", when what
+   * is actually needed is a login first.
+   */
+  if (!userId) {
+    return (
+      <Card className="p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-muted p-2">
+            <ScanFace className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold">Face check-in</h3>
+              <Badge variant="outline">Needs a login</Badge>
+            </div>
+            <p className="mt-1 max-w-prose text-sm text-muted-foreground">
+              A face is matched to whoever is clocking in through their account, so {userName} needs
+              a login before one can be set up. Create it from the Employees list.
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-5">

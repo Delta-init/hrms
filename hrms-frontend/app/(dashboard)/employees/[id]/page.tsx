@@ -10,6 +10,7 @@ import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileS
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
+import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { TITLE_LABELS, type Employee } from "@/types";
 
 const deptName = (e: Employee) => (e.department && typeof e.department === "object" ? e.department.name : null);
@@ -86,6 +87,13 @@ function EmployeeDetail() {
           </div>
         </div>
       </Card>
+
+      {/* Reachable only for someone without a login (anyone with one is sent
+          to their user page, which carries the same panel), so in practice this
+          is the prompt to create the account first. */}
+      <div className="mb-6">
+        <FaceEnrollmentPanel userId={linkedUserId || null} userName={e.name} />
+      </div>
 
       <EmployeeProfileSections employee={e} canEdit={canEdit} />
 
