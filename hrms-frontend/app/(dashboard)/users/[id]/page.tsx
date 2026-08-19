@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote, TrendingUp, FolderOpen } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, ContactRound, User2, CreditCard, BookUser, ArrowUpRight, LogOut, Banknote, TrendingUp, FolderOpen, Boxes } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUsers";
 import { useEmployeeByUser } from "@/hooks/useEmployees";
@@ -16,6 +16,7 @@ import { EmployeeResignation } from "@/components/resignations/EmployeeResignati
 import { EmployeeLoans } from "@/components/loans/EmployeeLoans";
 import { EmployeeIncrements } from "@/components/salary/EmployeeIncrements";
 import { UserCards } from "@/components/cards/UserCards";
+import { EmployeeAssets } from "@/components/assets/EmployeeAssets";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { OtherDocumentsPanel } from "@/components/documents/OtherDocumentsPanel";
@@ -39,6 +40,7 @@ export default function UserDetailPage() {
   const canEditEmployee = hasPermission("employees", "edit");
   const canCreateEmployee = hasPermission("employees", "create");
   const canViewCards = hasPermission("cards", "view");
+  const canViewAssets = hasPermission("assets", "view");
   const canViewResignations = hasPermission("resignations", "view");
   const canViewLoans = hasPermission("loans", "view");
   const canViewIncrements = hasPermission("salaryIncrements", "view");
@@ -82,6 +84,7 @@ export default function UserDetailPage() {
     canViewLoans && { key: "loans", label: "Loans", icon: Banknote },
     canViewIncrements && { key: "increments", label: "Increments", icon: TrendingUp },
     canViewCards && { key: "cards", label: "Cards", icon: CreditCard },
+    canViewAssets && { key: "assets", label: "Assets", icon: Boxes },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "profile";
 
@@ -226,6 +229,14 @@ export default function UserDetailPage() {
       )}
 
       {activeTab === "cards" && canViewCards && <UserCards userId={id} />}
+
+      {/* Keyed on the employee record — an asset is issued to a person, not to
+          a login, so somebody with no employee profile can hold nothing. */}
+      {activeTab === "assets" && canViewAssets && (
+        empLoading
+          ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          : <EmployeeAssets employeeId={employee?._id ?? null} />
+      )}
 
       <EmployeeDialog open={createEmpOpen} onOpenChange={setCreateEmpOpen} defaultName={user.name} defaultUserId={id} />
     </div>
