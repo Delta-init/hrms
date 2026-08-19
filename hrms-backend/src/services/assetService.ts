@@ -12,6 +12,8 @@ interface AssetQuery extends PaginationQuery {
   status?: string;
   category?: string;
   assignedTo?: string;
+  /** Employee id — things they were issued at some point but no longer hold. */
+  previouslyAssignedTo?: string;
 }
 
 const POP = [
@@ -46,6 +48,23 @@ export class AssetService {
     if (query.status) filter.status = query.status;
     if (query.category) filter.category = query.category;
     if (query.assignedTo) filter.assignedTo = query.assignedTo;
+
+    /**
+     * What somebody used to hold.
+     *
+     * Returning an asset clears `assignedTo`, so the record of who had it
+     * survives only in its history. Matching an `issued` entry naming them, and
+     * excluding anything they still hold, is what separates "used to have this"
+     * from "has this now" — the two answers a leaver's checklist needs side by
+     * side.
+     *
+     * `$ne` also covers assets now assigned to nobody, which is exactly what a
+     * returned one looks like.
+     */
+    if (query.previouslyAssignedTo) {
+      filter.history = { $elemMatch: { employee: query.previouslyAssignedTo, action: "issued" } };
+      filter.assignedTo = { $ne: query.previouslyAssignedTo };
+    }
     if (query.search) {
       filter.$or = [
         { name: searchRegex(query.search) },
