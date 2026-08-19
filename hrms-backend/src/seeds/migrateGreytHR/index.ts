@@ -776,6 +776,16 @@ async function main() {
    * The effect is that everybody's balance matches their old one on the day of
    * the cutover and behaves by these rules afterwards, with a row on the record
    * saying where the difference came from.
+   *
+   * Done per leave year, not just the current one. The year-wise export carries
+   * 2024 and 2025 as well, and a balance is read per year — so without those the
+   * moment anyone looked back at last year the number would be whatever our
+   * accrual happened to produce, which is not what they were told at the time.
+   *
+   * The two balance exports agree: every one of the 212 rows they share is
+   * identical, and the current-balance sheet only adds people the year-wise one
+   * omits. So they merge rather than compete, and the merge is checked below
+   * instead of assumed — a silent disagreement would pick a winner at random.
    */
   async function balances() {
     head("Leave balances");
@@ -783,22 +793,46 @@ async function main() {
       "Annual Leave": "annual", "Sick Leave": "sick",
       "Unpaid Leave": "unpaid", "Compensatory Off": "comp_off",
     };
-    const year = new Date().getUTCFullYear();
+    const thisYear = new Date().getUTCFullYear();
     const service = new LeaveBalanceService();
 
-    // Group the export's figures per person, so one computeBalances call
-    // answers every leave type they hold.
-    const wanted = new Map<string, Map<string, number>>();
+    /** year → employee code → leave type → the balance they were told they had. */
+    const wanted = new Map<number, Map<string, Map<string, number>>>();
+    const put = (year: number, c: string, type: string, days: number) => {
+      const forYear = wanted.get(year) ?? wanted.set(year, new Map()).get(year)!;
+      (forYear.get(c) ?? forYear.set(c, new Map()).get(c)!).set(type, days);
+    };
+
+    for (const r of sheets.yearBalance) {
+      const c = code(r);
+      const type = TYPE[r["Leave Type"]];
+      const days = parseNumber(r["Balance Days"]);
+      const year = Math.trunc(parseNumber(r["Leave Year"]) ?? 0);
+      if (!c || !type || days === null || !year) { tally("balances").skipped++; continue; }
+      put(year, c, type, days);
+    }
+
+    // The undated sheet is this year's figure. Anything it disagrees with is
+    // worth saying out loud rather than silently overwriting one with the other.
+    let conflicts = 0;
     for (const r of sheets.currentBalance) {
       const c = code(r);
       const type = TYPE[r["Leave Type"]];
       const days = parseNumber(r["Balance Days"]);
       if (!c || !type || days === null) { tally("balances").skipped++; continue; }
-      (wanted.get(c) ?? wanted.set(c, new Map()).get(c)!).set(type, days);
+      const existing = wanted.get(thisYear)?.get(c)?.get(type);
+      if (existing !== undefined && Math.abs(existing - days) > 0.001) {
+        conflicts++;
+        if (conflicts <= 5) warn(`balance disagreement for ${c} ${type} in ${thisYear}: year-wise says ${existing}, current says ${days} — keeping the year-wise figure`);
+        continue;
+      }
+      put(thisYear, c, type, days);
     }
+    if (conflicts) warn(`${conflicts} balances differ between the two exports`);
 
     let overdrawn = 0;
-    for (const [c, byType] of wanted) {
+    for (const [year, byCodeMap] of [...wanted].sort((a, b) => a[0] - b[0])) {
+     for (const [c, byType] of byCodeMap) {
       const emp = byCode.get(c);
       if (!emp?.user) { tally("balances").skipped += byType.size; continue; }
       for (const days of byType.values()) if (days < 0) overdrawn++;
@@ -831,10 +865,12 @@ async function main() {
         );
         await journal(LeaveAdjustment, saved!._id, (had as Record<string, unknown> | null) ?? null);
       }
+     }
     }
-    log(`  ${tally("balances").created} balances set · ${tally("balances").skipped} skipped (no login, or unreadable)`);
+    const years = [...wanted.keys()].sort();
+    log(`  ${tally("balances").created} balances set across ${years.length} leave year${years.length === 1 ? "" : "s"} (${years.join(", ")})`);
+    log(`  ${tally("balances").skipped} skipped — no login, or unreadable`);
     if (overdrawn) note(`${overdrawn} of these balances are negative in GreytHR — imported as-is, not clamped to zero`);
-    log(`  ${sheets.yearBalance.length} year-wise rows are not imported: only the current year's balance has a home.`);
   }
 
   // ── Report ─────────────────────────────────────────────────────────────────
