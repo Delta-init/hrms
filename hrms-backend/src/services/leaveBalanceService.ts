@@ -1,5 +1,6 @@
 import { LeavePolicy } from "../models/LeavePolicy.js";
 import { Employee } from "../models/Employee.js";
+import { LeaveAdjustment } from "../models/LeaveAdjustment.js";
 import type { CreateLeavePolicyInput, UpdateLeavePolicyInput } from "../validations/leavePolicyValidation.js";
 import type { ILeaveBalance } from "../types/index.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -69,11 +70,18 @@ export class LeaveBalanceService {
    * `year`. Carry-forward looks back exactly one year, never compounded.
    */
   async computeBalances(userId: string, year = new Date().getUTCFullYear()): Promise<ILeaveBalance[]> {
-    const [index, scheduleId, employee] = await Promise.all([
+    const [index, scheduleId, employee, adjustments] = await Promise.all([
       leavePolicyIndex(),
       scheduleIdFor(userId),
       Employee.findOne(scoped({ user: userId })).select("joiningDate").lean(),
+      // Corrections the rules cannot derive — an opening balance carried over
+      // from another system, or a manual credit HR owes somebody.
+      LeaveAdjustment.find(scoped({ user: userId, year })).select("type days").lean(),
     ]);
+    const adjustedBy = new Map<string, number>();
+    for (const a of adjustments) {
+      adjustedBy.set(a.type, (adjustedBy.get(a.type) ?? 0) + a.days);
+    }
     const joiningDate = employee?.joiningDate ? new Date(employee.joiningDate) : null;
     const policies = index.for(scheduleId);
 
@@ -99,6 +107,8 @@ export class LeaveBalanceService {
             await usedInPeriod(userId, policy.type, "year", new Date(Date.UTC(year - 1, 0, 1))))
         : 0;
 
+      const adjustment = adjustedBy.get(policy.type) ?? 0;
+
       results.push({
         type: policy.type,
         label: policy.label,
@@ -108,8 +118,9 @@ export class LeaveBalanceService {
         days: policy.days,
         accrued,
         carriedForward: carried,
+        adjustment,
         used,
-        balance: round(accrued + carried - used),
+        balance: round(accrued + carried + adjustment - used),
         eligibleAfterMonths: policy.eligibleAfterMonths,
         eligible: eligibility.eligible,
         eligibleOn: eligibility.eligibleOn ? eligibility.eligibleOn.toISOString() : null,

@@ -872,6 +872,8 @@ export interface ILeaveBalance {
   /** What this period grants them — the full days once eligible, else 0. */
   accrued: number;
   carriedForward: number;
+  /** Corrections the rules cannot derive — an opening balance, a manual credit. */
+  adjustment: number;
   used: number;
   balance: number;
   /** Months of service the policy asks for before this leave opens up. */

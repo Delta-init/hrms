@@ -39,7 +39,8 @@ const head = (s: string) => { log(); log(`── ${s} ${"─".repeat(Math.max(0,
  * describing a job that does not exist.
  */
 const ORDER = [
-  "leaverequests", "salaryincrements", "employmenthistories",
+  "leaverequests", "leaveadjustments", "salaryincrements",
+  "employmenthistories", "resignations",
   "employees", "users",
   "leavepolicies", "workschedules", "departments",
 ];

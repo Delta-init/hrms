@@ -16,8 +16,32 @@ export type Row = Record<string, string>;
 const clean = (v: unknown): string =>
   v === null || v === undefined ? "" : String(v).trim();
 
+/**
+ * The newest export matching a base name.
+ *
+ * These land in a downloads folder, and a second pull of the same report is
+ * saved as "LeaveInfo (2).xlsx" beside the first. Taking the highest suffix
+ * means a re-export is picked up without anyone renaming files, and the whole
+ * point of a re-export is that it is the one you meant.
+ *
+ * Case-insensitive, because GreytHR is inconsistent about it — "leaveinfo" and
+ * "LeaveInfo" are the same report on different days.
+ */
+export function pickSheet(dir: string, base: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+  const stem = base.replace(/\.xlsx$/i, "").toLowerCase();
+  const candidates = fs.readdirSync(dir).filter((f) => {
+    const m = /^(.*?)(?: \((\d+)\))?\.xlsx$/i.exec(f);
+    return !!m && m[1].toLowerCase() === stem;
+  });
+  if (!candidates.length) return null;
+  const suffix = (f: string) => Number(/ \((\d+)\)\.xlsx$/i.exec(f)?.[1] ?? 0);
+  return candidates.sort((a, b) => suffix(b) - suffix(a))[0];
+}
+
 export function readSheet(dir: string, file: string): Row[] {
-  const full = path.join(dir, file);
+  const picked = pickSheet(dir, file);
+  const full = path.join(dir, picked ?? file);
   if (!fs.existsSync(full)) return [];
   const wb = XLSX.readFile(full, { cellDates: false, raw: false });
   const ws = wb.Sheets[wb.SheetNames[0]];

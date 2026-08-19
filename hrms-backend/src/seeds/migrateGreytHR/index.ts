@@ -10,6 +10,10 @@ import { Role } from "../../models/Role.js";
 import { SalaryIncrement } from "../../models/SalaryIncrement.js";
 import { LeaveRequest } from "../../models/LeaveRequest.js";
 import { EmploymentHistory } from "../../models/EmploymentHistory.js";
+import { Resignation } from "../../models/Resignation.js";
+import { LeaveAdjustment } from "../../models/LeaveAdjustment.js";
+import { LeaveBalanceService } from "../../services/leaveBalanceService.js";
+import { runWithOrg } from "../../utils/orgContext.js";
 import { MigrationJournal, MigrationRun } from "../../models/MigrationJournal.js";
 import { readSheet, parseDate, parseNumber, normalise, isEmployeeCode, type Row } from "./read.js";
 
@@ -150,6 +154,9 @@ async function main() {
     salary: readSheet(DIR, "latestsalaryrevision.xlsx"),
     leave: readSheet(DIR, "leaveinfo.xlsx"),
     balance: readSheet(DIR, "leavebalance.xlsx"),
+    currentBalance: readSheet(DIR, "leavedetails.xlsx"),
+    yearBalance: readSheet(DIR, "yearwiseleavebalance.xlsx"),
+    resignations: readSheet(DIR, "ResignationDetails.xlsx"),
   };
   head("Files read");
   for (const [k, v] of Object.entries(sheets)) log(`  ${k.padEnd(16)} ${String(v.length).padStart(5)} rows`);
@@ -343,7 +350,8 @@ async function main() {
   await history();
   await salary();
   await leave();
-  await reconcile();
+  await resignations();
+  await balances();
 
   // ── Logins ─────────────────────────────────────────────────────────────────
   /**
@@ -677,14 +685,156 @@ async function main() {
     }
   }
 
-  // ── Reconciliation ─────────────────────────────────────────────────────────
-  async function reconcile() {
-    head("Leave balances — reported, not imported");
-    log("  This system computes a balance from the policy and the leave taken;");
-    log("  it has no field to paste GreytHR's closing balance into. The export's");
-    log("  figures are listed here so you can compare after the import.");
-    const negative = sheets.balance.filter((r) => (parseNumber(r["Balance Days"]) ?? 0) < 0);
-    log(`\n  ${sheets.balance.length} balance rows, of which ${negative.length} are negative in GreytHR.`);
+  // ── Resignations ───────────────────────────────────────────────────────────
+  /**
+   * The people who have already left.
+   *
+   * The first export carried none of this — every row was blank — so everybody
+   * came across active. This one names sixty leavers with real dates, which
+   * matters beyond tidiness: an active employee is on the payroll roster.
+   *
+   * Written as an accepted resignation plus a terminated employee, because that
+   * is the state a completed exit leaves behind. It does not run the normal
+   * review path: that would email people about a decision taken years ago.
+   */
+  async function resignations() {
+    head("Resignations");
+    const MODE: Record<string, string> = {
+      RESIGNED: "resignation", TERMINATED: "termination",
+      ABSCONDING: "absconding", TRANSFERRED: "resignation", RETIRED: "retirement",
+    };
+    let created = 0;
+    for (const r of sheets.resignations) {
+      const c = code(r);
+      const leaving = parseDate(r["Leaving Date"]);
+      if (!leaving || !isEmployeeCode(c)) { tally("resignations").skipped++; continue; }
+
+      /**
+       * Every leaver here is somebody the system has never heard of.
+       *
+       * The roster exports list current staff only, so none of these sixty were
+       * imported and no other sheet mentions them — not leave, not documents,
+       * not even a joining date. The record that gets created is therefore
+       * thin: a name, a code, and the day they left.
+       *
+       * Still worth having. Without it the answer to "did this person work
+       * here" is silence, and a headcount that has never lost anybody is wrong
+       * in a way nobody notices.
+       */
+      let emp = byCode.get(c);
+      if (!emp) {
+        created++;
+        if (!APPLY) { tally("resignations").created++; continue; }
+        emp = await Employee.create({
+          employeeCode: c, name: nameOf(r) || c, organization: orgId, status: "terminated",
+        });
+        await journal(Employee, emp._id, null);
+        byCode.set(c, emp);
+      }
+
+      tally("resignations").created++;
+      if (!APPLY) continue;
+      const key = { organization: orgId, employee: emp._id };
+      const had = await Resignation.findOne(key).lean();
+      const saved = await Resignation.findOneAndUpdate(
+        key,
+        { $set: {
+          // Submission date is often blank on an old record; the leaving date
+          // is the one thing every row has, so it stands in rather than today.
+          resignationDate: parseDate(r["Submission Date"]) ?? leaving,
+          lastWorkingDay: leaving,
+          type: MODE[(r["Separation Mode"] ?? "").toUpperCase()] ?? "resignation",
+          reason: (r["Leaving Reason"] || r["Separation Mode"] || "Imported from GreytHR").slice(0, 500),
+          status: "relieved",
+          reviewNote: r["Remarks"] ? String(r["Remarks"]).slice(0, 500) : undefined,
+          noticePeriodDays: parseNumber(r["Notice Period"]) ?? 0,
+        } },
+        { upsert: true, new: true }
+      );
+      await journal(Resignation, saved!._id, (had as Record<string, unknown> | null) ?? null);
+      await recordBefore(Employee, emp._id);
+      await Employee.updateOne({ _id: emp._id }, { $set: { status: "terminated" } });
+    }
+    log(`  ${tally("resignations").created} leavers recorded · ${tally("resignations").skipped} rows with no leaving date`);
+    if (created) {
+      note(`${created} leavers created from scratch — no other export mentions them, so the records hold only a name, a code and a leaving date`);
+    }
+    if (tally("resignations").created) {
+      note(`${tally("resignations").created} employees marked terminated — they are off the payroll roster`);
+    }
+  }
+
+  // ── Leave balances ─────────────────────────────────────────────────────────
+  /**
+   * Make the balances agree with what people were told they had.
+   *
+   * Balances here are computed — accrued plus carried minus used — so there is
+   * nothing to paste a figure into. What gets written is the *difference*
+   * between GreytHR's number and what this system works out on its own.
+   * Writing the figure itself would double it against our own accrual.
+   *
+   * The effect is that everybody's balance matches their old one on the day of
+   * the cutover and behaves by these rules afterwards, with a row on the record
+   * saying where the difference came from.
+   */
+  async function balances() {
+    head("Leave balances");
+    const TYPE: Record<string, string> = {
+      "Annual Leave": "annual", "Sick Leave": "sick",
+      "Unpaid Leave": "unpaid", "Compensatory Off": "comp_off",
+    };
+    const year = new Date().getUTCFullYear();
+    const service = new LeaveBalanceService();
+
+    // Group the export's figures per person, so one computeBalances call
+    // answers every leave type they hold.
+    const wanted = new Map<string, Map<string, number>>();
+    for (const r of sheets.currentBalance) {
+      const c = code(r);
+      const type = TYPE[r["Leave Type"]];
+      const days = parseNumber(r["Balance Days"]);
+      if (!c || !type || days === null) { tally("balances").skipped++; continue; }
+      (wanted.get(c) ?? wanted.set(c, new Map()).get(c)!).set(type, days);
+    }
+
+    let overdrawn = 0;
+    for (const [c, byType] of wanted) {
+      const emp = byCode.get(c);
+      if (!emp?.user) { tally("balances").skipped += byType.size; continue; }
+      for (const days of byType.values()) if (days < 0) overdrawn++;
+      tally("balances").created += byType.size;
+      if (!APPLY) continue;
+
+      // computeBalances resolves policies through the org context, which a
+      // script has none of until it is given one.
+      const computed = await new Promise<Awaited<ReturnType<typeof service.computeBalances>>>((resolve, reject) => {
+        runWithOrg({ orgId: String(orgId), isSuperAdmin: true }, () => {
+          service.computeBalances(String(emp.user), year).then(resolve, reject);
+        });
+      });
+      const ours = new Map(computed.map((b) => [b.type, b.balance]));
+
+      for (const [type, target] of byType) {
+        // Their existing adjustment is already inside `ours`, so it has to come
+        // back out — otherwise every re-run adds the gap a second time.
+        const existing = await LeaveAdjustment.findOne({
+          organization: orgId, user: emp.user, type, year, source: SOURCE,
+        }).lean();
+        const withoutOurs = (ours.get(type) ?? 0) - (existing?.days ?? 0);
+        const delta = Math.round((target - withoutOurs) * 100) / 100;
+
+        const had = existing;
+        const saved = await LeaveAdjustment.findOneAndUpdate(
+          { organization: orgId, user: emp.user, type, year, source: SOURCE },
+          { $set: { days: delta, reason: `Opening balance carried over from GreytHR (${target} days)` } },
+          { upsert: true, new: true }
+        );
+        await journal(LeaveAdjustment, saved!._id, (had as Record<string, unknown> | null) ?? null);
+      }
+    }
+    log(`  ${tally("balances").created} balances set · ${tally("balances").skipped} skipped (no login, or unreadable)`);
+    if (overdrawn) note(`${overdrawn} of these balances are negative in GreytHR — imported as-is, not clamped to zero`);
+    log(`  ${sheets.yearBalance.length} year-wise rows are not imported: only the current year's balance has a home.`);
   }
 
   // ── Report ─────────────────────────────────────────────────────────────────
