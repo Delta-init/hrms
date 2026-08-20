@@ -72,7 +72,7 @@ export const navItems: {
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "users" },
-  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "users" },
+  { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "users" },
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring" },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
