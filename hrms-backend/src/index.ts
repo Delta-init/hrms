@@ -15,6 +15,25 @@ import { startApprovalDigestCron } from "./jobs/approvalDigestJob.js";
 
 const app = express();
 
+/**
+ * Whose word to take for the client's IP address.
+ *
+ * Express trusts no proxy by default, so `req.ip` is the socket address —
+ * behind nginx or a CDN that is the proxy's own address, identical for every
+ * employee. Remote check-ins now record the address a punch came from, and a
+ * confidently wrong one is worse than none at all.
+ *
+ * Still off unless configured, because the opposite mistake is the dangerous
+ * one: trust the forwarded header when nothing sets it and anybody can claim
+ * any IP by sending it themselves. Set TRUST_PROXY to the number of proxies in
+ * front of this server (1 for a single nginx or CDN), or to their addresses.
+ */
+const trustProxy = env.TRUST_PROXY?.trim();
+if (trustProxy) {
+  const hops = Number(trustProxy);
+  app.set("trust proxy", Number.isInteger(hops) ? hops : trustProxy.split(",").map((s) => s.trim()));
+}
+
 // ─── Security & Parsing Middleware ────────────────────────────────────────────
 app.use(helmet());
 app.use(

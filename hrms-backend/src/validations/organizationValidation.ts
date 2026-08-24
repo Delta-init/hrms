@@ -9,6 +9,8 @@ const settingsSchema = z.object({
   smtpPass: z.string().max(200).optional(),
   smtpSecure: z.boolean().optional(),
   mailFrom: z.string().max(200).optional(),
+  enforceWorkMode: z.boolean().optional(),
+  bindRemoteDevice: z.boolean().optional(),
 });
 
 export const createOrganizationSchema = z.object({

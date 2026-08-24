@@ -1,7 +1,8 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { AttendanceService } from "../services/attendanceService.js";
-import { createAttendanceSchema, updateAttendanceSchema } from "../validations/attendanceValidation.js";
+import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema } from "../validations/attendanceValidation.js";
+import { buildPunchContext } from "../utils/punchContext.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { Employee } from "../models/Employee.js";
 import { scoped } from "../utils/orgContext.js";
@@ -126,9 +127,30 @@ export const getMyAttendance = async (req: AuthenticatedRequest, res: Response, 
   }
 };
 
+/**
+ * The provenance of a self-service punch.
+ *
+ * A bad body is ignored rather than refused: the location is a detail attached
+ * to the punch, and failing somebody's check-in because their browser sent an
+ * odd accuracy value would lose the thing that actually matters.
+ */
+const webSource = (req: AuthenticatedRequest) => {
+  const parsed = punchContextSchema.safeParse(req.body ?? {});
+  const body = parsed.success ? parsed.data : undefined;
+  return {
+    method: "web" as const,
+    ...buildPunchContext(req, body),
+    // Passed straight through rather than derived: these identify the browser
+    // rather than describe the punch, and the service strips them again.
+    deviceKey: body?.deviceKey,
+    deviceFingerprint: body?.deviceFingerprint,
+    deviceLabel: body?.deviceLabel,
+  };
+};
+
 export const clockIn = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const record = await service.clockIn(req.user!.userId);
+    const record = await service.clockIn(req.user!.userId, webSource(req));
     sendSuccess(res, "Clocked in", record, 201);
   } catch (error) {
     next(error);
@@ -137,7 +159,7 @@ export const clockIn = async (req: AuthenticatedRequest, res: Response, next: Ne
 
 export const clockOut = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const record = await service.clockOut(req.user!.userId);
+    const record = await service.clockOut(req.user!.userId, webSource(req));
     sendSuccess(res, "Clocked out", record);
   } catch (error) {
     next(error);

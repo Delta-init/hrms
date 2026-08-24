@@ -115,6 +115,21 @@ export const useDeleteEmployee = () => {
   });
 };
 
+/**
+ * Forget the browser a remote employee's attendance is tied to.
+ *
+ * The way out of a new laptop, a reinstalled browser or cleared site data —
+ * without it, every one of those is a permanent lockout.
+ */
+export const useResetEmployeeDevice = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { await api.post(`/employees/${id}/reset-device`); },
+    onSuccess: () => { invalidateEmployeeViews(qc); toast.success("Device reset — their next punch registers a new one"); },
+    onError: (e) => toast.error(errMsg(e, "Could not reset the device")),
+  });
+};
+
 export const useCreateEmployeeLogin = () => {
   const qc = useQueryClient();
   return useMutation({

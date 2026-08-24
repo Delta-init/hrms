@@ -11,6 +11,41 @@ const punchSourceSchema = new Schema<IPunchSource>(
     kiosk: { type: Schema.Types.ObjectId, ref: "Kiosk", default: null },
     matchScore: { type: Number, default: null },
     proofKey: { type: String, default: null },
+
+    // ── Where the punch came from ──
+    // Recorded for remote check-ins, where no kiosk saw the person and this is
+    // the only account of where the day started. Absent on every punch made
+    // before it was collected, and on any where the browser declined to say.
+    //
+    // Server-observed, so not forgeable by the person punching:
+    ip: { type: String, trim: true, maxlength: 64, default: null },
+    country: { type: String, trim: true, uppercase: true, maxlength: 2, default: null },
+    city: { type: String, trim: true, maxlength: 80, default: null },
+    region: { type: String, trim: true, maxlength: 80, default: null },
+    userAgent: { type: String, trim: true, maxlength: 400, default: null },
+    browser: { type: String, trim: true, maxlength: 40, default: null },
+    os: { type: String, trim: true, maxlength: 40, default: null },
+    deviceType: { type: String, enum: ["mobile", "tablet", "desktop"], default: null },
+
+    // Browser-reported, and so corroborating rather than conclusive — devtools
+    // can set any coordinates it likes. Rounded to ~100m before storage.
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    accuracy: { type: Number, default: null },
+    // Why there is no fix, when there is none — a declined prompt is an
+    // ordinary event and reads very differently from a missing field.
+    locationSource: {
+      type: String,
+      enum: ["gps", "denied", "unavailable", "unsupported"],
+      default: null,
+    },
+    timeZone: { type: String, trim: true, maxlength: 60, default: null },
+
+    // Which registered browser this came from, and whether it still looked like
+    // the machine it was registered on. A changed fingerprint does not refuse
+    // the punch — see Employee.trustedDevice — it marks it for a human.
+    deviceLabel: { type: String, trim: true, maxlength: 80, default: null },
+    deviceFingerprintChanged: { type: Boolean, default: false },
   },
   { _id: false }
 );

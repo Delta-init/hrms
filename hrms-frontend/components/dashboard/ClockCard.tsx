@@ -1,10 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlarmClock, Fingerprint, Power, Sunrise, Sunset, Lock, CheckCircle2, Loader2 } from "lucide-react";
+import { AlarmClock, Fingerprint, Power, Sunrise, Sunset, Lock, CheckCircle2, Loader2, MonitorSmartphone, MapPin } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
+  ResponsiveDialogTitle, ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { cn } from "@/lib/utils";
 import { useTodayAttendance, useClockIn, useClockOut } from "@/hooks/useSelfAttendance";
+import { deviceKey, deviceLabel, deviceFingerprint } from "@/lib/device";
+import type { PunchClientContext } from "@/types";
 
 type Tone = "neutral" | "green" | "amber" | "red" | "primary";
 const TONES: Record<Tone, { glow: string; text: string; badge: string; stroke: string }> = {
@@ -22,6 +29,63 @@ function fmtTime(iso?: string | null, tz?: string) {
 function fmtClock(d: Date, tz?: string) {
   return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: tz, hour12: true }).format(d);
 }
+/**
+ * What this browser can say about where the punch is being made.
+ *
+ * Only asked of remote staff — the people whose whereabouts the punch is the
+ * only record of. The permission prompt can be declined, and that is a normal
+ * answer rather than a failure: the punch goes through either way, carrying
+ * `denied` so the attendance record says why there is no fix instead of
+ * leaving a silent gap that reads like a bug.
+ *
+ * Needs a secure context. Over plain http on a LAN address the browser
+ * withholds geolocation entirely, which surfaces here as "unsupported".
+ */
+async function collectPunchContext(wantsLocation: boolean): Promise<PunchClientContext> {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Sent on every punch, not only when binding is on. The server decides
+  // whether it matters; the client asking first would just be a round trip,
+  // and a browser that has never sent one has no device to be bound to.
+  const key = deviceKey();
+  const device: PunchClientContext = key
+    ? { deviceKey: key, deviceLabel: deviceLabel(), deviceFingerprint: deviceFingerprint() }
+    : {};
+
+  if (!wantsLocation) return { timeZone, ...device };
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return { timeZone, ...device, locationSource: "unsupported" };
+  }
+
+  try {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        // Long enough for a cold GPS fix indoors, short enough that nobody
+        // stands watching a spinner wondering whether they clocked in.
+        timeout: 12_000,
+        maximumAge: 60_000,
+      });
+    });
+    return {
+      timeZone,
+      ...device,
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
+      accuracy: pos.coords.accuracy,
+      locationSource: "gps",
+    };
+  } catch (e) {
+    const code = (e as GeolocationPositionError | undefined)?.code;
+    return {
+      timeZone,
+      ...device,
+      locationSource: code === 1 /* PERMISSION_DENIED */ ? "denied" : "unavailable",
+    };
+  }
+}
+
+const NOTICE_KEY = "hrms.remote-punch-notice";
+
 function fmtDuration(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -33,6 +97,8 @@ export function ClockCard() {
   const { mutate: clockIn, isPending: clockingIn } = useClockIn();
   const { mutate: clockOut, isPending: clockingOut } = useClockOut();
   const [now, setNow] = useState(() => new Date());
+  const [noticeFor, setNoticeFor] = useState<"in" | "out" | null>(null);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -43,8 +109,32 @@ export function ClockCard() {
     return <Card className="flex h-full min-h-[360px] items-center justify-center p-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>;
   }
 
-  const { attendance, schedule, shift } = data;
+  const { attendance, schedule, shift, punchPolicy } = data;
   const tz = schedule.timeZone;
+
+  // Only remote staff are asked for a location: they are the ones no kiosk
+  // sees, and whose punch is the sole account of where the day started.
+  const recordsLocation = punchPolicy.workMode === "wfh";
+
+  const send = async (dir: "in" | "out") => {
+    setLocating(recordsLocation);
+    const ctx = await collectPunchContext(recordsLocation);
+    setLocating(false);
+    (dir === "in" ? clockIn : clockOut)(ctx);
+  };
+
+  const punch = (dir: "in" | "out") => {
+    // Say what is about to be collected before the browser's own prompt
+    // appears, not after. Once acknowledged it stays acknowledged; the standing
+    // line beneath the clock keeps it from becoming a thing they agreed to once
+    // and never saw again.
+    if (recordsLocation && localStorage.getItem(NOTICE_KEY) !== "ack") {
+      setNoticeFor(dir);
+      return;
+    }
+    void send(dir);
+  };
+
   const t = now.getTime();
   const windowOpen = new Date(shift.windowOpen).getTime();
   const lateAt = new Date(shift.lateThreshold).getTime();
@@ -58,18 +148,35 @@ export function ClockCard() {
   let actionLabel = "";
   let ActionIcon = AlarmClock;
   let pulse = false;
-  const busy = clockingIn || clockingOut;
+  // Waiting on the location fix counts as busy: the button must not look
+  // pressable again while the browser is still deciding.
+  const busy = clockingIn || clockingOut || locating;
+
+  // Office staff punch at a kiosk once the organization enforces it, so the
+  // button is not theirs to press — except to close a session they opened here
+  // before it was switched on, which the server still allows.
+  const kioskOnly = !punchPolicy.canSelfPunch;
 
   if (attendance?.checkOut) {
     tone = attendance.status === "half_day" ? "red" : attendance.status === "late" ? "amber" : "green";
     title = "Shift complete";
     sub = `Worked ${Math.floor(attendance.workedMinutes / 60)}h ${attendance.workedMinutes % 60}m`;
     actionLabel = "Done"; ActionIcon = CheckCircle2;
+  } else if (attendance?.checkIn && kioskOnly && !punchPolicy.canFinishOpenSession) {
+    tone = "neutral";
+    title = "Clock out at the kiosk";
+    sub = `Clocked in ${fmtTime(attendance.checkIn, tz)} · elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
+    actionLabel = "Kiosk only"; ActionIcon = MonitorSmartphone;
   } else if (attendance?.checkIn) {
     tone = attendance.status === "half_day" ? "red" : attendance.status === "late" ? "amber" : "green";
     title = "Clocked in";
     sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
-    action = () => clockOut(); actionLabel = "Clock Out"; ActionIcon = Power; pulse = true;
+    action = () => punch("out"); actionLabel = "Clock Out"; ActionIcon = Power; pulse = true;
+  } else if (kioskOnly) {
+    tone = "neutral";
+    title = "Check in at the kiosk";
+    sub = "You're set up as office-based, so your attendance is recorded there.";
+    actionLabel = "Kiosk only"; ActionIcon = MonitorSmartphone;
   } else if (t < windowOpen) {
     tone = "neutral";
     title = "Not open yet";
@@ -81,7 +188,7 @@ export function ClockCard() {
     else if (t <= halfAt) { tone = "amber"; sub = "You're running late"; }
     else { tone = "red"; sub = "Late — counts as half day"; }
     title = "Ready to clock in";
-    action = () => clockIn(); actionLabel = "Clock In"; ActionIcon = Fingerprint; pulse = true;
+    action = () => punch("in"); actionLabel = "Clock In"; ActionIcon = Fingerprint; pulse = true;
   }
 
   const c = TONES[tone];
@@ -162,6 +269,66 @@ export function ClockCard() {
           <p className="mt-1 text-base font-semibold tabular-nums">{fmtTime(attendance?.checkOut, tz)}</p>
         </div>
       </div>
+
+      {/* Standing notice, not a one-off consent. Somebody whose location is
+          recorded twice a day should be able to see that said plainly, on the
+          screen where it happens, rather than recall a dialog from months ago. */}
+      {recordsLocation && (
+        <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+          <MapPin className="mt-px h-3 w-3 shrink-0" />
+          <span>
+            Working remotely — your location, IP address and device are recorded with each punch.
+            {punchPolicy.device.required && (
+              punchPolicy.device.registered
+                ? ` Attendance is tied to ${punchPolicy.device.label || "your registered device"}.`
+                : " This browser will be registered as your attendance device."
+            )}
+          </span>
+        </p>
+      )}
+
+      <ResponsiveDialog open={noticeFor !== null} onOpenChange={(o) => !o && setNoticeFor(null)}>
+        <ResponsiveDialogContent desktopClassName="max-w-md">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-primary" />
+              Before you check {noticeFor === "out" ? "out" : "in"}
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          <div className="space-y-3 px-4 text-sm text-muted-foreground sm:px-0">
+            <p>
+              You&apos;re set up as working remotely, so each check-in and check-out records where it
+              was made from. Your employer keeps this as the record of your attendance.
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>Your approximate location, to about 100 metres — never your exact address</li>
+              <li>Your IP address and the country it belongs to</li>
+              <li>The browser and device you punched from</li>
+              {punchPolicy.device.required && (
+                <li>This browser is registered as your attendance device — punches from another
+                  one are refused until HR resets it</li>
+              )}
+            </ul>
+            <p>
+              Your browser will ask permission for the location. You can decline, and your punch
+              still goes through — the record simply notes that no location was shared.
+            </p>
+          </div>
+          <ResponsiveDialogFooter>
+            <Button variant="outline" onClick={() => setNoticeFor(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const dir = noticeFor;
+                localStorage.setItem(NOTICE_KEY, "ack");
+                setNoticeFor(null);
+                if (dir) void send(dir);
+              }}
+            >
+              Got it — check me {noticeFor === "out" ? "out" : "in"}
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </Card>
   );
 }

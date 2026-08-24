@@ -3,6 +3,12 @@ import { z } from "zod";
 const envSchema = z.object({
   PORT: z.string().default("5000"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  /**
+   * How many proxies sit in front of this server, or a comma-separated list of
+   * their addresses. Unset means none — see index.ts for why that is the safe
+   * default and why attendance needs this set correctly in production.
+   */
+  TRUST_PROXY: z.string().optional(),
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
   // 32 chars minimum: these are HMAC keys, and a guessable one lets an attacker
   // mint their own access tokens and impersonation tickets outright.

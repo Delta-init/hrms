@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createEmployee, getEmployees, getEmployeeById, getEmployeeByUser,
   getNextEmployeeCode, getMyEmployeeProfile, updateMyProfile, updateEmployee, deleteEmployee, createEmployeeLogin,
+  resetEmployeeDevice,
 } from "../controllers/employeeController.js";
 import {
   listDocumentsForEmployee, uploadDocumentForEmployee, deleteDocumentForEmployee,
@@ -29,6 +30,9 @@ router.put("/:id", checkPermission("employees", "edit"), updateEmployee);
 router.delete("/:id", checkPermission("employees", "delete"), deleteEmployee);
 // Provision a login account for the employee
 router.post("/:id/create-login", checkPermission("employees", "edit"), createEmployeeLogin);
+// Clearing somebody's registered device lets them punch from a new one, so it
+// sits behind the same permission as editing them rather than merely viewing.
+router.post("/:id/reset-device", checkPermission("employees", "edit"), resetEmployeeDevice);
 
 // Documents filed on an employee's behalf. Viewing a passport scan is reading
 // the employee record, so it rides on the same view/edit permissions.

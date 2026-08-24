@@ -62,6 +62,10 @@ export interface IOrganizationSettings {
   smtpPass?: string;
   smtpSecure?: boolean;
   mailFrom?: string;
+  /** Hold office staff to punching at a kiosk. See the model for why it is opt-in. */
+  enforceWorkMode?: boolean;
+  /** Tie each remote employee's punches to the first browser they use. */
+  bindRemoteDevice?: boolean;
 }
 
 export interface IOrganization extends Document {
@@ -184,6 +188,26 @@ export interface IPunchSource {
   matchScore?: number | null;
   /** R2 key of the frame this punch was made from; purged on a retention job. */
   proofKey?: string | null;
+
+  // Where the punch came from — see utils/punchContext.ts. Server-observed:
+  ip?: string | null;
+  country?: string | null;
+  city?: string | null;
+  region?: string | null;
+  userAgent?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  deviceType?: "mobile" | "tablet" | "desktop" | null;
+  // Browser-reported, and only as trustworthy as the browser:
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number | null;
+  locationSource?: "gps" | "denied" | "unavailable" | "unsupported" | null;
+  timeZone?: string | null;
+  /** The registered browser this punch came from, when device binding is on. */
+  deviceLabel?: string | null;
+  /** The key matched but the machine looked different — flagged, not refused. */
+  deviceFingerprintChanged?: boolean;
 }
 
 export interface IAttendanceSession {
@@ -463,6 +487,21 @@ export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
 export type MaritalStatus = "married" | "unmarried";
 export type EmployeeLocation = "india" | "dubai";
+/** Where somebody works, which decides where they are allowed to punch. */
+export type WorkMode = "office" | "wfh";
+
+/**
+ * A remote employee's registered browser. The key itself is never stored —
+ * only its hash — so this record cannot be used to punch as them.
+ */
+export interface ITrustedDevice {
+  keyHash: string;
+  label?: string;
+  fingerprint?: string;
+  boundAt?: Date;
+  boundIp?: string;
+  lastSeenAt?: Date | null;
+}
 
 /** Document categories collected during onboarding (location-driven). */
 export type DocumentType =
@@ -572,6 +611,9 @@ export interface IEmployee extends Document {
   joiningDate?: Date | null;
   status: EmployeeStatus;
   location?: EmployeeLocation;
+  workMode: WorkMode;
+  /** The single browser a remote employee may punch from. See the model. */
+  trustedDevice?: ITrustedDevice | null;
   /** Monthly base salary (used to prefill payslips). */
   salary?: number;
   currency?: string;

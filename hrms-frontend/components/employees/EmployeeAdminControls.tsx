@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, ChevronDown, Check } from "lucide-react";
-import { useDeleteEmployee, useUpdateEmployee } from "@/hooks/useEmployees";
+import { Loader2, Trash2, ChevronDown, Check, House, Building2, Smartphone } from "lucide-react";
+import { useDeleteEmployee, useUpdateEmployee, useResetEmployeeDevice } from "@/hooks/useEmployees";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import {
-  EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS,
+  EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, WORK_MODE_LABELS,
   type Employee, type EmployeeStatus,
 } from "@/types";
 
@@ -40,11 +40,20 @@ export function EmployeeAdminControls({
   const canDelete = hasPermission("employees", "delete");
   const { mutate: remove, isPending: deleting } = useDeleteEmployee();
   const { mutate: update, isPending: updatingStatus } = useUpdateEmployee();
+  const { mutate: resetDevice, isPending: resettingDevice } = useResetEmployeeDevice();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
 
   return (
     <>
       <Badge variant="outline" className="capitalize">{EMPLOYMENT_TYPE_LABELS[employee.employmentType]}</Badge>
+
+      <Badge variant="outline" className="gap-1">
+        {(employee.workMode ?? "office") === "wfh"
+          ? <House className="h-3 w-3" />
+          : <Building2 className="h-3 w-3" />}
+        {WORK_MODE_LABELS[employee.workMode ?? "office"]}
+      </Badge>
 
       {canEdit ? (
         <StatusChanger
@@ -58,6 +67,20 @@ export function EmployeeAdminControls({
         </span>
       )}
 
+      {/* Only shown once there is something to reset — an employee with no
+          registered device would just get a button that does nothing. */}
+      {canEdit && employee.trustedDevice && (
+        <Button
+          variant="outline" size="sm" className="gap-1.5"
+          disabled={resettingDevice}
+          onClick={() => setResetOpen(true)}
+          title={`Attendance is tied to ${employee.trustedDevice.label || "one browser"}`}
+        >
+          {resettingDevice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Smartphone className="h-3.5 w-3.5" />}
+          Reset device
+        </Button>
+      )}
+
       {canDelete && (
         <Button
           variant="outline" size="sm"
@@ -67,6 +90,19 @@ export function EmployeeAdminControls({
           <Trash2 className="h-3.5 w-3.5" />Delete
         </Button>
       )}
+
+      <ConfirmDialog
+        open={resetOpen} onOpenChange={setResetOpen}
+        title="Reset attendance device"
+        description={`${employee.name} is tied to ${employee.trustedDevice?.label || "one browser"}${
+          employee.trustedDevice?.boundAt
+            ? `, registered ${new Date(employee.trustedDevice.boundAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`
+            : ""
+        }. The next device they punch from becomes the new one.`}
+        confirmLabel="Reset device"
+        isPending={resettingDevice}
+        onConfirm={() => resetDevice(employee._id, { onSuccess: () => setResetOpen(false) })}
+      />
 
       <ConfirmDialog
         open={deleteOpen} onOpenChange={setDeleteOpen}

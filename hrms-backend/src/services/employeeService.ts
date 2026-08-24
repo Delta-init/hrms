@@ -18,6 +18,8 @@ interface EmployeeQuery extends PaginationQuery {
   excludeTerminated?: string;
   department?: string;
   employmentType?: string;
+  /** "office" | "wfh" — where the person works. */
+  workMode?: string;
   /** "yes" | "no" — whether the person has set up face check-in. */
   faceEnrolled?: string;
 }
@@ -118,6 +120,12 @@ export class EmployeeService {
     else if (query.excludeTerminated === "true") filter.status = { $ne: "terminated" };
     if (query.department) filter.department = query.department;
     if (query.employmentType) filter.employmentType = query.employmentType;
+    // Records written before the field existed have no `workMode` at all —
+    // Mongoose only applies the default when a document is saved. Asking for
+    // office staff has to mean "office or not yet set", or the migrated
+    // hundred would answer to neither filter.
+    if (query.workMode === "office") filter.workMode = { $in: ["office", null] };
+    else if (query.workMode) filter.workMode = query.workMode;
 
     /**
      * Who has set up face check-in, and who has not.
@@ -277,6 +285,23 @@ export class EmployeeService {
     const employee = await Employee.findOne(scoped({ user: userId }));
     if (!employee) throw Object.assign(new Error("No employee is linked to your account"), { statusCode: 404 });
     return this.update(String(employee._id), input as UpdateEmployeeInput);
+  }
+
+  /**
+   * Forget the browser a remote employee was tied to.
+   *
+   * The way out of every ordinary lockout — a new laptop, a reinstalled
+   * browser, cleared site data, a lost phone. Deliberately a clean slate
+   * rather than a re-registration: HR cannot know which browser the person is
+   * about to sit in front of, so the next punch registers it, exactly as the
+   * first one did.
+   */
+  async resetTrustedDevice(id: string) {
+    const employee = await Employee.findOne(scoped({ _id: id }));
+    if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    employee.set("trustedDevice", null);
+    await employee.save();
+    return { message: "Device reset. The next punch will register a new one." };
   }
 
   async remove(id: string) {

@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
@@ -8,7 +9,7 @@ import { Organization } from "../models/Organization.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
-import type { IPunchSource, PaginationQuery } from "../types/index.js";
+import type { IPunchSource, ITrustedDevice, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
@@ -24,8 +25,19 @@ function dayBoundary(value: string, tz: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? zonedTimeToUtc(value, "00:00", tz) : new Date(value);
 }
 
-/** Provenance passed in by whoever recorded the punch. */
-export type PunchSource = Omit<IPunchSource, "kiosk"> & { kiosk?: string | null };
+/**
+ * Provenance passed in by whoever recorded the punch.
+ *
+ * `deviceKey` and `deviceFingerprint` are transient: they identify the browser
+ * and are stripped in `gatePunch` before anything is written. The key is the
+ * secret that stands for the device — storing a copy on every punch would
+ * scatter it across the attendance history.
+ */
+export type PunchSource = Omit<IPunchSource, "kiosk"> & {
+  kiosk?: string | null;
+  deviceKey?: string;
+  deviceFingerprint?: string;
+};
 
 interface AttendanceQuery extends PaginationQuery {
   user?: string;
@@ -155,6 +167,179 @@ export class AttendanceService {
     return DEFAULT_SCHEDULE;
   }
 
+  /**
+   * Whether this person may punch from the web app.
+   *
+   * Office staff are expected at a kiosk, because being on site is the thing
+   * the punch attests to and one made from a phone on the way in attests to
+   * nothing. Work-from-home staff have no kiosk to walk past, so the web app is
+   * the only place they can punch at all.
+   *
+   * Three separate ways to be allowed, and each is there for a reason:
+   *  - the organization has not turned the policy on;
+   *  - the person works from home;
+   *  - or no employee record stands behind the login. Admin and service
+   *    accounts are not who the policy describes, and locking them out of their
+   *    own attendance while enforcing a rule about office attendance would be
+   *    an accident rather than a decision.
+   */
+  private async selfPunchPolicy(userId: string): Promise<{
+    workMode: "office" | "wfh" | null;
+    enforced: boolean;
+    canSelfPunch: boolean;
+    bindDevice: boolean;
+    employeeId: string | null;
+    trustedDevice: ITrustedDevice | null;
+  }> {
+    const [org, employee] = await Promise.all([
+      Organization.findById(getOrgId())
+        .select("settings.enforceWorkMode settings.bindRemoteDevice")
+        .lean<{ settings?: { enforceWorkMode?: boolean; bindRemoteDevice?: boolean } } | null>(),
+      Employee.findOne(scoped({ user: userId }))
+        .select("workMode trustedDevice")
+        .lean<{ _id: unknown; workMode?: "office" | "wfh"; trustedDevice?: ITrustedDevice | null } | null>(),
+    ]);
+
+    const enforced = !!org?.settings?.enforceWorkMode;
+    // Records written before the field existed have none: Mongoose only applies
+    // a default when a document is saved. Absent means office, which is what
+    // everybody was before anyone could choose otherwise.
+    const workMode = employee ? employee.workMode ?? "office" : null;
+
+    return {
+      workMode,
+      enforced,
+      canSelfPunch: !enforced || workMode !== "office",
+      // Only remote staff are held to one browser. Office staff punch at a
+      // kiosk, which already knows exactly which device it is.
+      bindDevice: !!org?.settings?.bindRemoteDevice && workMode === "wfh",
+      employeeId: employee ? String(employee._id) : null,
+      trustedDevice: employee?.trustedDevice ?? null,
+    };
+  }
+
+  /**
+   * Hold a remote employee to the one browser they registered.
+   *
+   * The browser mints a random key on first use and keeps it; we store only its
+   * hash, and every later punch has to present the same key. That is as close
+   * to "one device" as a web app gets — a determined person can copy the key
+   * out of their own browser, and no amount of fingerprinting changes that.
+   * What it does buy is that using a second device takes deliberate effort and
+   * leaves a trail, rather than being the path of least resistance.
+   *
+   * Returns what to stamp on the punch, or null when the rule does not apply.
+   */
+  private async bindOrCheckDevice(
+    policy: { bindDevice: boolean; employeeId: string | null; trustedDevice: ITrustedDevice | null },
+    source: PunchSource | undefined
+  ): Promise<{ deviceLabel: string | null; deviceFingerprintChanged: boolean } | null> {
+    // A kiosk punch is identified by the kiosk, and a manual one by the admin
+    // making it. Neither is a browser this rule has anything to say about.
+    if (source && source.method !== "web") return null;
+    if (!policy.bindDevice || !policy.employeeId) return null;
+
+    const key = source?.deviceKey?.trim();
+    if (!key) {
+      // Private browsing, cleared storage, or a client too old to send one.
+      // Refused rather than waved through: a punch that cannot say which device
+      // it came from is exactly what the setting exists to stop.
+      throw Object.assign(
+        new Error("This browser can't identify itself. Allow site data and try again, or ask HR to reset your device."),
+        { statusCode: 403, code: "DEVICE_KEY_MISSING" }
+      );
+    }
+
+    const hash = createHash("sha256").update(key).digest("hex");
+    const label = source?.deviceLabel?.trim().slice(0, 80) || "Unnamed device";
+    const fingerprint = source?.deviceFingerprint?.trim().slice(0, 64) || "";
+    const known = policy.trustedDevice;
+
+    if (!known?.keyHash) {
+      // First punch registers the device. Pre-registration by HR was the
+      // alternative and it makes every new joiner wait on an admin before they
+      // can start their first day; when and from where is kept instead, which
+      // is what makes this auditable afterwards.
+      await Employee.updateOne(
+        { _id: policy.employeeId },
+        {
+          $set: {
+            trustedDevice: {
+              keyHash: hash,
+              label,
+              fingerprint,
+              boundAt: new Date(),
+              boundIp: source?.ip ?? "",
+              lastSeenAt: new Date(),
+            },
+          },
+        }
+      );
+      return { deviceLabel: label, deviceFingerprintChanged: false };
+    }
+
+    // Constant-time, so the comparison cannot be probed a byte at a time.
+    const a = Buffer.from(hash, "hex");
+    const b = Buffer.from(known.keyHash, "hex");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw Object.assign(
+        new Error(`Attendance is tied to your registered device (${known.label || "unnamed"}). Punch from it, or ask HR to reset it.`),
+        { statusCode: 403, code: "DEVICE_NOT_TRUSTED" }
+      );
+    }
+
+    // Same key, different-looking machine. Not refused — a browser update
+    // rewrites its own user agent and nobody should lose a day's pay to that —
+    // but recorded on the punch so it can be looked at.
+    const changed = !!fingerprint && !!known.fingerprint && fingerprint !== known.fingerprint;
+    await Employee.updateOne(
+      { _id: policy.employeeId },
+      { $set: { "trustedDevice.lastSeenAt": new Date(), "trustedDevice.fingerprint": fingerprint || known.fingerprint } }
+    );
+    return { deviceLabel: known.label || label, deviceFingerprintChanged: changed };
+  }
+
+  /**
+   * Refuse a web punch from somebody the kiosk policy covers.
+   *
+   * Enforced here rather than on the route so that a hand-written POST is
+   * refused too. Hiding the button is a courtesy; this is the rule.
+   */
+  private assertKioskRule(policy: { canSelfPunch: boolean }, source?: PunchSource) {
+    // Only the employee's own web punch is covered. A kiosk punch is the very
+    // thing the policy asks for, and a manual one is an administrator acting —
+    // neither is somebody dodging the walk to the lobby.
+    if (source && source.method !== "web") return;
+    if (policy.canSelfPunch) return;
+
+    throw Object.assign(new Error("Please check in at the kiosk — dashboard check-in is for remote staff"), {
+      statusCode: 403,
+      code: "KIOSK_ONLY",
+    });
+  }
+
+  /**
+   * Every rule a punch has to pass, and the provenance to store once it has.
+   *
+   * One place and one policy read, so the two rules cannot disagree about who
+   * somebody is: which device is allowed depends on the same work mode that
+   * decides whether they may punch here at all.
+   */
+  private async gatePunch(
+    userId: string,
+    source: PunchSource | undefined,
+    opts?: { skipKioskRule?: boolean }
+  ): Promise<PunchSource | undefined> {
+    const policy = await this.selfPunchPolicy(userId);
+    if (!opts?.skipKioskRule) this.assertKioskRule(policy, source);
+
+    const device = await this.bindOrCheckDevice(policy, source);
+    // Drop the secret before it can reach a document, whether or not the rule
+    // applied — nothing downstream has any use for it.
+    const { deviceKey: _k, deviceFingerprint: _f, ...rest } = source ?? { method: "web" as const };
+    return device ? { ...rest, ...device } : (source ? rest : undefined);
+  }
+
   /** Mark any of the user's prior open days (clocked in, never out) as half-day. */
   private async closeStaleDays(userId: string, todayMidnightUtc: Date) {
     await Attendance.updateMany(
@@ -167,10 +352,32 @@ export class AttendanceService {
     const schedule = await this.scheduleFor(userId);
     const shift = resolveShift(schedule, new Date());
     await this.closeStaleDays(userId, shift.dateMidnightUtc);
-    const attendance = await Attendance.findOne({ user: userId, date: shift.dateMidnightUtc }).lean();
+    const [attendance, policy] = await Promise.all([
+      Attendance.findOne({ user: userId, date: shift.dateMidnightUtc }).lean(),
+      this.selfPunchPolicy(userId),
+    ]);
+
+    // Somebody the policy refuses may still close a session they opened from
+    // here, so the card is told about that separately rather than being locked
+    // outright — see clockOut.
+    const open = attendance?.sessions?.[attendance.sessions.length - 1];
+    const canFinishOpenSession =
+      !!attendance?.checkIn && !attendance.checkOut &&
+      (!open?.checkInSource || open.checkInSource.method === "web");
+
     return {
       attendance,
       schedule,
+      punchPolicy: {
+        workMode: policy.workMode,
+        canSelfPunch: policy.canSelfPunch,
+        canFinishOpenSession,
+        device: {
+          required: policy.bindDevice,
+          registered: !!policy.trustedDevice?.keyHash,
+          label: policy.trustedDevice?.label ?? null,
+        },
+      },
       shift: {
         shiftStart: shift.shiftStart,
         shiftEnd: shift.shiftEnd,
@@ -193,6 +400,11 @@ export class AttendanceService {
    * is what every punch was before the kiosk existed.
    */
   async clockIn(userId: string, source?: PunchSource) {
+    // Checked before anything else: "you cannot clock in here at all" outranks
+    // "not yet", and telling somebody to wait for a window they may never use
+    // would send them back at nine to be refused again.
+    source = await this.gatePunch(userId, source);
+
     const schedule = await this.scheduleFor(userId);
     const shift = resolveShift(schedule, new Date());
     const now = new Date();
@@ -233,6 +445,17 @@ export class AttendanceService {
     if (!att) {
       throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
     }
+
+    const open = att.sessions[att.sessions.length - 1];
+    // Anybody may close a session they opened here, even once the policy would
+    // refuse them a new one. Turning enforcement on at two in the afternoon
+    // otherwise strands everybody who clocked in from their desk that morning:
+    // no way to clock out, and an open day that becomes a half-day overnight.
+    // A punch made at the kiosk is still closed at the kiosk.
+    const startedHere = !open?.checkInSource || open.checkInSource.method === "web";
+    // The device rule still applies either way: finishing a day you started is
+    // a concession about where you are, not about whose machine you are on.
+    source = await this.gatePunch(userId, source, { skipKioskRule: startedHere });
 
     if (att.sessions.length > 0) {
       const last = att.sessions[att.sessions.length - 1]!;

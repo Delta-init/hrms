@@ -11,6 +11,25 @@ const settingsSchema = new Schema(
     smtpPass: { type: String, trim: true, maxlength: 200 },
     smtpSecure: { type: Boolean, default: false },
     mailFrom: { type: String, trim: true, maxlength: 200 },
+    /**
+     * Hold office staff to punching at a kiosk.
+     *
+     * Off by default, and deliberately a switch rather than implied by the
+     * work mode itself. Every employee is office until somebody says otherwise,
+     * so enforcing it the moment the field shipped would have taken the
+     * clock-in button away from everybody at once, before HR had classified a
+     * single person. Turn it on once the list is right.
+     */
+    enforceWorkMode: { type: Boolean, default: false },
+    /**
+     * Tie each remote employee's punches to one browser.
+     *
+     * Opt-in for the same reason as the setting above, and for one more: the
+     * first punch after it is switched on registers whatever device somebody
+     * happens to be holding. Turning it on mid-afternoon binds half the team
+     * to their phones.
+     */
+    bindRemoteDevice: { type: Boolean, default: false },
   },
   { _id: false }
 );

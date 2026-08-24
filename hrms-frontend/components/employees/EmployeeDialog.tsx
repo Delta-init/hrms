@@ -17,7 +17,7 @@ import { employeeFormSchema, type EmployeeFormValues } from "@/lib/validations/e
 import { useCreateEmployee, useUpdateEmployee, useNextEmployeeCode } from "@/hooks/useEmployees";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { useRolesSimple } from "@/hooks/useRoles";
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation } from "@/types";
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, WORK_MODE_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation, type WorkMode } from "@/types";
 
 const NONE = "__none__";
 const idOf = (v: unknown) => (v && typeof v === "object" ? (v as { _id: string })._id : (v as string) || "");
@@ -53,7 +53,7 @@ export function EmployeeDialog({
     defaultValues: {
       employeeCode: "", name: "", email: "", phone: "", department: "", designation: "",
       workSchedule: "", user: "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined,
-      salary: 0, currency: "AED",
+      workMode: "office", salary: 0, currency: "AED",
       createLogin: true, loginEmail: "", loginRole: "",
     },
   });
@@ -78,12 +78,14 @@ export function EmployeeDialog({
         joiningDate: toDateInput(employee.joiningDate),
         status: employee.status,
         location: employee.location ?? undefined,
+        // Records written before the field existed have none, and those are office.
+        workMode: employee.workMode ?? "office",
         salary: employee.salary ?? 0,
         currency: employee.currency ?? "AED",
         createLogin: false, loginEmail: "", loginRole: "",
       });
     } else {
-      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, salary: 0, currency: "AED", createLogin: !defaultUserId, loginEmail: "", loginRole: "" });
+      reset({ employeeCode: "", name: defaultName ?? "", email: "", phone: "", department: "", designation: "", workSchedule: "", user: defaultUserId ?? "", employmentType: "full_time", joiningDate: "", status: "active", location: undefined, workMode: "office", salary: 0, currency: "AED", createLogin: !defaultUserId, loginEmail: "", loginRole: "" });
     }
   }, [open, employee, reset, defaultName, defaultUserId]);
 
@@ -195,6 +197,25 @@ export function EmployeeDialog({
               )}
             />
             <p className="text-[11px] text-muted-foreground">Determines which documents the employee must upload during onboarding.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Work Mode</Label>
+            <Controller
+              name="workMode"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value ?? "office"} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(WORK_MODE_LABELS) as WorkMode[]).map((m) => (
+                      <SelectItem key={m} value={m}>{WORK_MODE_LABELS[m]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-[11px] text-muted-foreground">Office staff work on site and check in at a kiosk. Work-from-home staff check in from their own dashboard.</p>
           </div>
 
           <div className="space-y-1.5">

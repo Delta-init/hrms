@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, AttendanceToday } from "@/types";
+import type { ApiResponse, AttendanceToday, PunchClientContext } from "@/types";
 
 const TODAY_KEY = ["attendance", "today"] as const;
 const MINE_KEY = ["attendance", "mine"] as const;
@@ -31,7 +31,8 @@ export const useMyAttendance = (params?: Record<string, string>) =>
 export const useClockIn = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => (await api.post<ApiResponse<unknown>>("/attendance/clock-in")).data,
+    mutationFn: async (ctx?: PunchClientContext) =>
+      (await api.post<ApiResponse<unknown>>("/attendance/clock-in", ctx ?? {})).data,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance"] }); toast.success("Clocked in ✅"); },
     onError: (e) => toast.error(errMsg(e, "Could not clock in")),
   });
@@ -40,7 +41,8 @@ export const useClockIn = () => {
 export const useClockOut = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => (await api.post<ApiResponse<unknown>>("/attendance/clock-out")).data,
+    mutationFn: async (ctx?: PunchClientContext) =>
+      (await api.post<ApiResponse<unknown>>("/attendance/clock-out", ctx ?? {})).data,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["attendance"] }); toast.success("Clocked out 👋"); },
     onError: (e) => toast.error(errMsg(e, "Could not clock out")),
   });

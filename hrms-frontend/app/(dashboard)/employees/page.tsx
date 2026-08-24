@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound, ScanFace } from "lucide-react";
+import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound, ScanFace, House, Building2 } from "lucide-react";
 import { useEmployees, useDeleteEmployee } from "@/hooks/useEmployees";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useAuth, useImpersonate } from "@/hooks/useAuth";
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PersonAvatar } from "@/components/shared/PersonAvatar";
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, type Employee, type EmployeeStatus, type EmploymentType } from "@/types";
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type WorkMode } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<EmployeeStatus, string> = {
@@ -92,6 +92,18 @@ export default function EmployeesPage() {
     { id: "code", label: "Code", sortKey: "employeeCode", render: (e) => <span className="font-mono text-xs">{e.employeeCode}</span> },
     { id: "department", label: "Department", render: (e) => <span className="text-muted-foreground">{typeof e.department === "object" && e.department ? e.department.name : "—"}</span> },
     { id: "type", label: "Type", render: (e) => <span className="text-muted-foreground">{EMPLOYMENT_TYPE_LABELS[e.employmentType]}</span> },
+    {
+      id: "workMode", label: "Work mode",
+      render: (e) => (e.workMode ?? "office") === "wfh" ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">
+          <House className="h-3 w-3" />Home
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          <Building2 className="h-3 w-3" />Office
+        </span>
+      ),
+    },
     { id: "schedule", label: "Schedule", defaultVisible: false, render: (e) => <span className="text-muted-foreground">{typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "—"}</span> },
     { id: "joining", label: "Joining", defaultVisible: false, sortKey: "joiningDate", render: (e) => <span className="text-muted-foreground">{e.joiningDate ? new Date(e.joiningDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span> },
     // Dropped entirely when the recognition service is off, rather than shown
@@ -157,6 +169,16 @@ export default function EmployeesPage() {
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Work mode</Label>
+        <Select value={query.filters.workMode ?? ALL} onValueChange={(v) => query.setFilter("workMode", v)}>
+          <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="Anywhere" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Anywhere</SelectItem>
+            {(Object.keys(WORK_MODE_LABELS) as WorkMode[]).map((m) => <SelectItem key={m} value={m}>{WORK_MODE_LABELS[m]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
       {faceSettings?.enabled && (
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Face check-in</Label>
@@ -211,6 +233,7 @@ export default function EmployeesPage() {
           Designation: e.designation ?? "",
           Department: typeof e.department === "object" && e.department ? e.department.name : "",
           Type: EMPLOYMENT_TYPE_LABELS[e.employmentType],
+          "Work mode": WORK_MODE_LABELS[e.workMode ?? "office"],
           Schedule: typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "",
           Status: EMPLOYEE_STATUS_LABELS[e.status],
           Joining: e.joiningDate ? new Date(e.joiningDate).toISOString().slice(0, 10) : "",

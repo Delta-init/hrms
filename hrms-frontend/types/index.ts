@@ -92,6 +92,10 @@ export interface OrganizationSettings {
   smtpPass?: string;
   smtpSecure?: boolean;
   mailFrom?: string;
+  /** Hold office staff to punching at a kiosk rather than their dashboard. */
+  enforceWorkMode?: boolean;
+  /** Tie each remote employee's punches to the first browser they use. */
+  bindRemoteDevice?: boolean;
 }
 export interface Organization {
   _id: string;
@@ -243,6 +247,10 @@ export type MaritalStatus = "married" | "unmarried";
 export type EmployeeLocation = "india" | "dubai";
 export const LOCATION_LABELS: Record<EmployeeLocation, string> = { india: "India", dubai: "Dubai" };
 
+/** Where somebody works, which decides where they are allowed to punch. */
+export type WorkMode = "office" | "wfh";
+export const WORK_MODE_LABELS: Record<WorkMode, string> = { office: "Office", wfh: "Work from home" };
+
 // ─── Employee documents (location-driven onboarding) ─────────────────────────
 export type DocumentType =
   | "passport"
@@ -380,6 +388,15 @@ export interface Employee {
   joiningDate?: string | null;
   status: EmployeeStatus;
   location?: EmployeeLocation;
+  /** Absent on records written before the field existed; those are office. */
+  workMode?: WorkMode;
+  /** The one browser this person may punch from, when binding is on. */
+  trustedDevice?: {
+    label?: string;
+    boundAt?: string;
+    boundIp?: string;
+    lastSeenAt?: string | null;
+  } | null;
   salary?: number;
   currency?: string;
   photo?: string;
@@ -703,10 +720,42 @@ export interface ShiftInfo {
   serverNow: string;
 }
 
+/**
+ * What the browser volunteers when someone punches from the web app. The
+ * server records the IP, country and device itself — those are not ours to
+ * send, and would be worthless if they were.
+ */
+export interface PunchClientContext {
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+  locationSource?: "gps" | "denied" | "unavailable" | "unsupported";
+  timeZone?: string;
+  /** Identifies this browser when attendance is tied to one device. */
+  deviceKey?: string;
+  deviceLabel?: string;
+  deviceFingerprint?: string;
+}
+
 export interface AttendanceToday {
   attendance: Attendance | null;
   schedule: { timeZone: string; loginTime: string; logoutTime: string; graceMinutes: number };
   shift: ShiftInfo;
+  punchPolicy: {
+    /** null when no employee record stands behind the login, so no policy applies. */
+    workMode: WorkMode | null;
+    /** False for office staff once the organization enforces kiosk check-in. */
+    canSelfPunch: boolean;
+    /** They may still close a session they opened here before it was enforced. */
+    canFinishOpenSession: boolean;
+    device: {
+      /** Punches are tied to one browser for this person. */
+      required: boolean;
+      /** A browser is already registered; a different one will be refused. */
+      registered: boolean;
+      label: string | null;
+    };
+  };
 }
 
 // ─── Payslip ─────────────────────────────────────────────────────────────────

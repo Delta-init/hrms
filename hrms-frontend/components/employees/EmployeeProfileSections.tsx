@@ -4,12 +4,13 @@ import { motion } from "framer-motion";
 import {
   User2, Briefcase, Landmark, GraduationCap, MapPin, Home, ShieldAlert,
   Mail, Phone, CalendarDays, Clock3, Users2, BookUser, Plane, CreditCard, Contact,
+  Building2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmployeeSectionDialog, type ProfileSection } from "@/components/employees/EmployeeSectionDialog";
 import { cn } from "@/lib/utils";
-import { GENDER_LABELS, MARITAL_LABELS, type Employee, type EmployeeRef } from "@/types";
+import { GENDER_LABELS, MARITAL_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeRef } from "@/types";
 
 const fmtDate = (iso?: string | null) => (iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
 const nameOf = (r?: EmployeeRef | { _id: string; name: string } | string | null) => (r && typeof r === "object" ? r.name : null);
@@ -76,6 +77,7 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all",
           <Grid>
             <Item label="Department" value={deptName(e) ?? "—"} />
             <Item label="Location" value={e.location ?? "—"} icon={MapPin} />
+            <Item label="Work mode" value={WORK_MODE_LABELS[e.workMode ?? "office"]} icon={(e.workMode ?? "office") === "wfh" ? Home : Building2} />
             <Item label="Reporting to" value={nameOf(e.reportingTo) ?? "—"} />
             <Item label="Currency" value={e.currency ?? "—"} />
             <Item label="Joining date" value={fmtDate(e.joiningDate)} icon={CalendarDays} />

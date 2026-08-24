@@ -15,7 +15,8 @@ import { DepartmentSelect, ManagerSelect } from "@/components/pickers";
 import { useUpdateEmployee, useUpdateMyProfile } from "@/hooks/useEmployees";
 import {
   BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS, VISA_TYPES,
-  type Employee, type EmployeeStatus, type Gender, type MaritalStatus, type Title,
+  WORK_MODE_LABELS,
+  type Employee, type EmployeeStatus, type Gender, type MaritalStatus, type Title, type WorkMode,
 } from "@/types";
 
 export type ProfileSection =
@@ -56,6 +57,7 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
     case "employment":
       return {
         designation: e.designation ?? "", department: idOf(e.department), location: e.location ?? "",
+        workMode: e.workMode ?? "office",
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
         noticePeriodDays: e.noticePeriodDays ?? 60,
@@ -190,6 +192,11 @@ export function EmployeeSectionDialog({
                 )} />
               </div>
               <div className={field}><Label>Location</Label><Input placeholder="Dubai / India" {...register("location")} /></div>
+              <div className={field}><Label>Work mode</Label>
+                <SelectCtl control={control} name="workMode" placeholder="Select" clearable={false}>
+                  {(Object.keys(WORK_MODE_LABELS) as WorkMode[]).map((m) => <SelectItem key={m} value={m}>{WORK_MODE_LABELS[m]}</SelectItem>)}
+                </SelectCtl>
+              </div>
               <div className={field}><Label>Currency</Label><Input className="uppercase" {...register("currency")} /></div>
               <div className={field}><Label>Status</Label>
                 <SelectCtl control={control} name="status" placeholder="Select">
@@ -287,14 +294,20 @@ export function EmployeeSectionDialog({
 
 /** Controller-wrapped Select that maps "" ↔ NONE sentinel. */
 function SelectCtl({
-  control, name, placeholder, children,
-}: { control: Control<FormValues>; name: string; placeholder: string; children: React.ReactNode }) {
+  control, name, placeholder, children, clearable = true,
+}: {
+  control: Control<FormValues>; name: string; placeholder: string; children: React.ReactNode;
+  /** Offer "— None —". Off for fields that must always resolve to a value, such
+   *  as work mode: there is no third answer to where somebody works, and the
+   *  server rejects an empty one. */
+  clearable?: boolean;
+}) {
   return (
     <Controller control={control} name={name} render={({ field: f }) => (
       <Select value={(f.value as string) || NONE} onValueChange={(v) => f.onChange(v === NONE ? "" : v)}>
         <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
         <SelectContent>
-          <SelectItem value={NONE}>— None —</SelectItem>
+          {clearable && <SelectItem value={NONE}>— None —</SelectItem>}
           {children}
         </SelectContent>
       </Select>

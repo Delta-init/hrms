@@ -6,6 +6,7 @@ const title = z.enum(["mr", "mrs", "ms", "dr"]);
 const gender = z.enum(["male", "female", "other"]);
 const marital = z.enum(["married", "unmarried"]);
 const location = z.enum(["india", "dubai"]);
+const workMode = z.enum(["office", "wfh"]);
 
 const educationSchema = z.object({
   qualification: z.string().max(120).optional(),
@@ -113,6 +114,7 @@ export const createEmployeeSchema = z.object({
   joiningDate: z.coerce.date().optional().nullable(),
   status: status.default("active"),
   location: location.optional(),
+  workMode: workMode.default("office"),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,
@@ -131,6 +133,9 @@ export const updateEmployeeSchema = z.object({
   joiningDate: z.coerce.date().optional().nullable(),
   status: status.optional(),
   location: location.optional().nullable(),
+  // Not nullable, unlike `location`: how somebody punches has to resolve to an
+  // answer, and clearing it back to nothing would leave that undecidable.
+  workMode: workMode.optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,

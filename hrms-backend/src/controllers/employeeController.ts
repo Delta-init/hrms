@@ -73,6 +73,15 @@ export const updateEmployee = async (req: AuthenticatedRequest, res: Response, n
   } catch (error) { next(error); }
 };
 
+export const resetEmployeeDevice = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await service.resetTrustedDevice(req.params.id);
+    sendSuccess(res, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteEmployee = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await service.remove(req.params.id);

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { Loader2 } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useCreateOrganization, useUpdateOrganization } from "@/hooks/useOrganizations";
 import type { Organization } from "@/types";
 
@@ -29,9 +30,11 @@ interface FormValues {
   smtpPort: string;
   smtpUser: string;
   smtpPass: string;
+  enforceWorkMode: boolean;
+  bindRemoteDevice: boolean;
 }
 
-const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "" };
+const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, bindRemoteDevice: false };
 
 export function OrganizationDialog({ open, onOpenChange, organization }: Props) {
   const isEditing = !!organization;
@@ -39,7 +42,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const { mutate: update, isPending: updating } = useUpdateOrganization();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({ defaultValues: empty });
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm<FormValues>({ defaultValues: empty });
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +52,8 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
         name: organization.name, code: organization.code, status: organization.status,
         currency: s.currency ?? "AED", timeZone: s.timeZone ?? "Asia/Dubai", mailFrom: s.mailFrom ?? "",
         smtpHost: s.smtpHost ?? "", smtpPort: s.smtpPort ?? "587", smtpUser: s.smtpUser ?? "", smtpPass: s.smtpPass ?? "",
+        enforceWorkMode: s.enforceWorkMode ?? false,
+        bindRemoteDevice: s.bindRemoteDevice ?? false,
       });
     } else reset(empty);
   }, [open, organization, reset]);
@@ -56,7 +61,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const onSubmit = (v: FormValues) => {
     const payload = {
       name: v.name, code: v.code, status: v.status,
-      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined },
+      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, bindRemoteDevice: v.bindRemoteDevice },
     };
     if (isEditing) update({ id: organization._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -80,6 +85,45 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Currency</Label><Input className="uppercase" {...register("currency")} /></div>
               <div className="space-y-1.5"><Label>Time zone</Label><Input {...register("timeZone")} /></div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary">Attendance</p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="enforceWorkMode">Office staff check in at a kiosk</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Takes clock-in and clock-out off the dashboard for everyone whose work mode is Office.
+                  Set each person&apos;s work mode first — everybody counts as office until told otherwise.
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="enforceWorkMode"
+                render={({ field }) => (
+                  <Switch id="enforceWorkMode" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                )}
+              />
+            </div>
+
+            <div className="mt-4 flex items-start justify-between gap-4 border-t border-border pt-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="bindRemoteDevice">Remote staff punch from one device</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  The first browser a remote employee punches from is registered to them; punches
+                  from any other are refused until an admin resets it, from the employee&apos;s page.
+                  Turn it on at the start of a day — whatever device somebody is holding when they
+                  next punch is the one they get.
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="bindRemoteDevice"
+                render={({ field }) => (
+                  <Switch id="bindRemoteDevice" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                )}
+              />
             </div>
           </div>
 

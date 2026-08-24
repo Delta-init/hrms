@@ -186,6 +186,48 @@ const employeeSchema = new Schema<IEmployee>(
       default: "active",
     },
     location: { type: String, enum: ["india", "dubai"], default: undefined },
+    /**
+     * Where somebody works. Office staff are expected on site and punch at a
+     * kiosk; work-from-home staff punch from the web app, which is the only
+     * place their attendance can be recorded from.
+     *
+     * Defaults to office, because that is what everybody created or imported
+     * before this field existed was — including the whole GreytHR intake. A
+     * default of "wfh" would silently reclassify a hundred people.
+     */
+    workMode: { type: String, enum: ["office", "wfh"], default: "office" },
+
+    /**
+     * The one browser a remote employee may punch from.
+     *
+     * `keyHash` is a SHA-256 of a secret the browser minted for itself and
+     * keeps; the secret never lands in the database, so a dump of this
+     * collection does not let anybody punch as somebody else.
+     *
+     * `fingerprint` is not part of the check. Browsers change their user agent
+     * on every update and a person would be locked out by Tuesday's patch —
+     * it is recorded so that the same key surfacing on a visibly different
+     * machine can be flagged for a human to look at.
+     *
+     * Bound on first use rather than pre-registered by HR: the alternative is
+     * every new joiner waiting on an admin before they can start their day.
+     * When and from where it was bound is kept, which is the part that makes
+     * a first use auditable after the fact.
+     */
+    trustedDevice: {
+      type: new Schema(
+        {
+          keyHash: { type: String, required: true },
+          label: { type: String, trim: true, maxlength: 80, default: "" },
+          fingerprint: { type: String, trim: true, maxlength: 64, default: "" },
+          boundAt: { type: Date, default: Date.now },
+          boundIp: { type: String, trim: true, maxlength: 64, default: "" },
+          lastSeenAt: { type: Date, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
     salary: { type: Number, default: 0, min: 0 },
     currency: { type: String, trim: true, uppercase: true, default: "AED", maxlength: 6 },
     // Profile/portal photo (R2 key) + onboarding documents.
