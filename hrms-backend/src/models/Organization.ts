@@ -22,14 +22,22 @@ const settingsSchema = new Schema(
      */
     enforceWorkMode: { type: Boolean, default: false },
     /**
-     * Tie each remote employee's punches to one browser.
+     * How closely a remote employee is held to one browser.
      *
-     * Opt-in for the same reason as the setting above, and for one more: the
-     * first punch after it is switched on registers whatever device somebody
-     * happens to be holding. Turning it on mid-afternoon binds half the team
-     * to their phones.
+     *  off     — nothing about the device is recorded or registered.
+     *  flag    — the first browser is registered and punches from any other are
+     *            still accepted, marked as an anomaly for someone to review.
+     *  enforce — punches from any other browser are refused outright.
+     *
+     * Three settings rather than a switch because the middle one is where most
+     * organizations should start: it answers "is this actually happening, and
+     * to whom?" before anybody is locked out over it, and the answer is usually
+     * a handful of people with an ordinary explanation.
+     *
+     * Off by default, and worth switching on at the start of a day — whatever
+     * device somebody is holding when they next punch is the one they get.
      */
-    bindRemoteDevice: { type: Boolean, default: false },
+    remoteDevice: { type: String, enum: ["off", "flag", "enforce"], default: "off" },
   },
   { _id: false }
 );

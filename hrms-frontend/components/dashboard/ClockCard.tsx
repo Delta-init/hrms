@@ -278,7 +278,7 @@ export function ClockCard() {
           <MapPin className="mt-px h-3 w-3 shrink-0" />
           <span>
             Working remotely — your location, IP address and device are recorded with each punch.
-            {punchPolicy.device.required && (
+            {punchPolicy.device.policy !== "off" && (
               punchPolicy.device.registered
                 ? ` Attendance is tied to ${punchPolicy.device.label || "your registered device"}.`
                 : " This browser will be registered as your attendance device."
@@ -304,9 +304,13 @@ export function ClockCard() {
               <li>Your approximate location, to about 100 metres — never your exact address</li>
               <li>Your IP address and the country it belongs to</li>
               <li>The browser and device you punched from</li>
-              {punchPolicy.device.required && (
-                <li>This browser is registered as your attendance device — punches from another
-                  one are refused until HR resets it</li>
+              {punchPolicy.device.policy !== "off" && (
+                <li>
+                  This browser is registered as your attendance device
+                  {punchPolicy.device.policy === "enforce"
+                    ? " — punches from another one are refused until HR resets it"
+                    : " — punches from another one are flagged for review"}
+                </li>
               )}
             </ul>
             <p>

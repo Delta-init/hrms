@@ -64,8 +64,8 @@ export interface IOrganizationSettings {
   mailFrom?: string;
   /** Hold office staff to punching at a kiosk. See the model for why it is opt-in. */
   enforceWorkMode?: boolean;
-  /** Tie each remote employee's punches to the first browser they use. */
-  bindRemoteDevice?: boolean;
+  /** How closely remote staff are held to one browser. See the model. */
+  remoteDevice?: RemoteDevicePolicy;
 }
 
 export interface IOrganization extends Document {
@@ -206,8 +206,8 @@ export interface IPunchSource {
   timeZone?: string | null;
   /** The registered browser this punch came from, when device binding is on. */
   deviceLabel?: string | null;
-  /** The key matched but the machine looked different — flagged, not refused. */
-  deviceFingerprintChanged?: boolean;
+  /** Set when the punch did not come from the registered browser. */
+  deviceAnomaly?: DeviceAnomaly | null;
 }
 
 export interface IAttendanceSession {
@@ -489,6 +489,12 @@ export type MaritalStatus = "married" | "unmarried";
 export type EmployeeLocation = "india" | "dubai";
 /** Where somebody works, which decides where they are allowed to punch. */
 export type WorkMode = "office" | "wfh";
+
+/** How closely a remote employee is held to their registered browser. */
+export type RemoteDevicePolicy = "off" | "flag" | "enforce";
+
+/** Why a punch was marked as coming from the wrong place. */
+export type DeviceAnomaly = "unknown_device" | "no_device" | "changed_device";
 
 /**
  * A remote employee's registered browser. The key itself is never stored —

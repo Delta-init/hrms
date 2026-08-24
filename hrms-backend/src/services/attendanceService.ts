@@ -9,7 +9,7 @@ import { Organization } from "../models/Organization.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
-import type { IPunchSource, ITrustedDevice, PaginationQuery } from "../types/index.js";
+import type { IPunchSource, ITrustedDevice, RemoteDevicePolicy, DeviceAnomaly, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
@@ -187,14 +187,14 @@ export class AttendanceService {
     workMode: "office" | "wfh" | null;
     enforced: boolean;
     canSelfPunch: boolean;
-    bindDevice: boolean;
+    devicePolicy: RemoteDevicePolicy;
     employeeId: string | null;
     trustedDevice: ITrustedDevice | null;
   }> {
     const [org, employee] = await Promise.all([
       Organization.findById(getOrgId())
-        .select("settings.enforceWorkMode settings.bindRemoteDevice")
-        .lean<{ settings?: { enforceWorkMode?: boolean; bindRemoteDevice?: boolean } } | null>(),
+        .select("settings.enforceWorkMode settings.remoteDevice")
+        .lean<{ settings?: { enforceWorkMode?: boolean; remoteDevice?: RemoteDevicePolicy } } | null>(),
       Employee.findOne(scoped({ user: userId }))
         .select("workMode trustedDevice")
         .lean<{ _id: unknown; workMode?: "office" | "wfh"; trustedDevice?: ITrustedDevice | null } | null>(),
@@ -212,7 +212,7 @@ export class AttendanceService {
       canSelfPunch: !enforced || workMode !== "office",
       // Only remote staff are held to one browser. Office staff punch at a
       // kiosk, which already knows exactly which device it is.
-      bindDevice: !!org?.settings?.bindRemoteDevice && workMode === "wfh",
+      devicePolicy: workMode === "wfh" ? org?.settings?.remoteDevice ?? "off" : "off",
       employeeId: employee ? String(employee._id) : null,
       trustedDevice: employee?.trustedDevice ?? null,
     };
@@ -231,22 +231,28 @@ export class AttendanceService {
    * Returns what to stamp on the punch, or null when the rule does not apply.
    */
   private async bindOrCheckDevice(
-    policy: { bindDevice: boolean; employeeId: string | null; trustedDevice: ITrustedDevice | null },
+    policy: { devicePolicy: RemoteDevicePolicy; employeeId: string | null; trustedDevice: ITrustedDevice | null },
     source: PunchSource | undefined
-  ): Promise<{ deviceLabel: string | null; deviceFingerprintChanged: boolean } | null> {
+  ): Promise<{ deviceLabel: string | null; deviceAnomaly: DeviceAnomaly | null } | null> {
     // A kiosk punch is identified by the kiosk, and a manual one by the admin
     // making it. Neither is a browser this rule has anything to say about.
     if (source && source.method !== "web") return null;
-    if (!policy.bindDevice || !policy.employeeId) return null;
+    if (policy.devicePolicy === "off" || !policy.employeeId) return null;
+
+    const enforcing = policy.devicePolicy === "enforce";
+    /** Refuse when enforcing, otherwise let it through carrying the reason. */
+    const refuseOrFlag = (anomaly: DeviceAnomaly, message: string, code: string) => {
+      if (enforcing) throw Object.assign(new Error(message), { statusCode: 403, code });
+      return { deviceLabel: source?.deviceLabel?.trim().slice(0, 80) || null, deviceAnomaly: anomaly };
+    };
 
     const key = source?.deviceKey?.trim();
     if (!key) {
       // Private browsing, cleared storage, or a client too old to send one.
-      // Refused rather than waved through: a punch that cannot say which device
-      // it came from is exactly what the setting exists to stop.
-      throw Object.assign(
-        new Error("This browser can't identify itself. Allow site data and try again, or ask HR to reset your device."),
-        { statusCode: 403, code: "DEVICE_KEY_MISSING" }
+      return refuseOrFlag(
+        "no_device",
+        "This browser can't identify itself. Allow site data and try again, or ask HR to reset your device.",
+        "DEVICE_KEY_MISSING"
       );
     }
 
@@ -275,16 +281,20 @@ export class AttendanceService {
           },
         }
       );
-      return { deviceLabel: label, deviceFingerprintChanged: false };
+      return { deviceLabel: label, deviceAnomaly: null };
     }
 
     // Constant-time, so the comparison cannot be probed a byte at a time.
     const a = Buffer.from(hash, "hex");
     const b = Buffer.from(known.keyHash, "hex");
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      throw Object.assign(
-        new Error(`Attendance is tied to your registered device (${known.label || "unnamed"}). Punch from it, or ask HR to reset it.`),
-        { statusCode: 403, code: "DEVICE_NOT_TRUSTED" }
+      // Not re-registered when only flagging: the device they are supposed to
+      // be on stays the reference, or the second punch from the wrong machine
+      // would look correct and the anomaly would erase itself.
+      return refuseOrFlag(
+        "unknown_device",
+        `Attendance is tied to your registered device (${known.label || "unnamed"}). Punch from it, or ask HR to reset it.`,
+        "DEVICE_NOT_TRUSTED"
       );
     }
 
@@ -296,7 +306,7 @@ export class AttendanceService {
       { _id: policy.employeeId },
       { $set: { "trustedDevice.lastSeenAt": new Date(), "trustedDevice.fingerprint": fingerprint || known.fingerprint } }
     );
-    return { deviceLabel: known.label || label, deviceFingerprintChanged: changed };
+    return { deviceLabel: known.label || label, deviceAnomaly: changed ? "changed_device" : null };
   }
 
   /**
@@ -373,7 +383,7 @@ export class AttendanceService {
         canSelfPunch: policy.canSelfPunch,
         canFinishOpenSession,
         device: {
-          required: policy.bindDevice,
+          policy: policy.devicePolicy,
           registered: !!policy.trustedDevice?.keyHash,
           label: policy.trustedDevice?.label ?? null,
         },
@@ -517,7 +527,11 @@ export class AttendanceService {
 
     const [att, monthLeaves, holidays, rosterMap, regs] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: scanStart, $lt: scanEnd } })
-        .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone").lean(),
+        .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone " +
+                // Only the verdict, not the whole provenance: a month of full
+                // punch sources for every employee is a large payload to carry
+                // in order to draw one dot.
+                "sessions.checkInSource.deviceAnomaly sessions.checkOutSource.deviceAnomaly").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
         .select("user startDate endDate type halfDay").lean(),
       Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
@@ -533,6 +547,9 @@ export class AttendanceService {
     type DayEntry = {
       status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null;
       lateMinutes?: number; note?: string; timeZone?: string | null;
+      /** Set when any punch that day came from somewhere other than the
+       *  registered device — the day is marked for review, not disputed. */
+      deviceAnomaly?: DeviceAnomaly | null;
       /** Approved leave covering this day, whatever the attendance says. */
       leave?: DayLeave;
       /** A correction raised for this day. */
@@ -550,6 +567,12 @@ export class AttendanceService {
         status: a.status as string, workedMinutes: a.workedMinutes ?? 0,
         checkIn: a.checkIn ?? null, checkOut: a.checkOut ?? null,
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
+        // One flag for the day. A day with two odd punches is not twice as odd
+        // — somebody still has to look at it exactly once.
+        deviceAnomaly:
+          (a.sessions ?? [])
+            .flatMap((x) => [x?.checkInSource?.deviceAnomaly, x?.checkOutSource?.deviceAnomaly])
+            .find(Boolean) ?? null,
       };
     }
     // Per user, the leave in force on each day — "wfh" paints the calendar

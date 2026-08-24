@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateOrganization, useUpdateOrganization } from "@/hooks/useOrganizations";
-import type { Organization } from "@/types";
+import { REMOTE_DEVICE_LABELS, type Organization, type RemoteDevicePolicy } from "@/types";
 
 interface Props {
   open: boolean;
@@ -31,10 +32,10 @@ interface FormValues {
   smtpUser: string;
   smtpPass: string;
   enforceWorkMode: boolean;
-  bindRemoteDevice: boolean;
+  remoteDevice: RemoteDevicePolicy;
 }
 
-const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, bindRemoteDevice: false };
+const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off" };
 
 export function OrganizationDialog({ open, onOpenChange, organization }: Props) {
   const isEditing = !!organization;
@@ -53,7 +54,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
         currency: s.currency ?? "AED", timeZone: s.timeZone ?? "Asia/Dubai", mailFrom: s.mailFrom ?? "",
         smtpHost: s.smtpHost ?? "", smtpPort: s.smtpPort ?? "587", smtpUser: s.smtpUser ?? "", smtpPass: s.smtpPass ?? "",
         enforceWorkMode: s.enforceWorkMode ?? false,
-        bindRemoteDevice: s.bindRemoteDevice ?? false,
+        remoteDevice: s.remoteDevice ?? "off",
       });
     } else reset(empty);
   }, [open, organization, reset]);
@@ -61,7 +62,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const onSubmit = (v: FormValues) => {
     const payload = {
       name: v.name, code: v.code, status: v.status,
-      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, bindRemoteDevice: v.bindRemoteDevice },
+      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice },
     };
     if (isEditing) update({ id: organization._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -107,23 +108,31 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
               />
             </div>
 
-            <div className="mt-4 flex items-start justify-between gap-4 border-t border-border pt-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="bindRemoteDevice">Remote staff punch from one device</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  The first browser a remote employee punches from is registered to them; punches
-                  from any other are refused until an admin resets it, from the employee&apos;s page.
-                  Turn it on at the start of a day — whatever device somebody is holding when they
-                  next punch is the one they get.
-                </p>
-              </div>
+            <div className="mt-4 space-y-1.5 border-t border-border pt-4">
+              <Label htmlFor="remoteDevice">Remote staff device</Label>
               <Controller
                 control={control}
-                name="bindRemoteDevice"
+                name="remoteDevice"
                 render={({ field }) => (
-                  <Switch id="bindRemoteDevice" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="remoteDevice"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(REMOTE_DEVICE_LABELS) as RemoteDevicePolicy[]).map((k) => (
+                        <SelectItem key={k} value={k}>{REMOTE_DEVICE_LABELS[k]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
               />
+              <p className="text-[11px] text-muted-foreground">
+                The first browser a remote employee punches from is registered to them.
+                <strong className="font-medium"> Flag anomalies</strong> still accepts punches from
+                any other device and marks the day in red for review;
+                <strong className="font-medium"> Block other devices</strong> refuses them outright.
+                Start with flagging — it shows you who this actually affects before anyone is locked
+                out. Either way, an admin can reset somebody&apos;s device from their page, and
+                whatever device they are holding when they next punch becomes the registered one.
+              </p>
             </div>
           </div>
 

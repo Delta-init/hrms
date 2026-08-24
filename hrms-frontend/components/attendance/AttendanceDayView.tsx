@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, LogIn, LogOut, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogIn, LogOut, RotateCcw, ShieldAlert } from "lucide-react";
 import { useAttendanceDaily } from "@/hooks/useAttendance";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { useOrgTimeZone } from "@/hooks/useOrgTimeZone";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getInitials, cn } from "@/lib/utils";
+import { DEVICE_ANOMALY_LABELS } from "@/types";
 import type { DailyAttendanceRow, DayViewStatus } from "@/types";
 
 /**
@@ -91,8 +92,21 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
       render: (r) => {
         const s = byStatus.get(r.status);
         return (
-          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", s?.tone)}>
-            {r.leave?.label && (r.status === "on_leave" || r.status === "wfh") ? r.leave.label : s?.label ?? r.status}
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", s?.tone)}>
+              {r.leave?.label && (r.status === "on_leave" || r.status === "wfh") ? r.leave.label : s?.label ?? r.status}
+            </span>
+            {/* Beside the status rather than replacing it: the day still counts
+                as present, it is only the device it was punched from that wants
+                a second look. */}
+            {r.deviceAnomaly && (
+              <span
+                title={DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}
+                className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
+              >
+                <ShieldAlert className="h-3 w-3" />Device
+              </span>
+            )}
           </span>
         );
       },

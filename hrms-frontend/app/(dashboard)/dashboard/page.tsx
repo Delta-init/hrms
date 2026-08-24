@@ -60,10 +60,13 @@ function EmployeeDashboard() {
   const firstName = user?.name?.split(" ")[0] ?? "there";
 
   const stats = [
-    { label: "Present", value: present, icon: CalendarCheck, tint: "text-emerald-600 bg-emerald-500/10" },
-    { label: "Late", value: late, icon: Clock3, tint: "text-amber-600 bg-amber-500/10" },
-    { label: "Half Days", value: half, icon: AlertTriangle, tint: "text-red-600 bg-red-500/10" },
-    { label: "Hours (mo)", value: workedH, icon: Timer, tint: "text-primary bg-primary/10" },
+    // Every one of these counts a slice of this month's attendance, so each is
+    // a question ("which days was I late?") that only the attendance page can
+    // answer. They looked like cards you could press and did nothing.
+    { label: "Present", value: present, icon: CalendarCheck, tint: "text-emerald-600 bg-emerald-500/10", href: "/attendance" },
+    { label: "Late", value: late, icon: Clock3, tint: "text-amber-600 bg-amber-500/10", href: "/attendance" },
+    { label: "Half Days", value: half, icon: AlertTriangle, tint: "text-red-600 bg-red-500/10", href: "/attendance" },
+    { label: "Hours (mo)", value: workedH, icon: Timer, tint: "text-primary bg-primary/10", href: "/attendance" },
   ];
 
   return (
@@ -84,11 +87,13 @@ function EmployeeDashboard() {
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {stats.map((s) => (
             <motion.div key={s.label} variants={item}>
-              <Card className="p-5">
-                <div className={cn("mb-3 flex h-10 w-10 items-center justify-center rounded-xl", s.tint)}><s.icon className="h-5 w-5" /></div>
-                <p className="text-2xl font-bold tracking-tight">{s.value}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{s.label}</p>
-              </Card>
+              <Link href={s.href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl">
+                <Card className="p-5 transition-colors hover:border-primary/40 hover:bg-muted/40">
+                  <div className={cn("mb-3 flex h-10 w-10 items-center justify-center rounded-xl", s.tint)}><s.icon className="h-5 w-5" /></div>
+                  <p className="text-2xl font-bold tracking-tight">{s.value}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{s.label}</p>
+                </Card>
+              </Link>
             </motion.div>
           ))}
         </motion.div>
@@ -211,7 +216,10 @@ function MyOnboardingTasksCard() {
     <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">My Onboarding Tasks</h3></div>
-        <span className="text-xs font-medium text-muted-foreground">{done}/{myTasks.length} done</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-muted-foreground">{done}/{myTasks.length} done</span>
+          <Link href="/onboarding-tasks" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View all <ArrowUpRight className="h-3 w-3" /></Link>
+        </div>
       </div>
       <div className="space-y-2">
         {myTasks.map((t) => (

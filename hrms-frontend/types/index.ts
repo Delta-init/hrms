@@ -94,8 +94,8 @@ export interface OrganizationSettings {
   mailFrom?: string;
   /** Hold office staff to punching at a kiosk rather than their dashboard. */
   enforceWorkMode?: boolean;
-  /** Tie each remote employee's punches to the first browser they use. */
-  bindRemoteDevice?: boolean;
+  /** How closely remote staff are held to their registered browser. */
+  remoteDevice?: RemoteDevicePolicy;
 }
 export interface Organization {
   _id: string;
@@ -250,6 +250,22 @@ export const LOCATION_LABELS: Record<EmployeeLocation, string> = { india: "India
 /** Where somebody works, which decides where they are allowed to punch. */
 export type WorkMode = "office" | "wfh";
 export const WORK_MODE_LABELS: Record<WorkMode, string> = { office: "Office", wfh: "Work from home" };
+
+/** How closely remote staff are held to their registered browser. */
+export type RemoteDevicePolicy = "off" | "flag" | "enforce";
+export const REMOTE_DEVICE_LABELS: Record<RemoteDevicePolicy, string> = {
+  off: "Not tracked",
+  flag: "Flag anomalies",
+  enforce: "Block other devices",
+};
+
+/** Why a punch was marked as coming from somewhere other than the registered device. */
+export type DeviceAnomaly = "unknown_device" | "no_device" | "changed_device";
+export const DEVICE_ANOMALY_LABELS: Record<DeviceAnomaly, string> = {
+  unknown_device: "Punched from a device that isn't their registered one",
+  no_device: "Punched from a browser that couldn't identify itself",
+  changed_device: "Same device key, but the machine looked different",
+};
 
 // ─── Employee documents (location-driven onboarding) ─────────────────────────
 export type DocumentType =
@@ -749,8 +765,8 @@ export interface AttendanceToday {
     /** They may still close a session they opened here before it was enforced. */
     canFinishOpenSession: boolean;
     device: {
-      /** Punches are tied to one browser for this person. */
-      required: boolean;
+      /** How closely this person is held to their registered browser. */
+      policy: RemoteDevicePolicy;
       /** A browser is already registered; a different one will be refused. */
       registered: boolean;
       label: string | null;
@@ -1049,6 +1065,8 @@ export interface AttendanceCalendarDay {
   timeZone?: string | null;
   /** Approved leave covering this day, shown even when attendance was recorded. */
   leave?: { type: LeaveType; label: string; paid: boolean };
+  /** Set when a punch that day came from somewhere other than the registered device. */
+  deviceAnomaly?: DeviceAnomaly | null;
   /** A correction raised for this day, pending or already applied. */
   regularization?: {
     _id: string;

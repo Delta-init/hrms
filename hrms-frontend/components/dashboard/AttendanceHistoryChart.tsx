@@ -1,7 +1,8 @@
 "use client";
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { BarChart3 } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, ArrowUpRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useMyAttendance } from "@/hooks/useSelfAttendance";
 
@@ -41,7 +42,10 @@ export function AttendanceHistoryChart() {
 
   return (
     <Card className="p-5">
-      <div className="mb-1 flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /><h3 className="text-base font-semibold">Attendance History</h3></div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /><h3 className="text-base font-semibold">Attendance History</h3></div>
+        <Link href="/attendance" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">View all <ArrowUpRight className="h-3 w-3" /></Link>
+      </div>
       <p className="text-sm text-muted-foreground">Hours worked · last 6 months <span className="font-medium text-foreground">({totalH}h total)</span></p>
 
       <div className="mt-6 flex h-48 items-end gap-3">

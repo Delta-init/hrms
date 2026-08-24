@@ -41,11 +41,15 @@ const punchSourceSchema = new Schema<IPunchSource>(
     },
     timeZone: { type: String, trim: true, maxlength: 60, default: null },
 
-    // Which registered browser this came from, and whether it still looked like
-    // the machine it was registered on. A changed fingerprint does not refuse
-    // the punch — see Employee.trustedDevice — it marks it for a human.
+    // Which registered browser this came from, and — when it was not that one —
+    // why. Null is the ordinary case: the punch came from the device the person
+    // is registered on, or the organization does not track devices at all.
     deviceLabel: { type: String, trim: true, maxlength: 80, default: null },
-    deviceFingerprintChanged: { type: Boolean, default: false },
+    deviceAnomaly: {
+      type: String,
+      enum: ["unknown_device", "no_device", "changed_device"],
+      default: null,
+    },
   },
   { _id: false }
 );

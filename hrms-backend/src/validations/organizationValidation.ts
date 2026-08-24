@@ -10,7 +10,7 @@ const settingsSchema = z.object({
   smtpSecure: z.boolean().optional(),
   mailFrom: z.string().max(200).optional(),
   enforceWorkMode: z.boolean().optional(),
-  bindRemoteDevice: z.boolean().optional(),
+  remoteDevice: z.enum(["off", "flag", "enforce"]).optional(),
 });
 
 export const createOrganizationSchema = z.object({
