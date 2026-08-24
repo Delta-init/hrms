@@ -40,7 +40,11 @@ export async function birthdaysOn(date = new Date(), orgId?: string | null) {
   // Use UTC to match the aggregation's UTC $month / $dayOfMonth extraction.
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();
-  const match: Record<string, unknown> = { dob: { $ne: null } };
+  // Leavers are excluded here as they are in `upcomingByMonthDay`. Without it
+  // the two disagreed: somebody who has left showed up under "birthdays today"
+  // and in the wishes strip, but never in the upcoming list — so the same
+  // person appeared and vanished depending on which card you looked at.
+  const match: Record<string, unknown> = { dob: { $ne: null }, status: { $ne: "terminated" } };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([
     { $match: match },
@@ -66,7 +70,7 @@ export async function anniversariesOn(date = new Date(), orgId?: string | null) 
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();
   const year = date.getUTCFullYear();
-  const match: Record<string, unknown> = { joiningDate: { $ne: null } };
+  const match: Record<string, unknown> = { joiningDate: { $ne: null }, status: { $ne: "terminated" } };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([
     { $match: match },
