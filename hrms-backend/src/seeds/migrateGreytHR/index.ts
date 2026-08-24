@@ -157,6 +157,7 @@ async function main() {
     currentBalance: readSheet(DIR, "leavedetails.xlsx"),
     yearBalance: readSheet(DIR, "yearwiseleavebalance.xlsx"),
     resignations: readSheet(DIR, "ResignationDetails.xlsx"),
+    basic: readSheet(DIR, "EmployeeBasicInformation.xlsx"),
   };
   head("Files read");
   for (const [k, v] of Object.entries(sheets)) log(`  ${k.padEnd(16)} ${String(v.length).padStart(5)} rows`);
@@ -346,6 +347,7 @@ async function main() {
   const resolves = (c: string) => known.has(c);
 
   await logins();
+  await personal();
   await detail();
   await history();
   await salary();
@@ -392,6 +394,105 @@ async function main() {
     }
     log(`  ${tally("logins").created} logins to create · ${tally("logins").skipped} already had one`);
     note("no activation emails are sent — send them from the Employees page once the mailboxes exist");
+  }
+
+  // ── Personal details ───────────────────────────────────────────────────────
+  /**
+   * Date of birth and the rest of the personal fields.
+   *
+   * This sheet was never read by earlier runs, which is why the birthday cards
+   * on the dashboard have always been empty: no imported employee had a `dob`
+   * at all, so "birthdays today" could only ever be zero.
+   *
+   * Only fills blanks. Anything already entered in the app wins over the
+   * export — somebody who corrected their own date of birth in their profile
+   * should not have a stale spreadsheet put back on top of it.
+   */
+  async function personal() {
+    head("Personal details (date of birth, gender, nationality)");
+
+    const idFor = (c: string) =>
+      employeeIdByCode.get(c) ?? byCode.get(c)?._id ?? (resolves(c) ? ("pending" as unknown as mongoose.Types.ObjectId) : undefined);
+
+    /** "Mr." → mr. Anything outside the enum is dropped rather than guessed. */
+    const TITLES = new Set(["mr", "mrs", "ms", "dr"]);
+    const title = (v: string) => {
+      const t = v.trim().replace(/\.$/, "").toLowerCase();
+      return TITLES.has(t) ? t : undefined;
+    };
+    const gender = (v: string) => ({ m: "male", f: "female", o: "other" }[v.trim().toLowerCase()[0] ?? ""]);
+    /**
+     * The enum holds only married/unmarried, and separated and widowed are
+     * neither. Left unset rather than forced into the closer-looking of two
+     * wrong answers — two people, and a blank is honest where a guess is not.
+     */
+    const marital = (v: string) => {
+      const m = v.trim().toLowerCase();
+      if (m === "married") return "married";
+      if (m === "single" || m === "unmarried") return "unmarried";
+      return undefined;
+    };
+    /** "O+ve" and "B+" are the same blood group written two ways. */
+    const GROUPS = new Set(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]);
+    const blood = (v: string) => {
+      const b = v.trim().toUpperCase().replace(/\s+/g, "").replace(/\+VE$/, "+").replace(/-VE$/, "-");
+      return GROUPS.has(b) ? b : undefined;
+    };
+
+    /**
+     * One row per person. Twenty-two codes appear more than once (E0004 three
+     * times), so the fullest row wins — the same rule the visa sheet uses,
+     * because a duplicate is usually a partial re-export rather than a conflict.
+     */
+    const filled = (r: Row) => Object.values(r).filter((v) => String(v ?? "").trim()).length;
+    const rows = new Map<string, Row>();
+    for (const r of sheets.basic) {
+      const c = code(r);
+      if (!c || !isEmployeeCode(c)) continue;
+      const prev = rows.get(c);
+      if (!prev || filled(r) > filled(prev)) rows.set(c, r);
+    }
+
+    let noMatch = 0;
+    const missingDob: string[] = [];
+    const counts: Record<string, number> = {};
+
+    for (const [c, r] of rows) {
+      const id = idFor(c);
+      if (!id) { noMatch++; tally("personal").skipped++; continue; }
+
+      const existing = byCode.get(c);
+      const set: Record<string, unknown> = {};
+      /** Fill only what is blank, and only when the export actually has it. */
+      const put = (field: string, value: unknown) => {
+        if (value === undefined || value === null || value === "") return;
+        const current = existing ? (existing as unknown as Record<string, unknown>)[field] : undefined;
+        if (current !== undefined && current !== null && current !== "") return;
+        set[field] = value;
+        counts[field] = (counts[field] ?? 0) + 1;
+      };
+
+      const dob = parseDate(r["Date Of Birth"]);
+      if (!dob) missingDob.push(c);
+      put("dob", dob);
+      put("title", title(r["Title"] ?? ""));
+      put("gender", gender(r["Gender"] ?? ""));
+      put("maritalStatus", marital(r["Marital Status"] ?? ""));
+      put("bloodGroup", blood(r["Blood Group"] ?? ""));
+      put("nationality", (r["Nationality"] ?? "").trim().slice(0, 80) || undefined);
+      put("personalEmail", (r["Employee Personal Email"] ?? "").trim().toLowerCase().slice(0, 120) || undefined);
+      put("mobileNumber", (r["Phone"] ?? "").trim().slice(0, 30) || undefined);
+
+      if (!Object.keys(set).length) { tally("personal").skipped++; continue; }
+      tally("personal").updated++;
+      if (APPLY) await recordBefore(Employee, id);
+      if (APPLY) await Employee.updateOne({ _id: id }, { $set: set });
+    }
+
+    log(`  ${rows.size} people in the export · ${tally("personal").updated} to update · ${tally("personal").skipped} with nothing new to add`);
+    log(`  fields to fill: ${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(" · ") || "none"}`);
+    if (noMatch) note(`${noMatch} codes in the export match nobody in the system`);
+    if (missingDob.length) note(`${missingDob.length} have no date of birth in the export: ${missingDob.slice(0, 8).join(", ")}${missingDob.length > 8 ? " …" : ""}`);
   }
 
   // ── Per-employee detail ────────────────────────────────────────────────────
