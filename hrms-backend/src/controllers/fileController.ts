@@ -34,10 +34,27 @@ export const getFile = async (req: Request, res: Response, next: NextFunction): 
       return;
     }
 
-    const object = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    /**
+     * Range requests, passed straight through to R2.
+     *
+     * A <video> asks for byte ranges rather than the whole file, and answering
+     * the whole thing with a 200 is not something every browser will play — the
+     * induction video failed to load at all until this was here. Documents are
+     * unaffected: without a Range header this behaves exactly as before.
+     */
+    const range = req.headers.range;
+    const object = await r2.send(
+      new GetObjectCommand({ Bucket: R2_BUCKET, Key: key, ...(range ? { Range: range } : {}) })
+    );
 
     res.setHeader("Content-Type", object.ContentType ?? "application/octet-stream");
+    // Advertised even on a full response, or the player never asks in the first place.
+    res.setHeader("Accept-Ranges", "bytes");
     if (object.ContentLength) res.setHeader("Content-Length", String(object.ContentLength));
+    if (range && object.ContentRange) {
+      res.status(206);
+      res.setHeader("Content-Range", object.ContentRange);
+    }
     // Cacheable for the life of the link and no longer, and private so shared
     // proxies never hold somebody's passport scan.
     res.setHeader("Cache-Control", "private, max-age=3600");
