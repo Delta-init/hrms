@@ -38,6 +38,16 @@ const settingsSchema = new Schema(
      * device somebody is holding when they next punch is the one they get.
      */
     remoteDevice: { type: String, enum: ["off", "flag", "enforce"], default: "off" },
+    /**
+     * Hold new joiners at the induction and agreements before letting them in.
+     *
+     * Off by default, and it must stay off until the four PDFs and the video
+     * are uploaded — switching it on first would lock every employee out of
+     * the whole application over an administrative gap rather than anything
+     * they did. The gate itself is careful about this too: it only blocks on a
+     * definite "not signed", never on a failure to work out the answer.
+     */
+    requireAgreements: { type: Boolean, default: false },
   },
   { _id: false }
 );

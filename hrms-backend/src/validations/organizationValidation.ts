@@ -11,6 +11,7 @@ const settingsSchema = z.object({
   mailFrom: z.string().max(200).optional(),
   enforceWorkMode: z.boolean().optional(),
   remoteDevice: z.enum(["off", "flag", "enforce"]).optional(),
+  requireAgreements: z.boolean().optional(),
 });
 
 export const createOrganizationSchema = z.object({

@@ -58,3 +58,30 @@ export function extFromMime(mime: string): string {
       return "bin";
   }
 }
+
+/** Induction video: a different beast from a document, so a different limit. */
+export const MAX_VIDEO_SIZE = 250 * 1024 * 1024;
+
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_VIDEO_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "video/mp4") return cb(null, true);
+    // MP4 only on purpose: the duration is read from the movie header at
+    // upload, and that reader understands MP4. Accepting a format it cannot
+    // measure would mean trusting the browser for the one number the whole
+    // completion check is compared against.
+    cb(new Error("The induction video must be an MP4."));
+  },
+}).single("file");
+
+export const uploadVideoSingle = (req: Request, res: Response, next: NextFunction) => {
+  videoUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "Video is too large (max 250MB)." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};

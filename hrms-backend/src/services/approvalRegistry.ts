@@ -1,6 +1,8 @@
 import type { Model } from "mongoose";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
+import { SignedAgreement } from "../models/SignedAgreement.js";
+import { reviewSignedAgreement } from "./agreementService.js";
 import { Reimbursement } from "../models/Reimbursement.js";
 import { Confirmation } from "../models/Confirmation.js";
 import { JobRequisition } from "../models/JobRequisition.js";
@@ -31,7 +33,7 @@ import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 export type ApprovalModule =
   | "leave" | "regularization" | "reimbursement" | "confirmation"
-  | "hiring" | "offer" | "resignation";
+  | "hiring" | "offer" | "resignation" | "agreement";
 
 /** What was decided about a request, once somebody has decided it. */
 export interface Decision {
@@ -139,6 +141,41 @@ const reviewedDecision = (approvedWhen: string[]): Omit<DecidedConfig, "filter">
 });
 
 export const ADAPTERS: Adapter[] = [
+  {
+    module: "agreement",
+    label: "Signed agreements",
+    model: SignedAgreement as never,
+    // What HR is reviewing is the act of signing, which is `signedAt` — not
+    // when the row happened to be written.
+    raisedField: "signedAt",
+    pendingFilter: { status: "pending" },
+    populate: [
+      { path: "employee", select: "name employeeCode designation" },
+      { path: "user", select: "name email" },
+      { path: "videoView", select: "watchedSeconds completedAt skipAttempts" },
+    ],
+    decided: { filter: { status: { $in: ["approved", "rejected"] } }, ...reviewedDecision(["approved"]) },
+    toRow: (d) => {
+      const view = d.videoView as unknown as { watchedSeconds?: number; skipAttempts?: number } | null;
+      return {
+        id: String(d._id),
+        title: `NDA and terms — ${d.variant === "remote" ? "Remote" : "Onsite"}`,
+        raisedBy: person(d.employee ?? d.user),
+        raisedAt: (d.signedAt as Date) ?? null,
+        summary: [
+          { label: "Signed as", value: String(d.typedName ?? "—") },
+          { label: "Documents", value: `${(d.documents as unknown[] | undefined)?.length ?? 0} signed` },
+          { label: "Induction", value: view ? `${Math.round(view.watchedSeconds ?? 0)}s watched` : "—" },
+          // Surfaced because it is the one number that says "look closer".
+          { label: "Skip attempts", value: String(view?.skipAttempts ?? 0) },
+        ],
+        chain: null,
+        href: "/agreements",
+      };
+    },
+    decide: (id, approve, note, userId, role) =>
+      reviewSignedAgreement(id, approve, note ?? null, userId, role as never),
+  },
   {
     module: "leave",
     label: "Leave",

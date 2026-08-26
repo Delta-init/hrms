@@ -33,9 +33,10 @@ interface FormValues {
   smtpPass: string;
   enforceWorkMode: boolean;
   remoteDevice: RemoteDevicePolicy;
+  requireAgreements: boolean;
 }
 
-const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off" };
+const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off", requireAgreements: false };
 
 export function OrganizationDialog({ open, onOpenChange, organization }: Props) {
   const isEditing = !!organization;
@@ -55,6 +56,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
         smtpHost: s.smtpHost ?? "", smtpPort: s.smtpPort ?? "587", smtpUser: s.smtpUser ?? "", smtpPass: s.smtpPass ?? "",
         enforceWorkMode: s.enforceWorkMode ?? false,
         remoteDevice: s.remoteDevice ?? "off",
+        requireAgreements: s.requireAgreements ?? false,
       });
     } else reset(empty);
   }, [open, organization, reset]);
@@ -62,7 +64,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const onSubmit = (v: FormValues) => {
     const payload = {
       name: v.name, code: v.code, status: v.status,
-      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice },
+      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice, requireAgreements: v.requireAgreements },
     };
     if (isEditing) update({ id: organization._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -133,6 +135,27 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
                 out. Either way, an admin can reset somebody&apos;s device from their page, and
                 whatever device they are holding when they next punch becomes the registered one.
               </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary">Onboarding</p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="requireAgreements">Hold new joiners at the agreements</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Nobody reaches the app until they have watched the induction, signed the NDA and terms,
+                  and HR has verified the signature. Upload all four agreements and the video under Settings
+                  first — switching this on without them locks everyone out.
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="requireAgreements"
+                render={({ field }) => (
+                  <Switch id="requireAgreements" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                )}
+              />
             </div>
           </div>
 

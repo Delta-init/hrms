@@ -66,6 +66,8 @@ export interface IOrganizationSettings {
   enforceWorkMode?: boolean;
   /** How closely remote staff are held to one browser. See the model. */
   remoteDevice?: RemoteDevicePolicy;
+  /** Hold new joiners at the induction and agreements. See the model. */
+  requireAgreements?: boolean;
 }
 
 export interface IOrganization extends Document {
@@ -812,7 +814,7 @@ export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
 // ─── Approval workflow (configurable multi-step approval chains) ────────────
 /** Approvable modules that can have a configurable multi-step chain — the
  *  ones sharing the same pending → approved/rejected + reviewedBy shape. */
-export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations" | "hiring";
+export type ApprovableModule = "leave" | "regularization" | "reimbursements" | "confirmations" | "hiring" | "agreements";
 
 /**
  * When a step applies. `always` is every record; anything else names a

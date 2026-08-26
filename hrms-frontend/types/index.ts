@@ -96,6 +96,8 @@ export interface OrganizationSettings {
   enforceWorkMode?: boolean;
   /** How closely remote staff are held to their registered browser. */
   remoteDevice?: RemoteDevicePolicy;
+  /** Hold new joiners at the induction and agreements. */
+  requireAgreements?: boolean;
 }
 export interface Organization {
   _id: string;
@@ -2057,7 +2059,7 @@ export interface PanelConflict {
 // ─── Approvals console ────────────────────────────────────────────────────────
 export const APPROVAL_MODULES = [
   "leave", "regularization", "reimbursement", "confirmation",
-  "hiring", "offer", "resignation",
+  "hiring", "offer", "resignation", "agreement",
 ] as const;
 export type ApprovalModule = (typeof APPROVAL_MODULES)[number];
 
@@ -2070,6 +2072,7 @@ export const APPROVAL_MODULE_HREF: Record<ApprovalModule, string> = {
   hiring: "/hiring",
   offer: "/hiring/candidates",
   resignation: "/resignations",
+  agreement: "/agreements",
 };
 
 export interface ApprovalDecision {
@@ -2132,4 +2135,39 @@ export interface BulkDecideResult {
   requested: number;
   succeeded: number;
   failed: Array<{ id: string; ok: false; error: string }>;
+}
+
+// ─── Onboarding agreements ────────────────────────────────────────────────────
+export type AgreementVariant = "onsite" | "remote";
+export type AgreementKind = "nda" | "tc";
+export const AGREEMENT_KIND_LABELS: Record<AgreementKind, string> = {
+  nda: "Non-disclosure & non-compete",
+  tc: "Terms & conditions",
+};
+
+export interface InductionProgress {
+  duration: number;
+  watchedSeconds: number;
+  lastPosition: number;
+  completed: boolean;
+  completedAt: string | null;
+  skipAttempts: number;
+  /** Credited progress, not playhead — scrubbing moves the playhead and not this. */
+  percent: number;
+}
+
+export interface AgreementState {
+  /** The organization holds new joiners at this gate. Off until HR turns it on. */
+  required: boolean;
+  variant: AgreementVariant;
+  documents: Array<{ kind: AgreementKind; title: string; version: number; url: string; fileName?: string }>;
+  video: { title: string; durationSeconds: number; url: string } | null;
+  videoCompleted: boolean;
+  agreement: { _id: string; status: "pending" | "approved" | "rejected"; signedAt: string; reviewNote?: string } | null;
+  cleared: boolean;
+}
+
+export interface AgreementTemplateRow {
+  _id: string; kind: AgreementKind; variant: AgreementVariant; version: number;
+  fileName?: string; url: string; sha256: string; createdAt: string;
 }
