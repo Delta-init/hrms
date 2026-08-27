@@ -13,6 +13,7 @@ import { signRequest } from "../utils/signing.js";
  * of the file.
  */
 
+// Must match src/test-setup.ts, which installs these before anything loads.
 const SECRET = "integration-secret-long-enough-to-pass-validation";
 const CLIENT = "delta-finance";
 const PATH = "/api/v1/integrations/ping";
@@ -20,14 +21,7 @@ const PATH = "/api/v1/integrations/ping";
 let app: express.Express;
 
 beforeAll(async () => {
-  process.env.MONGODB_URI = "mongodb://localhost:27017/test";
-  process.env.JWT_SECRET = "x".repeat(32);
-  process.env.JWT_REFRESH_SECRET = "y".repeat(32);
-  process.env.SUPER_ADMIN_EMAIL = "admin@example.com";
-  process.env.SUPER_ADMIN_PASSWORD = "password";
-  process.env.INTEGRATION_CLIENT_ID = CLIENT;
-  process.env.INTEGRATION_SECRET = SECRET;
-
+  // Credentials come from src/test-setup.ts, preloaded before any module.
   const { serviceAuth } = await import("./serviceAuth.js");
 
   app = express();

@@ -3,6 +3,7 @@ import { serviceAuth } from "../middleware/serviceAuth.js";
 import {
   listOrganizations, listDepartments, listEmployees, ping,
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
+  listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -23,5 +24,11 @@ router.get("/directory/employees", listEmployees);
 router.get("/payroll/batches", serviceOrgScope, listHandoverBatches);
 router.get("/payroll/batches/:month", serviceOrgScope, getHandoverBatch);
 router.post("/payroll/batches/:month/claim", serviceOrgScope, claimHandoverBatch);
+
+// The one door through which a locked month may still change, and only while
+// it is with accounts.
+router.get("/payroll/batches/:month/adjustments", serviceOrgScope, listFinanceAdjustments);
+router.post("/payroll/batches/:month/adjustments", serviceOrgScope, applyFinanceAdjustments);
+router.delete("/payroll/batches/:month/adjustments/:externalId", serviceOrgScope, removeFinanceAdjustment);
 
 export default router;

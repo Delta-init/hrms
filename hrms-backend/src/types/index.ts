@@ -1214,6 +1214,10 @@ export interface IOneTimeAdjustment extends Document {
   applied: boolean;
   payslip?: Types.ObjectId | null;
   createdBy?: Types.ObjectId | IUser | null;
+  /** Who raised it: HR, or the accounts department during their pass. */
+  source?: "hr" | "finance";
+  /** The accounts-side id, so a retried request updates rather than duplicates. */
+  externalId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

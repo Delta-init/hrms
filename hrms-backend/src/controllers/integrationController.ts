@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { directoryService } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
+import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 /**
@@ -125,3 +126,56 @@ export const claimHandoverBatch = asyncRoute(async (req, res) => {
   sendSuccess(res, `${month} claimed by accounts`, batch);
 });
 
+// ── Accounts' own additions and deductions ──────────────────────────────────
+
+export const listFinanceAdjustments = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  sendSuccess(res, "Adjustments retrieved", await financeAdjustmentService.list(month));
+});
+
+export const applyFinanceAdjustments = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+
+  const items = req.body?.items as FinanceAdjustmentInput[] | undefined;
+  if (!Array.isArray(items) || items.length === 0) {
+    sendError(res, "items must be a non-empty array", 400);
+    return;
+  }
+  // Bounded because each item triggers a payslip rebuild, and an unbounded
+  // batch would hold a request open long enough to be retried mid-flight.
+  if (items.length > 500) {
+    sendError(res, "Send at most 500 adjustments per request", 400);
+    return;
+  }
+  for (const item of items) {
+    if (!item?.externalId || !item?.employeeId || !item?.label) {
+      sendError(res, "Each item needs externalId, employeeId, kind, label and amount", 400);
+      return;
+    }
+    if (item.kind !== "payment" && item.kind !== "deduction") {
+      sendError(res, `kind must be "payment" or "deduction"`, 400);
+      return;
+    }
+    if (typeof item.amount !== "number" || !Number.isFinite(item.amount) || item.amount <= 0) {
+      sendError(res, `"${item.label}" must have a positive numeric amount`, 400);
+      return;
+    }
+  }
+
+  const result = await financeAdjustmentService.apply(month, items);
+  sendSuccess(res, `${result.applied} adjustment(s) applied to ${month}`, result);
+});
+
+export const removeFinanceAdjustment = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  const externalId = String(req.params.externalId ?? "").trim();
+  if (!externalId) {
+    sendError(res, "externalId is required", 400);
+    return;
+  }
+  const result = await financeAdjustmentService.remove(month, externalId);
+  sendSuccess(res, result.message, result);
+});

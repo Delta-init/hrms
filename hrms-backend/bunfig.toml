@@ -1,0 +1,4 @@
+[test]
+# Loaded before any test module, so config/env.ts is satisfied whatever order
+# bun happens to pick. See src/test-setup.ts.
+preload = ["./src/test-setup.ts"]

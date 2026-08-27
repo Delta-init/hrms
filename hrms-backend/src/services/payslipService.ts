@@ -437,6 +437,82 @@ export class PayslipService {
   }
 
   /**
+   * Rebuild one payslip from its sources, after something it depends on changed.
+   *
+   * Needed because a payslip is not a document somebody typed — it is the
+   * output of salary structure, attendance, loans, reimbursements, overtime and
+   * one-time adjustments, and adding an adjustment to a month that already has
+   * payslips means every one of those has to be reconsidered together.
+   *
+   * In particular, adding money can change deductions. `allocateRecoveries`
+   * only takes what a month can afford and parks the rest in `deferred`, so a
+   * bonus can make a loan instalment collectable that last time was carried
+   * forward. Anyone expecting "net pay rises by the amount added" will be wrong
+   * some of the time, which is exactly why the caller is handed back what
+   * actually happened rather than being left to assume.
+   *
+   * Everything derivable is derived again. An earnings line that matches none
+   * of the sources is assumed to be one somebody typed by hand and is kept —
+   * the failure mode is a line preserved that could have been dropped, never
+   * money silently disappearing from a payslip.
+   */
+  async recompute(payslipId: string) {
+    const record = await Payslip.findOne(scoped({ _id: payslipId }));
+    if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+
+    const employeeId = String(record.employee);
+    const month = record.month;
+    const before = { gross: record.grossPay, deductions: record.totalDeductions, net: record.netPay };
+
+    // Hand back everything this slip had collected or consumed, so the sources
+    // below report what is genuinely outstanding rather than what is left over.
+    await undoRecoveries(record);
+
+    const att = await this.summary(employeeId, month);
+    const oneTime = await computeOneTimeAdjustments(employeeId, month);
+    const reimb = await computeReimbursements(employeeId, month);
+    const ot = await computeOvertime(employeeId, month);
+    const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
+
+    const structureEarnings = att.earnings ?? [{ label: "Basic", amount: att.salary || 0 }];
+    const derived = [...structureEarnings, ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
+    const derivedLabels = new Set(derived.map((l) => l.label));
+    const handTyped = (record.earnings as unknown as Line[]).filter((l) => !derivedLabels.has(l.label));
+    const earnings = [...derived, ...handTyped];
+
+    const structureDeductions = (att.structureDeductions ?? []) as Line[];
+    const manual = [...structureDeductions, ...attendanceDeductions(att, att.salary, att.proratedGross)];
+
+    const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
+
+    record.earnings = earnings as never;
+    record.deductions = [...manual, ...alloc.lines] as never;
+    record.workingDays = att.workingDays;
+    record.paidDays = att.paidDays;
+    record.lopDays = att.lopDays;
+    record.recoveries = alloc.recoveries as never;
+    record.deferred = alloc.deferred;
+    await record.save();
+
+    // Re-consume every source, in the same order create() does. Missing any one
+    // of these leaves an item marked outstanding while its money sits in a
+    // payslip, and it would be paid a second time next month.
+    await applyRecoveries(alloc, String(record._id));
+    if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(record._id));
+    if (reimb.ids.length) await markReimbursementsPaid(reimb.ids, String(record._id));
+    if (ot.ids.length) await markOvertimeApplied(ot.ids, String(record._id));
+
+    return {
+      payslipId: String(record._id),
+      employeeId,
+      before,
+      after: { gross: record.grossPay, deductions: record.totalDeductions, net: record.netPay },
+      /** Scheduled recovery this month still could not afford. */
+      deferred: record.deferred ?? 0,
+    };
+  }
+
+  /**
    * Move a selection of payslips to one status. Only the status moves — the
    * amounts and everything recovered against them are left alone, so this is
    * safe to run over a whole month at once.

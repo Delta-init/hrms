@@ -24,10 +24,32 @@ const oneTimeAdjustmentSchema = new Schema<IOneTimeAdjustment>(
     applied: { type: Boolean, default: false },
     payslip: { type: Schema.Types.ObjectId, ref: "Payslip", default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+
+    /**
+     * Who raised this — HR here, or the accounts department during their pass
+     * over a submitted month.
+     *
+     * Kept because the two are not interchangeable to a person reading a
+     * payslip: "Sales commission" added by finance is answerable to them, and
+     * HR cannot edit or delete it while the month is with accounts.
+     */
+    source: { type: String, enum: ["hr", "finance"], default: "hr" },
+    /**
+     * The accounts-side id for this item, so the same addition arriving twice
+     * updates one record rather than paying somebody twice. A retry after a
+     * timeout is indistinguishable from a first attempt, so this is the only
+     * thing making that safe.
+     */
+    externalId: { type: String, trim: true, default: null },
   },
   { timestamps: true, versionKey: false }
 );
 
 oneTimeAdjustmentSchema.index({ organization: 1, employee: 1, month: 1 });
+// Sparse-unique: only finance-sourced rows carry one, and it must be theirs alone.
+oneTimeAdjustmentSchema.index(
+  { externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $type: "string" } } }
+);
 
 export const OneTimeAdjustment = mongoose.model<IOneTimeAdjustment>("OneTimeAdjustment", oneTimeAdjustmentSchema);
