@@ -710,6 +710,64 @@ export interface IPayslipLine {
   amount: number;
 }
 
+/**
+ * Where a month's payroll has got to between HR and the accounts department.
+ *
+ *  draft          — HR is still working. Payslips are editable.
+ *  submitted      — HR has declared the month final and handed it to finance.
+ *  in_finance     — finance has imported it and is adding or deducting.
+ *  approved       — finance has signed the figures off, ready to pay.
+ *  partially_paid — some people have been paid, some have not.
+ *  paid           — everyone on the run has been paid.
+ *  returned       — finance sent it back for HR to fix; editable again.
+ *
+ * Every status except draft and returned freezes the month's payslips. That is
+ * the point of the record: once finance holds the figures, HR changing a number
+ * underneath them means the money that leaves the bank and the payslip the
+ * employee downloads describe two different months.
+ */
+export type PayrollBatchStatus =
+  | "draft"
+  | "submitted"
+  | "in_finance"
+  | "approved"
+  | "partially_paid"
+  | "paid"
+  | "returned";
+
+export interface IPayrollBatch extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  /** Pay period, "YYYY-MM". */
+  month: string;
+  monthDate: Date;
+  currency: string;
+  status: PayrollBatchStatus;
+  /** Totals as they stood when HR submitted — what finance was handed. */
+  employeeCount: number;
+  grossTotal: number;
+  deductionTotal: number;
+  netTotal: number;
+  submittedBy?: Types.ObjectId | IUser | null;
+  submittedAt?: Date | null;
+  approvedAt?: Date | null;
+  paidAt?: Date | null;
+  returnedAt?: Date | null;
+  returnReason?: string;
+  /** The finance-side run this was imported into, once it has been. */
+  financeRunId?: string;
+  history: Array<{
+    from: PayrollBatchStatus;
+    to: PayrollBatchStatus;
+    at: Date;
+    by?: Types.ObjectId | IUser | null;
+    actor: string;
+    note?: string;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IPayslip extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;

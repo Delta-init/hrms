@@ -5,6 +5,7 @@ import type { CreateOneTimeInput, UpdateOneTimeInput } from "../validations/oneT
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { assertMonthEditable } from "./payrollBatchService.js";
 import { parsePagination } from "../utils/query.js";
 
 interface OneTimeQuery extends PaginationQuery {
@@ -21,6 +22,10 @@ const POP = [
 
 export class OneTimeAdjustmentService {
   async create(input: CreateOneTimeInput, createdBy: string) {
+    // An adjustment changes what a month pays out, so it is governed by the
+    // same lock as the payslips. Adding a bonus after the handover would leave
+    // finance holding a total that no longer matches the payroll.
+    await assertMonthEditable(input.month, "one-time adjustments");
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
     const doc = await OneTimeAdjustment.create({
@@ -68,6 +73,10 @@ export class OneTimeAdjustmentService {
     const record = await OneTimeAdjustment.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Adjustment not found"), { statusCode: 404 });
     if (record.applied) throw Object.assign(new Error("This adjustment has already been applied to a payslip"), { statusCode: 400 });
+    await assertMonthEditable(record.month, "one-time adjustments");
+    if (input.month !== undefined && input.month !== record.month) {
+      await assertMonthEditable(input.month, "one-time adjustments");
+    }
     Object.assign(record, input);
     await record.save();
     return OneTimeAdjustment.findById(id).populate(POP);
@@ -77,6 +86,7 @@ export class OneTimeAdjustmentService {
     const record = await OneTimeAdjustment.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Adjustment not found"), { statusCode: 404 });
     if (record.applied) throw Object.assign(new Error("This adjustment has already been applied to a payslip"), { statusCode: 400 });
+    await assertMonthEditable(record.month, "one-time adjustments");
     await OneTimeAdjustment.deleteOne({ _id: record._id });
   }
 }

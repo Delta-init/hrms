@@ -778,6 +778,59 @@ export interface AttendanceToday {
 
 // ─── Payslip ─────────────────────────────────────────────────────────────────
 export type PayslipStatus = "draft" | "issued" | "paid";
+
+/**
+ * Statuses HR may set by hand.
+ *
+ * "paid" is missing on purpose: it asserts that money left a bank account,
+ * which happens in the accounts system and arrives here over the payroll
+ * integration. The API refuses it too — this is the screen agreeing.
+ */
+export const HR_SETTABLE_PAYSLIP_STATUSES = ["draft", "issued"] as const;
+export type HrSettablePayslipStatus = (typeof HR_SETTABLE_PAYSLIP_STATUSES)[number];
+
+export type PayrollBatchStatus =
+  | "draft" | "submitted" | "in_finance" | "approved" | "partially_paid" | "paid" | "returned";
+
+export const PAYROLL_BATCH_LABELS: Record<PayrollBatchStatus, string> = {
+  draft: "Not submitted",
+  submitted: "With accounts",
+  in_finance: "Accounts reviewing",
+  approved: "Approved for payment",
+  partially_paid: "Partly paid",
+  paid: "Paid",
+  returned: "Sent back by accounts",
+};
+
+export interface PayrollBatch {
+  month: string;
+  status: PayrollBatchStatus;
+  exists: boolean;
+  editable: boolean;
+  currency: string;
+  employeeCount: number;
+  grossTotal: number;
+  deductionTotal: number;
+  netTotal: number;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  returnedAt: string | null;
+  returnReason: string;
+  financeRunId: string;
+  history: Array<{ from: string; to: string; at: string; actor: string; note?: string }>;
+}
+
+export interface PayrollPreflight {
+  month: string;
+  status: PayrollBatchStatus;
+  canSubmit: boolean;
+  /** Refusals. Submit is blocked while any remain. */
+  blockers: string[];
+  /** Things worth knowing that do not stop the handover. */
+  warnings: string[];
+  totals: { employeeCount: number; grossTotal: number; deductionTotal: number; netTotal: number };
+}
 export const PAYSLIP_STATUS_LABELS: Record<PayslipStatus, string> = { draft: "Draft", issued: "Issued", paid: "Paid" };
 
 export interface PayslipLine { label: string; amount: number }

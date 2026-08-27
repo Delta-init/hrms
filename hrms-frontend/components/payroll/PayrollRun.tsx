@@ -13,7 +13,12 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
-import { PAYSLIP_STATUS_LABELS, type PayrollRunRow, type PayslipStatus } from "@/types";
+import { PayrollHandover } from "@/components/payroll/PayrollHandover";
+import { usePayrollBatch } from "@/hooks/usePayrollBatch";
+import {
+  PAYSLIP_STATUS_LABELS, HR_SETTABLE_PAYSLIP_STATUSES,
+  type PayrollRunRow, type PayslipStatus, type HrSettablePayslipStatus,
+} from "@/types";
 
 const statusStyles: Record<PayslipStatus, string> = {
   draft: "bg-muted text-muted-foreground border-border",
@@ -25,10 +30,19 @@ const money = (n: number, c: string) => `${c} ${(n ?? 0).toLocaleString(undefine
 
 export function PayrollRun() {
   const { hasPermission } = useAuth();
-  const canGenerate = hasPermission("payroll", "create");
-  const canEdit = hasPermission("payroll", "edit");
-  const canDelete = hasPermission("payroll", "delete");
   const [month, setMonth] = useState(curMonth());
+  const { data: batch } = usePayrollBatch(month);
+
+  /**
+   * Once a month is with accounts nothing here may change it, whatever the
+   * user's permissions say. The API refuses these writes too — this only keeps
+   * the screen from offering an action that is going to come back as an error.
+   */
+  const locked = batch ? !batch.editable : false;
+  const canGenerate = hasPermission("payroll", "create") && !locked;
+  const canEdit = hasPermission("payroll", "edit") && !locked;
+  const canDelete = hasPermission("payroll", "delete") && !locked;
+  const canHandOver = hasPermission("payroll", "approve");
   const { data, isLoading, isFetching } = usePayrollRun(month);
   const { mutate: generate, isPending: generating } = useGeneratePayroll();
 
@@ -54,7 +68,7 @@ export function PayrollRun() {
     setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
   const clearSelection = () => setSelected(new Set());
-  const applyStatus = (status: PayslipStatus) =>
+  const applyStatus = (status: HrSettablePayslipStatus) =>
     bulkStatus({ ids: selectedIds, status }, { onSuccess: clearSelection });
   const totalNet = rows.reduce((a, r) => a + r.netPay, 0);
   const currency = rows[0]?.currency ?? "AED";
@@ -76,6 +90,10 @@ export function PayrollRun() {
 
   return (
     <div className="space-y-4">
+      {/* Where the month stands with accounts. Above the figures, because it
+          decides whether any of them can still be changed. */}
+      <PayrollHandover month={month} canSubmit={canHandOver} />
+
       <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">
@@ -111,7 +129,7 @@ export function PayrollRun() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {(["draft", "issued", "paid"] as PayslipStatus[]).map((st) => (
+                  {HR_SETTABLE_PAYSLIP_STATUSES.map((st) => (
                     <DropdownMenuItem key={st} className="cursor-pointer" onSelect={() => applyStatus(st)}>
                       {PAYSLIP_STATUS_LABELS[st]}
                     </DropdownMenuItem>

@@ -36,8 +36,16 @@ export const bulkPayslipSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "Select at least one payslip").max(500),
 });
 
+/**
+ * "paid" is not accepted here any more.
+ *
+ * Marking somebody paid asserts that money left a bank account, and that
+ * happens in the accounts system. It reaches a payslip over the payroll
+ * integration at the end of the handover, never from the HR screen — otherwise
+ * the three-step flow is optional and a payslip can say paid with nothing sent.
+ */
 export const bulkPayslipStatusSchema = bulkPayslipSchema.extend({
-  status: z.enum(["draft", "issued", "paid"]),
+  status: z.enum(["draft", "issued"]),
 });
 
 export type BulkPayslipInput = z.infer<typeof bulkPayslipSchema>;

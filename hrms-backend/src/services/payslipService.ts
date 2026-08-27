@@ -7,6 +7,7 @@ import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/pays
 import type { PaginationQuery, IEmployee } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import { assertMonthEditable } from "./payrollBatchService.js";
 import {
   computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
 } from "./loanService.js";
@@ -273,6 +274,9 @@ async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind
 
 export class PayslipService {
   async create(input: CreatePayslipInput, issuerId: string) {
+    // Refused once the month is with accounts: a new payslip appearing after
+    // the handover is money finance never saw.
+    await assertMonthEditable(input.month, "payslips");
     const emp = await Employee.findOne(scoped({ _id: input.employee }));
     if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
@@ -376,6 +380,13 @@ export class PayslipService {
     const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
 
+    // Both months are checked: editing a locked slip is refused, and so is
+    // moving an editable one into a month that has already gone to accounts.
+    await assertMonthEditable(record.month, "a payslip");
+    if (input.month !== undefined && input.month !== record.month) {
+      await assertMonthEditable(input.month, "a payslip");
+    }
+
     if (input.month !== undefined) { record.month = input.month; record.monthDate = monthBounds(input.month).start; }
     if (input.currency !== undefined) record.currency = input.currency;
     // Earnings or deductions changing means the recoverable amount changes too.
@@ -429,8 +440,18 @@ export class PayslipService {
    * Move a selection of payslips to one status. Only the status moves — the
    * amounts and everything recovered against them are left alone, so this is
    * safe to run over a whole month at once.
+   *
+   * "paid" is deliberately not on offer. Marking somebody paid is a statement
+   * that money left a bank account, and that happens in the accounts system —
+   * it arrives here over the integration, at the end of the handover. Letting
+   * HR set it directly would make the whole three-step flow optional, and the
+   * first sign of trouble would be a payslip saying paid with nothing sent.
    */
-  async bulkSetStatus(ids: string[], status: "draft" | "issued" | "paid") {
+  async bulkSetStatus(ids: string[], status: "draft" | "issued") {
+    const records = await Payslip.find(scoped({ _id: { $in: ids } })).select("month").lean();
+    for (const month of new Set(records.map((r) => r.month))) {
+      await assertMonthEditable(month, "payslip statuses");
+    }
     const result = await Payslip.updateMany(scoped({ _id: { $in: ids } }), { $set: { status } });
     return { message: `${result.modifiedCount} payslip(s) marked ${status}`, matched: result.matchedCount, modified: result.modifiedCount };
   }
@@ -443,6 +464,9 @@ export class PayslipService {
    */
   async bulkRemove(ids: string[]) {
     const records = await Payslip.find(scoped({ _id: { $in: ids } }));
+    for (const month of new Set(records.map((r) => r.month))) {
+      await assertMonthEditable(month, "payslips");
+    }
     for (const record of records) {
       await undoRecoveries(record);
       await Payslip.deleteOne({ _id: record._id });
@@ -453,6 +477,7 @@ export class PayslipService {
   async remove(id: string) {
     const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
+    await assertMonthEditable(record.month, "a payslip");
     // Deleting a payslip un-collects its recoveries; leaving them credited made
     // loans look repaid by a slip that no longer exists.
     await undoRecoveries(record);
@@ -852,6 +877,7 @@ export class PayslipService {
 
   /** Bulk-create draft payslips for every active employee lacking one this month. */
   async runGenerate(month: string, issuerId: string) {
+    await assertMonthEditable(month, "payslips");
     const employees = await Employee.find(scoped(await payrollRosterFilter(month))).select("_id salary");
     const existing = await Payslip.find(scoped({ month })).select("employee");
     const existSet = new Set(existing.map((p) => String(p.employee)));

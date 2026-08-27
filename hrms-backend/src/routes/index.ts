@@ -15,6 +15,7 @@ import departmentRoutes from "./departmentRoutes.js";
 import employeeRoutes from "./employeeRoutes.js";
 import regularizationRoutes from "./regularizationRoutes.js";
 import payslipRoutes from "./payslipRoutes.js";
+import payrollBatchRoutes from "./payrollBatchRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
 import cardRoutes from "./cardRoutes.js";
 import resignationRoutes from "./resignationRoutes.js";
@@ -85,6 +86,7 @@ router.use("/departments", departmentRoutes);
 router.use("/employees", employeeRoutes);
 router.use("/regularizations", regularizationRoutes);
 router.use("/payslips", payslipRoutes);
+router.use("/payroll-batches", payrollBatchRoutes);
 
 // Server-to-server (Delta Finance). Signed requests, no user session.
 router.use("/integrations", integrationRoutes);
