@@ -87,6 +87,21 @@ const envSchema = z.object({
   // Two faces this close cannot be told apart at the kiosk, so enrolling the
   // second would break both.
   FACE_DUPLICATE_MARGIN: z.string().default("0.1"),
+
+  // ── Delta Finance integration ────────────────────────────────────────────
+  // Shared-secret credentials the finance server signs its requests with. Both
+  // unset means the integration API is disabled and returns 503 — an
+  // unconfigured deployment must not serve the employee directory to anyone
+  // who finds the route. The secret has the same 32-char floor as the JWT keys
+  // because it guards the same thing: the ability to speak as a trusted party.
+  INTEGRATION_CLIENT_ID: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(1).optional()
+  ),
+  INTEGRATION_SECRET: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(32, "INTEGRATION_SECRET must be at least 32 characters").optional()
+  ),
 });
 
 const parsed = envSchema.safeParse(process.env);

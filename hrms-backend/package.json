@@ -12,7 +12,8 @@
     "repair:leave-policy-index": "bun src/seeds/repairLeavePolicyIndex.ts",
     "faces:duplicates": "bun src/seeds/findDuplicateFaces.ts",
     "migrate:greythr": "bun src/seeds/migrateGreytHR/index.ts",
-    "migrate:greythr:revert": "bun src/seeds/migrateGreytHR/revert.ts"
+    "migrate:greythr:revert": "bun src/seeds/migrateGreytHR/revert.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/bun": "^1.4.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.6",

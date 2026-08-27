@@ -40,6 +40,7 @@ import reportRoutes from "./reportRoutes.js";
 import performanceRoutes from "./performanceRoutes.js";
 import faceRoutes from "./faceRoutes.js";
 import kioskRoutes from "./kioskRoutes.js";
+import integrationRoutes from "./integrationRoutes.js";
 
 const router = Router();
 
@@ -84,6 +85,9 @@ router.use("/departments", departmentRoutes);
 router.use("/employees", employeeRoutes);
 router.use("/regularizations", regularizationRoutes);
 router.use("/payslips", payslipRoutes);
+
+// Server-to-server (Delta Finance). Signed requests, no user session.
+router.use("/integrations", integrationRoutes);
 
 // Health check
 router.get("/health", (_req, res) => {

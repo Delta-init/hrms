@@ -47,7 +47,23 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "X-Org-Id", "X-Kiosk-Token"],
   })
 );
-app.use(express.json({ limit: "10mb" }));
+/**
+ * Keep the raw bytes of every JSON body.
+ *
+ * The integration API verifies an HMAC over the body exactly as it arrived
+ * (see middleware/serviceAuth.ts). Re-serialising `req.body` to check the
+ * signature would let the sender and this server disagree about key order or
+ * number formatting, failing honest requests. Costs one Buffer reference per
+ * request and nothing else.
+ */
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // After the body parsers (so req.body exists) and before any route.
 app.use(sanitizeQuery);
