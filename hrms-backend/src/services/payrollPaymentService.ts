@@ -128,6 +128,62 @@ export class PayrollPaymentService {
       batch: await payrollBatchService.describe(month),
     };
   }
+
+  /**
+   * Undo a payment, when a transfer bounced.
+   *
+   * Finance-driven, because the money moved on their side and only they know it
+   * came back. The payslips return to issued rather than draft: they were
+   * correct, they simply were not paid, and dropping them to draft would put
+   * them back in HR's editing pile on a month accounts still hold.
+   */
+  async reverse(month: string, paymentId: string, reason: string) {
+    const batch = await PayrollBatch.findOne(scoped({ month }));
+    if (!batch) throw err(`No payroll batch for ${month}`, 404);
+
+    const index = batch.payments.findIndex((p) => p.paymentId === paymentId);
+    if (index === -1) throw err(`No payment ${paymentId} on ${month}`, 404);
+
+    const payment = batch.payments[index]!;
+    // Only the slips this payment settled, found by the timestamp it stamped
+    // on them: another payment on the same month must not be undone with it.
+    const affected = await Payslip.find(scoped({ month, status: "paid", paidAt: payment.paidOn }))
+      .select("_id")
+      .lean();
+
+    await Payslip.updateMany(
+      scoped({ _id: { $in: affected.map((s) => s._id) } }),
+      { $set: { status: "issued", paidAt: null } }
+    );
+
+    batch.payments.splice(index, 1);
+    await batch.save();
+
+    const outstanding = await Payslip.countDocuments(scoped({ month, status: { $ne: "paid" } }));
+    const paidAny = await Payslip.countDocuments(scoped({ month, status: "paid" }));
+    const nextStatus: PayrollBatchStatus =
+      outstanding === 0 ? "paid" : paidAny > 0 ? "partially_paid" : "approved";
+
+    // Straight assignment: the state machine forbids paid → approved, and
+    // rightly so for anything a person does. A bounced transfer is the one case
+    // where the fact on the ground moved backwards, and refusing to record that
+    // would leave a payslip claiming money that was returned.
+    batch.status = nextStatus;
+    batch.paidAt = nextStatus === "paid" ? batch.paidAt : null;
+    batch.history.push({
+      from: "paid", to: nextStatus, at: new Date(), by: null,
+      actor: "finance", note: `Reversed payment ${paymentId}: ${reason}`,
+    } as never);
+    await batch.save();
+
+    return {
+      message: `Payment ${paymentId} reversed; ${affected.length} payslip(s) returned to issued`,
+      month,
+      status: nextStatus,
+      reversed: affected.length,
+      batch: await payrollBatchService.describe(month),
+    };
+  }
 }
 
 export const payrollPaymentService = new PayrollPaymentService();

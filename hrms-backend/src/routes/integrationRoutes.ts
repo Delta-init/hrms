@@ -4,7 +4,7 @@ import {
   listOrganizations, listDepartments, listEmployees, ping,
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
-  approveHandoverBatch, returnHandoverBatch, recordPayment,
+  approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -37,5 +37,6 @@ router.delete("/payroll/batches/:month/adjustments/:externalId", serviceOrgScope
 router.post("/payroll/batches/:month/approve", serviceOrgScope, approveHandoverBatch);
 router.post("/payroll/batches/:month/return", serviceOrgScope, returnHandoverBatch);
 router.post("/payroll/batches/:month/payments", serviceOrgScope, recordPayment);
+router.post("/payroll/batches/:month/payments/:paymentId/reverse", serviceOrgScope, reversePayment);
 
 export default router;

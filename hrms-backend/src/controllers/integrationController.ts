@@ -248,3 +248,15 @@ export const recordPayment = asyncRoute(async (req, res) => {
   sendSuccess(res, result.message, result);
 });
 
+export const reversePayment = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  const paymentId = String(req.params.paymentId ?? "").trim();
+  const reason = String(req.body?.reason ?? "").trim();
+  if (!reason) {
+    sendError(res, "A reason is required to reverse a payment", 400);
+    return;
+  }
+  const result = await payrollPaymentService.reverse(month, paymentId, reason);
+  sendSuccess(res, result.message, result);
+});
