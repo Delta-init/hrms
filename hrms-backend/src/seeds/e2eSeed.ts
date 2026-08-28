@@ -66,8 +66,11 @@ async function main() {
     roleName: "E2E HR", isSystemRole: false, organization: orgId,
     permissions: { payroll: { view: true, create: true, edit: true, delete: true, approve: true, export: true } },
   });
+  // A predictable address when something wants to log in and look at the
+  // result; a unique one otherwise, so repeat runs never collide.
+  const hrEmail = process.env.E2E_HR_EMAIL || `hr.${Date.now()}@e2e.local`;
   const hrUser = await User.create({
-    name: "E2E HR", email: `hr.${Date.now()}@e2e.local`, password: "Password123!",
+    name: "E2E HR", email: hrEmail, password: process.env.E2E_PASSWORD || "Password123!",
     role: role._id, organization: orgId, status: "active",
   });
 
@@ -153,7 +156,7 @@ async function main() {
 
         const batch = await PayrollBatch.findOne({ organization: orgId, month: MONTH }).lean();
         console.log(JSON.stringify({
-          orgId, month: MONTH, batchStatus: batch?.status,
+          orgId, month: MONTH, batchStatus: batch?.status, hrEmail,
           netTotal: batch?.netTotal, employeeCount: batch?.employeeCount,
           employees: created,
         }));
