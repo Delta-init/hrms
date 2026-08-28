@@ -3,6 +3,7 @@ import { directoryService } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
+import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 /**
@@ -179,3 +180,71 @@ export const removeFinanceAdjustment = asyncRoute(async (req, res) => {
   const result = await financeAdjustmentService.remove(month, externalId);
   sendSuccess(res, result.message, result);
 });
+
+// ── Approval and payment ────────────────────────────────────────────────────
+
+export const approveHandoverBatch = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  const current = await payrollBatchService.describe(month);
+  // Idempotent: re-approving an approved month is the answer it already had.
+  if (current.status === "approved") {
+    sendSuccess(res, `${month} was already approved`, current);
+    return;
+  }
+  const batch = await payrollBatchService.transition(month, "approved", {
+    actor: "finance",
+    note: req.body?.note ? String(req.body.note).slice(0, 300) : undefined,
+  });
+  sendSuccess(res, `${month} approved for payment`, batch);
+});
+
+export const returnHandoverBatch = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  const reason = String(req.body?.reason ?? "").trim();
+  if (!reason) {
+    // Required, because a month landing back with HR and no explanation is a
+    // month nobody knows how to fix.
+    sendError(res, "A reason is required when sending a payroll back to HR", 400);
+    return;
+  }
+  const batch = await payrollBatchService.transition(month, "returned", { actor: "finance", note: reason });
+  sendSuccess(res, `${month} sent back to HR`, batch);
+});
+
+export const recordPayment = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+
+  const paymentId = String(req.body?.paymentId ?? "").trim();
+  if (!paymentId) {
+    sendError(res, "paymentId is required — it is what makes a retry safe", 400);
+    return;
+  }
+  const lines = req.body?.lines as PaymentLine[] | undefined;
+  if (!Array.isArray(lines) || lines.length === 0) {
+    sendError(res, "lines must be a non-empty array of { payslipId, amount }", 400);
+    return;
+  }
+  if (lines.length > 2000) {
+    sendError(res, "Send at most 2000 payslips per payment", 400);
+    return;
+  }
+  for (const line of lines) {
+    if (!line?.payslipId || typeof line.amount !== "number" || !Number.isFinite(line.amount)) {
+      sendError(res, "Each line needs a payslipId and a numeric amount", 400);
+      return;
+    }
+  }
+
+  const result = await payrollPaymentService.record(month, {
+    paymentId,
+    paidOn: req.body?.paidOn ? String(req.body.paidOn) : undefined,
+    reference: req.body?.reference ? String(req.body.reference).slice(0, 120) : undefined,
+    method: req.body?.method ? String(req.body.method).slice(0, 40) : undefined,
+    lines,
+  });
+  sendSuccess(res, result.message, result);
+});
+

@@ -59,6 +59,33 @@ const payrollBatchSchema = new Schema<IPayrollBatch>(
 
     financeRunId: { type: String, trim: true, default: "" },
 
+    /**
+     * Payments accounts have already told us about.
+     *
+     * Recorded so a re-delivered notification is recognised rather than
+     * re-applied. The caller cannot tell a timeout from a failure, and without
+     * this a retry would mark a second set of payslips paid — or the same ones
+     * twice, with a fresh paidAt each time, quietly rewriting when somebody was
+     * paid.
+     */
+    payments: {
+      type: [
+        new Schema(
+          {
+            paymentId: { type: String, required: true },
+            paidOn: { type: Date, required: true },
+            reference: { type: String, trim: true, default: "" },
+            method: { type: String, trim: true, default: "" },
+            payslipCount: { type: Number, default: 0 },
+            amount: { type: Number, default: 0 },
+            recordedAt: { type: Date, default: Date.now },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
     history: { type: [historySchema], default: [] },
   },
   { timestamps: true, versionKey: false }

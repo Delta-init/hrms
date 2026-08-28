@@ -756,6 +756,16 @@ export interface IPayrollBatch extends Document {
   returnReason?: string;
   /** The finance-side run this was imported into, once it has been. */
   financeRunId?: string;
+  /** Payments accounts have reported, kept so a retry is not re-applied. */
+  payments: Array<{
+    paymentId: string;
+    paidOn: Date;
+    reference?: string;
+    method?: string;
+    payslipCount: number;
+    amount: number;
+    recordedAt: Date;
+  }>;
   history: Array<{
     from: PayrollBatchStatus;
     to: PayrollBatchStatus;

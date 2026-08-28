@@ -4,6 +4,7 @@ import {
   listOrganizations, listDepartments, listEmployees, ping,
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
+  approveHandoverBatch, returnHandoverBatch, recordPayment,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -30,5 +31,11 @@ router.post("/payroll/batches/:month/claim", serviceOrgScope, claimHandoverBatch
 router.get("/payroll/batches/:month/adjustments", serviceOrgScope, listFinanceAdjustments);
 router.post("/payroll/batches/:month/adjustments", serviceOrgScope, applyFinanceAdjustments);
 router.delete("/payroll/batches/:month/adjustments/:externalId", serviceOrgScope, removeFinanceAdjustment);
+
+// Sign-off, payment, and the way back. A payment is the only path by which a
+// payslip becomes paid — nothing on the HR side can set it.
+router.post("/payroll/batches/:month/approve", serviceOrgScope, approveHandoverBatch);
+router.post("/payroll/batches/:month/return", serviceOrgScope, returnHandoverBatch);
+router.post("/payroll/batches/:month/payments", serviceOrgScope, recordPayment);
 
 export default router;
