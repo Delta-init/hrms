@@ -37,6 +37,15 @@ export interface HandoverLine {
   departmentId: string | null;
   departmentName: string;
   designation: string;
+  /**
+   * What this person is paid in.
+   *
+   * Per payslip, not per batch. A batch carries one currency because it needs
+   * a heading, but the people in it need not share it — a month can hold
+   * salaries in dirhams and salaries in rupees, and finance summing them as
+   * one figure is out by a factor of twenty-two on every rupee line.
+   */
+  currency: string;
   /** Rounded to the currency's minor unit before it leaves, never after. */
   grossPay: number;
   totalDeductions: number;
@@ -126,6 +135,9 @@ export class PayrollHandoverService {
         departmentId: emp?.department ? String(emp.department) : null,
         departmentName: emp?.department ? (deptById.get(String(emp.department)) ?? "") : "",
         designation: emp?.designation ?? "",
+        // The payslip's own, falling back to the batch's where a payslip
+        // predates the field.
+        currency: (s.currency as string) || batch.currency,
         grossPay: s.grossPay ?? 0,
         totalDeductions: s.totalDeductions ?? 0,
         netPay: s.netPay ?? 0,
