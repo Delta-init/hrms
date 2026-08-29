@@ -1024,7 +1024,16 @@ export interface ICard extends Document {
 }
 
 // ─── Asset ───────────────────────────────────────────────────────────────────
-export type AssetCategory = "laptop" | "phone" | "monitor" | "furniture" | "vehicle" | "sim_card" | "other";
+/**
+ * What kind of thing an asset is. An open list: these are the values the app
+ * offers, and anything else somebody types is equally valid. See the model.
+ */
+export const ASSET_CATEGORIES = [
+  "laptop", "monitor", "phone", "telephone", "tablet", "mouse", "keyboard",
+  "headphone", "camera", "printer", "charger", "mini_pc", "pos_machine",
+  "accounts_equipment", "furniture", "uniform", "sim_card", "vehicle", "other",
+] as const;
+export type AssetCategory = (typeof ASSET_CATEGORIES)[number] | (string & {});
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
 
@@ -1051,6 +1060,11 @@ export interface IAsset extends Document {
   /** Currently-holding employee, if assigned. */
   assignedTo?: Types.ObjectId | IEmployee | null;
   assignedDate?: Date | null;
+  /** Which office holds it, and where inside it. */
+  branch?: string;
+  location?: string;
+  /** How many this record stands for; 1 for anything individually tagged. */
+  quantity?: number;
   notes?: string;
   history: IAssetHistoryEntry[];
   createdBy?: Types.ObjectId | IUser | null;
