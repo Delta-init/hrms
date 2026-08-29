@@ -22,12 +22,17 @@ export function DashboardMock() {
             <p className="mt-3 text-lg font-bold tabular-nums text-neutral-900">09:02</p>
             <div className="mt-2 h-6">
               <svg viewBox="0 0 120 24" className="h-full w-full">
+                {/* --line-length is comfortably longer than the path, so the
+                    dash hides it entirely at the start and the draw reads
+                    left to right. */}
                 <polyline
+                  className="hrms-line"
                   points="0,18 15,14 30,16 45,8 60,12 75,5 90,10 105,4 120,7"
                   fill="none"
                   stroke="#4f46e5"
                   strokeWidth="2"
                   strokeLinecap="round"
+                  style={{ ["--line-length" as string]: "140" }}
                 />
               </svg>
             </div>
@@ -39,8 +44,10 @@ export function DashboardMock() {
               {[70, 88, 62, 95, 80, 90].map((h, i) => (
                 <div
                   key={i}
-                  className="flex-1 rounded-sm bg-indigo-200"
-                  style={{ height: `${h}%` }}
+                  className="hrms-bar flex-1 rounded-sm bg-indigo-200"
+                  // Staggered so the row fills in across rather than all at
+                  // once, which is what makes it read as data arriving.
+                  style={{ height: `${h}%`, animationDelay: `${i * 90}ms` }}
                 />
               ))}
             </div>
@@ -59,12 +66,28 @@ export function DashboardMock() {
             <div className="relative h-20 w-20 shrink-0">
               <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
                 <circle cx="18" cy="18" r="15.9" fill="none" stroke="#eef2ff" strokeWidth="4" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#4f46e5" strokeWidth="4"
-                  strokeDasharray="44 100" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#a5b4fc" strokeWidth="4"
-                  strokeDasharray="33 100" strokeDashoffset="-44" strokeLinecap="round" />
-                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#c7d2fe" strokeWidth="4"
-                  strokeDasharray="23 100" strokeDashoffset="-77" strokeLinecap="round" />
+                {/* Each segment starts fully wound off and sweeps to its
+                    share. `--dash-length` is the circumference in the units
+                    strokeDasharray uses here, so winding off by that much
+                    hides the segment completely. */}
+                {[
+                  { stroke: "#4f46e5", dash: "44 100", offset: 0, delay: 0 },
+                  { stroke: "#a5b4fc", dash: "33 100", offset: -44, delay: 220 },
+                  { stroke: "#c7d2fe", dash: "23 100", offset: -77, delay: 420 },
+                ].map((seg) => (
+                  <circle
+                    key={seg.stroke}
+                    className="hrms-donut"
+                    cx="18" cy="18" r="15.9" fill="none"
+                    stroke={seg.stroke} strokeWidth="4"
+                    strokeDasharray={seg.dash} strokeLinecap="round"
+                    style={{
+                      ["--dash-length" as string]: `${100 + Math.abs(seg.offset)}`,
+                      ["--dash-offset" as string]: `${seg.offset}`,
+                      animationDelay: `${seg.delay}ms`,
+                    }}
+                  />
+                ))}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-sm font-bold text-neutral-900">248</span>
@@ -97,8 +120,12 @@ export function DashboardMock() {
               { n: "Rahul Menon", t: "Expense Claim", d: "12 Feb", s: "Pending", sc: "bg-amber-50 text-amber-500" },
               { n: "Sara Pereira", t: "Work From Home", d: "11 Feb", s: "Approved", sc: "bg-emerald-50 text-emerald-500" },
               { n: "John David", t: "Sick Leave", d: "11 Feb", s: "Pending", sc: "bg-amber-50 text-amber-500" },
-            ].map((r) => (
-              <div key={r.n} className="flex items-center gap-2 text-[9px] text-neutral-500">
+            ].map((r, i) => (
+              <div
+                key={r.n}
+                className="flex animate-in items-center gap-2 fade-in-0 slide-in-from-bottom-1 fill-mode-both text-[9px] text-neutral-500 duration-500"
+                style={{ animationDelay: `${600 + i * 110}ms` }}
+              >
                 <span className="flex-1 truncate font-medium text-neutral-700">{r.n}</span>
                 <span className="w-24 truncate">{r.t}</span>
                 <span className="w-12 text-right">{r.d}</span>

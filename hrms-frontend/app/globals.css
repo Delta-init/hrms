@@ -133,3 +133,52 @@
 ::-webkit-scrollbar-thumb:hover {
   background: transparent;
 }
+
+/*
+ * The login panel's dashboard preview.
+ *
+ * It plays once, on load, and then holds still: a login screen that keeps
+ * moving competes with the form beside it, which is the thing somebody is
+ * actually there to use.
+ *
+ * Each part animates the way that part would fill in for real — bars grow from
+ * their baseline, the donut sweeps round, the sparkline draws itself left to
+ * right — so it reads as a dashboard coming to life rather than a picture
+ * being slid into place.
+ */
+@keyframes hrms-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes hrms-donut-sweep {
+  from { stroke-dashoffset: var(--dash-length); }
+  to { stroke-dashoffset: var(--dash-offset); }
+}
+@keyframes hrms-line-draw {
+  from { stroke-dashoffset: var(--line-length); }
+  to { stroke-dashoffset: 0; }
+}
+
+.hrms-bar {
+  transform-origin: bottom;
+  animation: hrms-bar-grow 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hrms-donut {
+  animation: hrms-donut-sweep 1100ms cubic-bezier(0.22, 1, 0.36, 1) 250ms both;
+}
+.hrms-line {
+  stroke-dasharray: var(--line-length);
+  animation: hrms-line-draw 1200ms ease-out 200ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hrms-bar,
+  .hrms-donut,
+  .hrms-line {
+    animation: none;
+  }
+  /* Without the animation the end state has to be set outright, or the donut
+     and the line would sit at their start values and show nothing. */
+  .hrms-donut { stroke-dashoffset: var(--dash-offset); }
+  .hrms-line { stroke-dashoffset: 0; }
+}
