@@ -4,6 +4,8 @@ import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
+import { notifyPayrollReturned } from "../services/payrollNotifyService.js";
+import { getOrgId } from "../utils/orgContext.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 /**
@@ -210,6 +212,9 @@ export const returnHandoverBatch = asyncRoute(async (req, res) => {
     return;
   }
   const batch = await payrollBatchService.transition(month, "returned", { actor: "finance", note: reason });
+  // The one notification that cannot wait: the month is unlocked and sitting
+  // with HR, and nobody is paid until somebody fixes it and sends it again.
+  void notifyPayrollReturned(getOrgId(), month, reason);
   sendSuccess(res, `${month} sent back to HR`, batch);
 });
 

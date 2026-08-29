@@ -1,7 +1,8 @@
 import { PayrollBatch } from "../models/PayrollBatch.js";
 import { Payslip } from "../models/Payslip.js";
 import { payrollBatchService } from "./payrollBatchService.js";
-import { scoped } from "../utils/orgContext.js";
+import { scoped, getOrgId } from "../utils/orgContext.js";
+import { notifyPayrollPaid } from "./payrollNotifyService.js";
 import type { PayrollBatchStatus } from "../types/index.js";
 
 /**
@@ -116,6 +117,15 @@ export class PayrollPaymentService {
         note: `Payment ${input.paymentId}${input.reference ? ` (${input.reference})` : ""}`,
       });
     }
+
+    // HR is told from here rather than from the transition, because a partly
+    // paid month keeps the same status across several payments and would
+    // otherwise announce nothing after the first one.
+    void notifyPayrollPaid(getOrgId(), month, {
+      fullyPaid: nextStatus === "paid",
+      paidCount: toPay.length,
+      outstanding,
+    });
 
     return {
       duplicate: false,
