@@ -108,7 +108,10 @@ export class PayrollHandoverService {
     }
 
     const slips = await Payslip.find({ organization: organizationId, month })
-      .select("employee earnings deductions grossPay totalDeductions netPay status paidAt")
+      // currency included deliberately: a projection that omits it makes
+      // every payslip look like the batch's own, which is the thing this is
+      // here to distinguish.
+      .select("employee currency earnings deductions grossPay totalDeductions netPay status paidAt")
       .lean();
 
     const employees = await Employee.find({ _id: { $in: slips.map((s) => s.employee) } })
