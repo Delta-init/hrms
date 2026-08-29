@@ -47,6 +47,16 @@ export interface HandoverLine {
   paidAt: string | null;
   bank: { iban: string; accountNumber: string; bankName: string; nameInBank: string };
   payable: boolean;
+  /**
+   * The payslip refers to an employee record that no longer exists.
+   *
+   * Payslips outlive the people they belong to — deleting an employee leaves
+   * theirs behind — and the line then carries no code and no name. Accounts
+   * cannot map somebody who is not there, so the difference between "not
+   * mapped yet" and "cannot be mapped" has to travel with the line rather than
+   * being guessed from two empty strings at the other end.
+   */
+  employeeMissing: boolean;
 }
 
 export class PayrollHandoverService {
@@ -110,7 +120,9 @@ export class PayrollHandoverService {
         payslipId: String(s._id),
         employeeId: String(s.employee),
         employeeCode: emp?.employeeCode ?? "",
-        name: emp?.name ?? "",
+        // Named so the line is identifiable in a list. An empty string reads
+        // as a rendering fault rather than as missing data.
+        name: emp?.name ?? "(employee record deleted)",
         departmentId: emp?.department ? String(emp.department) : null,
         departmentName: emp?.department ? (deptById.get(String(emp.department)) ?? "") : "",
         designation: emp?.designation ?? "",
@@ -122,6 +134,7 @@ export class PayrollHandoverService {
         status: s.status,
         paidAt: s.paidAt ? new Date(s.paidAt).toISOString() : null,
         bank: { iban, accountNumber, bankName: bank?.bankName ?? "", nameInBank: bank?.nameInBank ?? "" },
+        employeeMissing: !emp,
         // Said here rather than left for finance to work out, so both systems
         // agree on who can actually receive money.
         payable: Boolean(iban || accountNumber),
