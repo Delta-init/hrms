@@ -3,6 +3,7 @@ import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
 import { assertRoleAssignable } from "./roleService.js";
 import { Resignation } from "../models/Resignation.js";
+import { Payslip } from "../models/Payslip.js";
 import { FaceProfile } from "../models/FaceProfile.js";
 import type { CreateEmployeeInput, UpdateEmployeeInput, UpdateMyProfileInput, CreateLoginInput } from "../validations/employeeValidation.js";
 import type { PaginationQuery } from "../types/index.js";
@@ -305,8 +306,31 @@ export class EmployeeService {
   }
 
   async remove(id: string) {
-    const record = await Employee.findOneAndDelete(scoped({ _id: id }));
+    const record = await Employee.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+
+    // A payslip belongs to somebody. Deleting the employee out from under one
+    // leaves a pay record pointing at nobody — it cannot be listed, because
+    // every payslip screen is reached through an employee, and it cannot be
+    // exported to accounts, because there is no one to pay. Finance blocks the
+    // whole month's import when it finds one, and the only way out is a
+    // database edit.
+    //
+    // Deleting the payslips alongside the employee would be worse: those are
+    // the record of what somebody was paid, and they outlive the employment.
+    // So the delete is refused and the payslips named.
+    const payslipCount = await Payslip.countDocuments({ employee: record._id });
+    if (payslipCount > 0) {
+      throw Object.assign(
+        new Error(
+          `${record.name} has ${payslipCount} payslip(s) and cannot be deleted. ` +
+            `Delete the payslips first if they are not needed, or mark the employee as terminated to keep the pay history.`,
+        ),
+        { statusCode: 409 },
+      );
+    }
+
+    await Employee.deleteOne({ _id: record._id });
     // Otherwise left as a dangling reference — the Resignations list would show a blank row.
     await Resignation.deleteMany({ employee: record._id });
     return { message: "Employee deleted successfully" };
