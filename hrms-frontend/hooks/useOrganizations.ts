@@ -28,6 +28,14 @@ export const useAllOrganizations = (enabled = true) =>
     staleTime: 5 * 60 * 1000,
   });
 
+/** One organization, for its own page. */
+export const useOrganization = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, id],
+    queryFn: async () => (await api.get<ApiResponse<Organization>>(`/organizations/${id}`)).data.data!,
+    enabled: !!id,
+  });
+
 export const useCreateOrganization = () => {
   const qc = useQueryClient();
   return useMutation({

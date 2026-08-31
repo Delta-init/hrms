@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { Landmark, Plus, MoreHorizontal, Pencil, Trash2, Loader2, AlertTriangle, Mail } from "lucide-react";
 import { useOrganizations, useDeleteOrganization } from "@/hooks/useOrganizations";
@@ -51,14 +52,16 @@ export default function OrganizationsPage() {
   const columns: DataTableColumn<Organization>[] = [
     {
       id: "org", label: "Organization", alwaysVisible: true, sortKey: "name",
+      // The name is the way in. Editing used to live only behind the row's
+      // dropdown, which is a hard place to find and impossible to link to.
       render: (o) => (
-        <div className="flex items-center gap-3">
+        <Link href={`/organizations/${o._id}`} className="flex items-center gap-3 hover:underline">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><Landmark className="h-4 w-4" /></div>
           <div className="min-w-0">
             <p className="truncate font-medium">{o.name}</p>
             <p className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">{o.code}</p>
           </div>
-        </div>
+        </Link>
       ),
     },
     { id: "currency", label: "Currency", render: (o) => <span className="text-muted-foreground">{o.settings?.currency || "—"}</span> },
@@ -81,6 +84,7 @@ export default function OrganizationsPage() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild className="cursor-pointer"><Link href={`/organizations/${o._id}`}><Landmark className="mr-2 h-4 w-4" />Open</Link></DropdownMenuItem>
               {canEdit && <DropdownMenuItem onClick={() => { setSelected(o); setDialogOpen(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
               {canDelete && <DropdownMenuItem onClick={() => { setSelected(o); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
             </DropdownMenuContent>
