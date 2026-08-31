@@ -45,6 +45,15 @@ const userSchema = new Schema<IUser>(
       enum: ["active", "inactive", "invited"],
       default: "active",
     },
+    /**
+     * When an invitation was last emailed to this person.
+     *
+     * Written only once the mail actually left, so a batch that stops halfway
+     * can be re-run and pick up where it stopped instead of starting again —
+     * and nobody gets a second password that invalidates the one they were just
+     * sent.
+     */
+    invitedAt: { type: Date, default: null },
     // When true, the user must set a new password before normal access
     // (used by the admin-invite / first-password flow).
     mustResetPassword: {

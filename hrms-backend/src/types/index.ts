@@ -114,6 +114,8 @@ export interface IUser extends Document {
   /** Assigned work schedule (shift, region, leave calendar). */
   workSchedule?: Types.ObjectId | IWorkSchedule | null;
   status: "active" | "inactive" | "invited";
+  /** When an invitation email last went out, so a stopped batch can resume. */
+  invitedAt?: Date | null;
   mustResetPassword: boolean;
   profileCompleted: boolean;
   /** Bumped to invalidate every token previously issued to this user. */

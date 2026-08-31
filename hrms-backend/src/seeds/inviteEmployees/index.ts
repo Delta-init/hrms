@@ -49,6 +49,23 @@ const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.split("=")
 const APPLY = args.includes("--apply");
 const SEND = args.includes("--send");
 const INCLUDE_ACTIVE = args.includes("--include-active");
+/**
+ * Hours within which somebody already invited is left alone.
+ *
+ * A run of a hundred emails can stop halfway — a closed terminal, a dropped
+ * connection — and the people already reached must not be reissued a password,
+ * because that kills the one sitting in the mail they just received. Re-running
+ * therefore resumes. `--reinvite-after=0` overrides it and invites everybody.
+ */
+const REINVITE_AFTER_H = Number(arg("reinvite-after") ?? 24);
+/**
+ * Retro-stamp the first N of the pool as already invited, and send nothing.
+ *
+ * For a batch that was interrupted before this stamp existed: the order is
+ * fixed (by employee code), so the N the terminal reported as sent are the
+ * first N here, and marking them stops the resume from mailing them twice.
+ */
+const MARK_SENT = Number(arg("mark-sent") ?? 0);
 /** One address or several, comma-separated — for trying it on a few people first. */
 const ONLY = arg("only")?.toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
 const ORG_NAME = arg("org") ?? "Delta International Management Development Training";
@@ -105,6 +122,7 @@ const inviteHtml = (name: string, email: string, pw: string, url: string) =>
   </div>`;
 
 interface Row {
+  userId: unknown;
   code: string; name: string; email: string; password: string;
   designation: string; department: string; sent: string; note: string;
 }
@@ -116,7 +134,11 @@ async function main() {
   if (!org) throw new Error(`No organisation named "${ORG_NAME}"`);
 
   log(`Organisation : ${org.name}`);
-  log(`Mode         : ${!APPLY ? "DRY RUN — nothing is written" : SEND ? "APPLY + SEND — passwords set and emails sent" : "APPLY — passwords set, sheet written, nothing sent"}`);
+  log(`Mode         : ${
+    MARK_SENT > 0 ? `MARK ONLY — first ${MARK_SENT} recorded as already invited, nothing sent`
+    : !APPLY ? "DRY RUN — nothing is written"
+    : SEND ? "APPLY + SEND — each password set immediately before its own email"
+    : "APPLY — passwords set, sheet written, nothing sent"}`);
   if (ONLY) log(`Only         : ${ONLY.join(", ")}`);
   log(`Activate at  : ${CLIENT_URL}/set-password`);
 
@@ -126,7 +148,7 @@ async function main() {
     .sort({ employeeCode: 1 })
     .lean();
 
-  const users = await User.find({ organization: org._id }).select("name email status tokenVersion").lean();
+  const users = await User.find({ organization: org._id }).select("name email status tokenVersion invitedAt").lean();
   const byId = new Map(users.map((u) => [String(u._id), u]));
 
   const targets: Array<{ emp: (typeof employees)[number]; user: (typeof users)[number] }> = [];
@@ -139,6 +161,12 @@ async function main() {
     if (ONLY && !ONLY.includes(user.email.toLowerCase())) continue;
     if ((user.tokenVersion ?? 0) > 0 && !INCLUDE_ACTIVE) {
       skipped.push(`${emp.employeeCode} ${emp.name} — has signed in already (--include-active to reset anyway)`);
+      continue;
+    }
+    const invitedAt = (user as { invitedAt?: Date | null }).invitedAt;
+    if (REINVITE_AFTER_H > 0 && invitedAt && Date.now() - new Date(invitedAt).getTime() < REINVITE_AFTER_H * 3_600_000) {
+      const hrs = Math.round((Date.now() - new Date(invitedAt).getTime()) / 360_000) / 10;
+      skipped.push(`${emp.employeeCode} ${emp.name} — invited ${hrs}h ago (--reinvite-after=0 to send again)`);
       continue;
     }
     targets.push({ emp, user });
@@ -163,49 +191,104 @@ async function main() {
     return;
   }
 
-  // ── Set the passwords ─────────────────────────────────────────────────────
-  const rows: Row[] = [];
-  for (const { emp, user } of targets) {
+  if (MARK_SENT > 0) {
+    head(`Marking the first ${MARK_SENT} as already invited`);
+    const now = new Date();
+    for (const { emp, user } of targets.slice(0, MARK_SENT)) {
+      await User.updateOne({ _id: user._id }, { $set: { invitedAt: now } });
+      log(`  ${emp.employeeCode.toString().padEnd(6)} ${user.email}`);
+    }
+    log(`\n  Nothing was sent and no password changed. Re-run with --apply --send`);
+    log(`  to reach the remaining ${targets.length - Math.min(MARK_SENT, targets.length)}.`);
+    await mongoose.disconnect();
+    return;
+  }
+
+  /**
+   * Give one person a fresh temporary password.
+   *
+   * Kept a step of its own so a sending run can do it one person at a time,
+   * immediately before their email. Resetting the whole batch first and mailing
+   * afterwards means an interruption leaves everyone past the cut-off holding a
+   * password that exists only in a database column — locked out, with no mail
+   * to tell them otherwise.
+   */
+  const setPassword = async (userId: unknown) => {
+    const doc = await User.findById(userId);
+    if (!doc) return null;
     const password = temporaryPassword();
-    const doc = await User.findById(user._id);
-    if (!doc) continue;
     doc.password = password;            // hashed by the schema's pre-save hook
     doc.mustResetPassword = true;       // forced to choose their own on first sign-in
     if (doc.status === "inactive") doc.status = "invited";
     await doc.save();
-    rows.push({
-      code: String(emp.employeeCode), name: String(emp.name), email: String(user.email),
-      password, designation: String(emp.designation ?? ""),
-      department: (emp.department as { name?: string } | null)?.name ?? "",
-      sent: "", note: "",
-    });
+    return password;
+  };
+
+  const rowFor = (emp: (typeof targets)[number]["emp"], user: (typeof targets)[number]["user"], password: string): Row => ({
+    userId: user._id,
+    code: String(emp.employeeCode), name: String(emp.name), email: String(user.email),
+    password, designation: String(emp.designation ?? ""),
+    department: (emp.department as { name?: string } | null)?.name ?? "",
+    sent: "", note: "",
+  });
+
+  const rows: Row[] = [];
+  if (!SEND) {
+    for (const { emp, user } of targets) {
+      const password = await setPassword(user._id);
+      if (password) rows.push(rowFor(emp, user, password));
+    }
+    log(`\n  ${rows.length} temporary passwords set`);
   }
-  log(`\n  ${rows.length} temporary passwords set`);
 
   // ── Send ──────────────────────────────────────────────────────────────────
   if (SEND) {
     head("Sending");
     let ok = 0;
-    for (const [i, r] of rows.entries()) {
-      const url = `${CLIENT_URL}/set-password?email=${encodeURIComponent(r.email)}`;
+    for (const [i, { emp, user }] of targets.entries()) {
+      const email = String(user.email);
+      const label = `${String(i + 1).padStart(3)}/${targets.length}  ${String(emp.employeeCode).padEnd(6)} ${email}`;
+
+      // Kept so a failure can put the account back exactly as it was, rather
+      // than leaving somebody with a password that was mailed nowhere. The
+      // pre-save hook only runs on save(), so writing the old hash through
+      // updateOne restores it verbatim instead of hashing it twice.
+      const before = await User.findById(user._id).select("+password status").lean();
+      const password = await setPassword(user._id);
+      if (!password) { log(`  ${label}  SKIPPED — login vanished`); continue; }
+
+      const r = rowFor(emp, user, password);
+      const url = `${CLIENT_URL}/set-password?email=${encodeURIComponent(email)}`;
       let sent = false;
       try {
         sent = await sendMail({
-          to: r.email, organization: String(org._id),
+          to: email, organization: String(org._id),
           subject: "Welcome to Delta HRMS — activate your account",
-          html: inviteHtml(r.name, r.email, r.password, url),
-          text: `Welcome to Delta HRMS. Sign in with ${r.email} / temporary password ${r.password}, then set your own password at ${url}`,
+          html: inviteHtml(r.name, email, password, url),
+          text: `Welcome to Delta HRMS. Sign in with ${email} / temporary password ${password}, then set your own password at ${url}`,
         });
       } catch (e) {
         r.note = e instanceof Error ? e.message : String(e);
       }
       r.sent = sent ? "sent" : "failed";
-      if (sent) ok++;
-      if ((i + 1) % 10 === 0) log(`  ${i + 1} of ${rows.length}…`);
+      if (sent) {
+        ok++;
+        // Stamped only once the mail is away, so an interrupted batch resumes
+        // where it stopped and a failure is retried rather than quietly skipped.
+        await User.updateOne({ _id: user._id }, { $set: { invitedAt: new Date() } });
+      } else if (before) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { password: before.password, status: before.status } }
+        );
+        r.password = "(unchanged — nothing was sent)";
+      }
+      rows.push(r);
+      log(`  ${label}  ${sent ? "sent" : `FAILED${r.note ? ` — ${r.note}` : ""}`}`);
       // Paced so a hundred at once is not read as a burst.
-      if (i < rows.length - 1) await new Promise((res) => setTimeout(res, GAP_MS));
+      if (i < targets.length - 1) await new Promise((res) => setTimeout(res, GAP_MS));
     }
-    log(`  ${ok} sent · ${rows.length - ok} failed`);
+    log(`\n  ${ok} sent · ${rows.length - ok} failed`);
   }
 
   // ── The sheet ─────────────────────────────────────────────────────────────
