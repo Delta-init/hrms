@@ -1,4 +1,4 @@
-import { documentsOverview } from "../services/documentOverviewService.js";
+import { documentsOverview, ignoreDocuments, unignoreDocuments, type DocumentRef } from "../services/documentOverviewService.js";
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import {
@@ -177,5 +177,40 @@ export const getDocumentsOverview = async (req: AuthenticatedRequest, res: Respo
   try {
     const data = await documentsOverview(req.query as Record<string, string>);
     sendSuccess(res, "Documents overview", data);
+  } catch (error) { next(error); }
+};
+
+/**
+ * Read a bulk selection off the request.
+ *
+ * The table sends whole rows; only the two fields that identify one are kept,
+ * and anything missing either is dropped rather than written as a half-formed
+ * dismissal that would never match a row again.
+ */
+function refsFrom(body: unknown): DocumentRef[] {
+  const items = (body as { items?: unknown })?.items;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((i) => ({ employee: String((i as DocumentRef)?.employee ?? ""), slot: String((i as DocumentRef)?.slot ?? "") }))
+    .filter((i) => i.employee && i.slot)
+    .slice(0, 500);
+}
+
+/** Stop counting the selected documents as a problem. */
+export const ignoreDocumentRows = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const refs = refsFrom(req.body);
+    if (!refs.length) { sendError(res, "Select at least one document", 400); return; }
+    const reason = String((req.body as { reason?: string })?.reason ?? "");
+    sendSuccess(res, "Documents ignored", await ignoreDocuments(refs, req.user!.userId, reason));
+  } catch (error) { next(error); }
+};
+
+/** Put the selected documents back in the counts. */
+export const unignoreDocumentRows = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const refs = refsFrom(req.body);
+    if (!refs.length) { sendError(res, "Select at least one document", 400); return; }
+    sendSuccess(res, "Documents restored", await unignoreDocuments(refs));
   } catch (error) { next(error); }
 };

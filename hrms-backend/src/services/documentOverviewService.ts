@@ -1,5 +1,7 @@
+import { Types } from "mongoose";
 import { Employee } from "../models/Employee.js";
-import { orgFilter } from "../utils/orgContext.js";
+import { DocumentIgnore } from "../models/DocumentIgnore.js";
+import { orgFilter, getOrgId } from "../utils/orgContext.js";
 import { publicUrl } from "./uploadService.js";
 import {
   DOCUMENT_REQUIREMENTS,
@@ -24,7 +26,17 @@ import type { EmployeeLocation } from "../types/index.js";
  * The missing ones are the point.
  */
 
-export type DocumentStatus = "missing" | "expired" | "expiring" | "valid" | "not_uploaded";
+export type DocumentStatus = "missing" | "expired" | "expiring" | "valid" | "not_uploaded" | "ignored";
+
+/**
+ * How far ahead counts as "expiring".
+ *
+ * Two months. Ninety days put documents into the amber bucket a full quarter
+ * before anybody could act on them, so the bucket stayed permanently full and
+ * stopped meaning anything. Sixty days is close enough that appearing in it is
+ * a reason to start the renewal.
+ */
+export const DEFAULT_EXPIRY_WINDOW_DAYS = 60;
 
 export interface DocumentRow {
   employee: {
@@ -46,6 +58,10 @@ export interface DocumentRow {
   daysToExpiry: number | null;
   file: { fileName: string; url: string; uploadedAt: Date | null; mimeType?: string; size?: number } | null;
   status: DocumentStatus;
+  /** Set when somebody has decided this one is not worth chasing. */
+  ignored: { reason: string; at: Date | null } | null;
+  /** What the status would be if it were not ignored — so the chip can say so. */
+  underlyingStatus: DocumentStatus;
 }
 
 export interface DocumentQuery {
@@ -57,6 +73,12 @@ export interface DocumentQuery {
   /** Expiry horizon in days for the "expiring" bucket. */
   within?: string;
   search?: string;
+}
+
+/** One row, addressed the way the client sees it. */
+export interface DocumentRef {
+  employee: string;
+  slot: string;
 }
 
 const DAY = 86_400_000;
@@ -96,20 +118,39 @@ function statusOf(hasFile: boolean, required: boolean, days: number | null, with
 }
 
 export async function documentsOverview(query: DocumentQuery) {
-  const within = Math.max(0, Number(query.within) || 90);
+  const within = Math.max(0, Number(query.within) || DEFAULT_EXPIRY_WINDOW_DAYS);
 
   const filter: Record<string, unknown> = { ...orgFilter(), status: { $ne: "terminated" } };
   if (query.employee) filter._id = query.employee;
   if (query.location) filter.location = query.location;
   if (query.department) filter.department = query.department;
 
-  const employees = await Employee.find(filter)
-    .select("name employeeCode designation department location documents otherDocuments passport visa emiratesId labourCard")
-    .populate<{ department: { name: string } | null }>("department", "name")
-    .sort({ name: 1 })
-    .lean();
+  const [employees, ignores] = await Promise.all([
+    Employee.find(filter)
+      .select("name employeeCode designation department location documents otherDocuments passport visa emiratesId labourCard")
+      .populate<{ department: { name: string } | null }>("department", "name")
+      .sort({ name: 1 })
+      .lean(),
+    DocumentIgnore.find(orgFilter()).lean(),
+  ]);
 
+  const ignored = new Map(ignores.map((i) => [`${String(i.employee)}:${i.slot}`, i]));
   const rows: DocumentRow[] = [];
+
+  /**
+   * An ignored row keeps its real status underneath and reports "ignored" on
+   * top. Overwriting the real one would make un-ignoring guess at what the row
+   * had been, and the reviewer could not see what they were reinstating.
+   */
+  const withIgnore = (row: Omit<DocumentRow, "ignored" | "underlyingStatus">): DocumentRow => {
+    const hit = ignored.get(`${String(row.employee._id)}:${row.slot}`);
+    return {
+      ...row,
+      underlyingStatus: row.status,
+      status: hit ? "ignored" : row.status,
+      ignored: hit ? { reason: hit.reason ?? "", at: hit.ignoredAt ?? null } : null,
+    };
+  };
 
   for (const emp of employees) {
     const who = {
@@ -133,7 +174,7 @@ export async function documentsOverview(query: DocumentQuery) {
       const expiryDate = detail?.expiryDate ?? null;
       const days = daysUntil(expiryDate);
 
-      rows.push({
+      rows.push(withIgnore({
         employee: who,
         slot: req.key,
         label: req.label,
@@ -152,14 +193,14 @@ export async function documentsOverview(query: DocumentQuery) {
             }
           : null,
         status: statusOf(!!file, req.required, days, within),
-      });
+      }));
     }
 
     // Free-form entries are already whole — label, number, dates and file in one
     // place — so they only need shaping, not joining.
     for (const other of emp.otherDocuments ?? []) {
       const days = daysUntil(other.expiryDate);
-      rows.push({
+      rows.push(withIgnore({
         employee: who,
         slot: `other:${String(other._id)}`,
         label: other.label,
@@ -178,7 +219,7 @@ export async function documentsOverview(query: DocumentQuery) {
             }
           : null,
         status: statusOf(!!other.fileKey, false, days, within),
-      });
+      }));
     }
   }
 
@@ -200,7 +241,8 @@ export async function documentsOverview(query: DocumentQuery) {
   }
 
   // Worst first: expired, then soonest to expire, then gaps, then the rest.
-  const rank: Record<DocumentStatus, number> = { expired: 0, expiring: 1, missing: 2, not_uploaded: 3, valid: 4 };
+  // Ignored sits last — it is the bucket somebody has already dealt with.
+  const rank: Record<DocumentStatus, number> = { expired: 0, expiring: 1, missing: 2, not_uploaded: 3, valid: 4, ignored: 5 };
   visible.sort(
     (a, b) =>
       rank[a.status] - rank[b.status] ||
@@ -209,4 +251,52 @@ export async function documentsOverview(query: DocumentQuery) {
   );
 
   return { rows: visible, counts, total: rows.length, within, employees: employees.length };
+}
+
+/**
+ * Stop counting these rows as a problem.
+ *
+ * Upserted rather than inserted so re-ignoring something updates the reason
+ * instead of failing on the unique index — the caller is selecting rows from a
+ * table and cannot be expected to know which of them are already dismissed.
+ */
+export async function ignoreDocuments(refs: DocumentRef[], userId: string, reason = "") {
+  const orgId = getOrgId();
+  if (!refs.length) return { ignored: 0 };
+  const oid = (v: string) => new Types.ObjectId(v);
+  const result = await DocumentIgnore.bulkWrite(
+    refs.map(({ employee, slot }) => ({
+      updateOne: {
+        filter: { organization: oid(String(orgId)), employee: oid(employee), slot },
+        update: {
+          $set: { reason: reason.trim().slice(0, 200), ignoredBy: oid(userId), ignoredAt: new Date() },
+        },
+        upsert: true,
+      },
+    }))
+  );
+  return { ignored: result.upsertedCount + result.modifiedCount };
+}
+
+/** Put them back in the counts. */
+export async function unignoreDocuments(refs: DocumentRef[]) {
+  if (!refs.length) return { restored: 0 };
+  const result = await DocumentIgnore.deleteMany({
+    ...orgFilter(),
+    $or: refs.map(({ employee, slot }) => ({ employee, slot })),
+  });
+  return { restored: result.deletedCount };
+}
+
+/**
+ * Every ignored (employee, slot) pair in the org, as a lookup set.
+ *
+ * The dashboard counts expiries from the employee documents directly rather
+ * than through the rows above, so it needs the same dismissals applied or the
+ * two views disagree about how many problems exist.
+ */
+export async function ignoredSlots(orgId?: string | null): Promise<Set<string>> {
+  const scope = orgId ? { organization: orgId } : orgFilter();
+  const rows = await DocumentIgnore.find(scope).select("employee slot").lean();
+  return new Set(rows.map((r) => `${String(r.employee)}:${r.slot}`));
 }

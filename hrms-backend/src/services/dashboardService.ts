@@ -7,6 +7,7 @@ import { Resignation } from "../models/Resignation.js";
 import { orgFilter, getOrgId, scoped } from "../utils/orgContext.js";
 import { publicUrl } from "../config/r2.js";
 import { confirmationsDue } from "./confirmationService.js";
+import { ignoredSlots, DEFAULT_EXPIRY_WINDOW_DAYS } from "./documentOverviewService.js";
 
 /**
  * The month/day keys (month*100 + day) covered by a window starting today.
@@ -208,7 +209,9 @@ interface EmpDocs {
   visa?: { type?: string; expiryDate?: Date };
   labourCard?: { cardNumber?: string; expiryDate?: Date };
   emiratesId?: { idNumber?: string; expiryDate?: Date };
-  otherDocuments?: Array<{ label: string; number?: string; expiryDate?: Date | null }>;
+  // _id is what the documents view keys a free-form entry by, so a dismissal
+  // made there can be matched here.
+  otherDocuments?: Array<{ _id?: unknown; label: string; number?: string; expiryDate?: Date | null }>;
 }
 
 /**
@@ -218,7 +221,23 @@ interface EmpDocs {
  * dashboard can show "overdue" rather than silently dropping them. Sorted
  * most-urgent first.
  */
-export async function expiringDocuments(withinDays = 90, orgId?: string | null): Promise<ExpiringDoc[]> {
+/**
+ * Which slot key a dashboard document type corresponds to.
+ *
+ * The documents view generates rows keyed by requirement slot; this counts the
+ * same expiries straight off the employee. They have to agree on what has been
+ * dismissed, or one screen says four passports need chasing while the other
+ * says one. India's combined identity slot maps to the passport field, so both
+ * of its keys are checked.
+ */
+const SLOT_OF: Record<string, string[]> = {
+  passport: ["passport", "identity"],
+  visa: ["visa_copy"],
+  labourCard: ["labour_card"],
+  emiratesId: ["emirates_id"],
+};
+
+export async function expiringDocuments(withinDays = 60, orgId?: string | null): Promise<ExpiringDoc[]> {
   const now = new Date();
   const cutoff = new Date(now.getTime() + withinDays * 86_400_000);
   const expiringBy = (path: string) => ({ [path]: { $ne: null, $lte: cutoff } });
@@ -248,16 +267,22 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
       .lean<Array<{ cardNumber: string; name: string; client: unknown; expiryDate?: Date }>>(),
   ]);
 
+  const dismissed = await ignoredSlots(orgId);
+
   const items: ExpiringDoc[] = [];
   const push = (
     emp: { _id: unknown; name: string; employeeCode?: string; designation?: string },
     type: ExpiringDocType,
     label: string,
-    expiry?: Date | null
+    expiry?: Date | null,
+    slot?: string
   ) => {
     if (!expiry) return;
     const d = new Date(expiry);
     if (d > cutoff) return;
+    // Somebody has already decided this one is not worth chasing.
+    const keys = slot ? [slot] : SLOT_OF[type] ?? [];
+    if (keys.some((k) => dismissed.has(`${String(emp._id)}:${k}`))) return;
     const daysLeft = Math.ceil((d.getTime() - now.getTime()) / 86_400_000);
     items.push({
       employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, designation: emp.designation },
@@ -273,7 +298,7 @@ export async function expiringDocuments(withinDays = 90, orgId?: string | null):
     // The employee matched if ANY custom record is due, so each is checked
     // individually here — push() ignores the ones that aren't.
     for (const d of e.otherDocuments ?? []) {
-      push(e, "other", d.number ? `${d.label} ${d.number}` : d.label, d.expiryDate);
+      push(e, "other", d.number ? `${d.label} ${d.number}` : d.label, d.expiryDate, `other:${String(d._id)}`);
     }
   }
 
@@ -306,7 +331,7 @@ interface OrgNode {
 
 export class DashboardService {
   /** Full list of expiring passports/visas within the window (default 90 days). */
-  async documentExpiry(withinDays = 90) {
+  async documentExpiry(withinDays = DEFAULT_EXPIRY_WINDOW_DAYS) {
     return expiringDocuments(withinDays, getOrgId());
   }
 
@@ -395,7 +420,7 @@ export class DashboardService {
       Resignation.find({ ...org, status: "accepted" })
         .populate("employee", "name employeeCode designation").sort({ lastWorkingDay: 1 }).limit(8).lean(),
       Resignation.countDocuments({ ...org, status: "accepted" }),
-      expiringDocuments(90, getOrgId()),
+      expiringDocuments(DEFAULT_EXPIRY_WINDOW_DAYS, getOrgId()),
       upcomingBirthdays(30, getOrgId()),
       upcomingAnniversaries(7, getOrgId()),
       recentJoiners(30, getOrgId()),

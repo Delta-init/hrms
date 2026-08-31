@@ -1921,7 +1921,7 @@ export interface KioskPunchResult {
  * an optional one. Both are absences — the distinction is whether anyone has to
  * do something about it.
  */
-export type DocumentStatus = "missing" | "expired" | "expiring" | "valid" | "not_uploaded";
+export type DocumentStatus = "missing" | "expired" | "expiring" | "valid" | "not_uploaded" | "ignored";
 
 export interface DocumentRow {
   employee: {
@@ -1943,6 +1943,16 @@ export interface DocumentRow {
   daysToExpiry: number | null;
   file: { fileName: string; url: string; uploadedAt: string | null; mimeType?: string; size?: number } | null;
   status: DocumentStatus;
+  /** Set when somebody has decided this one is not worth chasing. */
+  ignored: { reason: string; at: string | null } | null;
+  /** What the status would be if it were not ignored. */
+  underlyingStatus: DocumentStatus;
+}
+
+/** One row, addressed the way the server identifies it. */
+export interface DocumentRef {
+  employee: string;
+  slot: string;
 }
 
 export interface DocumentsOverview {

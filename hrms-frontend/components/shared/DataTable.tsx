@@ -9,6 +9,7 @@ import { exportToExcel, type ExcelRow } from "@/lib/excel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
@@ -50,13 +51,32 @@ export interface DataTableProps<T> {
   /** When provided, shows an "Export" button that writes the current rows to Excel. */
   exportMapper?: (row: T) => ExcelRow;
   exportName?: string;
+  /**
+   * Tick boxes down the left, and a bar of actions once anything is ticked.
+   *
+   * Selection is held by the caller rather than here: what you do with a
+   * selection almost always outlives the table that made it — a dialog, a
+   * mutation, a redirect — and a table that owned it would have to hand it back
+   * on every render anyway.
+   */
+  selectable?: boolean;
+  selected?: Set<string>;
+  onSelectedChange?: (next: Set<string>) => void;
+  /** Rendered in the bulk bar. `clear` empties the selection. */
+  bulkActions?: (keys: string[], clear: () => void) => React.ReactNode;
+  /** Rows that cannot be ticked — already handled, or not the caller's to touch. */
+  isSelectable?: (row: T) => boolean;
 }
+
+/** Stable empty set, so an uncontrolled table does not re-render on identity. */
+const EMPTY_SELECTION: Set<string> = new Set();
 
 export function DataTable<T>({
   tableId, columns, rows, rowKey, loading, pagination, query,
   searchable = true, searchPlaceholder = "Search…", filters, quickFilters, actions,
   emptyText = "No records found.", rowLabel = "rows", minWidth = 720,
   exportMapper, exportName = "export",
+  selectable = false, selected, onSelectedChange, bulkActions, isSelectable,
 }: DataTableProps<T>) {
   const LS_VIS = `hrms_dt_${tableId}_visible`;
   const LS_ORD = `hrms_dt_${tableId}_order`;
@@ -163,6 +183,30 @@ export function DataTable<T>({
 
   const align = (a?: string) => (a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left");
 
+  const chosen = selected ?? EMPTY_SELECTION;
+  const selectableRows = selectable ? rows.filter((r) => !isSelectable || isSelectable(r)) : [];
+  const allChosen = selectableRows.length > 0 && selectableRows.every((r) => chosen.has(rowKey(r)));
+  const someChosen = selectableRows.some((r) => chosen.has(rowKey(r)));
+  const setChosen = (next: Set<string>) => onSelectedChange?.(next);
+  const toggleRow = (key: string) => {
+    const next = new Set(chosen);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setChosen(next);
+  };
+  /**
+   * The header box acts on what is on screen, never on rows a filter is hiding.
+   * Ticking "all" and silently dismissing documents you cannot see would be the
+   * kind of bulk action nobody can audit afterwards.
+   */
+  const toggleAll = () => {
+    const next = new Set(chosen);
+    if (allChosen) selectableRows.forEach((r) => next.delete(rowKey(r)));
+    else selectableRows.forEach((r) => next.add(rowKey(r)));
+    setChosen(next);
+  };
+  const selectionCol = selectable ? 1 : 0;
+
   return (
     <div className="space-y-3">
       {/* Toolbar */}
@@ -247,12 +291,36 @@ export function DataTable<T>({
         </AnimatePresence>
       )}
 
+      {/* What is selected, and what can be done with it. Sits above the table so
+          it does not move as rows come and go underneath. */}
+      {selectable && chosen.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5">
+          <span className="text-sm font-medium tabular-nums">
+            {chosen.size} selected
+          </span>
+          <div className="flex flex-wrap items-center gap-2">{bulkActions?.(Array.from(chosen), () => setChosen(new Set()))}</div>
+          <Button variant="ghost" size="sm" className="ml-auto h-8 text-muted-foreground" onClick={() => setChosen(new Set())}>
+            <X className="h-3.5 w-3.5" />Clear
+          </Button>
+        </div>
+      )}
+
       {/* Table (md+) */}
       <Card className="overflow-hidden">
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm" style={{ minWidth }}>
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                {selectable && (
+                  <th className="w-10 px-5 py-3">
+                    <Checkbox
+                      checked={allChosen ? true : someChosen ? "indeterminate" : false}
+                      onCheckedChange={toggleAll}
+                      disabled={selectableRows.length === 0}
+                      aria-label="Select all rows on this page"
+                    />
+                  </th>
+                )}
                 {visibleColumns.map((c) => {
                   const activeSort = c.sortKey && query.sortBy === c.sortKey;
                   return (
@@ -270,12 +338,26 @@ export function DataTable<T>({
             </thead>
             <tbody className="divide-y divide-border">
               {loading ? (
-                <tr><td colSpan={visibleColumns.length} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                <tr><td colSpan={visibleColumns.length + selectionCol} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={visibleColumns.length} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
+                <tr><td colSpan={visibleColumns.length + selectionCol} className="px-5 py-16 text-center text-muted-foreground">{emptyText}</td></tr>
               ) : (
                 rows.map((row, i) => (
-                  <motion.tr key={rowKey(row)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="hover:bg-muted/30">
+                  <motion.tr
+                    key={rowKey(row)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(i * 0.02, 0.3) }}
+                    className={cn("hover:bg-muted/30", selectable && chosen.has(rowKey(row)) && "bg-primary/5")}
+                  >
+                    {selectable && (
+                      <td className="w-10 px-5 py-3.5">
+                        <Checkbox
+                          checked={chosen.has(rowKey(row))}
+                          onCheckedChange={() => toggleRow(rowKey(row))}
+                          disabled={!!isSelectable && !isSelectable(row)}
+                          aria-label="Select row"
+                        />
+                      </td>
+                    )}
                     {visibleColumns.map((c) => (
                       <td key={c.id} className={cn("px-5 py-3.5", align(c.align), c.className)}>{c.render(row)}</td>
                     ))}
@@ -296,6 +378,15 @@ export function DataTable<T>({
             rows.map((row, i) => (
               <motion.div key={rowKey(row)} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.3) }} className="p-4">
                 <div className="flex items-start justify-between gap-3">
+                  {selectable && (
+                    <Checkbox
+                      className="mt-1 shrink-0"
+                      checked={chosen.has(rowKey(row))}
+                      onCheckedChange={() => toggleRow(rowKey(row))}
+                      disabled={!!isSelectable && !isSelectable(row)}
+                      aria-label="Select row"
+                    />
+                  )}
                   {primaryCol && <div className="min-w-0 flex-1">{primaryCol.render(row)}</div>}
                   {actionsCol && <div className="shrink-0">{actionsCol.render(row)}</div>}
                 </div>
