@@ -162,21 +162,41 @@ async function main() {
   head("Files read");
   for (const [k, v] of Object.entries(sheets)) log(`  ${k.padEnd(16)} ${String(v.length).padStart(5)} rows`);
 
+  /**
+   * When each person joined.
+   *
+   * Read from the basic-information export, which is the only file that carries
+   * it. This used to be taken off the visa sheet, whose seven columns are all
+   * visa fields — there is no "Joined On" among them, so every lookup returned
+   * undefined and all 98 people were filed with no joining date at all. Nothing
+   * failed; the field was simply never populated, which is the worst way for an
+   * import to be wrong.
+   *
+   * The export repeats people, so the first date for a code wins; they agree
+   * wherever they repeat.
+   */
+  const joinedByCode = new Map<string, Date>();
+  for (const r of sheets.basic) {
+    const c = code(r);
+    const d = parseDate(r["Joined On"]);
+    if (isEmployeeCode(c) && d && !joinedByCode.has(c)) joinedByCode.set(c, d);
+  }
+
   // ── Roster ─────────────────────────────────────────────────────────────────
   interface Person { code: string; name: string; joined: Date | null; row: Row }
   const roster = new Map<string, Person>();
   for (const r of sheets.visa) {
     const c = code(r);
-    if (isEmployeeCode(c) && nameOf(r)) roster.set(c, { code: c, name: nameOf(r), joined: parseDate(r["Joined On"]), row: r });
+    if (isEmployeeCode(c) && nameOf(r)) roster.set(c, { code: c, name: nameOf(r), joined: joinedByCode.get(c) ?? null, row: r });
   }
   for (const r of sheets.category) {
     const c = code(r);
     if (!isEmployeeCode(c) || !nameOf(r)) continue;
     const p = roster.get(c);
     if (p) { p.row = { ...p.row, ...r }; }
-    else roster.set(c, { code: c, name: nameOf(r), joined: null, row: r });
+    else roster.set(c, { code: c, name: nameOf(r), joined: joinedByCode.get(c) ?? null, row: r });
   }
-  log(`\n  ${roster.size} people in the export`);
+  log(`\n  ${roster.size} people in the export · ${joinedByCode.size} with a joining date`);
 
   // ── Reference data ─────────────────────────────────────────────────────────
   head("Departments");
