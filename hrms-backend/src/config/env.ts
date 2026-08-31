@@ -50,6 +50,9 @@ const envSchema = z.object({
   // Daily "what is still waiting for a decision" digest to Super Admins.
   // An hour after the birthday mail, so the two don't arrive together.
   APPROVAL_DIGEST_CRON: z.string().default("0 9 * * *"),
+  // Late enough that the morning's check-ins are in, early enough to still be
+  // that morning. Anyone arriving after it is told the following day.
+  LATE_NOTICE_CRON: z.string().default("30 10 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

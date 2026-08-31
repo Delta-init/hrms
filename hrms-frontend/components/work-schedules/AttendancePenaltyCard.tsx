@@ -18,7 +18,7 @@ interface Props {
   canEdit: boolean;
 }
 
-const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, defaultRegularizationStatus: "present" };
+const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, monthlyRegularizationLimit: 3, defaultRegularizationStatus: "present" };
 
 export function AttendancePenaltyCard({ canEdit }: Props) {
   const { data: policy, isLoading } = useAttendancePenaltyPolicy();
@@ -100,6 +100,20 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
             recorded and days nobody has worked yet.
           </p>
         )}
+
+        <div className="space-y-1.5 border-t border-border pt-4">
+          <Label htmlFor="monthlyRegularizationLimit">Corrections allowed per month</Label>
+          <Input
+            id="monthlyRegularizationLimit" type="number" min="0" step="1" className="sm:w-64"
+            disabled={!canEdit} {...register("monthlyRegularizationLimit")}
+          />
+          {errors.monthlyRegularizationLimit && <p className="text-xs text-destructive">{errors.monthlyRegularizationLimit.message}</p>}
+          <p className="text-[11px] text-muted-foreground">
+            Past this, a correction goes to the requester&apos;s reporting manager instead of the usual
+            approver, and the manager is emailed. It is not a cap — the request still gets made, it just
+            gets seen by somebody who would know. Applies whether or not penalties are switched on.
+          </p>
+        </div>
 
         <div className="space-y-1.5 border-t border-border pt-4">
           <Label>A correction marks the day as</Label>

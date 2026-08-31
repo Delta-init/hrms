@@ -3,11 +3,17 @@ import type { UpsertAttendancePenaltyPolicyInput } from "../validations/attendan
 import type { IAttendancePenaltyPolicy } from "../types/index.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 
-const DEFAULTS = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, defaultRegularizationStatus: "present" as const };
+const DEFAULTS = {
+  enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false,
+  defaultRegularizationStatus: "present" as const, monthlyRegularizationLimit: 3,
+};
 
 /** The org's late-penalty policy, or sane defaults (disabled) if never configured. */
 export async function getAttendancePenaltyPolicy(): Promise<
-  Pick<IAttendancePenaltyPolicy, "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid" | "defaultRegularizationStatus">
+  Pick<
+    IAttendancePenaltyPolicy,
+    "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid" | "defaultRegularizationStatus" | "monthlyRegularizationLimit"
+  >
 > {
   const record = await AttendancePenaltyPolicy.findOne(scoped({})).lean();
   if (!record) return DEFAULTS;
@@ -17,6 +23,9 @@ export async function getAttendancePenaltyPolicy(): Promise<
     lateBlockSize: record.lateBlockSize,
     unrecordedDaysUnpaid: record.unrecordedDaysUnpaid ?? false,
     defaultRegularizationStatus: record.defaultRegularizationStatus ?? "present",
+    // Records written before the limit existed have no value at all — Mongoose
+    // applies a default only on save — so the fallback lives here too.
+    monthlyRegularizationLimit: record.monthlyRegularizationLimit ?? DEFAULTS.monthlyRegularizationLimit,
   };
 }
 

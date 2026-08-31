@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, Pencil, LogIn, LogOut, AlertCircle } from "lucide-react";
-import { useRegularizations, useMyRegularizations, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
+import { ClipboardCheck, Plus, Loader2, Check, X, ListChecks, Inbox, Send, Trash2, Pencil, LogIn, LogOut, AlertCircle, ShieldAlert } from "lucide-react";
+import { useRegularizations, useMyRegularizations, useMyRegularizationAllowance, useReviewRegularization, useDeleteRegularization } from "@/hooks/useRegularizations";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
@@ -22,6 +22,27 @@ import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
 import { REGULARIZATION_TYPE_LABELS, type Regularization, type RegularizationStatus, type RegularizationType, type RegularizationOutcome, ATTENDANCE_STATUS_LABELS } from "@/types";
 
 const ALL = "__all__";
+/**
+ * Marks a request that has gone past the month's allowance.
+ *
+ * Shown wherever an approver sees the request, because the useful thing is
+ * knowing *before* clicking Approve that it is not theirs to approve — being
+ * told by a 403 afterwards is a worse way to learn the rule.
+ */
+function EscalatedTag({ r }: { r: Regularization }) {
+  if (!r.escalated) return null;
+  const who = r.escalatedTo && typeof r.escalatedTo === "object" ? r.escalatedTo.name : null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600"
+      title={who ? `Past the monthly allowance — only ${who} can approve it` : "Past the monthly allowance — the reporting manager approves it"}
+    >
+      <ShieldAlert className="h-3 w-3" />
+      #{r.monthlyIndex} · {who ?? "manager"}
+    </span>
+  );
+}
+
 const statusStyles: Record<RegularizationStatus, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   approved: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
@@ -67,6 +88,7 @@ function SimpleRegTable({ rows, loading, error, emptyText, canApprove, canEdit, 
                 <td className="px-5 py-3.5 text-xs"><span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3 w-3" />{fmtTime(r.requestedCheckIn, r.timeZone)}</span><span className="mx-1 text-muted-foreground">/</span><span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3 w-3" />{fmtTime(r.requestedCheckOut, r.timeZone)}</span></td>
                 <td className="px-5 py-3.5">
                   <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span>
+                  {r.status === "pending" && <EscalatedTag r={r} />}
                   {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
                 </td>
                 {showActions && <td className="px-5 py-3.5"><div className="flex items-center justify-end gap-1">
@@ -101,6 +123,7 @@ export default function RegularizationPage() {
   const { data: pendingData, isLoading: pendingLoading, error: pendingError } =
     useRegularizations({ status: "pending", limit: "200" }, canApprove);
   const { data: mineData, isLoading: mineLoading, error: mineError } = useMyRegularizations({ limit: "200" });
+  const { data: allowance } = useMyRegularizationAllowance();
 
   const { mutate: review_, isPending: reviewing } = useReviewRegularization();
   const { mutate: remove, isPending: deleting } = useDeleteRegularization();
@@ -142,6 +165,7 @@ export default function RegularizationPage() {
         <>
           <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", statusStyles[r.status])}>{r.status}</span>
           {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+          {r.status === "pending" && <div className="mt-0.5"><EscalatedTag r={r} /></div>}
         </>
       ),
     },
@@ -221,7 +245,24 @@ export default function RegularizationPage() {
       {activeTab === "mine" && (
         <div className="space-y-4">
           <Card className="flex items-center justify-between p-5">
-            <div><h3 className="text-base font-semibold">Request a correction</h3><p className="text-sm text-muted-foreground">Raise a regularization for a day you missed a punch.</p></div>
+            <div>
+              <h3 className="text-base font-semibold">Request a correction</h3>
+              <p className="text-sm text-muted-foreground">Raise a regularization for a day you missed a punch.</p>
+              {/* Said before they submit, not after. The allowance is not a
+                  refusal, so the wording is about who sees it rather than
+                  whether they may ask. */}
+              {allowance && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {allowance.nextNeedsManager ? (
+                    <span className="text-amber-600">
+                      You have used {allowance.used} of {allowance.limit} this month — your next one goes to your reporting manager.
+                    </span>
+                  ) : (
+                    <>{allowance.remaining} of {allowance.limit} left this month</>
+                  )}
+                </p>
+              )}
+            </div>
             <Button onClick={() => setApplyOpen(true)}><Plus className="h-4 w-4" />New Request</Button>
           </Card>
           <SimpleRegTable

@@ -32,6 +32,17 @@ const attendancePenaltyPolicySchema = new Schema<IAttendancePenaltyPolicy>(
       enum: ["present", "half_day", "wfh"],
       default: "present",
     },
+    /**
+     * How many corrections a person may raise in a month before their manager
+     * has to sign it off.
+     *
+     * Not a cap. Somebody who genuinely forgot to punch out four times still
+     * gets their day corrected — the fourth request simply stops being a
+     * formality and goes to the person who would know. A hard block would only
+     * teach people to stop asking, which loses the attendance record rather
+     * than fixing the habit.
+     */
+    monthlyRegularizationLimit: { type: Number, required: true, min: 0, max: 31, default: 3 },
   },
   { timestamps: true, versionKey: false }
 );

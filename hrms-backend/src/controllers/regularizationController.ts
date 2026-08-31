@@ -73,3 +73,10 @@ export const deleteRegularization = async (req: AuthenticatedRequest, res: Respo
     sendSuccess(res, result.message);
   } catch (error) { next(error); }
 };
+
+/** What is left of the caller's monthly allowance, and who signs off past it. */
+export const getMyRegularizationAllowance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Allowance retrieved", await service.monthlyAllowance(req.user!.userId));
+  } catch (error) { next(error); }
+};

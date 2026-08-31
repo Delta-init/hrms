@@ -35,6 +35,18 @@ const regularizationSchema = new Schema<IRegularization>(
       enum: ["pending", "approved", "rejected", "cancelled"],
       default: "pending",
     },
+    /**
+     * Where this sat in the person's month when they raised it.
+     *
+     * Stored rather than recounted, because the answer changes: a request
+     * raised as somebody's second becomes their fifth once four more arrive,
+     * and the reason it did or did not need a manager has to stay true.
+     */
+    monthlyIndex: { type: Number, default: 1, min: 1 },
+    /** Past the month's allowance, so the reporting manager has to sign it off. */
+    escalated: { type: Boolean, default: false },
+    /** The manager who must act on it. Null when nobody could be identified. */
+    escalatedTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: [500, "Review note cannot exceed 500 characters"] },

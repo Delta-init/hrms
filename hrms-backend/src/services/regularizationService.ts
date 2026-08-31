@@ -11,6 +11,9 @@ import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from ".
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 import { notifyReviewed } from "./reviewNotifier.js";
+import { reportingManagerUserId, managerContact } from "./reportingManager.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 
 interface RegQuery extends PaginationQuery {
   user?: string;
@@ -22,6 +25,9 @@ interface RegQuery extends PaginationQuery {
 const POP = [
   { path: "user", select: "name email designation" },
   { path: "reviewedBy", select: "name email" },
+  // So an approver can see whose sign-off an escalated request is waiting on
+  // without looking the manager up themselves.
+  { path: "escalatedTo", select: "name email" },
 ];
 
 // Wording for the notification email. The client has its own copy for the UI;
@@ -37,6 +43,40 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export class RegularizationService {
+  /**
+   * How many corrections this person has raised so far this month.
+   *
+   * Counted by when the request was *raised*, not the day it corrects: somebody
+   * fixing three days of last month in one sitting has still asked three times
+   * this month, and it is the asking that the allowance is about.
+   *
+   * Rejected and cancelled requests do not count. An allowance spent on a
+   * request nobody granted would punish people for asking, which is the
+   * opposite of what this is for.
+   */
+  private async raisedThisMonth(userId: unknown, now = new Date()): Promise<number> {
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return Regularization.countDocuments(
+      scoped({ user: userId, createdAt: { $gte: from, $lt: to }, status: { $nin: ["rejected", "cancelled"] } })
+    );
+  }
+
+  /** What the requester should be told before they submit. */
+  async monthlyAllowance(userId: string) {
+    const policy = await getAttendancePenaltyPolicy();
+    const used = await this.raisedThisMonth(userId);
+    const limit = policy.monthlyRegularizationLimit;
+    return {
+      used,
+      limit,
+      remaining: Math.max(0, limit - used),
+      /** True when the *next* request would need the manager. */
+      nextNeedsManager: used >= limit,
+      managerId: used >= limit ? await reportingManagerUserId(userId) : null,
+    };
+  }
+
   async create(input: CreateRegularizationInput) {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
@@ -44,14 +84,75 @@ export class RegularizationService {
     // The form sends a choice; a request raised without one takes the
     // organization's default rather than a value fixed in the code.
     const policy = await getAttendancePenaltyPolicy();
+
+    const already = await this.raisedThisMonth(input.user);
+    const monthlyIndex = already + 1;
+    const overLimit = monthlyIndex > policy.monthlyRegularizationLimit;
+    // Only looked up when it matters — most requests are within the allowance
+    // and should not pay for two extra queries.
+    const escalatedTo = overLimit ? await reportingManagerUserId(input.user) : null;
+
     const reg = await Regularization.create({
       ...input,
       resultingStatus: input.resultingStatus ?? policy.defaultRegularizationStatus ?? "present",
       organization: getOrgId(),
       status: input.status ?? "pending",
+      monthlyIndex,
+      escalated: overLimit,
+      escalatedTo,
       ...workflow,
     });
+
+    if (overLimit) await this.notifyManagerOfEscalation(reg, user, monthlyIndex, policy.monthlyRegularizationLimit);
     return Regularization.findById(reg._id).populate(POP);
+  }
+
+  /**
+   * Tell the manager a correction needs them.
+   *
+   * Best-effort and deliberately after the record is saved: a mail server
+   * having a bad afternoon must not lose somebody's request.
+   */
+  private async notifyManagerOfEscalation(
+    reg: { _id: unknown; date: Date; timeZone?: string; type: string; reason?: string; escalatedTo?: unknown },
+    requester: { name?: string },
+    index: number,
+    limit: number
+  ) {
+    try {
+      if (!reg.escalatedTo) return;
+      const manager = await managerContact(String(reg.escalatedTo));
+      if (!manager?.email) return;
+
+      const tz = reg.timeZone || "Asia/Dubai";
+      const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(reg.date);
+      const who = requester.name ?? "Somebody in your team";
+      const link = `${env.CLIENT_URL}/regularization`;
+
+      await sendMail({
+        to: manager.email,
+        subject: `${who} has asked for a ${index}${index === 2 ? "nd" : index === 3 ? "rd" : "th"} attendance correction this month`,
+        text:
+          `${who} has raised ${index} attendance corrections this month; the allowance is ${limit}.\n\n` +
+          `Date: ${day}\nCorrection: ${TYPE_LABELS[reg.type] ?? reg.type}\n` +
+          (reg.reason ? `Reason: ${reg.reason}\n` : "") +
+          `\nThis one needs your approval: ${link}`,
+        html:
+          `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+          `<h2 style="color:#4f46e5;margin-bottom:4px">An attendance correction needs you</h2>` +
+          `<p style="color:#555"><strong>${who}</strong> has raised <strong>${index}</strong> corrections this month. ` +
+          `The allowance is ${limit}, so this one comes to you rather than going through on its own.</p>` +
+          `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">` +
+          `<tr><td style="padding:4px 12px 4px 0;color:#888">Date</td><td style="padding:4px 0;font-weight:600">${day}</td></tr>` +
+          `<tr><td style="padding:4px 12px 4px 0;color:#888">Correction</td><td style="padding:4px 0;font-weight:600">${TYPE_LABELS[reg.type] ?? reg.type}</td></tr>` +
+          (reg.reason ? `<tr><td style="padding:4px 12px 4px 0;color:#888">Reason</td><td style="padding:4px 0">${reg.reason}</td></tr>` : "") +
+          `</table>` +
+          `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review it</a></p>` +
+          `</div>`,
+      });
+    } catch {
+      /* the request is saved; a failed notice is not worth failing the write */
+    }
   }
 
   async list(query: RegQuery) {
@@ -153,6 +254,33 @@ export class RegularizationService {
       throw Object.assign(new Error("This request has already been reviewed"), { statusCode: 400 });
     }
     assertNotSelfReview(record.user, reviewerId);
+
+    /**
+     * A request past the month's allowance belongs to the person's manager.
+     *
+     * Checked before anything else is written, and not softened for whoever
+     * happens to hold the regularization permission — the whole point of the
+     * allowance is that the fourth correction is seen by somebody who knows
+     * whether it is reasonable, and HR waving it through would make the rule
+     * decorative.
+     *
+     * A Super Admin is still allowed through, as everywhere else in the
+     * approval engine, and so is the case where no manager could be identified
+     * — refusing there would strand the request with nobody able to act.
+     */
+    if (record.escalated && record.escalatedTo) {
+      const isSuperAdmin = reviewerRole.isSystemRole && reviewerRole.roleName === "Super Admin";
+      if (!isSuperAdmin && String(record.escalatedTo) !== String(reviewerId)) {
+        const manager = await managerContact(String(record.escalatedTo));
+        throw Object.assign(
+          new Error(
+            `This is correction ${record.monthlyIndex} of the month, past the allowance, so it needs ` +
+            `${manager?.name ? `${manager.name} — the requester's reporting manager` : "the requester's reporting manager"}.`
+          ),
+          { statusCode: 403 }
+        );
+      }
+    }
 
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
     // The approver may correct the day's outcome as they approve. Recorded on

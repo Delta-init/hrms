@@ -696,6 +696,11 @@ export interface IRegularization extends Document {
   requestedCheckOut?: Date | null;
   reason?: string;
   status: RegularizationStatus;
+  /** Where this sat in the person's month when they raised it. */
+  monthlyIndex: number;
+  /** Past the month's allowance, so the reporting manager has to sign it off. */
+  escalated: boolean;
+  escalatedTo?: Types.ObjectId | IUser | null;
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
@@ -871,6 +876,8 @@ export interface IAttendancePenaltyPolicy extends Document {
   unrecordedDaysUnpaid: boolean;
   /** What a new regularization proposes before anyone changes it. */
   defaultRegularizationStatus: RegularizationOutcome;
+  /** Corrections a person may raise in a month before their manager signs off. */
+  monthlyRegularizationLimit: number;
   createdAt: Date;
   updatedAt: Date;
 }

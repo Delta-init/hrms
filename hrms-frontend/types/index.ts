@@ -738,6 +738,11 @@ export interface Regularization extends WorkflowState {
   requestedCheckOut?: string | null;
   reason?: string;
   status: RegularizationStatus;
+  /** Where this sat in the requester's month — 4 means their fourth. */
+  monthlyIndex?: number;
+  /** Past the month's allowance, so the reporting manager has to sign it off. */
+  escalated?: boolean;
+  escalatedTo?: { _id: string; name: string } | string | null;
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;

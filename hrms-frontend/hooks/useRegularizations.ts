@@ -30,6 +30,22 @@ export const useMyRegularizations = (params?: Record<string, string>) =>
     },
   });
 
+/**
+ * How many corrections the caller has left this month.
+ *
+ * Fetched separately from the list because it is about the person, not the
+ * page: the count includes requests that are already approved and no longer on
+ * screen, and recomputing it from the visible rows would understate it.
+ */
+export const useMyRegularizationAllowance = () =>
+  useQuery({
+    queryKey: [...KEY, "mine", "allowance"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ used: number; limit: number; remaining: number; nextNeedsManager: boolean; managerId: string | null }>>(
+        "/regularizations/mine/allowance"
+      )).data.data!,
+  });
+
 export const useCreateRegularization = () => {
   const qc = useQueryClient();
   return useMutation({

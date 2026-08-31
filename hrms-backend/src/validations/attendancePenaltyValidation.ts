@@ -5,6 +5,7 @@ export const upsertAttendancePenaltyPolicySchema = z.object({
   graceLates: z.number().int().min(0).max(31).default(3),
   lateBlockSize: z.number().int().min(1).max(31).default(3),
   unrecordedDaysUnpaid: z.boolean().default(false),
+  monthlyRegularizationLimit: z.coerce.number().int().min(0).max(31).default(3),
   defaultRegularizationStatus: z.enum(["present", "half_day", "wfh"]).default("present"),
 });
 

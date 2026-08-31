@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createRegularization, getRegularizations, getMyRegularizations,
+  createRegularization, getRegularizations, getMyRegularizations, getMyRegularizationAllowance,
   getRegularizationById, updateRegularization, reviewRegularization, deleteRegularization,
 } from "../controllers/regularizationController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -11,6 +11,9 @@ router.use(authenticate);
 
 // Self-service — own requests, no module permission required.
 router.get("/mine", getMyRegularizations);
+// Self-service: how many corrections are left this month, and who has to sign
+// off past that. No module permission — it is the caller's own allowance.
+router.get("/mine/allowance", getMyRegularizationAllowance);
 
 router.get("/", checkPermission("regularization", "view"), getRegularizations);
 router.post("/", checkPermission("regularization", "create"), createRegularization);
