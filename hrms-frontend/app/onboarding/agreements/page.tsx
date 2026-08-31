@@ -41,6 +41,16 @@ export default function AgreementsPage() {
   const [muted, setMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [total, setTotal] = useState(0);
+  const [hovering, setHovering] = useState(false);
+  /**
+   * The furthest they have legitimately got to.
+   *
+   * Rewinding is allowed and re-watching earns nothing, so this only ever
+   * climbs. It starts at whatever the server says was reached in an earlier
+   * sitting, which is what makes going back possible on a fresh visit rather
+   * than only within one.
+   */
+  const furthest = useRef(0);
   const [signature, setSignature] = useState<string | null>(null);
   const [typedName, setTypedName] = useState("");
 
@@ -58,6 +68,16 @@ export default function AgreementsPage() {
    * so this used to bail on a null ref and never run again. No heartbeat was
    * ever sent and the bar sat at 0% however long anybody watched.
    */
+  /** Seek, but only backwards — forward is the thing being prevented. */
+  const seekTo = (fraction: number) => {
+    const el = videoRef.current;
+    if (!el || !Number.isFinite(el.duration)) return;
+    const target = Math.max(0, Math.min(el.duration, fraction * el.duration));
+    if (!videoDone && target > furthest.current) return;
+    el.currentTime = target;
+    setElapsed(target);
+  };
+
   const togglePlay = () => {
     const el = videoRef.current;
     if (!el) return;
@@ -169,7 +189,11 @@ export default function AgreementsPage() {
               induction is complete the native controls come back and the video
               can be scrubbed freely, because by then there is nothing to game.
             */}
-            <div className="relative overflow-hidden rounded-xl bg-black">
+            <div
+              className="group relative overflow-hidden rounded-xl bg-black"
+              onMouseEnter={() => setHovering(true)}
+              onMouseLeave={() => setHovering(false)}
+            >
               <video
                 ref={videoRef}
                 src={induction.video.url}
@@ -180,14 +204,29 @@ export default function AgreementsPage() {
                 onClick={videoDone ? undefined : togglePlay}
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
-                onTimeUpdate={(e) => setElapsed(e.currentTarget.currentTime)}
-                onLoadedMetadata={(e) => setTotal(e.currentTarget.duration)}
+                onTimeUpdate={(e) => {
+                  const t = e.currentTarget.currentTime;
+                  setElapsed(t);
+                  if (t > furthest.current) furthest.current = t;
+                }}
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  setTotal(el.duration);
+                  // Pick up where they left off. The position comes from the
+                  // server rather than this browser, so it follows them to
+                  // another machine and cannot be edited into a shortcut.
+                  const resume = induction.progress?.lastPosition ?? 0;
+                  furthest.current = Math.max(furthest.current, resume);
+                  if (resume > 1 && resume < el.duration - 1) {
+                    el.currentTime = resume;
+                    setElapsed(resume);
+                  }
+                }}
                 // Belt and braces: keyboard and programmatic seeks bypass the
                 // absent bar, and the server would refuse the credit anyway.
                 onSeeking={(e) => {
                   const el = e.currentTarget;
-                  const allowed = induction.progress?.lastPosition ?? 0;
-                  if (!videoDone && el.currentTime > allowed + 2) el.currentTime = allowed;
+                  if (!videoDone && el.currentTime > furthest.current + 2) el.currentTime = furthest.current;
                 }}
                 onEnded={() => beat(videoRef.current?.duration ?? 0, {
                   onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
@@ -195,7 +234,18 @@ export default function AgreementsPage() {
                 className="w-full"
               />
               {!videoDone && (
-                <div className="flex items-center gap-3 bg-black/80 px-3 py-2">
+                /*
+                 * Out of the way while it plays, and back the moment the pointer
+                 * arrives — or whenever it is paused, since a transport you have
+                 * to hover to find is no use to somebody looking for the play
+                 * button.
+                 */
+                <div
+                  className={cn(
+                    "absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/90 to-black/40 px-3 py-2.5 transition-opacity duration-200",
+                    hovering || !playing ? "opacity-100" : "pointer-events-none opacity-0"
+                  )}
+                >
                   <button
                     type="button" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 text-black transition hover:bg-white"
@@ -208,10 +258,37 @@ export default function AgreementsPage() {
                   >
                     {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                   </button>
-                  {/* Where the playhead is — shown, not draggable. */}
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/20">
-                    <div className="h-full rounded-full bg-white/70" style={{ width: `${total ? (elapsed / total) * 100 : 0}%` }} />
+
+                  {/*
+                    Clickable, but only backwards. The lighter section is what has
+                    been reached and can be returned to; past it the bar does
+                    nothing, which is quieter than snapping the playhead back and
+                    says the same thing.
+                  */}
+                  <div
+                    role="slider" tabIndex={0}
+                    aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(total)} aria-valuenow={Math.round(elapsed)}
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      seekTo((e.clientX - r.left) / r.width);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                      e.preventDefault();
+                      const step = e.key === "ArrowLeft" ? -5 : 5;
+                      if (total) seekTo((elapsed + step) / total);
+                    }}
+                    className="group/bar relative h-4 flex-1 cursor-pointer"
+                  >
+                    <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
+                      {/* How far back you may go. */}
+                      <div className="absolute inset-y-0 left-0 rounded-full bg-white/30"
+                           style={{ width: `${total ? Math.min(100, (furthest.current / total) * 100) : 0}%` }} />
+                      <div className="absolute inset-y-0 left-0 rounded-full bg-white"
+                           style={{ width: `${total ? (elapsed / total) * 100 : 0}%` }} />
+                    </div>
                   </div>
+
                   <span className="shrink-0 text-[11px] tabular-nums text-white/80">
                     {clock(elapsed)} / {clock(total)}
                   </span>
