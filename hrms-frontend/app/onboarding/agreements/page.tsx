@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace, Play, Pause, Volume2, VolumeX, ExternalLink } from "lucide-react";
+import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace, Play, Pause, Volume2, VolumeX, ExternalLink, Download } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import {
   useMyAgreements, useStartInduction, useInductionHeartbeat, useSignAgreements,
 } from "@/hooks/useAgreements";
-import { AGREEMENT_KIND_LABELS } from "@/types";
+import { AGREEMENT_KIND_LABELS, type AgreementKind } from "@/types";
 import { cn } from "@/lib/utils";
 
 /** How often the player tells the server where it is. */
@@ -142,6 +142,7 @@ export default function AgreementsPage() {
                 ? "Your agreements are signed and verified."
                 : "Your agreements are signed. HR will verify them separately — nothing more is needed from you."}
             </p>
+            <SignedCopies documents={data.agreement?.documents ?? []} />
             <Button className="mt-4" onClick={() => router.replace("/dashboard")}>Go to your dashboard</Button>
           </div>
         </Card>
@@ -176,6 +177,7 @@ export default function AgreementsPage() {
                 ? " HR will check it in their own time — you do not have to wait for that."
                 : " Nothing further is needed."}
             </p>
+            <SignedCopies documents={data.agreement.documents} />
           </div>
         </Card>
 
@@ -438,6 +440,35 @@ export default function AgreementsPage() {
         </Step>
       )}
     </Shell>
+  );
+}
+
+/**
+ * The signed copies, to read back or keep.
+ *
+ * Not the templates from step 2 — these carry their name and signature. The
+ * download link asks the API for it as an attachment, because the `download`
+ * attribute does nothing across origins and would otherwise just reopen the
+ * viewer.
+ */
+function SignedCopies({ documents }: { documents: Array<{ kind: AgreementKind; version: number; url: string }> }) {
+  if (!documents.length) return null;
+  return (
+    <div className="mt-3 space-y-1.5">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your signed copies</p>
+      {documents.map((d) => (
+        <div key={`${d.kind}-${d.version}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+          <FileText className="h-4 w-4 shrink-0 text-primary" />
+          <span className="flex-1 text-sm">{AGREEMENT_KIND_LABELS[d.kind]}</span>
+          <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+            View <ExternalLink className="h-3 w-3" />
+          </a>
+          <a href={`${d.url}&download=1`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            Download <Download className="h-3 w-3" />
+          </a>
+        </div>
+      ))}
+    </div>
   );
 }
 

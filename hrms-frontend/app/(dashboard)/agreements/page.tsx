@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  FileSignature, FileText, Loader2, Check, X, ExternalLink, AlertTriangle, Clock,
+  FileSignature, FileText, Loader2, Check, X, ExternalLink, Download, AlertTriangle, Clock,
 } from "lucide-react";
 import { useSignedAgreements, useReviewAgreement } from "@/hooks/useAgreements";
 import { useAuth } from "@/hooks/useAuth";
@@ -194,14 +194,18 @@ function ReviewDialog({ record, onOpenChange, canReview }: {
               <Label className="text-xs text-muted-foreground">Documents as signed</Label>
               <div className="mt-1 space-y-1.5">
                 {record.documents.map((d) => (
-                  <a
-                    key={`${d.kind}-${d.version}`} href={d.url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-lg border border-border p-2.5 text-sm hover:bg-muted"
-                  >
-                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div key={`${d.kind}-${d.version}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5 text-sm">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="flex-1">{AGREEMENT_KIND_LABELS[d.kind] ?? d.kind} · v{d.version}</span>
-                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                  </a>
+                    <a href={d.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      View <ExternalLink className="h-3 w-3" />
+                    </a>
+                    {/* Asked of the API rather than left to the `download`
+                        attribute, which does nothing across origins. */}
+                    <a href={`${d.url}&download=1`} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                      Download <Download className="h-3 w-3" />
+                    </a>
+                  </div>
                 ))}
               </div>
             </div>

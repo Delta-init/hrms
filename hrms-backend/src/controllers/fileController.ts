@@ -58,6 +58,20 @@ export const getFile = async (req: Request, res: Response, next: NextFunction): 
     // Cacheable for the life of the link and no longer, and private so shared
     // proxies never hold somebody's passport scan.
     res.setHeader("Cache-Control", "private, max-age=3600");
+
+    /**
+     * Save rather than open, when asked.
+     *
+     * The `download` attribute on a link is ignored across origins, and the
+     * client is on a different origin to this API — so a "download" link could
+     * only ever open the browser's viewer. Saying it here is the only way the
+     * file actually saves. The name is the last path segment, which is what the
+     * uploader's own filename became.
+     */
+    if (req.query.download !== undefined) {
+      const name = key.split("/").pop() || "download";
+      res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/["\\]/g, "")}"`);
+    }
     // These are user-uploaded files served from our origin; never let a browser
     // decide one is HTML and run it.
     res.setHeader("X-Content-Type-Options", "nosniff");

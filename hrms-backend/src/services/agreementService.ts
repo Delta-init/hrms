@@ -237,17 +237,39 @@ async function fillSignatureFields(
       const hit = findLabel(hits, label);
       if (hit && value) write(hit, value);
     }
-    // "Name:" heads that block and also appears in the signature block below,
-    // so the first occurrence is the particulars one and the last is the signer.
+    /**
+     * The "Name:" that heads the particulars block, and only that one.
+     *
+     * Taking the first "Name" in the document put the employee's name in the
+     * header of the terms' board-of-directors table — the column heading reads
+     * "Name", and normalising punctuation away made it match "Name:". So it is
+     * anchored instead: the particulars name is the one directly above
+     * "Nationality:", which is the line that only ever appears in that block.
+     * A document without that line has no particulars block and gets nothing.
+     */
     const names = findAllLabels(hits, "Name:");
-    if (names.length && p.name) write(names[0], p.name);
+    const nationality = findLabel(hits, "Nationality:");
+    const particularsName = nationality
+      ? names.find(
+          (n) =>
+            n.pageIndex === nationality.pageIndex &&
+            n.y > nationality.y &&
+            n.y - nationality.y < 40 &&
+            Math.abs(n.x - nationality.x) < 12
+        )
+      : null;
+    if (particularsName && p.name) write(particularsName, p.name);
 
     // ── The signature block ──
     // The NDA signs in two columns and both say "Signature:"; the employee's is
     // the right-hand one. Signing the left would sign for the company.
     const sig = findLabel(hits, "Signature:", { preferRight: true });
+    // The signer's name: the terms label it plainly, the NDA uses the "Name:"
+    // in its signature block — the last one, and never the particulars one.
     const signerName =
-      findLabel(hits, "Employee Name:") ?? (names.length > 1 ? names[names.length - 1] : null);
+      findLabel(hits, "Employee Name:") ??
+      [...names].reverse().find((n) => n !== particularsName) ??
+      null;
     if (signerName) write(signerName, opts.typedName, 10);
 
     const designation = findLabel(hits, "Designation");
@@ -341,7 +363,23 @@ export async function myState(userId: string) {
       : null,
     videoCompleted: !!induction?.view?.completedAt,
     agreement: latest
-      ? { _id: latest._id, status: latest.status, signedAt: latest.signedAt, reviewNote: latest.reviewNote }
+      ? {
+          _id: latest._id,
+          status: latest.status,
+          signedAt: latest.signedAt,
+          reviewNote: latest.reviewNote,
+          /**
+           * What they actually signed — their name and signature on the
+           * document, not the blank template above. Somebody who has just put
+           * their name to two agreements should be able to read back what they
+           * put it to, and keep a copy, without asking HR for it.
+           */
+          documents: (latest.documents ?? []).map((d) => ({
+            kind: d.kind,
+            version: d.version,
+            url: publicUrl(d.signedKey),
+          })),
+        }
       : null,
     faceRequired,
     faceEnrolled,

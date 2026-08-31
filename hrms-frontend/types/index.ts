@@ -2341,7 +2341,14 @@ export interface AgreementState {
   documents: Array<{ kind: AgreementKind; title: string; version: number; url: string; fileName?: string }>;
   video: { title: string; durationSeconds: number; url: string } | null;
   videoCompleted: boolean;
-  agreement: { _id: string; status: "pending" | "approved" | "rejected"; signedAt: string; reviewNote?: string } | null;
+  agreement: {
+    _id: string;
+    status: "pending" | "approved" | "rejected";
+    signedAt: string;
+    reviewNote?: string;
+    /** The signed copies — their name and signature on the document. */
+    documents: Array<{ kind: AgreementKind; version: number; url: string }>;
+  } | null;
   /** Onboarding also asks for a face — and the matching service is reachable. */
   faceRequired: boolean;
   faceEnrolled: boolean;
