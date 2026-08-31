@@ -46,12 +46,14 @@ interface Props {
   within: string;
   onWithinChange: (value: string) => void;
   windows: Array<{ value: string; label: string }>;
+  /** Deep-linked from the dashboard, which knows which bucket it sent you for. */
+  initialStatus?: string;
   canEdit: boolean;
   canDelete: boolean;
 }
 
-export function CompanyDocumentsPanel({ within, onWithinChange, windows, canEdit, canDelete }: Props) {
-  const [status, setStatus] = useState(ALL);
+export function CompanyDocumentsPanel({ within, onWithinChange, windows, initialStatus, canEdit, canDelete }: Props) {
+  const [status, setStatus] = useState(initialStatus ?? ALL);
   const [company, setCompany] = useState(ALL);
   const [type, setType] = useState(ALL);
   const [dialogOpen, setDialogOpen] = useState(false);

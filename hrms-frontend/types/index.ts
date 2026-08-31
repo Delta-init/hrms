@@ -1250,9 +1250,18 @@ export interface NoticeLite {
   noticePeriodDays: number;
 }
 export interface ExpiringDocument {
-  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  /**
+   * Whose document it is — null for anything that belongs to no one person: a
+   * company licence, or an access card whose holder has no employee record.
+   */
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } | null;
+  /** The entity a company document belongs to. Absent for a person's papers. */
+  company?: string;
+  /** Slug and reference, for company documents — label with `companyDocTypeLabel`. */
+  documentType?: string;
+  number?: string;
   /** "other" covers the free-form documents an employee can have any number of. */
-  type: "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other";
+  type: "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other" | "company";
   label: string;
   expiryDate: string;
   daysLeft: number;

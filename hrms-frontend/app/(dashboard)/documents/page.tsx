@@ -10,6 +10,7 @@ import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { CompanyDocumentsPanel } from "@/components/documents/CompanyDocumentsPanel";
+import { useCompanyDocuments } from "@/hooks/useCompanyDocuments";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +115,16 @@ function Documents() {
 
   const { data, isLoading, isFetching } = useDocumentsOverview(apiParams);
   const rows = data?.rows ?? [];
+
+  /**
+   * How many company documents need attention, for the tab badge.
+   *
+   * The dashboard's "Docs expiring" figure counts both halves of this page, so
+   * landing on the employee tab and seeing a smaller number would look like
+   * something had gone missing. The badge says where the rest are.
+   */
+  const { data: companyData } = useCompanyDocuments({ within }, canView);
+  const companyDue = (companyData?.counts.expired ?? 0) + (companyData?.counts.expiring ?? 0);
 
   const canEdit = hasPermission("employees", "edit");
   const { mutate: ignore, isPending: ignoring } = useIgnoreDocuments();
@@ -247,7 +258,7 @@ function Documents() {
       <Tabs
         tabs={[
           { key: "people", label: "Employee documents", icon: Users },
-          { key: "company", label: "Company documents", icon: Building2 },
+          { key: "company", label: "Company documents", icon: Building2, count: companyDue },
         ]}
         value={tab}
         onChange={setTab}
@@ -258,6 +269,7 @@ function Documents() {
           within={within}
           onWithinChange={setWithin}
           windows={WINDOWS}
+          initialStatus={params.get("status") ?? undefined}
           canEdit={canEdit}
           canDelete={hasPermission("employees", "delete")}
         />

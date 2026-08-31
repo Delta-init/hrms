@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   Cake, Plane, CalendarClock, ClipboardCheck, ArrowUpRight, PartyPopper, LogOut, FileWarning, Home, Award, Megaphone, Pin,
-  ShieldCheck, UserPlus, UserMinus,
+  ShieldCheck, UserPlus, UserMinus, Building2,
 } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useAnnouncements } from "@/hooks/useAnnouncements";
@@ -16,7 +16,8 @@ import { ConfirmationDialog } from "@/components/confirmations/ConfirmationDialo
 import { ApprovalsCard } from "@/components/dashboard/ApprovalsCard";
 import {
   LEAVE_TYPE_LABELS, REGULARIZATION_TYPE_LABELS, ANNOUNCEMENT_CATEGORY_LABELS,
-  type LeaveLite, type RegularizationLite, type DueConfirmation, leaveTypeLabel } from "@/types";
+  type LeaveLite, type RegularizationLite, type DueConfirmation, leaveTypeLabel,
+  companyDocTypeLabel } from "@/types";
 
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } } };
@@ -238,18 +239,41 @@ export function HrDashboard() {
         {/* Document expiry */}
         <Panel icon={FileWarning} title="Document expiry" tint="text-rose-600" href="/employees">
           {data?.expiringDocuments?.length ? (
-            <div className="space-y-2">{data.expiringDocuments.map((d, i) => (
-              <div key={`${d.employee._id}-${d.type}-${i}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
-                <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", d.expired ? "bg-red-500/10 text-red-600" : "bg-rose-500/10 text-rose-600")}><FileWarning className="h-4 w-4" /></div>
+            <div className="space-y-2">{data.expiringDocuments.map((d, i) => {
+              // A company licence has no employee, and neither does an access
+              // card whose holder was never linked to a record — both used to
+              // render a link to /employees/null.
+              const isCompany = d.type === "company";
+              const who = isCompany ? d.company ?? "The company" : d.employee?.name ?? "Unassigned";
+              // The row's own status, not "expiring" — sending an expired licence
+              // to the expiring filter would land on a page that cannot show it.
+              const href = isCompany
+                ? `/documents?tab=company&status=${d.expired ? "expired" : "expiring"}`
+                : d.employee?._id
+                  ? `/employees/${d.employee._id}`
+                  : null;
+              const detail = isCompany
+                ? [companyDocTypeLabel(d.documentType), d.number].filter(Boolean).join(" ")
+                : d.label;
+              return (
+              <div key={`${d.employee?._id ?? d.company ?? "x"}-${d.type}-${i}`} className="flex items-center gap-3 rounded-lg border border-border p-2.5">
+                <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", d.expired ? "bg-red-500/10 text-red-600" : "bg-rose-500/10 text-rose-600")}>
+                  {isCompany ? <Building2 className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <Link href={`/employees/${d.employee._id}`} className="truncate text-sm font-medium hover:text-primary hover:underline">{d.employee.name}</Link>
-                  <p className="truncate text-xs text-muted-foreground">{d.label} · {fmtDate(d.expiryDate)}</p>
+                  {href ? (
+                    <Link href={href} className="truncate text-sm font-medium hover:text-primary hover:underline">{who}</Link>
+                  ) : (
+                    <span className="truncate text-sm font-medium">{who}</span>
+                  )}
+                  <p className="truncate text-xs text-muted-foreground">{detail} · {fmtDate(d.expiryDate)}</p>
                 </div>
                 <Badge variant="secondary" className={cn("capitalize", d.expired ? "bg-red-500/10 text-red-600" : d.daysLeft <= 30 ? "bg-amber-500/10 text-amber-600" : "")}>
                   {d.expired ? `expired ${Math.abs(d.daysLeft)}d` : `${d.daysLeft}d left`}
                 </Badge>
               </div>
-            ))}</div>
+              );
+            })}</div>
           ) : <Empty text="No documents expiring soon." />}
         </Panel>
 

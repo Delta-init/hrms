@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { Employee } from "../models/Employee.js";
 import { Card } from "../models/Card.js";
+import { CompanyDocument } from "../models/CompanyDocument.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Resignation } from "../models/Resignation.js";
@@ -188,10 +189,23 @@ export async function recentResignations(withinDays = 30, orgId?: string | null)
     .lean();
 }
 
-export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other";
+export type ExpiringDocType = "passport" | "visa" | "labourCard" | "emiratesId" | "card" | "other" | "company";
 
 interface ExpiringDoc {
-  employee: { _id: unknown; name: string; employeeCode?: string; designation?: string };
+  /**
+   * Whose document it is — null for anything that belongs to no one person.
+   *
+   * A trade licence belongs to the business, and an access card can outlive the
+   * employee record it was issued against. Both were already possible; only the
+   * first made it obvious, because a card with no holder still rendered a link
+   * to /employees/null.
+   */
+  employee: { _id: unknown; name: string; employeeCode?: string; designation?: string } | null;
+  /** The entity a company document belongs to. Absent for a person's papers. */
+  company?: string;
+  /** Slug and reference, for company documents — the client labels these itself. */
+  documentType?: string;
+  number?: string;
   type: ExpiringDocType;
   label: string;
   expiryDate: Date;
@@ -311,11 +325,51 @@ export async function expiringDocuments(withinDays = 60, orgId?: string | null):
       // Fall back to the name printed on the card when no employee record is linked.
       const holder = byUser.get(String(c.client)) ?? { _id: null, name: c.name };
       push(holder, "card", `Access card ${c.cardNumber}`, c.expiryDate);
+
     }
+  }
+
+  /**
+   * The company's own paperwork.
+   *
+   * A lapsed trade licence stops the business trading, which outranks any one
+   * person's visa, so it belongs in the same list rather than on a screen
+   * somebody has to remember to open. Queried directly rather than through
+   * push(): there is no employee to key it on, and pretending otherwise is how
+   * a link to /employees/null gets written.
+   */
+  const companyDocs = await CompanyDocument.find({
+    ...scope,
+    expiryDate: { $ne: null, $lte: cutoff },
+  })
+    .select("companyName documentType number expiryDate")
+    .lean();
+
+  for (const d of companyDocs) {
+    if (!d.expiryDate) continue;
+    const when = new Date(d.expiryDate);
+    const daysLeft = Math.ceil((when.getTime() - now.getTime()) / 86_400_000);
+    items.push({
+      employee: null,
+      company: d.companyName,
+      documentType: d.documentType,
+      number: d.number ?? "",
+      type: "company",
+      label: d.number ? `${humanise(d.documentType)} ${d.number}` : humanise(d.documentType),
+      expiryDate: when,
+      daysLeft,
+      expired: daysLeft < 0,
+    });
   }
 
   items.sort((a, b) => a.expiryDate.getTime() - b.expiryDate.getTime());
   return items;
+}
+
+/** "trade_licence" → "Trade licence", for clients that cannot label it better. */
+function humanise(slug: string): string {
+  const words = String(slug).replace(/_/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : "Document";
 }
 
 interface OrgNode {
