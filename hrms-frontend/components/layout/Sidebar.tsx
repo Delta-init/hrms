@@ -43,7 +43,7 @@ import { Logo as BrandLogo, LogoMark } from "@/components/shared/Logo";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyProfile } from "@/hooks/useOnboarding";
-import type { HrmsModule } from "@/types";
+import type { HrmsModule, PermissionAction } from "@/types";
 import {
   Tooltip,
   TooltipContent,
@@ -57,6 +57,8 @@ export const navItems: {
   label: string;
   icon: React.ElementType;
   permModule: HrmsModule | null;
+  /** Which action the module needs. Defaults to "view". */
+  permAction?: PermissionAction;
   /** Reads across every organisation, so no per-tenant permission can grant it. */
   superAdminOnly?: boolean;
 }[] = [
@@ -72,10 +74,16 @@ export const navItems: {
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
-  // Managing devices is an attendance job, which is what the API has always
-  // enforced — the sidebar asked for `users` instead, so it showed the link to
-  // people the endpoints then refused and hid it from the ones who could use it.
-  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance" },
+  /**
+   * Registering a tablet, rotating its pairing token, deactivating it — all
+   * `edit` work, and there is nothing on the page worth reaching without it.
+   *
+   * `attendance` alone was wrong in the other direction: every employee holds
+   * `attendance.view` so they can see their own hours, so a hundred people were
+   * shown an administrator's device page. `users` before that was wrong too —
+   * it hid the page from the person who manages the kiosks.
+   */
+  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance", permAction: "edit" },
   { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "kiosk" },
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring" },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
@@ -110,7 +118,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, superAdminOnly }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         // A third of the menu is deliberately ungated — everyone can raise a
         // ticket or see their own payslip. That is right for a person and wrong
@@ -119,7 +127,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
           ? href === "/kiosk"
           : superAdminOnly
             ? isSuperAdmin
-            : permModule === null ? true : hasPermission(permModule, "view");
+            : permModule === null ? true : hasPermission(permModule, permAction ?? "view");
         if (!allowed) return null;
 
         const linkEl = (

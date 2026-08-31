@@ -27,7 +27,9 @@ router.post("/punch", kioskPunchLimiter, authenticateKiosk, kioskPunch);
 // ─── Management side ─────────────────────────────────────────────────────────
 router.use(authenticate);
 
-router.get("/", checkPermission("attendance", "view"), listKiosks);
+// Edit, matching the page: listing the tablets is administration, and every
+// employee holds attendance.view for their own hours.
+router.get("/", checkPermission("attendance", "edit"), listKiosks);
 router.post("/", checkPermission("attendance", "edit"), registerKiosk);
 router.post("/:id/rotate-token", checkPermission("attendance", "edit"), rotateKioskToken);
 router.patch("/:id/active", checkPermission("attendance", "edit"), setKioskActive);

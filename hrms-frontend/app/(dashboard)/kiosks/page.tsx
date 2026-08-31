@@ -30,7 +30,9 @@ import type { Kiosk, PairedKiosk } from "@/types";
 export default function KiosksPage() {
   const { hasPermission, isLoading: sessionLoading } = useAuth();
   const { data: faceSettings } = useFaceSettings();
-  const canView = hasPermission("attendance", "view");
+  // Edit, not view: every employee holds attendance.view for their own hours,
+  // and this page is only ever used to register a device or rotate its token.
+  const canView = hasPermission("attendance", "edit");
   const canEdit = hasPermission("attendance", "edit");
   const canDelete = hasPermission("attendance", "delete");
 
