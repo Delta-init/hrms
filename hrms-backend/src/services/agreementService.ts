@@ -346,11 +346,16 @@ export async function myState(userId: string) {
     faceRequired,
     faceEnrolled,
     /**
-     * The gate lifts only on an approved signing — and, where the organisation
-     * asks for one, a face on file. Submitting is not clearing: HR still has to
-     * verify what was signed.
+     * The gate lifts once they have signed, not once HR has got round to it.
+     *
+     * Verification is HR's job and it happens on HR's schedule; holding
+     * somebody out of the system until it does means a new joiner sits locked
+     * out for however long the queue takes, having done everything asked of
+     * them. The signing is recorded either way, and a rejection puts them back
+     * at the gate to sign again — which is the point at which their access
+     * should actually stop.
      */
-    cleared: latest?.status === "approved" && (!faceRequired || faceEnrolled),
+    cleared: !!latest && latest.status !== "rejected" && (!faceRequired || faceEnrolled),
   };
 }
 

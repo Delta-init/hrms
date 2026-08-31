@@ -134,7 +134,14 @@ export default function AgreementsPage() {
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
           <div className="flex-1">
             <p className="font-medium">All done</p>
-            <p className="mt-1 text-sm text-muted-foreground">Your agreements are signed and approved.</p>
+            {/* "Approved" is no longer what this means. The gate lifts when
+                they sign; HR verifies afterwards, and saying otherwise would
+                have them believe a check has happened that has not. */}
+            <p className="mt-1 text-sm text-muted-foreground">
+              {data.agreement?.status === "approved"
+                ? "Your agreements are signed and verified."
+                : "Your agreements are signed. HR will verify them separately — nothing more is needed from you."}
+            </p>
             <Button className="mt-4" onClick={() => router.replace("/dashboard")}>Go to your dashboard</Button>
           </div>
         </Card>
@@ -142,19 +149,51 @@ export default function AgreementsPage() {
     );
   }
 
-  if (data.agreement?.status === "pending") {
+  /**
+   * Signed, and no longer waiting on anybody.
+   *
+   * This used to be a dead end: a card saying HR would get to it, and nothing
+   * else on the page. Somebody who had done everything asked of them sat locked
+   * out of the system for as long as the review queue took. Verification still
+   * happens — it just is not their problem, and a rejection puts them back here
+   * to sign again, which is the point at which access should stop.
+   */
+  if (data.agreement?.status === "pending" || data.agreement?.status === "approved") {
+    const faceLeft = data.faceRequired && !data.faceEnrolled;
     return (
-      <Shell>
-        <Card className="flex items-start gap-3 p-6">
-          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+      <Shell steps={data.faceRequired ? 4 : 3}>
+        <Card className="flex items-start gap-3 p-5">
+          {data.agreement.status === "approved"
+            ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            : <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />}
           <div>
-            <p className="font-medium">With HR for verification</p>
+            <p className="font-medium">
+              {data.agreement.status === "approved" ? "Signed and verified" : "Signed — with HR for verification"}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
               You signed on {new Date(data.agreement.signedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}.
-              You&apos;ll get access once HR has checked it.
+              {data.agreement.status === "pending"
+                ? " HR will check it in their own time — you do not have to wait for that."
+                : " Nothing further is needed."}
             </p>
           </div>
         </Card>
+
+        {faceLeft && (
+          <Step n={data.faceRequired ? 4 : 3} icon={ScanFace} title="Set up face check-in" done={false}>
+            <FaceEnrollmentPanel userId={session?.user?._id ?? null} userName={session?.user?.name ?? "You"} />
+          </Step>
+        )}
+
+        {!faceLeft && (
+          <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
+            <div>
+              <p className="font-medium">That&apos;s everything</p>
+              <p className="mt-1 text-sm text-muted-foreground">Your account is ready to use.</p>
+            </div>
+            <Button onClick={() => router.replace("/dashboard")}>Go to the dashboard</Button>
+          </Card>
+        )}
       </Shell>
     );
   }
@@ -389,14 +428,12 @@ export default function AgreementsPage() {
         <Step
           n={4} icon={ScanFace} title="Set up face check-in"
           done={data.faceEnrolled}
-          muted={data.agreement?.status !== "approved"}
+          muted={!data.agreement}
         >
-          {data.agreement?.status === "approved" ? (
+          {data.agreement ? (
             <FaceEnrollmentPanel userId={session?.user?._id ?? null} userName={session?.user?.name ?? "You"} />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Available once HR has approved your signed documents.
-            </p>
+            <p className="text-sm text-muted-foreground">Available once you have signed.</p>
           )}
         </Step>
       )}
