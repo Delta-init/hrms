@@ -49,7 +49,14 @@ const signedAgreementSchema = new Schema(
     /** Proof the induction was watched before this was allowed to happen. */
     videoView: { type: Schema.Types.ObjectId, ref: "VideoView", default: null },
 
-    status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending", index: true },
+    /**
+     * "superseded" is what a signing becomes when the person signs again before
+     * HR has looked at it. Kept rather than deleted: it is a record of what
+     * somebody put their name to, even briefly, and the file it produced still
+     * exists. It is not a verdict — nobody decided anything about it — so it
+     * sits outside the pending/approved/rejected set HR works through.
+     */
+    status: { type: String, enum: ["pending", "approved", "rejected", "superseded"], default: "pending", index: true },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

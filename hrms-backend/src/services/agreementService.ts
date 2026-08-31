@@ -419,13 +419,26 @@ export async function sign(
     throw fail("Finish the induction video before signing", 409, "VIDEO_INCOMPLETE");
   }
 
+  /**
+   * Signing again, while HR has not yet looked.
+   *
+   * A signature drawn with a trackpad is often not the one somebody wanted, and
+   * they usually only notice on reading it back. Until HR has verified it there
+   * is nothing to protect, so the earlier one steps aside and the new one takes
+   * its place in the queue.
+   *
+   * Once it has been approved that stops: replacing a verified signing would
+   * quietly undo the verification. Getting it changed then is HR's to do, by
+   * sending it back — which already puts the person here to sign afresh.
+   */
   const open = await SignedAgreement.findOne(scoped({ user: userId, status: { $in: ["pending", "approved"] } })).lean();
+  if (open?.status === "approved") {
+    throw fail("Your agreements are already signed and verified. Ask HR to send them back if they need changing.", 409, "ALREADY_SIGNED");
+  }
   if (open) {
-    throw fail(
-      open.status === "approved" ? "Your agreements are already signed and approved" : "Your signed agreements are already with HR",
-      409,
-      "ALREADY_SIGNED"
-    );
+    // Kept, not deleted: it is a record of what was put a name to, and the file
+    // it produced is still in storage.
+    await SignedAgreement.updateOne({ _id: open._id }, { $set: { status: "superseded" } });
   }
 
   const signaturePng = Buffer.from(input.signaturePng.replace(/^data:image\/png;base64,/, ""), "base64");

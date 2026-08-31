@@ -42,6 +42,8 @@ export default function AgreementsPage() {
   const [elapsed, setElapsed] = useState(0);
   const [total, setTotal] = useState(0);
   const [hovering, setHovering] = useState(false);
+  /** Set when they choose to draw their signature again, which reopens the flow. */
+  const [resigning, setResigning] = useState(false);
   /**
    * The furthest they have legitimately got to.
    *
@@ -127,7 +129,7 @@ export default function AgreementsPage() {
     );
   }
 
-  if (data.cleared) {
+  if (data.cleared && !resigning) {
     return (
       <Shell>
         <Card className="flex items-start gap-3 p-6">
@@ -143,7 +145,14 @@ export default function AgreementsPage() {
                 : "Your agreements are signed. HR will verify them separately — nothing more is needed from you."}
             </p>
             <SignedCopies documents={data.agreement?.documents ?? []} />
-            <Button className="mt-4" onClick={() => router.replace("/dashboard")}>Go to your dashboard</Button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => router.replace("/dashboard")}>Go to your dashboard</Button>
+              {data.agreement?.status === "pending" && (
+                <Button variant="outline" className="gap-1.5" onClick={() => setResigning(true)}>
+                  <PenLine className="h-3.5 w-3.5" />Sign again
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       </Shell>
@@ -159,7 +168,7 @@ export default function AgreementsPage() {
    * happens — it just is not their problem, and a rejection puts them back here
    * to sign again, which is the point at which access should stop.
    */
-  if (data.agreement?.status === "pending" || data.agreement?.status === "approved") {
+  if (!resigning && (data.agreement?.status === "pending" || data.agreement?.status === "approved")) {
     const faceLeft = data.faceRequired && !data.faceEnrolled;
     return (
       <Shell steps={data.faceRequired ? 4 : 3}>
@@ -178,6 +187,15 @@ export default function AgreementsPage() {
                 : " Nothing further is needed."}
             </p>
             <SignedCopies documents={data.agreement.documents} />
+            {/* A signature drawn with a trackpad is often not the one somebody
+                wanted, and they usually notice on reading it back. Offered only
+                while HR has not looked: replacing a verified signing would
+                quietly undo the verification. */}
+            {data.agreement.status === "pending" && (
+              <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={() => setResigning(true)}>
+                <PenLine className="h-3.5 w-3.5" />Sign again
+              </Button>
+            )}
           </div>
         </Card>
 
