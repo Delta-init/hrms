@@ -20,6 +20,11 @@ export const HRMS_MODULES = [
   "employees",
   "departments",
   "attendance",
+  // The check-in tablet by the door. Its own module so a device account can be
+  // granted the kiosk and nothing else — before this, reaching the kiosk screen
+  // meant handing over `users` or `attendance`, which unlock the staff register
+  // and everybody's punches along with it.
+  "kiosk",
   "leave",
   "regularization",
   "payroll",

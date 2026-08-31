@@ -7,7 +7,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { loginSchema, type LoginFormValues } from "@/lib/validations/authSchema";
-import { useLogin } from "@/hooks/useAuth";
+import { useAuth, useLogin, homePathFor } from "@/hooks/useAuth";
+import { getSession } from "next-auth/react";
+import type { AuthUser } from "@/types";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,16 +33,21 @@ function LoginFormInner() {
    * instead of always dumping them on the dashboard. Only same-origin paths are
    * accepted — a callbackUrl is attacker-supplied, and following it anywhere
    * else is an open redirect.
+   *
+   * Where "the dashboard" is depends on the account: a tablet login has no
+   * dashboard to land on, so `homePath` sends it to the kiosk instead.
    */
+  const { homePath } = useAuth();
+
   const target = (() => {
     const raw = searchParams.get("callbackUrl");
-    if (!raw) return "/dashboard";
+    if (!raw) return homePath;
     try {
       const url = new URL(raw, window.location.origin);
-      if (url.origin !== window.location.origin) return "/dashboard";
-      return url.pathname === "/login" ? "/dashboard" : url.pathname + url.search;
+      if (url.origin !== window.location.origin) return homePath;
+      return url.pathname === "/login" ? homePath : url.pathname + url.search;
     } catch {
-      return "/dashboard";
+      return homePath;
     }
   })();
 
@@ -62,6 +69,24 @@ function LoginFormInner() {
    * price for it always working.
    */
   const leaveToApp = () => window.location.assign(target);
+
+  /**
+   * The same, but for the moment just after signing in.
+   *
+   * `homePath` above is read from the hook's session, which is still empty
+   * while the sign-in request is in flight — so a tablet account would be sent
+   * to the dashboard and only bounced to the kiosk once the session caught up.
+   * Asking for the session directly costs one request and lands it first time.
+   */
+  const leaveToAppAfterLogin = async () => {
+    if (searchParams.get("callbackUrl")) { leaveToApp(); return; }
+    try {
+      const fresh = await getSession();
+      window.location.assign(homePathFor((fresh?.user as { role?: AuthUser["role"] } | undefined)?.role));
+    } catch {
+      leaveToApp();
+    }
+  };
 
   // /login isn't behind the middleware, so an already-signed-in user would
   // otherwise sit here looking signed out.
@@ -90,7 +115,7 @@ function LoginFormInner() {
       // already on its way, and flipping back to "Log In" makes a sign-in that
       // worked look like one that failed for the half second before the page
       // changes.
-      leaveToApp();
+      await leaveToAppAfterLogin();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       if (message.toLowerCase().includes("set a new password")) {

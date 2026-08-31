@@ -71,8 +71,11 @@ export const navItems: {
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
-  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "users" },
-  { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "users" },
+  // Managing devices is an attendance job, which is what the API has always
+  // enforced — the sidebar asked for `users` instead, so it showed the link to
+  // people the endpoints then refused and hid it from the ones who could use it.
+  { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance" },
+  { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "kiosk" },
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring" },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
@@ -100,16 +103,21 @@ export const navItems: {
 
 function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, isKioskOnly } = useAuth();
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
       {navItems.map(({ href, label, icon: Icon, permModule, superAdminOnly }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
-        const allowed = superAdminOnly
-          ? isSuperAdmin
-          : permModule === null ? true : hasPermission(permModule, "view");
+        // A third of the menu is deliberately ungated — everyone can raise a
+        // ticket or see their own payslip. That is right for a person and wrong
+        // for a tablet by the door, which is nobody: it gets the kiosk alone.
+        const allowed = isKioskOnly
+          ? href === "/kiosk"
+          : superAdminOnly
+            ? isSuperAdmin
+            : permModule === null ? true : hasPermission(permModule, "view");
         if (!allowed) return null;
 
         const linkEl = (

@@ -23,6 +23,9 @@ export const HRMS_MODULES = [
   "employees",
   "departments",
   "attendance",
+  // The check-in tablet by the door — its own module so a device account can be
+  // granted the kiosk and nothing else.
+  "kiosk",
   "leave",
   "regularization",
   "payroll",
@@ -56,6 +59,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   employees: "Employees",
   departments: "Departments",
   attendance: "Attendance",
+  kiosk: "Check-in Kiosk",
   leave: "Leave",
   payroll: "Payroll",
   regularization: "Regularization",

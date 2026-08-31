@@ -2,6 +2,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { OnboardingGate } from "@/components/layout/OnboardingGate";
+import { KioskLock } from "@/components/layout/KioskLock";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { OfflineNotice } from "@/components/pwa/OfflineNotice";
@@ -15,6 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         disableTransitionOnChange
       >
     <OnboardingGate />
+    <KioskLock />
     <div className="flex h-screen w-full overflow-hidden bg-muted/30">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col p-2 md:p-3">
