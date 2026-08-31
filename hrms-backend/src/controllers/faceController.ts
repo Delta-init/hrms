@@ -8,6 +8,7 @@ import { faceServiceEnabled } from "../services/faceClient.js";
 import { livenessRequired } from "../services/livenessService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { getOrgId } from "../utils/orgContext.js";
+import { Organization } from "../models/Organization.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import { enrollFaceSchema } from "../validations/faceValidation.js";
 
@@ -46,8 +47,22 @@ export const getFaceSettings = async (
   _req: AuthenticatedRequest,
   res: Response
 ): Promise<void> => {
+  /**
+   * Whether this organisation asks for a face, answered here rather than by the
+   * onboarding state.
+   *
+   * The dashboard prompt used to read it from /agreements/me, which throws for
+   * anybody with no work mode set — so the one employee who most needed
+   * chasing was the one person it stayed silent for. Whether a face is wanted
+   * has nothing to do with which agreements apply.
+   */
+  const org = await Organization.findById(getOrgId()).select("settings.requireFaceEnrollment")
+    .lean<{ settings?: { requireFaceEnrollment?: boolean } } | null>();
+
   sendSuccess(res, "Face enrollment settings", {
     enabled: faceServiceEnabled,
+    /** Asked for by the organisation, and possible — one without the other is not a requirement. */
+    required: !!org?.settings?.requireFaceEnrollment && faceServiceEnabled,
     minCaptures: service.minCaptures,
     maxCaptures: service.maxCaptures,
     consentText: FACE_CONSENT_TEXT,

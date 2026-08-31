@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { ScanFace, X } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { useAuth } from "@/hooks/useAuth";
-import { useMyAgreements } from "@/hooks/useAgreements";
 import { useFaceSettings, useFaceStatus } from "@/hooks/useFaceEnrollment";
 import { FaceCaptureDialog } from "@/components/face/FaceCaptureDialog";
 import { Card } from "@/components/ui/card";
@@ -31,7 +31,7 @@ const HIDDEN_UNTIL = "hrms_face_prompt_hidden_until";
 export function FaceEnrolmentPrompt() {
   const { user } = useAuth();
   const userId = user?._id ?? "";
-  const { data: state } = useMyAgreements({ enabled: !!userId });
+  const { data: session } = useSession();
   const { data: settings } = useFaceSettings();
   const { data: status } = useFaceStatus(userId, !!settings?.enabled && !!userId);
   const [capturing, setCapturing] = useState(false);
@@ -57,8 +57,28 @@ export function FaceEnrolmentPrompt() {
     setDismissed(true);
   };
 
-  const wanted = !!state?.faceRequired && !!settings?.enabled;
+  /**
+   * Read from the face settings, not the onboarding state.
+   *
+   * It used to come from /agreements/me, which throws for anybody with no work
+   * mode set — so the one employee who most needed chasing was the one person
+   * this stayed silent for. Whether a face is wanted has nothing to do with
+   * which agreements apply.
+   */
+  const wanted = !!settings?.required;
   const missing = status ? !status.enrolled : false;
+
+  /**
+   * Never while impersonating.
+   *
+   * The captures come from whoever is sitting at the camera, and the request
+   * carries the impersonated person's id — so enrolling here would file an
+   * administrator's face as somebody else's, in the system that decides who
+   * clocked in. The prompt still shows, because hiding it would leave an admin
+   * checking the feature convinced it is broken.
+   */
+  const impersonating = !!(session as { impersonatedBy?: unknown } | null)?.impersonatedBy;
+
   if (!userId || !wanted || !missing || dismissed) return null;
 
   return (
@@ -70,12 +90,14 @@ export function FaceEnrolmentPrompt() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Set up face check-in</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            You have no face on file yet, so the kiosk cannot recognise you. It takes about a minute
-            and needs a camera.
+            {impersonating
+              ? "They have no face on file, so the kiosk cannot recognise them. It has to be done from their own device — enrolling here would store your face as theirs."
+              : "You have no face on file yet, so the kiosk cannot recognise you. It takes about a minute and needs a camera."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setCapturing(true)}>
+          <Button size="sm" onClick={() => setCapturing(true)} disabled={impersonating}
+                  title={impersonating ? "Not while impersonating — it would store your face as theirs" : undefined}>
             <ScanFace className="h-4 w-4" />Enrol now
           </Button>
           <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground"

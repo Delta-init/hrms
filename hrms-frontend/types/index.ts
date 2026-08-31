@@ -1888,6 +1888,8 @@ export interface CompOffSuggestion {
 export interface FaceSettings {
   /** False when the recognition service is not configured on the server. */
   enabled: boolean;
+  /** The organisation asks for a face, and the service exists to take one. */
+  required?: boolean;
   minCaptures: number;
   maxCaptures: number;
   /** Exact wording the employee must agree to before enrollment. */
