@@ -1955,6 +1955,66 @@ export interface DocumentRef {
   slot: string;
 }
 
+/**
+ * A document the business itself holds — a trade licence, a tenancy contract.
+ *
+ * Not an employee document with the person left blank: it has a company rather
+ * than an owner, and it exists only once somebody adds it, so it is never
+ * "missing" the way a required employee slot can be.
+ */
+export interface CompanyDocument {
+  _id: string;
+  companyName: string;
+  /** Slug — "trade_licence". Label it with `companyDocTypeLabel`. */
+  documentType: string;
+  number: string;
+  issueDate: string | null;
+  expiryDate: string | null;
+  notes: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt: string | null;
+  daysToExpiry: number | null;
+  status: DocumentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The kinds people file most often. Anything else is accepted and slugged. */
+export const COMPANY_DOC_TYPE_LABELS: Record<string, string> = {
+  trade_licence: "Trade licence",
+  establishment_card: "Establishment card",
+  immigration_card: "Immigration card",
+  chamber_of_commerce: "Chamber of Commerce",
+  tenancy_contract: "Tenancy contract",
+  ejari: "Ejari",
+  vat_certificate: "VAT certificate",
+  tax_card: "Tax card",
+  insurance: "Insurance policy",
+  bank_guarantee: "Bank guarantee",
+  municipality_permit: "Municipality permit",
+  civil_defence: "Civil defence certificate",
+  moe_permit: "Ministry of Education permit",
+  lease_agreement: "Lease agreement",
+  other: "Other",
+};
+
+/** The label we know, or the slug made readable. */
+export const companyDocTypeLabel = (t?: string | null): string =>
+  (t && COMPANY_DOC_TYPE_LABELS[t]) ||
+  (t ? t.replace(/_/g, " ").replace(/^\w/, (m) => m.toUpperCase()) : "—");
+
+export interface CompanyDocumentsResponse {
+  rows: CompanyDocument[];
+  counts: Partial<Record<DocumentStatus, number>>;
+  total: number;
+  within: number;
+  companies: string[];
+  types: string[];
+}
+
 export interface DocumentsOverview {
   rows: DocumentRow[];
   /** Bucket sizes over every slot, not just the ones currently filtered in. */

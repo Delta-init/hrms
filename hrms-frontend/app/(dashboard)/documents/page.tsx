@@ -2,12 +2,14 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FolderOpen, FileText, AlertTriangle, Loader2, BellOff, BellRing } from "lucide-react";
+import { FolderOpen, FileText, AlertTriangle, Loader2, BellOff, BellRing, Users, Building2 } from "lucide-react";
 import { useDocumentsOverview, useIgnoreDocuments, useUnignoreDocuments } from "@/hooks/useDocumentsOverview";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Tabs } from "@/components/shared/Tabs";
+import { CompanyDocumentsPanel } from "@/components/documents/CompanyDocumentsPanel";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +91,9 @@ function Documents() {
 
   // Deep-linked from the dashboard's "Docs expiring" card, which used to land on
   // a page with no way to filter by any of what it had counted.
+  // The dashboard deep-links here with a status, so the tab is a query too —
+  // a link that lands on the wrong half of the page is worse than no link.
+  const [tab, setTab] = useState<string>(params.get("tab") === "company" ? "company" : "people");
   const [status, setStatus] = useState<string>(params.get("status") ?? ALL);
   const [within, setWithin] = useState<string>(params.get("within") ?? DEFAULT_WINDOW);
   const [location, setLocation] = useState<string>(ALL);
@@ -239,6 +244,25 @@ function Documents() {
         icon={FolderOpen}
       />
 
+      <Tabs
+        tabs={[
+          { key: "people", label: "Employee documents", icon: Users },
+          { key: "company", label: "Company documents", icon: Building2 },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {tab === "company" ? (
+        <CompanyDocumentsPanel
+          within={within}
+          onWithinChange={setWithin}
+          windows={WINDOWS}
+          canEdit={canEdit}
+          canDelete={hasPermission("employees", "delete")}
+        />
+      ) : (
+      <>
       {/* The figures first, and each one filters the table. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {STATUSES.filter((s) => s.headline).map((s) => {
@@ -376,6 +400,8 @@ function Documents() {
         })}
         exportName="documents"
       />
+      </>
+      )}
 
       <ResponsiveDialog open={reasonOpen} onOpenChange={(o) => { setReasonOpen(o); if (!o) setReason(""); }}>
         <ResponsiveDialogContent desktopClassName="max-w-md">
