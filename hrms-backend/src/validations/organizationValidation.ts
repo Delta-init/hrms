@@ -12,6 +12,7 @@ const settingsSchema = z.object({
   enforceWorkMode: z.boolean().optional(),
   remoteDevice: z.enum(["off", "flag", "enforce"]).optional(),
   requireAgreements: z.boolean().optional(),
+  requireFaceEnrollment: z.boolean().optional(),
 });
 
 export const createOrganizationSchema = z.object({

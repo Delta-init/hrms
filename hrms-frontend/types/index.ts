@@ -98,6 +98,8 @@ export interface OrganizationSettings {
   mailFrom?: string;
   /** Hold office staff to punching at a kiosk rather than their dashboard. */
   enforceWorkMode?: boolean;
+  /** Onboarding also requires a face on file. Ignored if the service is down. */
+  requireFaceEnrollment?: boolean;
   /** How closely remote staff are held to their registered browser. */
   remoteDevice?: RemoteDevicePolicy;
   /** Hold new joiners at the induction and agreements. */
@@ -2340,6 +2342,9 @@ export interface AgreementState {
   video: { title: string; durationSeconds: number; url: string } | null;
   videoCompleted: boolean;
   agreement: { _id: string; status: "pending" | "approved" | "rejected"; signedAt: string; reviewNote?: string } | null;
+  /** Onboarding also asks for a face — and the matching service is reachable. */
+  faceRequired: boolean;
+  faceEnrolled: boolean;
   cleared: boolean;
 }
 

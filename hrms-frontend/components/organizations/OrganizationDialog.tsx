@@ -34,9 +34,10 @@ interface FormValues {
   enforceWorkMode: boolean;
   remoteDevice: RemoteDevicePolicy;
   requireAgreements: boolean;
+  requireFaceEnrollment: boolean;
 }
 
-const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off", requireAgreements: false };
+const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off", requireAgreements: false, requireFaceEnrollment: false };
 
 export function OrganizationDialog({ open, onOpenChange, organization }: Props) {
   const isEditing = !!organization;
@@ -57,6 +58,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
         enforceWorkMode: s.enforceWorkMode ?? false,
         remoteDevice: s.remoteDevice ?? "off",
         requireAgreements: s.requireAgreements ?? false,
+        requireFaceEnrollment: s.requireFaceEnrollment ?? false,
       });
     } else reset(empty);
   }, [open, organization, reset]);
@@ -64,7 +66,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const onSubmit = (v: FormValues) => {
     const payload = {
       name: v.name, code: v.code, status: v.status,
-      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice, requireAgreements: v.requireAgreements },
+      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice, requireAgreements: v.requireAgreements, requireFaceEnrollment: v.requireFaceEnrollment },
     };
     if (isEditing) update({ id: organization._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -154,6 +156,24 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
                 name="requireAgreements"
                 render={({ field }) => (
                   <Switch id="requireAgreements" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                )}
+              />
+            </div>
+
+            <div className="mt-3 flex items-start justify-between gap-4 border-t border-border pt-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="requireFaceEnrollment">Also require face check-in</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Adds a fourth step: a face on file before onboarding is finished. Ignored while the face
+                  matching service is unreachable, so an outage holds nobody at a step nothing can complete.
+                  Needs a working camera, so expect a few people to need help.
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="requireFaceEnrollment"
+                render={({ field }) => (
+                  <Switch id="requireFaceEnrollment" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
                 )}
               />
             </div>

@@ -73,6 +73,8 @@ export interface IOrganizationSettings {
   remoteDevice?: RemoteDevicePolicy;
   /** Hold new joiners at the induction and agreements. See the model. */
   requireAgreements?: boolean;
+  /** Onboarding also requires a face on file. */
+  requireFaceEnrollment?: boolean;
 }
 
 export interface IOrganization extends Document {

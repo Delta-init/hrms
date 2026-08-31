@@ -2,12 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock } from "lucide-react";
+import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SignaturePad } from "@/components/onboarding/SignaturePad";
+import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import {
   useMyAgreements, useStartInduction, useInductionHeartbeat, useSignAgreements,
 } from "@/hooks/useAgreements";
@@ -110,7 +111,7 @@ export default function AgreementsPage() {
   const canSign = videoDone && allOpened && !!signature && typedName.trim().length > 1;
 
   return (
-    <Shell>
+    <Shell steps={data.faceRequired ? 4 : 3}>
       {data.agreement?.status === "rejected" && (
         <Card className="mb-6 flex items-start gap-3 border-destructive/30 bg-destructive/5 p-4">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -206,16 +207,35 @@ export default function AgreementsPage() {
           </Button>
         </div>
       </Step>
+
+      {/* 4 — face, only where the organisation asks for one and the matching
+          service is actually reachable. The server decides both; a step nothing
+          can complete is worse than no step. */}
+      {data.faceRequired && (
+        <Step
+          n={4} icon={ScanFace} title="Set up face check-in"
+          done={data.faceEnrolled}
+          muted={data.agreement?.status !== "approved"}
+        >
+          {data.agreement?.status === "approved" ? (
+            <FaceEnrollmentPanel userId={session?.user?._id ?? null} userName={session?.user?.name ?? "You"} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Available once HR has approved your signed documents.
+            </p>
+          )}
+        </Step>
+      )}
     </Shell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, steps = 3 }: { children: React.ReactNode; steps?: number }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
       <h1 className="text-2xl font-bold tracking-tight">Before you start</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Three things to finish, and then you&apos;re in.
+        {steps === 4 ? "Four things" : "Three things"} to finish, and then you&apos;re in.
       </p>
       <div className="mt-6 space-y-4">{children}</div>
     </div>

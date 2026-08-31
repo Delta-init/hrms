@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { DocumentTemplate } from "../models/DocumentTemplate.js";
+import { FaceProfile } from "../models/FaceProfile.js";
+import { faceServiceEnabled } from "../services/faceClient.js";
 import { r2, R2_BUCKET } from "../config/r2.js";
 import { scoped } from "../utils/orgContext.js";
 
@@ -186,9 +188,23 @@ async function employeeFor(userId: string) {
 /** Everything the onboarding gate needs to render itself. */
 export async function myState(userId: string) {
   const employee = await employeeFor(userId);
-  const org = await Organization.findById(getOrgId()).select("settings.requireAgreements")
-    .lean<{ settings?: { requireAgreements?: boolean } } | null>();
+  const org = await Organization.findById(getOrgId())
+    .select("settings.requireAgreements settings.requireFaceEnrollment")
+    .lean<{ settings?: { requireAgreements?: boolean; requireFaceEnrollment?: boolean } } | null>();
   const required = !!org?.settings?.requireAgreements;
+
+  /**
+   * Whether a face is part of finishing onboarding.
+   *
+   * Asked for only when the matching service is actually configured. Otherwise
+   * the step is one nothing on earth can complete, and requiring it would hold
+   * every new joiner at a wall because a server somewhere is unreachable — the
+   * same reason the gate never blocks on an answer it could not work out.
+   */
+  const faceRequired = !!org?.settings?.requireFaceEnrollment && faceServiceEnabled;
+  const faceEnrolled = faceRequired
+    ? !!(await FaceProfile.exists(scoped({ user: userId })))
+    : false;
   const variant = variantFor(employee);
   const templates = await activeTemplates(variant);
   const induction = await viewFor(userId);
@@ -211,8 +227,14 @@ export async function myState(userId: string) {
     agreement: latest
       ? { _id: latest._id, status: latest.status, signedAt: latest.signedAt, reviewNote: latest.reviewNote }
       : null,
-    /** The gate lifts only on an approved signing. */
-    cleared: latest?.status === "approved",
+    faceRequired,
+    faceEnrolled,
+    /**
+     * The gate lifts only on an approved signing — and, where the organisation
+     * asks for one, a face on file. Submitting is not clearing: HR still has to
+     * verify what was signed.
+     */
+    cleared: latest?.status === "approved" && (!faceRequired || faceEnrolled),
   };
 }
 

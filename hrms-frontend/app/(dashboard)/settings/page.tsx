@@ -50,7 +50,7 @@ export default function SettingsPage() {
               <p className="font-medium">{ready ? "Ready to switch on" : "Not ready yet"}</p>
               <p className="mt-1 text-muted-foreground">
                 {ready
-                  ? "All four agreements and the induction video are in place. Turn on “hold new joiners at the agreements” from the Organizations page when you want the gate to apply."
+                  ? "All four agreements and the induction video are in place. The gate, and whether it also asks for a face, are switched on from the Organizations page."
                   : "Upload all four agreements and the induction video before switching the gate on — turning it on first would lock everyone out."}
               </p>
               {!!data?.unclassified && (

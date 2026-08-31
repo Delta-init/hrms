@@ -48,6 +48,15 @@ const settingsSchema = new Schema(
      * definite "not signed", never on a failure to work out the answer.
      */
     requireAgreements: { type: Boolean, default: false },
+    /**
+     * Whether onboarding also requires a face on file.
+     *
+     * Separate from `requireAgreements` so the gate can be switched on for the
+     * paperwork before the cameras are ready — and switched back off without a
+     * deploy if the matching service goes down, which would otherwise strand
+     * every new joiner at a step nothing can complete.
+     */
+    requireFaceEnrollment: { type: Boolean, default: false },
   },
   { _id: false }
 );
