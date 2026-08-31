@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import { Asset } from "../models/Asset.js";
 import { Employee } from "../models/Employee.js";
 import type {
@@ -12,6 +13,8 @@ interface AssetQuery extends PaginationQuery {
   status?: string;
   category?: string;
   assignedTo?: string;
+  /** Office or site the thing lives at, as the register spells it. */
+  branch?: string;
   /** Employee id — things they were issued at some point but no longer hold. */
   previouslyAssignedTo?: string;
 }
@@ -41,6 +44,30 @@ export class AssetService {
     return this.list({ ...query, assignedTo: String(employee._id) });
   }
 
+  /**
+   * The category and branch values this organisation actually uses.
+   *
+   * Both fields are open text, so the filter dropdowns cannot be built from a
+   * constant without going stale the moment somebody adds a kind of thing
+   * nobody had bought before. Asking the data is the only answer that stays
+   * true, and it is two grouped counts over an indexed field.
+   */
+  async facets() {
+    // An aggregation gets no schema casting, so the org id has to be a real
+    // ObjectId here — handed a string, $match silently matches nothing and the
+    // filters come back empty rather than erroring.
+    const orgId = getOrgId();
+    const match: Record<string, unknown> = orgId ? { organization: new Types.ObjectId(orgId) } : {};
+    const [categories, branches] = await Promise.all([
+      Asset.aggregate([{ $match: match }, { $group: { _id: "$category", count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+      Asset.aggregate([{ $match: { ...match, branch: { $nin: ["", null] } } }, { $group: { _id: "$branch", count: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+    ]);
+    return {
+      categories: categories.filter((c) => c._id).map((c) => ({ value: String(c._id), count: c.count })),
+      branches: branches.map((b) => ({ value: String(b._id), count: b.count })),
+    };
+  }
+
   async list(query: AssetQuery) {
     const { page, limit, skip } = parsePagination(query, 20, 200);
 
@@ -48,6 +75,7 @@ export class AssetService {
     if (query.status) filter.status = query.status;
     if (query.category) filter.category = query.category;
     if (query.assignedTo) filter.assignedTo = query.assignedTo;
+    if (query.branch) filter.branch = query.branch;
 
     /**
      * What somebody used to hold.
@@ -70,6 +98,11 @@ export class AssetService {
         { name: searchRegex(query.search) },
         { assetTag: searchRegex(query.search) },
         { serialNumber: searchRegex(query.search) },
+        // The register's own words about a thing — the location it sits in, and
+        // for anything imported, the name the sheet gave as its holder. Both are
+        // what somebody actually types when hunting for an asset by hand.
+        { location: searchRegex(query.search) },
+        { notes: searchRegex(query.search) },
       ];
     }
 

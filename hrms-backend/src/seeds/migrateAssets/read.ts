@@ -67,3 +67,53 @@ export function parseMoney(v: unknown): number | null {
 }
 
 export const fileIn = (dir: string, name: string) => path.join(dir, name);
+
+/**
+ * What a "Room / fixture" row is actually describing.
+ *
+ * These rows do not belong to a person, they belong to a room — so the sheet
+ * reuses the "Assigned To" column to say what the thing *is*: "Curved Monitor",
+ * "Chair- 10", "Monitor- Megha". Read literally that produces fifty-four assets
+ * all named "Room / fixture" with a phantom holder called "Couch - 1", which is
+ * how the first import left them.
+ *
+ * A trailing number is a count, not part of the name — "Chair- 10" is ten
+ * chairs. A trailing word that names a real employee is a genuine holder, which
+ * is why the caller passes in the staff list rather than this guessing.
+ */
+export function readFixtureLabel(label: string, isEmployee: (name: string) => boolean) {
+  const raw = t(label);
+  if (!raw) return { name: "", quantity: 1, holder: "" };
+
+  // "Hanging Lights- 3 Set", "Chair- 10", "Vending Machine-1"
+  const counted = /^(.*?)[\s-]+(\d+)(\s*set)?$/i.exec(raw);
+  if (counted && Number(counted[2]) > 0) {
+    return { name: counted[1].trim(), quantity: Number(counted[2]), holder: "" };
+  }
+
+  // "Monitor- Megha" — an item and the person it sits with.
+  const named = /^(.*?)[\s-]+([A-Za-z]+)$/.exec(raw);
+  if (named && isEmployee(named[2])) {
+    return { name: named[1].trim(), quantity: 1, holder: named[2].trim() };
+  }
+
+  return { name: raw, quantity: 1, holder: "" };
+}
+
+/** A fixture's kind, read from its own name; anything unrecognised is furniture. */
+const FIXTURE_WORDS: [RegExp, string][] = [
+  [/\bmonitor\b|\bscreen\b|\bsignage\b/i, "monitor"],
+  [/\bkeyboard\b/i, "keyboard"],
+  [/\bmouse\b/i, "mouse"],
+  [/\btelephone\b|\bgrand ?stream\b/i, "telephone"],
+  [/\bmike\b|\bmic\b/i, "speaker"],
+  [/\bcpu\b|\bpc\b|\bsystem\b|\blenovo\b/i, "mini_pc"],
+  [/\btv\b/i, "monitor"],
+  [/\bfire extinguisher\b|\bfirst aid\b/i, "first_aid"],
+];
+export function fixtureCategory(name: string): string {
+  // A label naming two things ("Monitor Keyboard Mouse") is a set, not one of
+  // them; leaving it as furniture keeps it out of the monitor count.
+  const hits = FIXTURE_WORDS.filter(([rx]) => rx.test(name));
+  return hits.length === 1 ? hits[0][1] : "furniture";
+}

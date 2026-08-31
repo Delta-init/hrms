@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks,
 } from "lucide-react";
-import { useAssets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
+import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
@@ -21,8 +21,8 @@ import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getInitials, cn } from "@/lib/utils";
 import {
-  ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS,
-  type Asset, type AssetCategory, type AssetStatus,
+  assetCategoryLabel, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS,
+  type Asset, type AssetStatus,
 } from "@/types";
 
 const ALL = "__all__";
@@ -36,6 +36,14 @@ const conditionStyles: Record<string, string> = {
   new: "text-emerald-600", good: "text-emerald-600", fair: "text-amber-600",
   poor: "text-red-500", damaged: "text-red-600",
 };
+/**
+ * The holder the imported register named, for anything not yet matched.
+ *
+ * The migration could not turn most of those free-text names into employees, so
+ * it kept them in the notes rather than throwing them away. Showing it beats an
+ * empty dash: it says "we know who has this, we just have not linked it".
+ */
+const sheetHolder = (a: Asset) => a.notes?.match(/Sheet says held by:\s*(.+)/)?.[1]?.trim() ?? "";
 const assigneeOf = (a: Asset) => (a.assignedTo && typeof a.assignedTo === "object" ? a.assignedTo : null);
 const fmtDate = (iso?: string | null) => (iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
 
@@ -48,13 +56,16 @@ export default function AssetsPage() {
 
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
+  const [branch, setBranch] = useState(ALL);
   const [search, setSearch] = useState("");
   const params: Record<string, string> = { limit: "200" };
   if (status !== ALL) params.status = status;
   if (category !== ALL) params.category = category;
+  if (branch !== ALL) params.branch = branch;
   if (search) params.search = search;
 
   const { data, isLoading, isFetching } = useAssets(canView ? params : undefined);
+  const { data: facets } = useAssetFacets(canView);
   const rows = data?.data ?? [];
   const { data: mine, isLoading: mineLoading } = useMyAssets();
   const { mutate: remove, isPending: deleting } = useDeleteAsset();
@@ -110,7 +121,7 @@ export default function AssetsPage() {
                       <p className="font-medium">{a.name}</p>
                       <p className="text-xs text-muted-foreground">{a.assetTag}{a.serialNumber ? ` · SN ${a.serialNumber}` : ""}</p>
                     </td>
-                    <td className="px-4 py-3">{ASSET_CATEGORY_LABELS[a.category]}</td>
+                    <td className="px-4 py-3">{assetCategoryLabel(a.category)}</td>
                     <td className={cn("px-4 py-3 font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</td>
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[a.status])}>{ASSET_STATUS_LABELS[a.status]}</span>
@@ -130,7 +141,7 @@ export default function AssetsPage() {
           <Card className="flex flex-wrap items-end gap-4 p-4">
             <div className="min-w-[200px] flex-1 space-y-1.5">
               <Label className="text-xs text-muted-foreground">Search</Label>
-              <Input placeholder="Name, tag, serial…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9" />
+              <Input placeholder="Name, tag, serial, location, notes…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Status</Label>
@@ -148,10 +159,26 @@ export default function AssetsPage() {
                 <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL}>All categories</SelectItem>
-                  {(Object.keys(ASSET_CATEGORY_LABELS) as AssetCategory[]).map((k) => <SelectItem key={k} value={k}>{ASSET_CATEGORY_LABELS[k]}</SelectItem>)}
+                  {(facets?.categories ?? []).map((c) => (
+                    <SelectItem key={c.value} value={c.value}>{assetCategoryLabel(c.value)} ({c.count})</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+            {!!facets?.branches.length && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Branch</Label>
+                <Select value={branch} onValueChange={setBranch}>
+                  <SelectTrigger className="h-9 w-[170px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>All branches</SelectItem>
+                    {facets.branches.map((b) => (
+                      <SelectItem key={b.value} value={b.value}>{b.value} ({b.count})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </Card>
 
           <Card className="overflow-hidden">
@@ -161,6 +188,7 @@ export default function AssetsPage() {
                   <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-4 py-3 font-medium">Asset</th>
                     <th className="px-4 py-3 font-medium">Category</th>
+                    <th className="px-4 py-3 font-medium">Where</th>
                     <th className="px-4 py-3 font-medium">Condition</th>
                     <th className="px-4 py-3 font-medium">Assigned to</th>
                     <th className="px-4 py-3 font-medium">Status</th>
@@ -169,18 +197,31 @@ export default function AssetsPage() {
                 </thead>
                 <tbody>
                   {isLoading || isFetching ? (
-                    <tr><td colSpan={6} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                    <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={6} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</td></tr>
+                    <tr><td colSpan={7} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</td></tr>
                   ) : rows.map((a) => {
                     const assignee = assigneeOf(a);
                     return (
                       <tr key={a._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                         <td className="px-4 py-3">
-                          <p className="font-medium">{a.name}</p>
+                          <p className="flex items-center gap-2 font-medium">
+                            {a.name}
+                            {(a.quantity ?? 1) > 1 && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">×{a.quantity}</span>
+                            )}
+                          </p>
                           <p className="text-xs text-muted-foreground">{a.assetTag}{a.serialNumber ? ` · SN ${a.serialNumber}` : ""}</p>
                         </td>
-                        <td className="px-4 py-3">{ASSET_CATEGORY_LABELS[a.category]}</td>
+                        <td className="px-4 py-3">{assetCategoryLabel(a.category)}</td>
+                        <td className="px-4 py-3">
+                          {a.branch || a.location ? (
+                            <>
+                              <p>{a.branch || "—"}</p>
+                              {a.location && <p className="text-xs text-muted-foreground">{a.location}</p>}
+                            </>
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </td>
                         <td className={cn("px-4 py-3 font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</td>
                         <td className="px-4 py-3">
                           {assignee ? (
@@ -188,6 +229,10 @@ export default function AssetsPage() {
                               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{getInitials(assignee.name)}</div>
                               <span className="truncate">{assignee.name}</span>
                             </div>
+                          ) : sheetHolder(a) ? (
+                            <span className="text-xs text-muted-foreground" title="From the imported register — not yet matched to an employee">
+                              {sheetHolder(a)} <span className="opacity-70">(unmatched)</span>
+                            </span>
                           ) : <span className="text-muted-foreground">—</span>}
                         </td>
                         <td className="px-4 py-3">

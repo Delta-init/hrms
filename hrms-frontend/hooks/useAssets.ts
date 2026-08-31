@@ -19,6 +19,20 @@ export const useAssets = (params?: Record<string, string>) =>
     },
   });
 
+/**
+ * The category and branch values the register actually uses.
+ *
+ * Both are open text, so a hard-coded filter list goes stale the moment
+ * somebody adds a kind of thing nobody had bought before.
+ */
+export const useAssetFacets = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "facets"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ categories: { value: string; count: number }[]; branches: { value: string; count: number }[] }>>("/assets/facets")).data.data!,
+    enabled,
+  });
+
 /** Self-service — assets currently assigned to the caller. */
 export const useMyAssets = () =>
   useQuery({

@@ -4,7 +4,7 @@ import { Organization } from "../../models/Organization.js";
 import { Employee } from "../../models/Employee.js";
 import { Asset } from "../../models/Asset.js";
 import { MigrationJournal, MigrationRun } from "../../models/MigrationJournal.js";
-import { t, code, nameKey, sheetRows, sheetGrid, parseDate, parseMoney, fileIn } from "./read.js";
+import { t, code, nameKey, sheetRows, sheetGrid, parseDate, parseMoney, fileIn, readFixtureLabel, fixtureCategory } from "./read.js";
 import { readSheet } from "../migrateGreytHR/read.js";
 
 /**
@@ -118,6 +118,13 @@ async function main() {
   const org = await Organization.findOne({ name: ORG_NAME });
   if (!org) throw new Error(`No organisation named "${ORG_NAME}"`);
 
+  // Loaded before the first sheet rather than at the holder step, because the
+  // Assets tab needs it to tell "Monitor- Megha" from "Chair- 10".
+  const employees = await Employee.find({ organization: org._id, status: { $ne: "terminated" } })
+    .select("name employeeCode").lean();
+  const firstNames = new Set(employees.flatMap((e) => nameKey(e.name).split(" ")).filter((w) => w.length > 2));
+  const isEmployeeWord = (w: string) => firstNames.has(nameKey(w));
+
   // ── 1. Tagged assets ──────────────────────────────────────────────────────
   head("Tagged assets");
   for (const r of sheetRows(MASTER, "Assets")) {
@@ -126,22 +133,32 @@ async function main() {
     const cat = t(r["Category"]);
     // The charger and the cameras both claimed DC01. The charger moves aside.
     const tag = c === "DC01" && /charger/i.test(cat) ? "DCR01" : c;
+    /**
+     * A room fixture belongs to a room, not a person, so the sheet reuses the
+     * "Assigned To" column on those rows to say what the thing is — "Curved
+     * Monitor", "Chair- 10", "Monitor- Megha". Reading it as a holder produced
+     * fifty-four assets all called "Room / fixture" with a phantom owner.
+     */
+    const isFixture = /^room \/ fixture$/i.test(cat);
+    const fixture = isFixture ? readFixtureLabel(t(r["Assigned To"]), isEmployeeWord) : null;
     push({
       assetTag: tag,
-      name: clean([t(r["Brand / Model"]), cat]) || cat || "Asset",
-      category: slug(cat),
+      name: fixture?.name
+        ? clean([fixture.name, t(r["Brand / Model"])])
+        : clean([t(r["Brand / Model"]), cat]) || cat || "Asset",
+      category: fixture?.name ? fixtureCategory(fixture.name) : slug(cat),
       serialNumber: t(r["Serial Number"]) || undefined,
       purchaseCost: parseMoney(r["Asset Value"]),
       status: STATUS[t(r["Status"]).toLowerCase()] ?? "available",
       branch: t(r["Branch"]), location: t(r["Location"]),
-      quantity: 1,
+      quantity: fixture?.quantity ?? 1,
       notes: [
         tag !== c ? `Re-tagged from ${c}; the cameras keep DC01–DC06` : "",
-        t(r["Raw Allocation"]) && t(r["Raw Allocation"]) !== t(r["Assigned To"]) ? `Allocation: ${t(r["Raw Allocation"])}` : "",
-        t(r["Actually Used By"]) && t(r["Actually Used By"]) !== t(r["Assigned To"]) ? `Actually used by: ${t(r["Actually Used By"])}` : "",
+        !isFixture && t(r["Raw Allocation"]) && t(r["Raw Allocation"]) !== t(r["Assigned To"]) ? `Allocation: ${t(r["Raw Allocation"])}` : "",
+        !isFixture && t(r["Actually Used By"]) && t(r["Actually Used By"]) !== t(r["Assigned To"]) ? `Actually used by: ${t(r["Actually Used By"])}` : "",
         t(r["Remarks"]),
       ].filter(Boolean),
-      holder: t(r["Assigned To"]),
+      holder: fixture ? fixture.holder : t(r["Assigned To"]),
       source: "Assets",
     });
   }
@@ -282,8 +299,6 @@ async function main() {
 
   // ── 7. Holders ────────────────────────────────────────────────────────────
   head("Holders");
-  const employees = await Employee.find({ organization: org._id, status: { $ne: "terminated" } })
-    .select("name employeeCode").lean();
   const byCode = new Map(employees.map((e) => [String(e.employeeCode).toUpperCase(), e]));
   const resolved = new Map<string, { _id: unknown; name: string }>();
 

@@ -1034,13 +1034,29 @@ export interface Overtime {
 }
 
 // ─── Asset ────────────────────────────────────────────────────────────────────
-export type AssetCategory = "laptop" | "phone" | "monitor" | "furniture" | "vehicle" | "sim_card" | "other";
+/**
+ * Open, not a union of seven.
+ *
+ * The register holds twenty-odd kinds of thing and grows whenever the business
+ * buys something new, so the labels below are what we know how to write nicely
+ * rather than what is allowed. Anything else falls back to a readable version
+ * of its own slug — see `assetCategoryLabel`.
+ */
+export type AssetCategory = string;
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
-export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
+export const ASSET_CATEGORY_LABELS: Record<string, string> = {
   laptop: "Laptop", phone: "Phone", monitor: "Monitor", furniture: "Furniture",
-  vehicle: "Vehicle", sim_card: "SIM Card", other: "Other",
+  vehicle: "Vehicle", sim_card: "SIM Card", mouse: "Mouse", keyboard: "Keyboard",
+  headphone: "Headphone", tablet: "Tablet", telephone: "Telephone", camera: "Camera",
+  clock: "Clock", speaker: "Speaker", printer: "Printer", charger: "Charger",
+  mini_pc: "Mini PC", pos_machine: "POS Machine", uniform: "Uniform",
+  accounts_equipment: "Accounts Equipment", first_aid: "First Aid", other: "Other",
 };
+/** The label we know, or the slug made readable: "pos_machine" → "Pos Machine". */
+export const assetCategoryLabel = (c?: string | null): string =>
+  (c && ASSET_CATEGORY_LABELS[c]) ||
+  (c ? c.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) : "—");
 export const ASSET_CONDITION_LABELS: Record<AssetCondition, string> = {
   new: "New", good: "Good", fair: "Fair", poor: "Poor", damaged: "Damaged",
 };
@@ -1066,6 +1082,12 @@ export interface Asset {
   status: AssetStatus;
   assignedTo?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
   assignedDate?: string | null;
+  /** Office or site the thing lives at, as the register spells it. */
+  branch?: string;
+  /** Room or desk within the branch. */
+  location?: string;
+  /** How many items this record stands for — bulk stock is counted, not tagged. */
+  quantity?: number;
   notes?: string;
   history: AssetHistoryEntry[];
   createdAt: string;

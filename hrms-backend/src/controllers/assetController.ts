@@ -30,6 +30,12 @@ export const getAssets = async (req: AuthenticatedRequest, res: Response, next: 
   } catch (error) { next(error); }
 };
 
+export const getAssetFacets = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Asset facets retrieved", await service.facets());
+  } catch (error) { next(error); }
+};
+
 export const getAssetById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Asset retrieved", await service.getById(req.params.id));

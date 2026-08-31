@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createAsset, getAssets, getMyAssets, getAssetById, updateAsset, deleteAsset,
+  createAsset, getAssets, getAssetFacets, getMyAssets, getAssetById, updateAsset, deleteAsset,
   issueAsset, returnAsset, markAssetAvailable, retireAsset,
 } from "../controllers/assetController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -13,6 +13,8 @@ router.use(authenticate);
 router.get("/mine", getMyAssets);
 
 router.get("/", checkPermission("assets", "view"), getAssets);
+// Before "/:id", or "facets" is read as an asset id.
+router.get("/facets", checkPermission("assets", "view"), getAssetFacets);
 router.post("/", checkPermission("assets", "create"), createAsset);
 router.get("/:id", checkPermission("assets", "view"), getAssetById);
 router.put("/:id", checkPermission("assets", "edit"), updateAsset);
