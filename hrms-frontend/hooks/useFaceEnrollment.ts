@@ -94,6 +94,10 @@ export const useEnrollFace = (userId: string) => {
       ).data.data!,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: statusKey(userId) });
+      // Onboarding can be waiting on exactly this. Without it the gate keeps
+      // reporting the state it read before the face existed, and somebody who
+      // has just finished the last step is still told to finish it.
+      qc.invalidateQueries({ queryKey: ["agreements", "me"] });
       toast.success("Face enrolled");
     },
     // Deliberately no toast: which capture failed and why belongs next to the
@@ -108,6 +112,8 @@ export const useDeleteFaceProfile = (userId: string) => {
     mutationFn: async () => (await api.delete<ApiResponse<null>>(`/face/profiles/${userId}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: statusKey(userId) });
+      // Deleting it can put somebody back inside the gate, so the same applies.
+      qc.invalidateQueries({ queryKey: ["agreements", "me"] });
       toast.success("Face data deleted");
     },
     onError: (e) => toast.error(enrollError(e).message),

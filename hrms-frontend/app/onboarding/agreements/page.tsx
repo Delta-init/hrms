@@ -44,6 +44,8 @@ export default function AgreementsPage() {
   const [hovering, setHovering] = useState(false);
   /** Set when they choose to draw their signature again, which reopens the flow. */
   const [resigning, setResigning] = useState(false);
+  /** So the name is filled in for them once, and never re-filled after. */
+  const seededName = useRef(false);
   /**
    * The furthest they have legitimately got to.
    *
@@ -59,8 +61,19 @@ export default function AgreementsPage() {
   useEffect(() => { startInduction(); }, [startInduction]);
   useEffect(() => {
     if (data?.videoCompleted) { setVideoDone(true); setPercent(100); }
-    if (session?.user?.name && !typedName) setTypedName(session.user.name);
-  }, [data, session, typedName]);
+    /**
+     * Seeded once, not kept full.
+     *
+     * `typedName` used to be a dependency of this effect, so clearing the field
+     * re-ran it and put the name straight back — the last character could never
+     * be deleted. Somebody whose account name is not the name they sign under
+     * had no way to change it.
+     */
+    if (session?.user?.name && !seededName.current) {
+      seededName.current = true;
+      setTypedName(session.user.name);
+    }
+  }, [data, session]);
 
   /**
    * The server is the one that decides; this only reports where the playhead is.
