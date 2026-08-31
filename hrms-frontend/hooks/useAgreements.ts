@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, AgreementState, InductionProgress, AgreementTemplateRow } from "@/types";
+import type { ApiResponse, SignedAgreementRow, AgreementState, InductionProgress, AgreementTemplateRow } from "@/types";
 
 const KEY = ["agreements", "me"] as const;
 const errMsg = (e: unknown, f: string) =>
@@ -42,6 +42,29 @@ export const useSignAgreements = () => {
 };
 
 // ── Administration ──
+/** Every signing in the organisation, newest first. HR's review queue. */
+export const useSignedAgreements = (status?: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "signed", status ?? "all"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<SignedAgreementRow[]>>("/agreements", { params: status ? { status } : undefined })).data.data ?? [],
+    enabled,
+  });
+
+export const useReviewAgreement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, action, note }: { id: string; action: "approve" | "reject"; note?: string }) =>
+      (await api.post<ApiResponse<unknown>>(`/agreements/${id}/review`, { action, note })).data.data,
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+      toast.success(v.action === "approve" ? "Signing approved" : "Sent back to be signed again");
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not record that")),
+  });
+};
+
 export const useAgreementTemplates = () =>
   useQuery({
     queryKey: ["agreements", "templates"],

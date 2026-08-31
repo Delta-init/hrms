@@ -2348,6 +2348,23 @@ export interface AgreementState {
   cleared: boolean;
 }
 
+/** One person's signing, as HR reviews it. */
+export interface SignedAgreementRow {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  variant: AgreementVariant;
+  typedName: string;
+  status: "pending" | "approved" | "rejected";
+  signedAt: string;
+  signedIp?: string | null;
+  reviewNote?: string;
+  reviewedAt?: string | null;
+  signatureUrl: string;
+  documents: Array<{ kind: AgreementKind; version: number; url: string; sourceSha256?: string }>;
+  videoView?: { watchedSeconds?: number; completedAt?: string | null; skipAttempts?: number } | null;
+  createdAt: string;
+}
+
 export interface AgreementTemplateRow {
   _id: string; kind: AgreementKind; variant: AgreementVariant; version: number;
   fileName?: string; url: string; sha256: string; createdAt: string;

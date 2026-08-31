@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
+  FileSignature,
   Users,
   Shield,
   UserRound,
@@ -78,6 +79,7 @@ export const navItems: {
   { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "kiosk" },
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring" },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
+  { href: "/agreements", label: "Signed Agreements", icon: FileSignature, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
   { href: "/loans", label: "Loans", icon: Banknote, permModule: "loans" },
   { href: "/salary-increments", label: "Salary Increments", icon: TrendingUp, permModule: "salaryIncrements" },

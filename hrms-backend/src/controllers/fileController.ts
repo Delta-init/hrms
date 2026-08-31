@@ -61,7 +61,32 @@ export const getFile = async (req: Request, res: Response, next: NextFunction): 
     // These are user-uploaded files served from our origin; never let a browser
     // decide one is HTML and run it.
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+    /**
+     * A policy that does not forbid the file it is attached to.
+     *
+     * `default-src 'none'; sandbox` on everything meant a PDF framed by the
+     * client was refused with ERR_BLOCKED_BY_RESPONSE: inside an iframe the
+     * response is a document, so the header applies to it, and `sandbox`
+     * without `allow-same-origin` puts that document in an opaque origin where
+     * `default-src 'none'` blocks the viewer from loading the very bytes it was
+     * given. Opening the same URL in a tab was never affected, which is what
+     * made this look like a client bug for so long.
+     *
+     * The header is there to stop an uploaded HTML file executing, and that is
+     * a risk belonging to types a browser will run. Types it merely displays —
+     * a PDF, an image, a video, served under their own content type with
+     * `nosniff` — get a policy that permits the file and nothing else. The
+     * allowlist is matched against the *stored* content type, so something
+     * uploaded as text/html never qualifies however it is named.
+     */
+    const contentType = object.ContentType ?? "";
+    const inert = /^(image\/|video\/|audio\/)/.test(contentType) || contentType === "application/pdf";
+    res.setHeader(
+      "Content-Security-Policy",
+      inert
+        ? "default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'self'; style-src 'unsafe-inline'; frame-ancestors *"
+        : "default-src 'none'; sandbox"
+    );
     // The client is on its own origin, and helmet's site-wide default of
     // same-origin makes a browser refuse to render this in an <img>. Relaxed
     // only for this route, where being embedded elsewhere is the entire point

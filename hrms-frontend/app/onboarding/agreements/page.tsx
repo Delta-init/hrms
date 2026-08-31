@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace, Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace, Play, Pause, Volume2, VolumeX, ExternalLink } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -314,22 +314,48 @@ export default function AgreementsPage() {
         <p className="mb-3 text-sm text-muted-foreground">
           These are the {data.variant === "remote" ? "remote" : "onsite"} versions, which apply to you.
         </p>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {data.documents.map((d) => (
-            <a
-              key={d.kind} href={d.url} target="_blank" rel="noreferrer"
-              onClick={() => setOpened((o) => ({ ...o, [d.kind]: true }))}
+            <div
+              key={d.kind}
               className={cn(
-                "flex items-center gap-3 rounded-lg border p-3 transition-colors",
-                videoDone ? "hover:border-primary/40 hover:bg-muted/40" : "pointer-events-none opacity-50",
-                opened[d.kind] ? "border-emerald-500/30 bg-emerald-500/5" : "border-border"
+                "overflow-hidden rounded-lg border transition-colors",
+                videoDone ? "" : "pointer-events-none opacity-50",
+                opened[d.kind] ? "border-emerald-500/30" : "border-border"
               )}
             >
-              <FileText className="h-4 w-4 shrink-0 text-primary" />
-              <span className="flex-1 text-sm font-medium">{AGREEMENT_KIND_LABELS[d.kind]}</span>
-              <span className="text-xs text-muted-foreground">v{d.version}</span>
-              {opened[d.kind] && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-            </a>
+              <div className={cn("flex items-center gap-3 p-3", opened[d.kind] && "bg-emerald-500/5")}>
+                <FileText className="h-4 w-4 shrink-0 text-primary" />
+                <span className="flex-1 text-sm font-medium">{AGREEMENT_KIND_LABELS[d.kind]}</span>
+                <span className="text-xs text-muted-foreground">v{d.version}</span>
+                {opened[d.kind] && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+                <button
+                  type="button"
+                  onClick={() => setOpened((o) => ({ ...o, [d.kind]: !o[d.kind] }))}
+                  className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+                >
+                  {opened[d.kind] ? "Hide" : "Read it"}
+                </button>
+                <a
+                  href={d.url} target="_blank" rel="noreferrer"
+                  onClick={() => setOpened((o) => ({ ...o, [d.kind]: true }))}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  Open <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              {/* Read here rather than in a tab nobody comes back from. Opening
+                  it is what marks the document read, so the preview and the link
+                  both count — this is a step somebody has to have done, not a
+                  box to tick. */}
+              {opened[d.kind] && (
+                <iframe
+                  src={d.url}
+                  title={AGREEMENT_KIND_LABELS[d.kind]}
+                  className="h-[520px] w-full border-t border-border bg-muted"
+                />
+              )}
+            </div>
           ))}
         </div>
       </Step>

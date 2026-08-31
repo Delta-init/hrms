@@ -40,6 +40,11 @@ const csp = [
   // black rectangle. Opening the same URL in a tab of its own always worked,
   // because there was no page policy to answer to.
   `media-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  // The agreements are read inside the onboarding page rather than in a tab
+  // somebody never comes back from, which means framing a PDF served by the
+  // API. Without this it falls back to default-src 'self' and the frame is
+  // refused, exactly as the video was.
+  `frame-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
