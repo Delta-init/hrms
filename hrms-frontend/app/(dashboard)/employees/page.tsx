@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PersonAvatar } from "@/components/shared/PersonAvatar";
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type WorkMode } from "@/types";
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EXIT_TYPE_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type ExitType, type WorkMode } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<EmployeeStatus, string> = {
@@ -48,7 +48,19 @@ export default function EmployeesPage() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Could not impersonate"); }
   };
 
-  const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
+  /**
+   * Current staff unless you ask otherwise.
+   *
+   * Sixty of the hundred and fifty-nine people on file have left. Showing them
+   * mixed in by default made the register read as twice the size of the company,
+   * and there was no way to say "just the people who work here" — "Terminated"
+   * could only be asked for, never excluded.
+   */
+  const query = useTableQuery({
+    defaultSortBy: "createdAt",
+    defaultSortOrder: "desc",
+    defaultFilters: { staff: "current" },
+  });
   const { data, isLoading, isFetching } = useEmployees(query.params, { enabled: canView });
   const { data: departments = [] } = useDepartmentsSimple();
   const { data: faceSettings } = useFaceSettings();
@@ -127,7 +139,24 @@ export default function EmployeesPage() {
         );
       },
     }] satisfies DataTableColumn<Employee>[] : []),
-    { id: "status", label: "Status", sortKey: "status", render: (e) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>{EMPLOYEE_STATUS_LABELS[e.status]}</span> },
+    {
+      id: "status", label: "Status", sortKey: "status",
+      render: (e) => (
+        <div className="flex flex-col items-start gap-0.5">
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[e.status])}>
+            {/* "Terminated" reads the same for somebody who resigned and
+                somebody who was dismissed. Where the exit record knows which,
+                say which. */}
+            {e.status === "terminated" && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status]}
+          </span>
+          {e.status === "terminated" && e.lastWorkingDay && (
+            <span className="text-[10px] text-muted-foreground">
+              until {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(e.lastWorkingDay))}
+            </span>
+          )}
+        </div>
+      ),
+    },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
       render: (e) => (
@@ -194,6 +223,35 @@ export default function EmployeesPage() {
       )}
 
       <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Staff</Label>
+        <Select value={query.filters.staff ?? "all"} onValueChange={(v) => query.setFilter("staff", v)}>
+          <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="current">Current staff</SelectItem>
+            <SelectItem value="leavers">Leavers</SelectItem>
+            <SelectItem value="all">Everyone</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Only meaningful about somebody who has gone, so it is offered only
+          when leavers are in view. */}
+      {query.filters.staff !== "current" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">How they left</Label>
+          <Select value={query.filters.exitType ?? ALL} onValueChange={(v) => query.setFilter("exitType", v)}>
+            <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Any reason" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Any reason</SelectItem>
+              {(Object.keys(EXIT_TYPE_LABELS) as ExitType[]).map((t) => (
+                <SelectItem key={t} value={t}>{EXIT_TYPE_LABELS[t]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}>
           <SelectTrigger className="h-9 w-[150px]"><SelectValue placeholder="All status" /></SelectTrigger>
@@ -235,7 +293,8 @@ export default function EmployeesPage() {
           Type: EMPLOYMENT_TYPE_LABELS[e.employmentType],
           "Work mode": WORK_MODE_LABELS[e.workMode ?? "office"],
           Schedule: typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "",
-          Status: EMPLOYEE_STATUS_LABELS[e.status],
+          Status: e.status === "terminated" && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status],
+          "Last working day": e.lastWorkingDay ? new Date(e.lastWorkingDay).toISOString().slice(0, 10) : "",
           Joining: e.joiningDate ? new Date(e.joiningDate).toISOString().slice(0, 10) : "",
         })}
       />

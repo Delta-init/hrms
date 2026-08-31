@@ -23,6 +23,10 @@ interface EmployeeQuery extends PaginationQuery {
   workMode?: string;
   /** "yes" | "no" — whether the person has set up face check-in. */
   faceEnrolled?: string;
+  /** "current" | "leavers" | "all" — whether to include people who have left. */
+  staff?: string;
+  /** How somebody left: resignation, termination, retirement, … */
+  exitType?: string;
 }
 
 const POP = [
@@ -119,6 +123,27 @@ export class EmployeeService {
     // Pickers exclude leavers. Done here rather than by filtering the returned
     // page, which drops people from the middle of a paginated result.
     else if (query.excludeTerminated === "true") filter.status = { $ne: "terminated" };
+    else if (query.staff === "current") filter.status = { $ne: "terminated" };
+    else if (query.staff === "leavers") filter.status = "terminated";
+
+    /**
+     * How somebody left.
+     *
+     * The employee record only knows "terminated", which lumps a resignation
+     * in with a dismissal — the distinction lives on the resignation record,
+     * so this resolves there and comes back as a set of employee ids.
+     *
+     * Resolved into a constraint rather than by filtering the returned page,
+     * the same reason `staff` above is: a page-level filter drops people out of
+     * the middle of a paginated result and makes the total a lie.
+     */
+    if (query.exitType) {
+      const left = await Resignation.find({ ...orgFilter(), resignationType: query.exitType })
+        .select("employee").lean();
+      filter._id = { $in: left.map((r) => r.employee) };
+      // Asking how somebody left only makes sense about somebody who has.
+      if (!query.status && query.staff !== "all") filter.status = "terminated";
+    }
     if (query.department) filter.department = query.department;
     if (query.employmentType) filter.employmentType = query.employmentType;
     // Records written before the field existed have no `workMode` at all —
@@ -155,8 +180,34 @@ export class EmployeeService {
       Employee.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       Employee.countDocuments(filter),
     ]);
+    /**
+     * How the leavers on this page left, and when.
+     *
+     * "Terminated" is the only status the employee record has, so on its own it
+     * says somebody has gone but not whether they resigned or were dismissed —
+     * a distinction that matters to anyone reading the list. Looked up only for
+     * the leavers actually on this page, so a page of current staff costs
+     * nothing.
+     */
+    const leaverIds = rows.filter((r) => r.status === "terminated").map((r) => r._id);
+    const exits = leaverIds.length
+      ? await Resignation.find({ ...orgFilter(), employee: { $in: leaverIds } })
+          .select("employee resignationType lastWorkingDay").sort({ lastWorkingDay: -1 }).lean()
+      : [];
+    const exitByEmployee = new Map<string, { resignationType?: string; lastWorkingDay?: Date }>();
+    for (const e of exits) if (!exitByEmployee.has(String(e.employee))) exitByEmployee.set(String(e.employee), e);
+
     // lean() skips the schema's toJSON transform, so the photo URL is added here.
-    const records = rows.map((r) => ({ ...r, photoUrl: r.photo ? publicUrl(String(r.photo)) : "" }));
+    const records = rows.map((r) => {
+      const exit = exitByEmployee.get(String(r._id));
+      return {
+        ...r,
+        photoUrl: r.photo ? publicUrl(String(r.photo)) : "",
+        ...(exit
+          ? { exitType: exit.resignationType ?? null, lastWorkingDay: exit.lastWorkingDay ?? null }
+          : {}),
+      };
+    });
     return { records, pagination: buildPagination(total, page, limit) };
   }
 

@@ -5,6 +5,14 @@ export interface UseTableQueryOptions {
   defaultSortBy?: string;
   defaultSortOrder?: "asc" | "desc";
   defaultLimit?: number;
+  /**
+   * Filters the table starts with, and returns to when cleared.
+   *
+   * For a list whose natural default is narrower than "everything" — the
+   * employee register holds sixty people who have left, and showing them by
+   * default made it read as twice the size of the company.
+   */
+  defaultFilters?: Record<string, string>;
 }
 
 const ALL = "__all__";
@@ -21,7 +29,7 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState(opts.defaultSortBy ?? "createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(opts.defaultSortOrder ?? "desc");
-  const [filters, setFilters_] = useState<Record<string, string>>({});
+  const [filters, setFilters_] = useState<Record<string, string>>(opts.defaultFilters ?? {});
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -57,12 +65,18 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
     setPage(1);
   }, []);
 
+  // Back to the defaults, not to nothing — clearing a list that starts on
+  // "current staff" should not silently start including everyone who has left.
+  const defaults = opts.defaultFilters;
   const clearFilters = useCallback(() => {
-    setFilters_({});
+    setFilters_(defaults ?? {});
     setSearch("");
     setDebouncedSearch("");
     setPage(1);
-  }, []);
+    // A literal written at the call site; re-running on identity would reset
+    // the table on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(defaults ?? {})]);
 
   const toggleSort = useCallback((field: string) => {
     setSortBy((prev) => {
@@ -87,7 +101,16 @@ export function useTableQuery(opts: UseTableQueryOptions = {}) {
     return { ...p, ...filters };
   }, [page, limit, sortBy, sortOrder, debouncedSearch, filters]);
 
-  const activeFilterCount = Object.keys(filters).length + (debouncedSearch ? 1 : 0);
+  /**
+   * How many filters the reader has actually chosen.
+   *
+   * A default does not count. Otherwise a list that starts on "current staff"
+   * opens showing "1 filter" and a Clear button that appears to do nothing —
+   * it is already in the state it clears to.
+   */
+  const activeFilterCount =
+    Object.entries(filters).filter(([k, v]) => (defaults?.[k] ?? undefined) !== v).length +
+    (debouncedSearch ? 1 : 0);
 
   return {
     page, setPage,

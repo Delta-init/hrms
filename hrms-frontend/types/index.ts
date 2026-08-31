@@ -239,6 +239,16 @@ export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   intern: "Intern",
 };
 
+/** How somebody left. Mirrors `resignationType` on the resignation record. */
+export type ExitType = "resignation" | "termination" | "retirement" | "end_of_contract" | "absconding";
+export const EXIT_TYPE_LABELS: Record<ExitType, string> = {
+  resignation: "Resigned",
+  termination: "Terminated",
+  retirement: "Retired",
+  end_of_contract: "Contract ended",
+  absconding: "Absconded",
+};
+
 export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   active: "Active",
   probation: "Probation",
@@ -409,6 +419,9 @@ export interface Employee {
   employmentType: EmploymentType;
   joiningDate?: string | null;
   status: EmployeeStatus;
+  /** Present only on leavers — how and when they went. */
+  exitType?: ExitType | null;
+  lastWorkingDay?: string | null;
   location?: EmployeeLocation;
   /** Absent on records written before the field existed; those are office. */
   workMode?: WorkMode;
