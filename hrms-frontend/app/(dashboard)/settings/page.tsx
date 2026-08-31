@@ -111,11 +111,18 @@ export default function SettingsPage() {
               completion check is compared against — which is why we don&apos;t take it from the browser.
             </p>
             {data?.video ? (
-              <div className="rounded-xl border border-border p-3">
-                <p className="text-sm font-medium">{data.video.title}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {Math.floor(data.video.durationSeconds / 60)}m {data.video.durationSeconds % 60}s
-                </p>
+              <div className="space-y-3 rounded-xl border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">{data.video.title}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {Math.floor(data.video.durationSeconds / 60)}m {data.video.durationSeconds % 60}s
+                  </p>
+                </div>
+                {/* Playable here too. Uploading a video nobody can watch back is
+                    how a broken or wrong file sits in place until a new joiner
+                    finds it — and this is the one screen where somebody would
+                    think to check. */}
+                <video src={data.video.url} controls preload="metadata" className="w-full rounded-lg bg-black" />
               </div>
             ) : (
               <p className="text-xs text-amber-600">No video uploaded.</p>

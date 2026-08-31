@@ -129,7 +129,16 @@ export default function AgreementsPage() {
             <video
               ref={videoRef}
               src={induction.video.url}
-              controls={videoDone}
+              /**
+               * Always. This read `controls={videoDone}`, which showed them
+               * only once the video was already finished — so there was no play
+               * button until after the thing had been watched, and no way to
+               * start it. Skipping ahead is prevented twice over already: the
+               * handler below snaps the playhead back, and the server credits
+               * elapsed time rather than position, so a dragged bar earns
+               * nothing. Neither of those needs the play button hidden.
+               */
+              controls
               controlsList="nodownload noplaybackrate"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
