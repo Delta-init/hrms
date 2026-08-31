@@ -41,6 +41,7 @@ void Department;
  *   bun src/seeds/inviteEmployees/index.ts
  *   bun src/seeds/inviteEmployees/index.ts --apply
  *   bun src/seeds/inviteEmployees/index.ts --apply --send
+ *   bun src/seeds/inviteEmployees/index.ts --apply --send --only=a@x.com,b@x.com
  */
 
 const args = process.argv.slice(2);
@@ -48,11 +49,22 @@ const arg = (k: string) => args.find((a) => a.startsWith(`--${k}=`))?.split("=")
 const APPLY = args.includes("--apply");
 const SEND = args.includes("--send");
 const INCLUDE_ACTIVE = args.includes("--include-active");
-const ONLY = arg("only")?.toLowerCase();
+/** One address or several, comma-separated — for trying it on a few people first. */
+const ONLY = arg("only")?.toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
 const ORG_NAME = arg("org") ?? "Delta International Management Development Training";
 const OUT = (arg("out") ?? `${process.env.HOME}/Downloads/Employee invitations.xlsx`).replace(/^~/, process.env.HOME ?? "~");
 /** Gmail throttles a burst; one every second and a half is well inside it. */
 const GAP_MS = Number(arg("gap") ?? 1500);
+/**
+ * Where the activation link points.
+ *
+ * Deliberately not `env.CLIENT_URL`. This runs from somebody's laptop, where
+ * that is localhost, and the first two invitations went out with an activate
+ * button nobody outside this machine could open. A script that sends real mail
+ * to real people must not inherit a developer's local address, so the public
+ * one is the default and `--client-url` is there for anyone who needs another.
+ */
+const CLIENT_URL = (arg("client-url") ?? "https://hrms.deltainstitutions.com").replace(/\/+$/, "");
 
 const log = (s = "") => console.log(s);
 const head = (s: string) => { log(); log(`── ${s} ${"─".repeat(Math.max(0, 58 - s.length))}`); };
@@ -105,7 +117,8 @@ async function main() {
 
   log(`Organisation : ${org.name}`);
   log(`Mode         : ${!APPLY ? "DRY RUN — nothing is written" : SEND ? "APPLY + SEND — passwords set and emails sent" : "APPLY — passwords set, sheet written, nothing sent"}`);
-  if (ONLY) log(`Only         : ${ONLY}`);
+  if (ONLY) log(`Only         : ${ONLY.join(", ")}`);
+  log(`Activate at  : ${CLIENT_URL}/set-password`);
 
   const employees = await Employee.find({ organization: org._id, status: { $ne: "terminated" }, user: { $ne: null } })
     .select("name employeeCode designation department user status")
@@ -123,7 +136,7 @@ async function main() {
     const user = byId.get(String(emp.user));
     if (!user) { skipped.push(`${emp.employeeCode} ${emp.name} — login missing`); continue; }
     if (!user.email) { skipped.push(`${emp.employeeCode} ${emp.name} — no email address`); continue; }
-    if (ONLY && user.email.toLowerCase() !== ONLY) continue;
+    if (ONLY && !ONLY.includes(user.email.toLowerCase())) continue;
     if ((user.tokenVersion ?? 0) > 0 && !INCLUDE_ACTIVE) {
       skipped.push(`${emp.employeeCode} ${emp.name} — has signed in already (--include-active to reset anyway)`);
       continue;
@@ -174,7 +187,7 @@ async function main() {
     head("Sending");
     let ok = 0;
     for (const [i, r] of rows.entries()) {
-      const url = `${env.CLIENT_URL}/set-password?email=${encodeURIComponent(r.email)}`;
+      const url = `${CLIENT_URL}/set-password?email=${encodeURIComponent(r.email)}`;
       let sent = false;
       try {
         sent = await sendMail({
