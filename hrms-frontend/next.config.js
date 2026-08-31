@@ -34,6 +34,12 @@ const csp = [
   // name that origin instead of trusting every https host on the internet —
   // which is what it took to load them straight off a public bucket.
   `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  // The induction video is served from the same signed /files route as the
+  // photos above, and without this it falls back to default-src 'self' — which
+  // is not the API's origin, so the player was refused the file and showed a
+  // black rectangle. Opening the same URL in a tab of its own always worked,
+  // because there was no page policy to answer to.
+  `media-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "font-src 'self' data:",
   `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
