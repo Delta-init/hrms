@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace } from "lucide-react";
+import { PlayCircle, FileText, PenLine, CheckCircle2, Loader2, AlertTriangle, Clock, ScanFace, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,10 @@ import { cn } from "@/lib/utils";
 /** How often the player tells the server where it is. */
 const BEAT_MS = 5_000;
 
+/** Seconds as m:ss, for the transport's own read-out. */
+const clock = (s: number) =>
+  Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
+
 export default function AgreementsPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -30,6 +34,13 @@ export default function AgreementsPage() {
   const [percent, setPercent] = useState(0);
   const [videoDone, setVideoDone] = useState(false);
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  // The transport's own state. Held here rather than read off the element on
+  // every render, so the controls repaint when it plays rather than when React
+  // happens to re-render for some other reason.
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [total, setTotal] = useState(0);
   const [signature, setSignature] = useState<string | null>(null);
   const [typedName, setTypedName] = useState("");
 
@@ -39,18 +50,39 @@ export default function AgreementsPage() {
     if (session?.user?.name && !typedName) setTypedName(session.user.name);
   }, [data, session, typedName]);
 
-  // The server is the one that decides; this only reports where the playhead is.
-  useEffect(() => {
+  /**
+   * The server is the one that decides; this only reports where the playhead is.
+   *
+   * `videoUrl` is in the dependencies because the element does not exist on the
+   * first run — the video is rendered only once `startInduction` has answered,
+   * so this used to bail on a null ref and never run again. No heartbeat was
+   * ever sent and the bar sat at 0% however long anybody watched.
+   */
+  const togglePlay = () => {
     const el = videoRef.current;
-    if (!el || videoDone) return;
+    if (!el) return;
+    if (el.paused) void el.play();
+    else el.pause();
+  };
+  const toggleMute = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+  };
+
+  const videoUrl = induction?.video?.url;
+  useEffect(() => {
+    if (!videoUrl || videoDone) return;
     const id = setInterval(() => {
-      if (el.paused || el.ended) return;
+      const el = videoRef.current;
+      if (!el || el.paused || el.ended) return;
       beat(el.currentTime, {
         onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
       });
     }, BEAT_MS);
     return () => clearInterval(id);
-  }, [beat, videoDone]);
+  }, [beat, videoDone, videoUrl]);
 
   if (isLoading) {
     return <Shell><div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div></Shell>;
@@ -126,43 +158,73 @@ export default function AgreementsPage() {
       <Step n={1} icon={PlayCircle} title="Watch the induction" done={videoDone}>
         {induction?.video ? (
           <>
-            <video
-              ref={videoRef}
-              src={induction.video.url}
-              /**
-               * Always. This read `controls={videoDone}`, which showed them
-               * only once the video was already finished — so there was no play
-               * button until after the thing had been watched, and no way to
-               * start it. Skipping ahead is prevented twice over already: the
-               * handler below snaps the playhead back, and the server credits
-               * elapsed time rather than position, so a dragged bar earns
-               * nothing. Neither of those needs the play button hidden.
-               */
-              controls
-              controlsList="nodownload noplaybackrate"
-              disablePictureInPicture
-              onContextMenu={(e) => e.preventDefault()}
-              // Dragging the bar is pointless — the server credits elapsed time,
-              // not playhead position — but snapping back says so immediately
-              // instead of letting someone reach the end and be told no.
-              onSeeking={(e) => {
-                const el = e.currentTarget;
-                if (!videoDone && el.currentTime > (induction.progress?.lastPosition ?? 0) + 2) {
-                  el.currentTime = induction.progress?.lastPosition ?? 0;
-                }
-              }}
-              onEnded={() => beat(videoRef.current?.duration ?? 0, {
-                onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
-              })}
-              className="w-full rounded-xl bg-black"
-            />
+            {/*
+              No native controls until it has been watched.
+              
+              The scrub bar was the problem: dragging it fired a seek, the guard
+              snapped the playhead back to the last credited position — zero, on
+              a first viewing — and the video appeared to restart. Punishing a
+              drag is a worse answer than not offering one, so the transport is
+              play, pause and volume, and there is nothing to drag. Once the
+              induction is complete the native controls come back and the video
+              can be scrubbed freely, because by then there is nothing to game.
+            */}
+            <div className="relative overflow-hidden rounded-xl bg-black">
+              <video
+                ref={videoRef}
+                src={induction.video.url}
+                controls={videoDone}
+                controlsList="nodownload noplaybackrate"
+                disablePictureInPicture
+                onContextMenu={(e) => e.preventDefault()}
+                onClick={videoDone ? undefined : togglePlay}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onTimeUpdate={(e) => setElapsed(e.currentTarget.currentTime)}
+                onLoadedMetadata={(e) => setTotal(e.currentTarget.duration)}
+                // Belt and braces: keyboard and programmatic seeks bypass the
+                // absent bar, and the server would refuse the credit anyway.
+                onSeeking={(e) => {
+                  const el = e.currentTarget;
+                  const allowed = induction.progress?.lastPosition ?? 0;
+                  if (!videoDone && el.currentTime > allowed + 2) el.currentTime = allowed;
+                }}
+                onEnded={() => beat(videoRef.current?.duration ?? 0, {
+                  onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
+                })}
+                className="w-full"
+              />
+              {!videoDone && (
+                <div className="flex items-center gap-3 bg-black/80 px-3 py-2">
+                  <button
+                    type="button" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 text-black transition hover:bg-white"
+                  >
+                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-[1px]" />}
+                  </button>
+                  <button
+                    type="button" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 transition hover:text-white"
+                  >
+                    {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </button>
+                  {/* Where the playhead is — shown, not draggable. */}
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/20">
+                    <div className="h-full rounded-full bg-white/70" style={{ width: `${total ? (elapsed / total) * 100 : 0}%` }} />
+                  </div>
+                  <span className="shrink-0 text-[11px] tabular-nums text-white/80">
+                    {clock(elapsed)} / {clock(total)}
+                  </span>
+                </div>
+              )}
+            </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               {videoDone
                 ? "Watched in full — thank you."
-                : `${percent}% watched. The bar tracks time actually watched, so skipping ahead won't move it.`}
+                : `${percent}% credited. This bar counts time actually watched, so it lags the player a little and only moves while it is playing.`}
             </p>
           </>
         ) : (
