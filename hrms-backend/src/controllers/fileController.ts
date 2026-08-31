@@ -61,7 +61,43 @@ export const getFile = async (req: Request, res: Response, next: NextFunction): 
     // These are user-uploaded files served from our origin; never let a browser
     // decide one is HTML and run it.
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+
+    /**
+     * A sandbox that does not also break the file.
+     *
+     * `default-src 'none'; sandbox` on everything meant a video opened in a tab
+     * of its own could never play. Navigating straight to a media URL makes the
+     * response a document, so the header applies to it — and `sandbox` without
+     * `allow-same-origin` puts that document in an opaque origin, where
+     * `default-src 'none'` blocks the media element the browser just built to
+     * show it. Nothing about the file or the transport was wrong; the response
+     * was forbidding itself.
+     *
+     * Loosening a directive would not help either: `default-src 'none'` is what
+     * refuses the load, and no `media-src` can override it inside an opaque
+     * origin. So the header is simply not sent for the types it was never
+     * protecting against.
+     *
+     * It exists to stop an uploaded HTML file executing, and that risk belongs
+     * to types a browser will run. A video, an image or a PDF served under its
+     * own content type with `nosniff` cannot become script — Chrome's PDF
+     * viewer sandboxes embedded JavaScript itself. The strict policy is kept
+     * for everything else, and the allowlist is matched against the *stored*
+     * content type, so a file uploaded as text/html never qualifies however it
+     * is named.
+     */
+    const contentType = object.ContentType ?? "";
+    const inert = /^(image\/|video\/|audio\/)/.test(contentType) || contentType === "application/pdf";
+    res.setHeader(
+      "Content-Security-Policy",
+      inert
+        // No sandbox, so the document keeps this origin and `'self'` actually
+        // matches the file it was served with. Set explicitly rather than left
+        // unset, or helmet's site-wide policy applies instead and its
+        // `frame-ancestors 'self'` stops the client embedding a PDF.
+        ? "default-src 'none'; media-src 'self'; img-src 'self' data:; object-src 'self'; frame-ancestors *"
+        : "default-src 'none'; sandbox"
+    );
     // The client is on its own origin, and helmet's site-wide default of
     // same-origin makes a browser refuse to render this in an <img>. Relaxed
     // only for this route, where being embedded elsewhere is the entire point
