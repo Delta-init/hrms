@@ -11,6 +11,7 @@ import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { ClockCard } from "@/components/dashboard/ClockCard";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
+import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,7 +34,14 @@ export default function DashboardPage() {
   // HR / managers get the team overview (and no clock-in card); everyone else
   // gets the personal self-service dashboard.
   const isManager = hasPermission("leave", "approve") || hasPermission("employees", "view");
-  if (isManager) return <HrDashboard />;
+  if (isManager) {
+    return (
+      <div className="space-y-6">
+        <FaceEnrolmentPrompt />
+        <HrDashboard />
+      </div>
+    );
+  }
 
   return <EmployeeDashboard />;
 }
@@ -73,6 +81,7 @@ function EmployeeDashboard() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {/* Left / main */}
       <div className="space-y-6 lg:col-span-2">
+        <FaceEnrolmentPrompt />
         {/* Greeting hero */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-indigo-600 to-indigo-800 p-7 text-white shadow-lg">
