@@ -115,6 +115,12 @@ export class UserService {
     });
 
     await user.save();
+    // The same schedule lives on the employee record, where HR edits it. Kept
+    // in step from this side too, so the two cannot drift apart again
+    // depending on which screen somebody happened to use.
+    if (input.workSchedule !== undefined) {
+      await Employee.updateOne({ user: user._id }, { $set: { workSchedule: input.workSchedule || null } });
+    }
     return User.findById(id)
       .populate("role")
       .populate("workSchedule", "name timeZone loginTime logoutTime workDays graceMinutes");

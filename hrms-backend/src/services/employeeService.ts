@@ -36,6 +36,23 @@ const POP = [
   { path: "reportingTo", select: "name employeeCode designation email" },
 ];
 
+/**
+ * Keep the login's copy of the work schedule in step with the employee's.
+ *
+ * Two documents hold this: the employee record, which is where HR edits it,
+ * and the login, which is the only one attendance reads
+ * (resolveWorkScheduleForUser). createLogin copies it once at creation and
+ * nothing carried a later change across, so every edit after that day moved
+ * the employee record alone and left attendance scoring the person against
+ * whatever their shift had been when their account was made — or, for anyone
+ * whose login never got one, against a hardcoded 09:00-18:00 Asia/Dubai.
+ * People who arrived on time were recorded late for it.
+ */
+async function mirrorScheduleToLogin(record: { user?: unknown; workSchedule?: unknown }, changed: boolean) {
+  if (!changed || !record.user) return;
+  await User.updateOne({ _id: record.user }, { $set: { workSchedule: record.workSchedule ?? null } });
+}
+
 /** Normalize optional ref/blank fields for persistence. */
 function clean<T extends Record<string, unknown>>(input: T) {
   const out: Record<string, unknown> = { ...input };
@@ -329,6 +346,7 @@ export class EmployeeService {
     // instead of leaving the record permanently unsavable.
     if ((record.location as unknown as string) === "") record.location = undefined;
     await record.save();
+    await mirrorScheduleToLogin(record, input.workSchedule !== undefined);
     return Employee.findById(id).populate(POP);
   }
 
