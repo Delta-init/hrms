@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, ShieldAlert } from "lucide-react";
+import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, ShieldAlert, Monitor, Globe, MapPin } from "lucide-react";
 import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -115,6 +115,49 @@ export default function AttendancePage() {
           )}
         </span>
       ),
+    },
+    {
+      id: "device", label: "Device",
+      render: (r) => r.punchDevice
+        ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Monitor className="h-3.5 w-3.5" />{r.punchDevice}</span>
+        : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      id: "ip", label: "IP",
+      render: (r) => r.punchIp
+        ? <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground"><Globe className="h-3.5 w-3.5" />{r.punchIp}</span>
+        : <span className="text-muted-foreground">—</span>,
+    },
+    {
+      id: "location", label: "Location",
+      render: (r) => {
+        // A missing fix is reported as the reason it is missing. Somebody who
+        // declined the prompt and a browser that cannot do it are different
+        // facts, and neither is the same as nothing having been recorded.
+        if (!r.punchPlace && !r.punchCoords) {
+          const why = r.punchLocationSource === "denied" ? "Declined"
+            : r.punchLocationSource === "unavailable" ? "Unavailable"
+            : r.punchLocationSource === "unsupported" ? "Not supported"
+            : null;
+          return <span className="text-muted-foreground">{why ?? "—"}</span>;
+        }
+        const c = r.punchCoords;
+        const body = (
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5" />{r.punchPlace ?? `${c!.latitude.toFixed(3)}, ${c!.longitude.toFixed(3)}`}
+          </span>
+        );
+        // The coordinates are browser-reported and only ever corroborating, so
+        // they open a map rather than being presented as a finding.
+        return c ? (
+          <a
+            href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
+            target="_blank" rel="noopener noreferrer"
+            title={`${c.latitude}, ${c.longitude} — reported by the browser`}
+            className="hover:underline"
+          >{body}</a>
+        ) : body;
+      },
     },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
@@ -235,6 +278,10 @@ export default function AttendancePage() {
               // and "Device" alone says nothing about what was wrong with it.
               "Device flag": r.deviceAnomaly ? DEVICE_ANOMALY_LABELS[r.deviceAnomaly] : "",
               "Punched from": r.deviceAnomaly ? r.deviceLabel ?? "Unknown device" : "",
+              Device: r.punchDevice ?? "",
+              IP: r.punchIp ?? "",
+              Location: r.punchPlace ?? (r.punchLocationSource === "denied" ? "Declined" : r.punchLocationSource === "unavailable" ? "Unavailable" : ""),
+              Coordinates: r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
             })}
           />
         </>

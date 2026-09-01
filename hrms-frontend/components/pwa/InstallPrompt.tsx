@@ -83,7 +83,7 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
   }, [persistent]);
 
   const close = () => {
-    localStorage.setItem(DISMISSED, "1");
+    // localStorage.setItem(DISMISSED, "1");
     setDismissed(true);
   };
 
@@ -100,11 +100,11 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
     else if (!persistent) close();
   };
 
-  if (installed) return null;
+  if (installed || dismissed) return null;
   // Uninvited, it appears only when there is something to press or explain.
   // Asked for, it always answers — including when the browser has offered no
   // prompt, which is itself the thing that needs explaining.
-  if (!persistent && (dismissed || (!event && !showIosHelp))) return null;
+  // if (!persistent && (dismissed || (!event && !showIosHelp))) return null;
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5">

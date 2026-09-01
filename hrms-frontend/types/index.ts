@@ -551,6 +551,15 @@ export interface Attendance {
   deviceAnomaly?: DeviceAnomaly | null;
   /** The machine that punch came from — named only when it was flagged. */
   deviceLabel?: string | null;
+  /** Where and from what the day was started, taken from the check-in punch. */
+  punchDevice?: string | null;
+  punchIp?: string | null;
+  /** "Dubai, DU, AE" — as much of it as the lookup could give. */
+  punchPlace?: string | null;
+  punchCoords?: { latitude: number; longitude: number } | null;
+  /** Why there is no fix, when there is none: denied, unavailable, unsupported. */
+  punchLocationSource?: "gps" | "denied" | "unavailable" | "unsupported" | null;
+  punchMethod?: "web" | "face" | "manual" | null;
   createdAt: string;
   updatedAt: string;
 }

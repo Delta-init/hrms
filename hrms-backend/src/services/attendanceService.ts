@@ -24,8 +24,48 @@ import { Types } from "mongoose";
  * wrong. A day with two odd punches is not twice as odd — somebody still has
  * to look at it exactly once — so the first flag found stands for the day.
  */
-type Sourced = { deviceAnomaly?: DeviceAnomaly | null; deviceLabel?: string | null } | null;
+type Sourced = {
+  deviceAnomaly?: DeviceAnomaly | null; deviceLabel?: string | null;
+  browser?: string | null; os?: string | null; deviceType?: string | null;
+  ip?: string | null; city?: string | null; region?: string | null; country?: string | null;
+  latitude?: number | null; longitude?: number | null; locationSource?: string | null;
+  method?: string | null;
+} | null;
 type SourcedSession = { checkInSource?: Sourced; checkOutSource?: Sourced };
+
+/** "Chrome on Windows", falling back to whatever the browser did say. */
+function deviceNameOf(src: Sourced): string | null {
+  if (!src) return null;
+  if (src.deviceLabel?.trim()) return src.deviceLabel.trim();
+  const both = [src.browser, src.os].filter(Boolean).join(" on ");
+  return both || src.deviceType || null;
+}
+
+/**
+ * Where and from what the day was started.
+ *
+ * Taken from the check-in: the punch that opens the day is the one that says
+ * where somebody was when it began, which is the question being asked. A
+ * missing fix is reported as the reason it is missing — a declined prompt and
+ * a browser that cannot do it read very differently, and neither is the same
+ * as nothing having been recorded.
+ */
+function punchOriginOf(sessions?: unknown) {
+  const list = (sessions ?? []) as SourcedSession[];
+  const first = list.find((x) => x?.checkInSource)?.checkInSource ?? null;
+  const place = [first?.city, first?.region, first?.country].filter(Boolean).join(", ");
+  return {
+    punchDevice: deviceNameOf(first),
+    punchIp: first?.ip?.trim() || null,
+    punchPlace: place || null,
+    punchCoords:
+      typeof first?.latitude === "number" && typeof first?.longitude === "number"
+        ? { latitude: first.latitude, longitude: first.longitude }
+        : null,
+    punchLocationSource: first?.locationSource ?? null,
+    punchMethod: first?.method ?? null,
+  };
+}
 
 /**
  * The flagged punch of a day, and the machine it came from.
@@ -227,7 +267,7 @@ export class AttendanceService {
     // on one tab and clean on the other, which is worse than not flagging it at
     // all. The rows still carry their raw sessions — this only adds the summary
     // the list actually reads.
-    const records = found.map((r) => ({ ...r, ...anomalyOf(r.sessions) }));
+    const records = found.map((r) => ({ ...r, ...anomalyOf(r.sessions), ...punchOriginOf(r.sessions) }));
 
     return { records, pagination: buildPagination(total, page, limit) };
   }
