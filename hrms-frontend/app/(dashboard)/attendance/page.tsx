@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays } from "lucide-react";
-import { useAttendance, useDeleteAttendance } from "@/hooks/useAttendance";
+import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -64,6 +64,9 @@ export default function AttendancePage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Attendance | null>(null);
   const [tab, setTab] = useState("records");
+  /** Rows ticked for a bulk change — distinct from `selected`, the row being edited. */
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set());
+  const bulkStatus = useBulkSetAttendanceStatus();
   const tabs = [
     { key: "records", label: "Records", icon: ListChecks },
     { key: "day", label: "Day view", icon: CalendarDays },
@@ -166,6 +169,25 @@ export default function AttendancePage() {
             pagination={data?.pagination}
             query={query}
             searchPlaceholder="Search by name, employee code or email…"
+            selectable={canEdit}
+            selected={chosen}
+            onSelectedChange={setChosen}
+            bulkActions={(keys, clear) => (
+              <Select
+                value=""
+                onValueChange={(status) => bulkStatus.mutate({ ids: keys, status }, { onSuccess: clear })}
+                disabled={bulkStatus.isPending}
+              >
+                <SelectTrigger className="h-8 w-[190px]">
+                  <SelectValue placeholder={bulkStatus.isPending ? "Updating…" : "Set status…"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
+                    <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             filters={filters}
             quickFilters={
               <DateRangeFilter

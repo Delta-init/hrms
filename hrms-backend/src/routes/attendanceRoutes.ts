@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createAttendance,
+  bulkSetAttendanceStatus,
   getAttendance,
   getAttendanceById,
   updateAttendance,
@@ -31,6 +32,8 @@ router.get("/daily", checkPermission("attendance", "view"), getAttendanceDaily);
 // Recording attendance for an arbitrary employee (vs. self-service clock-in
 // above) and looking up a record by id are manager-only actions.
 router.post("/", checkPermission("attendance", "edit"), createAttendance);
+// Before "/:id" — otherwise "bulk-status" is read as an id.
+router.patch("/bulk-status", checkPermission("attendance", "edit"), bulkSetAttendanceStatus);
 router.get("/:id", checkPermission("attendance", "edit"), getAttendanceById);
 router.put("/:id", checkPermission("attendance", "edit"), updateAttendance);
 router.delete("/:id", checkPermission("attendance", "delete"), deleteAttendance);

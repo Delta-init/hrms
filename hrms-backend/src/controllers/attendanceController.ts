@@ -109,6 +109,20 @@ export const deleteAttendance = async (req: AuthenticatedRequest, res: Response,
 };
 
 // ── Self-service ──
+export const bulkSetAttendanceStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { ids, status } = req.body as { ids?: string[]; status?: string };
+    if (!Array.isArray(ids) || !ids.length) {
+      throw Object.assign(new Error("Select at least one record"), { statusCode: 400 });
+    }
+    if (!status) throw Object.assign(new Error("A status is required"), { statusCode: 400 });
+    const result = await service.setStatusMany(ids, status);
+    sendSuccess(res, `${result.modified} record${result.modified === 1 ? "" : "s"} updated`, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getTodayAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await service.getToday(req.user!.userId);

@@ -61,6 +61,25 @@ export const useUpdateAttendance = () => {
   });
 };
 
+/**
+ * Set the status on several days at once.
+ *
+ * The whole list is invalidated rather than the touched rows patched: a status
+ * change moves the "today at a glance" counts above the table as well, and
+ * those are a second query over the same records.
+ */
+export const useBulkSetAttendanceStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ids, status }: { ids: string[]; status: string }) => {
+      const res = await api.patch<ApiResponse<{ matched: number; modified: number }>>("/attendance/bulk-status", { ids, status });
+      return res.data;
+    },
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not update those records")),
+  });
+};
+
 export const useDeleteAttendance = () => {
   const qc = useQueryClient();
   return useMutation({

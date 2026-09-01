@@ -227,6 +227,30 @@ export class AttendanceService {
     return Attendance.findById(id).populate("user", "name email designation");
   }
 
+  /**
+   * Set the status on several days at once.
+   *
+   * Marking a room full of people on leave, or correcting a run of days a rule
+   * got wrong, was one record at a time through a dialog. The late minutes go
+   * with the status: a day called present that still carries eighty of them
+   * contradicts itself, and that is exactly the state hand-editing one field at
+   * a time kept producing.
+   *
+   * Scoped and counted rather than trusted: ids are matched inside the caller's
+   * organisation, and the number actually changed is reported, so a request
+   * naming another tenant's record silently changes nothing and says so.
+   */
+  async setStatusMany(ids: string[], status: string) {
+    const valid = ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
+    if (!valid.length) return { matched: 0, modified: 0 };
+    const update: Record<string, unknown> = { status };
+    // Only a late or half day carries late minutes; anything else keeps them
+    // at zero rather than inheriting a number from the status it used to be.
+    if (status !== "late" && status !== "half_day") update.lateMinutes = 0;
+    const res = await Attendance.updateMany(scoped({ _id: { $in: valid } }), { $set: update });
+    return { matched: res.matchedCount, modified: res.modifiedCount };
+  }
+
   async remove(id: string) {
     const record = await Attendance.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
