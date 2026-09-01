@@ -18,24 +18,33 @@ export interface DocRequirement {
 /**
  * Location-driven document matrix. This is the ONE source of truth: it drives
  * both the onboarding upload UI and the backend "all required present?" guard.
+ *
+ * Only the photo is required. Everything else is a slot to be collected, not a
+ * gate to be passed: a passport is at an embassy, a certificate with a previous
+ * employer, a visa copy still being issued — none of that is a reason to hold
+ * somebody out of the app on their first day. HR still sees every empty slot on
+ * the documents screen, so chasing them is a task rather than a blockade.
+ *
+ * The photo stays required because it is the one thing the product itself needs:
+ * it becomes the profile picture, and face check-in has nothing to match against
+ * without it.
  */
 export const DOCUMENT_REQUIREMENTS: Record<EmployeeLocation, DocRequirement[]> = {
   dubai: [
-    { key: "passport", label: "Passport", required: true, accepts: ["passport"] },
-    { key: "visa_copy", label: "Visa copy", required: true, accepts: ["visa_copy"] },
-    // Both are tracked for expiry on the employee record, and until now there
-    // was nowhere to file the scan that goes with the number. Optional so
-    // adding them does not retroactively mark 34 onboarded people incomplete.
+    { key: "passport", label: "Passport", required: false, accepts: ["passport"] },
+    { key: "visa_copy", label: "Visa copy", required: false, accepts: ["visa_copy"] },
+    // Both are tracked for expiry on the employee record, and the scan that
+    // goes with the number is filed here.
     { key: "emirates_id", label: "Emirates ID", required: false, accepts: ["emirates_id"] },
     { key: "labour_card", label: "Labour card", required: false, accepts: ["labour_card"] },
     { key: "photo", label: "Photo", required: true, isPhoto: true, accepts: ["photo"] },
-    { key: "education_certificate", label: "Educational certificate", required: true, accepts: ["education_certificate"] },
+    { key: "education_certificate", label: "Educational certificate", required: false, accepts: ["education_certificate"] },
     { key: "experience_certificate", label: "Experience certificate", required: false, accepts: ["experience_certificate"] },
   ],
   india: [
-    { key: "identity", label: "Aadhaar / Passport", required: true, accepts: ["aadhaar", "passport"] },
+    { key: "identity", label: "Aadhaar / Passport", required: false, accepts: ["aadhaar", "passport"] },
     { key: "photo", label: "Photo", required: true, isPhoto: true, accepts: ["photo"] },
-    { key: "education_certificate", label: "Educational certificate", required: true, accepts: ["education_certificate"] },
+    { key: "education_certificate", label: "Educational certificate", required: false, accepts: ["education_certificate"] },
     { key: "experience_certificate", label: "Experience certificate", required: false, accepts: ["experience_certificate"] },
   ],
 };
