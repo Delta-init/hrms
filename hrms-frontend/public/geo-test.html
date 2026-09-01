@@ -76,11 +76,17 @@
   say("isSecureContext", window.isSecureContext);
   say("userAgent", navigator.userAgent);
 
+  // Set once a fix has actually come back, so a later read of the permission
+  // cannot replace "it worked" with advice about it being blocked. They can
+  // disagree: a browser may hand back a position while still reporting the
+  // permission oddly, and the position is the answer that matters.
+  var gotFix = false;
+
   function paintState(s) {
     var cls = s === "granted" ? "ok" : s === "denied" ? "bad" : "warn";
     $("state").innerHTML = '<span class="' + cls + '">' + s + "</span>";
     say("permission", s);
-    if (s === "denied") {
+    if (s === "denied" && !gotFix) {
       $("verdict").innerHTML =
         "The browser has this site's location <strong>blocked</strong>, so it will not prompt. " +
         "Open the padlock beside the address, set Location to Allow — or press Reset permissions — " +
@@ -109,6 +115,7 @@
     var t0 = Date.now();
     navigator.geolocation.getCurrentPosition(
       function (pos) {
+        gotFix = true;
         var ms = Date.now() - t0;
         $("took").textContent = ms + " ms";
         $("result").innerHTML = '<span class="ok">got a fix</span> — ' +
