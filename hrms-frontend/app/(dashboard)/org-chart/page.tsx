@@ -8,7 +8,10 @@ import { Card } from "@/components/ui/card";
 
 export default function OrgChartPage() {
   const { hasPermission } = useAuth();
-  const canView = hasPermission("employees", "view");
+  // Everybody may look at the chart — they are all in it. Opening the profile
+  // behind a card is a different thing, and stays with the employees permission.
+  const canView = true;
+  const canOpenProfile = hasPermission("employees", "view");
   const canEdit = hasPermission("employees", "edit");
   const canCreate = hasPermission("employees", "create");
   const { data, isLoading } = useOrgChart(canView);
@@ -32,7 +35,7 @@ export default function OrgChartPage() {
         <Card className="p-16 text-center text-muted-foreground"><Network className="mx-auto mb-2 h-7 w-7" />No employees to chart yet.</Card>
       ) : (
         <Card className="overflow-x-auto p-6">
-          <OrgChartBoard roots={roots} canEdit={canEdit} canCreate={canCreate} />
+          <OrgChartBoard roots={roots} canEdit={canEdit} canCreate={canCreate} canOpenProfile={canOpenProfile} />
         </Card>
       )}
 

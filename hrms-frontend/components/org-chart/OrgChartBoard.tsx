@@ -17,6 +17,8 @@ interface Props {
   roots: OrgNode[];
   /** Reassigning and editing need employees.edit; the chart is read-only without it. */
   canEdit: boolean;
+  /** Whether the viewer may open the employee profile behind a card. */
+  canOpenProfile: boolean;
   /** Adding a brand-new person needs employees.create. */
   canCreate: boolean;
 }
@@ -43,7 +45,7 @@ function buildParentMap(roots: OrgNode[]) {
  * server rejects them too, but greying the card out while dragging explains the
  * rule instead of only reporting the failure afterwards.
  */
-export function OrgChartBoard({ roots, canEdit, canCreate }: Props) {
+export function OrgChartBoard({ roots, canEdit, canCreate, canOpenProfile }: Props) {
   const { mutate: update, isPending } = useUpdateEmployee();
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropId, setDropId] = useState<string | null>(null);
@@ -139,6 +141,7 @@ export function OrgChartBoard({ roots, canEdit, canCreate }: Props) {
               node={n}
               canEdit={canEdit}
               canCreate={canCreate}
+              canOpenProfile={canOpenProfile}
               hasParent={!!parentOf.get(n._id)}
               dragId={dragId}
               dropId={dropId}
@@ -188,6 +191,7 @@ interface NodeProps {
   node: OrgNode;
   canEdit: boolean;
   canCreate: boolean;
+  canOpenProfile: boolean;
   hasParent: boolean;
   dragId: string | null;
   dropId: string | null;
@@ -200,7 +204,7 @@ interface NodeProps {
 }
 
 function TreeNode(props: NodeProps) {
-  const { node, canEdit, canCreate, dragId, dropId, canDropOn, nodeProps } = props;
+  const { node, canEdit, canCreate, canOpenProfile, dragId, dropId, canDropOn, nodeProps } = props;
   const isDragging = dragId === node._id;
   const isTarget = dropId === node._id;
   // Dim what this card can't be dropped onto, so the rule is visible mid-drag.
@@ -231,9 +235,11 @@ function TreeNode(props: NodeProps) {
               <MoreVertical className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem asChild>
-                <Link href={`/employees/${node._id}`}><User className="h-4 w-4" />View profile</Link>
-              </DropdownMenuItem>
+              {canOpenProfile && (
+                <DropdownMenuItem asChild>
+                  <Link href={`/employees/${node._id}`}><User className="h-4 w-4" />View profile</Link>
+                </DropdownMenuItem>
+              )}
               {canEdit && (
                 <DropdownMenuItem onSelect={() => props.onEdit(node._id)}>
                   <Pencil className="h-4 w-4" />Edit details
@@ -262,14 +268,26 @@ function TreeNode(props: NodeProps) {
           </DropdownMenu>
         )}
 
-        <Link href={`/employees/${node._id}`} className="flex flex-col items-center gap-1" draggable={false}>
-          <PersonAvatar name={node.name} photoUrl={node.photoUrl} className="h-10 w-10" fallbackClassName="text-xs" />
-          <p className="mt-0.5 line-clamp-1 text-sm font-semibold">{node.name}</p>
-          {node.designation && <p className="line-clamp-1 text-xs text-muted-foreground">{node.designation}</p>}
-          {node.department && (
-            <span className="mt-0.5 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{node.department}</span>
-          )}
-        </Link>
+        {/* A card is a link only for somebody who may open what it points at.
+            For everybody else it is the same card without the promise — better
+            than a link that answers "you don't have access". */}
+        {(() => {
+          const face = (
+            <>
+              <PersonAvatar name={node.name} photoUrl={node.photoUrl} className="h-10 w-10" fallbackClassName="text-xs" />
+              <p className="mt-0.5 line-clamp-1 text-sm font-semibold">{node.name}</p>
+              {node.designation && <p className="line-clamp-1 text-xs text-muted-foreground">{node.designation}</p>}
+              {node.department && (
+                <span className="mt-0.5 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{node.department}</span>
+              )}
+            </>
+          );
+          return canOpenProfile ? (
+            <Link href={`/employees/${node._id}`} className="flex flex-col items-center gap-1" draggable={false}>{face}</Link>
+          ) : (
+            <div className="flex flex-col items-center gap-1">{face}</div>
+          );
+        })()}
       </div>
 
       {node.children.length > 0 && (

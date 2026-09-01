@@ -66,7 +66,12 @@ export const navItems: {
   { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, superAdminOnly: true },
   { href: "/employees", label: "Employees", icon: UserRound, permModule: "employees" },
   { href: "/departments", label: "Departments", icon: Building2, permModule: "departments" },
-  { href: "/org-chart", label: "Org Chart", icon: Network, permModule: "employees" },
+  // Everybody, because everybody is in it. The chart is names, titles,
+  // departments and reporting lines — nothing an employee could not read off a
+  // door — and hiding who reports to whom from the people doing the reporting
+  // made it an admin tool. Editing still needs employees.edit, and the profile
+  // behind a card stays behind employees.view.
+  { href: "/org-chart", label: "Org Chart", icon: Network, permModule: null },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck, permModule: "attendance" },
   { href: "/leave", label: "Leave", icon: CalendarClock, permModule: "leave" },
   { href: "/regularization", label: "Regularization", icon: ClipboardCheck, permModule: null },

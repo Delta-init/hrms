@@ -12,7 +12,11 @@ router.get("/wishes", getWishesToday);
 // HR snapshot — available to anyone who can view employees (HR Manager, Super Admin).
 router.get("/summary", checkPermission("employees", "view"), getDashboardSummary);
 router.get("/document-expiry", checkPermission("employees", "view"), getDocumentExpiry);
-router.get("/org-chart", checkPermission("employees", "view"), getOrgChart);
+// Authenticated, but no employees permission: an org chart is who reports to
+// whom, and everybody is in it. It carries names, titles, departments and
+// photos — nothing an employee could not read off a door. The screen still
+// gates editing, and the profile behind each card is gated where it lives.
+router.get("/org-chart", getOrgChart);
 // Manually run the daily birthday email (testing / on-demand).
 router.post("/birthday-check", checkPermission("employees", "view"), triggerBirthdayCheck);
 
