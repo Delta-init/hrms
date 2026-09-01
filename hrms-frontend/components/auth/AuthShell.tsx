@@ -26,8 +26,13 @@ export function BrandLogo({ className = "h-8 w-auto", dark = false }: { classNam
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen w-full items-center justify-center ">
-      <div className="grid w-full h-screen overflow-hidden rounded-[2rem] border border-black/5 bg-white  lg:grid-cols-2">
+    // `min-h`, never a fixed height: the card fills a tall screen but is allowed
+    // to grow past a short one so the page scrolls to the rest of the form.
+    // Pinning it to the viewport clipped the sign-in button out of reach on a
+    // laptop in landscape, with nothing to scroll. `svh` rather than `vh` so a
+    // mobile browser's collapsing address bar does not add phantom height.
+    <div className="flex min-h-svh w-full items-center justify-center">
+      <div className="grid w-full min-h-svh overflow-hidden rounded-[2rem] border border-black/5 bg-white lg:grid-cols-2">
         {/* ── Left: form panel ── */}
         <div className="flex flex-col p-8 sm:p-10 lg:p-12">
           {/* logo */}
