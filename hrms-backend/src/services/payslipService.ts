@@ -729,18 +729,22 @@ export class PayslipService {
     base.unrecordedDays = unrecordedKeys.length;
     base.recordedDays = workingKeys.length - base.unrecordedDays;
 
-    // The whole month counts, days still to come included: a payslip covers the
-    // month, and a day nobody ever marks is a day nobody worked. Generating
-    // mid-month therefore prices the month as it stands — every remaining day
-    // unaccounted for — so the figure is only final once the month is. Split
-    // out rather than hidden, so the form can say which part has not happened.
+    // Days still to come are counted and shown — the payslip covers the whole
+    // month, and the form has to be able to say how much of it has not happened
+    // — but they are never charged for. Today included: a day is not missed
+    // until it is over, and somebody who clocks in this afternoon would
+    // otherwise have been docked for it this morning.
     const today = dayKey(new Date(), tz);
     base.unrecordedFutureDays = unrecordedKeys.filter((k) => k >= today).length;
 
-    // Only docked when the organization has said attendance is mandatory.
+    // Only docked when the organization has said attendance is mandatory, and
+    // then only for days that have actually passed. Charging the whole month on
+    // its first day took a month's pay off everyone for not yet having worked
+    // it — which is what a payslip generated mid-month used to do.
     base.unrecordedDaysUnpaid = penaltyPolicy.unrecordedDaysUnpaid;
-    if (penaltyPolicy.unrecordedDaysUnpaid && base.unrecordedDays > 0) {
-      base.lopDays = Math.round((base.lopDays + base.unrecordedDays) * 100) / 100;
+    const chargeableUnrecorded = Math.max(0, base.unrecordedDays - base.unrecordedFutureDays);
+    if (penaltyPolicy.unrecordedDaysUnpaid && chargeableUnrecorded > 0) {
+      base.lopDays = Math.round((base.lopDays + chargeableUnrecorded) * 100) / 100;
     }
 
     // Counted against the thirty days the salary buys, not against the working
