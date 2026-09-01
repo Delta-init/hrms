@@ -115,18 +115,49 @@ export function ClockCard() {
     return () => clearInterval(t);
   }, []);
 
+  /** Set once the permission is allowed but this page is still running without it. */
+  const [needsReload, setNeedsReload] = useState(false);
+
   useEffect(() => {
     // Not in every browser — Safari has no Permissions API for geolocation —
     // so "unknown" is a real answer and the card simply says less.
     if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
     let status: PermissionStatus | null = null;
-    const onChange = () => setGeoState(status?.state ?? "unknown");
+    const onChange = () => {
+      const next = status?.state ?? "unknown";
+      setGeoState(next);
+      // Changing a site permission in the browser's own settings does not
+      // reach a page already open — Chrome hands it the old answer until it
+      // reloads. Somebody who has just switched Location on and watched the
+      // punch fail anyway is looking at a page that has not been told.
+      if (next === "granted") setNeedsReload(true);
+    };
     navigator.permissions
       .query({ name: "geolocation" as PermissionName })
       .then((s) => { status = s; setGeoState(s.state); s.addEventListener("change", onChange); })
       .catch(() => setGeoState("unknown"));
     return () => status?.removeEventListener("change", onChange);
   }, []);
+
+  /**
+   * Ask before the punch, not during it.
+   *
+   * Requesting a location only when somebody presses Clock In puts the
+   * browser's prompt between them and the thing they came to do, and a prompt
+   * dismissed in that moment is a refusal remembered forever. Asking on arrival
+   * gets it out of the way while nothing is at stake — and only where it is
+   * actually required, and only while the browser is still willing to ask.
+   */
+  const wantsLocation = !!data?.punchPolicy.locationRequired;
+  useEffect(() => {
+    if (!wantsLocation || geoState !== "prompt") return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      () => setGeoState("granted"),
+      () => { /* Their answer either way; the card reads it from the permission. */ },
+      { timeout: 12_000, maximumAge: 60_000 }
+    );
+  }, [wantsLocation, geoState]);
 
   if (isLoading || !data) {
     return <Card className="flex h-full min-h-[360px] items-center justify-center p-6"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>;
@@ -303,7 +334,17 @@ export function ClockCard() {
           location and try again" is useless advice once the browser has stopped
           asking — the setting is behind the padlock in the address bar, and
           nothing this page does can open it. */}
-      {locationBlocked && (
+      {/* Allowed since the page opened. The browser told us, but it will keep
+          answering this page with the old refusal until it reloads — so the
+          only useful thing here is the reload itself. */}
+      {needsReload && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11px] leading-snug text-emerald-800 dark:text-emerald-300">
+          <span className="flex-1">Location is allowed now. Reload the page so your punch can use it.</span>
+          <Button size="sm" className="h-7 shrink-0" onClick={() => window.location.reload()}>Reload</Button>
+        </div>
+      )}
+
+      {locationBlocked && !needsReload && (
         <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
           <p className="font-medium">Location is blocked for this site, so your punch will be refused.</p>
           <p className="mt-0.5">
@@ -312,6 +353,16 @@ export function ClockCard() {
             <strong> Allow</strong>, then reload this page. On iPhone also check Settings → Privacy → Location
             Services → Safari.
           </p>
+          {/* For the case the browser has quietly changed its mind — a reset in
+              site settings, or a different answer on another device — so it can
+              be tried without hunting for the reload button. */}
+          <Button
+            size="sm" variant="outline"
+            className="mt-2 h-7 border-amber-500/40 bg-transparent text-amber-800 hover:bg-amber-500/10 dark:text-amber-300"
+            onClick={() => window.location.reload()}
+          >
+            I have allowed it — reload
+          </Button>
         </div>
       )}
 
