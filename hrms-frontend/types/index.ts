@@ -1157,6 +1157,8 @@ export interface SalaryBreakup {
 
 // ─── Attendance calendar ─────────────────────────────────────────────────────
 export interface AttendanceCalendarDay {
+  /** The attendance record behind this day, when one was recorded. */
+  attendanceId?: string;
   status: AttendanceStatus;
   workedMinutes?: number;
   checkIn?: string | null;

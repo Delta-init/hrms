@@ -49,6 +49,21 @@ export const useCreateAttendance = () => {
   });
 };
 
+/**
+ * One record, in full.
+ *
+ * The day view lists people rather than records — most rows have no record at
+ * all — so it holds an id, not the thing itself. Editing loads the real record
+ * rather than assembling one from the row, which would drift from the dialog's
+ * expectations the moment either changed.
+ */
+export const useAttendanceById = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "one", id ?? ""],
+    queryFn: async () => (await api.get<ApiResponse<Attendance>>(`/attendance/${id}`)).data.data!,
+    enabled: !!id,
+  });
+
 export const useUpdateAttendance = () => {
   const qc = useQueryClient();
   return useMutation({

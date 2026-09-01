@@ -650,6 +650,15 @@ export class AttendanceService {
     type DayLeave = { type: string; label: string; paid: boolean };
     type DayReg = { _id: unknown; type: string; status: string; resultingStatus?: string };
     type DayEntry = {
+      /**
+       * The attendance record behind the day, where one exists.
+       *
+       * A day view row is a person, not a record — most of them have no record
+       * at all — so editing or deleting one needs the id of the thing being
+       * acted on. Absent means there is nothing to act on, which is a different
+       * state from a record that says "absent".
+       */
+      attendanceId?: string;
       status: string; workedMinutes?: number; checkIn?: Date | null; checkOut?: Date | null;
       lateMinutes?: number; note?: string; timeZone?: string | null;
       /** Set when any punch that day came from somewhere other than the
@@ -669,6 +678,7 @@ export class AttendanceService {
       const key = localDayKey(a.date, a.timeZone || orgTz);
       if (!attByUser.has(uid)) attByUser.set(uid, {});
       attByUser.get(uid)![key] = {
+        attendanceId: String(a._id),
         status: a.status as string, workedMinutes: a.workedMinutes ?? 0,
         checkIn: a.checkIn ?? null, checkOut: a.checkOut ?? null,
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,

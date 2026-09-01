@@ -1,7 +1,11 @@
 "use client";
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, LogIn, LogOut, RotateCcw, ShieldAlert } from "lucide-react";
-import { useAttendanceDaily } from "@/hooks/useAttendance";
+import { ChevronLeft, ChevronRight, LogIn, LogOut, RotateCcw, ShieldAlert, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useAttendanceDaily, useAttendanceById, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
+import { useAuth } from "@/hooks/useAuth";
+import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { useOrgTimeZone } from "@/hooks/useOrgTimeZone";
 import { dayKeyIn } from "@/lib/dateRange";
@@ -10,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getInitials, cn } from "@/lib/utils";
-import { DEVICE_ANOMALY_LABELS } from "@/types";
-import type { DailyAttendanceRow, DayViewStatus } from "@/types";
+import { DEVICE_ANOMALY_LABELS, ATTENDANCE_STATUS_LABELS } from "@/types";
+import type { DailyAttendanceRow, DayViewStatus, AttendanceStatus } from "@/types";
 
 /**
  * One day, everybody.
@@ -59,6 +63,18 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
   const [date, setDate] = useState(today);
   const query = useTableQuery({ defaultLimit: 100 });
   const { data, isLoading, isFetching } = useAttendanceDaily(date);
+  const { hasPermission } = useAuth();
+  const canEdit = canManage && hasPermission("attendance", "edit");
+  const canDelete = canManage && hasPermission("attendance", "delete");
+
+  // A row here is a person; only some of them have a record behind them, and
+  // only those can be edited, deleted or restated.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set());
+  const { data: editing, isLoading: loadingRecord } = useAttendanceById(editingId ?? undefined);
+  const { mutate: remove, isPending: removing } = useDeleteAttendance();
+  const bulkStatus = useBulkSetAttendanceStatus();
 
   const statusFilter = query.filters.status ?? ALL;
   const rows = useMemo(() => {
@@ -122,6 +138,21 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
           {r.regularization ? `Correction ${r.regularization.status}` : r.note || "—"}
         </span>
       ),
+    },
+    {
+      // Only where a record exists. A day with nothing recorded has nothing to
+      // edit or delete, and offering the menu anyway would be offering to act
+      // on something that is not there.
+      id: "actions", label: "", alwaysVisible: true, align: "right",
+      render: (r) => (r.attendanceId && (canEdit || canDelete)) ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canEdit && <DropdownMenuItem onClick={() => setEditingId(r.attendanceId!)} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
+            {canDelete && <DropdownMenuItem onClick={() => setDeletingId(r.attendanceId!)} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null,
     },
   ];
 
@@ -194,6 +225,34 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
         query={query}
         searchable
         searchPlaceholder="Search employee…"
+        selectable={canEdit}
+        selected={chosen}
+        onSelectedChange={setChosen}
+        isSelectable={(r) => !!r.attendanceId}
+        bulkActions={(keys, clear) => (
+          <Select
+            value=""
+            onValueChange={(status) => {
+              // The table hands back row keys, which are people. The change
+              // applies to their records, so they are translated here rather
+              // than the table being keyed by something half its rows lack.
+              const ids = rows
+                .filter((r) => keys.includes(r.employee._id) && r.attendanceId)
+                .map((r) => r.attendanceId!);
+              if (ids.length) bulkStatus.mutate({ ids, status }, { onSuccess: clear });
+            }}
+            disabled={bulkStatus.isPending}
+          >
+            <SelectTrigger className="h-8 w-[190px]">
+              <SelectValue placeholder={bulkStatus.isPending ? "Updating…" : "Set status…"} />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
+                <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         emptyText={canManage ? "Nobody to show for this day." : "No record for this day."}
         rowLabel="employees"
         minWidth={860}
@@ -222,6 +281,28 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
           Note: r.note ?? "",
         })}
         exportName={`attendance-${date}`}
+      />
+
+      {/* Opened by id and rendered once the real record has arrived, so the
+          form is never filled from a half-built stand-in. */}
+      {editingId && editing && (
+        <AttendanceDialog
+          open
+          onOpenChange={(o) => { if (!o) setEditingId(null); }}
+          attendance={editing}
+        />
+      )}
+      <ConfirmDialog
+        open={!!deletingId}
+        onOpenChange={(o) => { if (!o) setDeletingId(null); }}
+        title="Delete this attendance record?"
+        description="The day goes back to having nothing recorded against it. This cannot be undone."
+        confirmLabel="Delete"
+        isPending={removing}
+        onConfirm={() => {
+          if (!deletingId) return;
+          remove(deletingId, { onSuccess: () => setDeletingId(null) });
+        }}
       />
     </div>
   );
