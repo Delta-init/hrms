@@ -23,7 +23,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Header />
         <div className="mt-2"><ImpersonationBanner /></div>
         <OfflineNotice />
-        <InstallPrompt />
+        {/* Permanent: no dismiss button, and a past dismissal is not
+            remembered. Asked for that way — installing the app is the thing
+            most people here still have to do, and an offer they closed once
+            was an offer they could never find again. */}
+        <InstallPrompt persistent />
         <main className="flex-1 overflow-y-auto rounded-2xl border border-border/40 bg-background p-4 shadow-sm md:p-6">
           {children}
         </main>
