@@ -330,10 +330,6 @@ export class AuthService {
     }
 
     if (decoded.kind === "restore") {
-      // Burn the ticket first: the unique index on jti makes a replayed copy
-      // fail here rather than mint a second admin session.
-      await this.consumeTicket(decoded);
-
       const admin = await User.findById(decoded.userId).populate("role");
       if (!admin) throw Object.assign(new Error("Session cannot be restored"), { statusCode: 401 });
       // Same re-checks the impersonate branch does — an admin deactivated or
@@ -342,6 +338,12 @@ export class AuthService {
         throw Object.assign(new Error("Session cannot be restored"), { statusCode: 401 });
       }
       const { accessToken, refreshToken } = this.tokensFor(admin);
+      // Burned only once a session can actually be handed back. Burning on the
+      // way in meant any later failure — a lookup, a hiccup — spent the one
+      // ticket out of the impersonation and stranded the admin inside it with
+      // nothing left to retry. Replay is still blocked: two copies arriving
+      // together both reach here and the unique index on jti admits one.
+      await this.consumeTicket(decoded);
       const target = decoded.targetUserId ? await User.findById(decoded.targetUserId).select("name organization") : null;
       await AuditLog.create({
         organization: admin.organization,
