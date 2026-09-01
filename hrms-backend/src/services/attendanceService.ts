@@ -24,17 +24,30 @@ import { Types } from "mongoose";
  * wrong. A day with two odd punches is not twice as odd — somebody still has
  * to look at it exactly once — so the first flag found stands for the day.
  */
-type SourcedSession = {
-  checkInSource?: { deviceAnomaly?: DeviceAnomaly | null } | null;
-  checkOutSource?: { deviceAnomaly?: DeviceAnomaly | null } | null;
-};
-function anomalyOf(sessions?: unknown): DeviceAnomaly | null {
+type Sourced = { deviceAnomaly?: DeviceAnomaly | null; deviceLabel?: string | null } | null;
+type SourcedSession = { checkInSource?: Sourced; checkOutSource?: Sourced };
+
+/**
+ * The flagged punch of a day, and the machine it came from.
+ *
+ * The label matters as much as the flag: "this was not their device" is a
+ * question, and "this was not their device — it came from Chrome on Windows"
+ * is something somebody can act on without opening the record. The first flag
+ * found stands for the day, because a day with two odd punches is not twice as
+ * odd; somebody still has to look at it exactly once.
+ */
+function anomalyOf(sessions?: unknown): { deviceAnomaly: DeviceAnomaly | null; deviceLabel: string | null } {
   const list = (sessions ?? []) as SourcedSession[];
-  return (
-    list
-      .flatMap((x) => [x?.checkInSource?.deviceAnomaly, x?.checkOutSource?.deviceAnomaly])
-      .find(Boolean) ?? null
-  );
+  const flagged = list
+    .flatMap((x) => [x?.checkInSource, x?.checkOutSource])
+    .find((src) => src?.deviceAnomaly);
+  return {
+    deviceAnomaly: flagged?.deviceAnomaly ?? null,
+    // Only the flagged punch's device is named. The label on an ordinary punch
+    // is the device they are supposed to be on, and putting that on the row
+    // would read as an accusation about the wrong machine.
+    deviceLabel: flagged?.deviceLabel?.trim() || null,
+  };
 }
 
 /**
@@ -214,7 +227,7 @@ export class AttendanceService {
     // on one tab and clean on the other, which is worse than not flagging it at
     // all. The rows still carry their raw sessions — this only adds the summary
     // the list actually reads.
-    const records = found.map((r) => ({ ...r, deviceAnomaly: anomalyOf(r.sessions) }));
+    const records = found.map((r) => ({ ...r, ...anomalyOf(r.sessions) }));
 
     return { records, pagination: buildPagination(total, page, limit) };
   }
@@ -690,6 +703,8 @@ export class AttendanceService {
       /** Set when any punch that day came from somewhere other than the
        *  registered device — the day is marked for review, not disputed. */
       deviceAnomaly?: DeviceAnomaly | null;
+      /** The machine that flagged punch came from, so the row can name it. */
+      deviceLabel?: string | null;
       /** Approved leave covering this day, whatever the attendance says. */
       leave?: DayLeave;
       /** A correction raised for this day. */
@@ -708,7 +723,7 @@ export class AttendanceService {
         status: a.status as string, workedMinutes: a.workedMinutes ?? 0,
         checkIn: a.checkIn ?? null, checkOut: a.checkOut ?? null,
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
-        deviceAnomaly: anomalyOf(a.sessions),
+        ...anomalyOf(a.sessions),
       };
     }
     // Per user, the leave in force on each day — "wfh" paints the calendar

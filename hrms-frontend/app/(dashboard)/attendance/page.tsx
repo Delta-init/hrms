@@ -104,10 +104,13 @@ export default function AttendancePage() {
               flagged day looks the same whichever tab you find it on. */}
           {r.deviceAnomaly && (
             <span
-              title={DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}
+              title={`${DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}${r.deviceLabel ? ` — ${r.deviceLabel}` : ""}`}
               className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
             >
-              <ShieldAlert className="h-3 w-3" />Device
+              {/* The machine, not the word "Device". "It was not their computer"
+                  is a question; "it came from Chrome on Windows" is something
+                  somebody can act on without opening the record. */}
+              <ShieldAlert className="h-3 w-3" />{r.deviceLabel || "Unknown device"}
             </span>
           )}
         </span>
@@ -231,6 +234,7 @@ export default function AttendancePage() {
               // Spelled out rather than a flag: a spreadsheet has no tooltip,
               // and "Device" alone says nothing about what was wrong with it.
               "Device flag": r.deviceAnomaly ? DEVICE_ANOMALY_LABELS[r.deviceAnomaly] : "",
+              "Punched from": r.deviceAnomaly ? r.deviceLabel ?? "Unknown device" : "",
             })}
           />
         </>

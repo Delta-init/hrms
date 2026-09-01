@@ -117,10 +117,10 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
                 a second look. */}
             {r.deviceAnomaly && (
               <span
-                title={DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}
+                title={`${DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}${r.deviceLabel ? ` — ${r.deviceLabel}` : ""}`}
                 className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
               >
-                <ShieldAlert className="h-3 w-3" />Device
+                <ShieldAlert className="h-3 w-3" />{r.deviceLabel || "Unknown device"}
               </span>
             )}
           </span>

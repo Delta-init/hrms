@@ -549,6 +549,8 @@ export interface Attendance {
    * day view gets it, so both tabs flag the same day.
    */
   deviceAnomaly?: DeviceAnomaly | null;
+  /** The machine that punch came from — named only when it was flagged. */
+  deviceLabel?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1176,6 +1178,8 @@ export interface AttendanceCalendarDay {
   leave?: { type: LeaveType; label: string; paid: boolean };
   /** Set when a punch that day came from somewhere other than the registered device. */
   deviceAnomaly?: DeviceAnomaly | null;
+  /** The machine that punch came from — named only when it was flagged. */
+  deviceLabel?: string | null;
   /** A correction raised for this day, pending or already applied. */
   regularization?: {
     _id: string;
