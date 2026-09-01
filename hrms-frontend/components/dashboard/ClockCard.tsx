@@ -99,10 +99,33 @@ export function ClockCard() {
   const [now, setNow] = useState(() => new Date());
   const [noticeFor, setNoticeFor] = useState<"in" | "out" | null>(null);
   const [locating, setLocating] = useState(false);
+  /**
+   * Whether the browser will even ask.
+   *
+   * A refusal is remembered for the site: getCurrentPosition then fails
+   * instantly with PERMISSION_DENIED and no prompt appears, so somebody told to
+   * "allow location and try again" is being asked to accept an invitation that
+   * is never issued. The state is read up front so the card can say what
+   * actually has to happen — which is in the browser's own settings, not here.
+   */
+  const [geoState, setGeoState] = useState<PermissionState | "unknown">("unknown");
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    // Not in every browser — Safari has no Permissions API for geolocation —
+    // so "unknown" is a real answer and the card simply says less.
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
+    let status: PermissionStatus | null = null;
+    const onChange = () => setGeoState(status?.state ?? "unknown");
+    navigator.permissions
+      .query({ name: "geolocation" as PermissionName })
+      .then((s) => { status = s; setGeoState(s.state); s.addEventListener("change", onChange); })
+      .catch(() => setGeoState("unknown"));
+    return () => status?.removeEventListener("change", onChange);
   }, []);
 
   if (isLoading || !data) {
@@ -115,6 +138,9 @@ export function ClockCard() {
   // Only remote staff are asked for a location: they are the ones no kiosk
   // sees, and whose punch is the sole account of where the day started.
   const recordsLocation = punchPolicy.workMode === "wfh";
+  // Required and refused: pressing the button can only fail, and the browser
+  // will not re-ask. Say so where the button is.
+  const locationBlocked = !!punchPolicy.locationRequired && geoState === "denied";
 
   const send = async (dir: "in" | "out") => {
     setLocating(recordsLocation);
@@ -273,6 +299,22 @@ export function ClockCard() {
       {/* Standing notice, not a one-off consent. Somebody whose location is
           recorded twice a day should be able to see that said plainly, on the
           screen where it happens, rather than recall a dialog from months ago. */}
+      {/* Before the button, and specific about where the fix lives. "Allow
+          location and try again" is useless advice once the browser has stopped
+          asking — the setting is behind the padlock in the address bar, and
+          nothing this page does can open it. */}
+      {locationBlocked && (
+        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
+          <p className="font-medium">Location is blocked for this site, so your punch will be refused.</p>
+          <p className="mt-0.5">
+            Your browser remembers that it was declined and will not ask again. Open the padlock
+            (or <span className="font-mono">ⓘ</span>) beside the address, set <strong>Location</strong> to
+            <strong> Allow</strong>, then reload this page. On iPhone also check Settings → Privacy → Location
+            Services → Safari.
+          </p>
+        </div>
+      )}
+
       {recordsLocation && (
         <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
           <MapPin className="mt-px h-3 w-3 shrink-0" />

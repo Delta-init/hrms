@@ -548,7 +548,10 @@ export class AttendanceService {
     const why = source?.locationSource;
     const message =
       why === "denied"
-        ? "Working from home means your punch has to record where you are. Allow location for this site in your browser and try again."
+        // Not "allow it and try again": the browser remembers a refusal and
+        // stops asking, so there is no prompt left to accept. The setting is
+        // the only way back, and it is not on this page.
+        ? "Working from home means your punch has to record where you are, and location is blocked for this site. Open the padlock beside the address bar, set Location to Allow, reload, and punch again."
         : why === "unsupported"
           ? "This browser cannot report a location, and a work-from-home punch needs one. Use a different browser, or ask HR to record the day for you."
           : "Your location could not be read, and a work-from-home punch needs one. Check that location is switched on for this device, then try again — or ask HR to record the day for you.";
