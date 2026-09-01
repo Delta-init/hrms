@@ -56,24 +56,57 @@ export class AttendanceService {
     }
   }
 
+  /**
+   * The day a record belongs to, in the only terms that find it again.
+   *
+   * A record is looked up by an exact `date`, and that instant is midnight in
+   * the person's own timezone — that is what clockIn writes and what the
+   * employee's own screen asks for. Recording attendance by hand used to store
+   * the bare calendar date instead, which is midnight UTC: five and a half
+   * hours away for somebody on Asia/Kolkata. The record existed, the admin
+   * table listed it, and the employee's dashboard still said "not clocked in",
+   * because it was filed under a key nothing else looks at.
+   */
+  private async dayKeyFor(userId: string, date: Date): Promise<{ key: Date; timeZone: string }> {
+    const schedule = await this.scheduleFor(userId);
+    // Anchored at noon UTC so the calendar date the admin picked survives the
+    // shift into the target zone in either direction.
+    const noon = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12));
+    const shift = resolveShift(schedule, noon);
+    return { key: shift.dateMidnightUtc, timeZone: schedule.timeZone };
+  }
+
   async create(input: CreateAttendanceInput) {
     // Scope the user to the caller's org so a record can't reference another tenant's user.
     const user = await User.findOne(scoped({ _id: input.user }));
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
 
-    const existing = await Attendance.findOne(scoped({ user: input.user, date: input.date }));
+    const { key, timeZone } = await this.dayKeyFor(String(input.user), input.date);
+
+    // A day already recorded — whether by hand or by the person clocking in —
+    // is amended rather than duplicated. Two records for one day would be
+    // counted twice by every total that follows, pay included, and the old
+    // guard could not see a clock-in at all because it compared the raw date.
+    const existing = await Attendance.findOne(scoped({ user: input.user, date: key }));
     if (existing) {
-      throw Object.assign(
-        new Error("An attendance record already exists for this user on that date"),
-        { statusCode: 409 }
-      );
+      existing.timeZone = input.timeZone ?? timeZone;
+      existing.status = input.status;
+      existing.lateMinutes = input.lateMinutes ?? 0;
+      if (input.note !== undefined) existing.note = input.note;
+      if (input.checkIn !== undefined || input.checkOut !== undefined) {
+        this.applySessions(existing, input.checkIn ?? existing.checkIn, input.checkOut ?? existing.checkOut);
+      }
+      await existing.save();
+      return Attendance.findById(existing._id).populate("user", "name email designation");
     }
 
     const attendance = new Attendance({
       organization: getOrgId(),
       user: input.user,
-      date: input.date,
-      timeZone: input.timeZone,
+      date: key,
+      // Falls back to the person's own schedule rather than a fixed zone: the
+      // list renders each record's times in whatever this says.
+      timeZone: input.timeZone ?? timeZone,
       status: input.status,
       lateMinutes: input.lateMinutes ?? 0,
       note: input.note,
@@ -134,7 +167,19 @@ export class AttendanceService {
     const record = await Attendance.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
 
-    if (input.date !== undefined) record.date = input.date;
+    if (input.date !== undefined) {
+      // Through the same rule as create, so editing a record's date cannot
+      // file it where its owner will not find it.
+      const { key } = await this.dayKeyFor(String(record.user), input.date);
+      const clash = await Attendance.findOne(scoped({ user: record.user, date: key, _id: { $ne: record._id } }));
+      if (clash) {
+        throw Object.assign(
+          new Error("This user already has a record on that day"),
+          { statusCode: 409 }
+        );
+      }
+      record.date = key;
+    }
     if (input.timeZone !== undefined) record.timeZone = input.timeZone;
     if (input.status !== undefined) record.status = input.status;
     if (input.lateMinutes !== undefined) record.lateMinutes = input.lateMinutes;

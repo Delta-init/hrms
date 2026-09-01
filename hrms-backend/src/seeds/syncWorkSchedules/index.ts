@@ -261,11 +261,18 @@ async function main() {
 
     const wasStatus = String(att.status);
     const wasLate = att.lateMinutes ?? 0;
-    if (wasStatus === status && wasLate === lateMinutes && att.timeZone === schedule.timeZone) continue;
+    // The day a record is filed under is part of what can be wrong with it.
+    // Judging only the status let a record whose verdict already happened to be
+    // right keep a key nobody looks under — which is exactly how one recorded
+    // by hand stayed invisible on its owner's own dashboard.
+    const bucket = shift.dateMidnightUtc;
+    const misfiled = att.date.getTime() !== bucket.getTime();
+    if (wasStatus === status && wasLate === lateMinutes && att.timeZone === schedule.timeZone && !misfiled) continue;
 
     const at = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: schedule.timeZone, hour12: false }).format(att.checkIn);
     log(`  ${String(who).slice(0, 30).padEnd(31)} ${String(att.date).slice(4, 15)}  in ${at} vs ${label}`);
-    log(`      ${wasStatus} / ${wasLate} min  →  ${status} / ${lateMinutes} min`);
+    if (wasStatus !== status || wasLate !== lateMinutes) log(`      ${wasStatus} / ${wasLate} min  →  ${status} / ${lateMinutes} min`);
+    if (misfiled) log(`      filed at ${att.date.toISOString()} — the owner's dashboard looks for ${bucket.toISOString()}`);
 
     if (APPLY) {
       att.status = status as typeof att.status;
@@ -275,8 +282,7 @@ async function main() {
       // judged by, so a timezone correction can move it. Only where the slot
       // is free — two records on one day for one person is worse than a
       // record filed under the old day.
-      const bucket = shift.dateMidnightUtc;
-      if (att.date.getTime() !== bucket.getTime()) {
+      if (misfiled) {
         const clash = await Attendance.findOne({ user: att.user, date: bucket, _id: { $ne: att._id } });
         if (clash) {
           log(`      date stays ${String(att.date).slice(4, 15)} — ${String(bucket).slice(4, 15)} already has a record`);
