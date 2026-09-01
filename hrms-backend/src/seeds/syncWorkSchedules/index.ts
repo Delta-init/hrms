@@ -38,6 +38,24 @@ const APPLY = args.includes("--apply");
 const ATTENDANCE = args.includes("--attendance");
 const arg = (name: string) => args.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
 const ORG_NAME = arg("org") ?? "Delta International Management Development Training";
+/**
+ * Give a schedule to people who have none.
+ *
+ * Nothing in the system, and nothing in the GreytHR export, says what shift
+ * these people work — `Curr.Shift` is blank for exactly them, so the gap came
+ * over from the old system rather than being lost here. It cannot be inferred
+ * either: the people who do have one are split across timezones with no
+ * relation to their location. So it has to be stated, not guessed.
+ *
+ *   --assign="10:00am - 7:00pm"           every unassigned person
+ *   --assign="Dubai" --where-location=dubai   only those in Dubai
+ *   --from=shifts.xlsx                    per person, from a sheet of
+ *                                         employee code + schedule name
+ */
+const ASSIGN = arg("assign");
+const FROM = arg("from");
+const WHERE_LOCATION = arg("where-location")?.toLowerCase();
+const WHERE_DEPT = arg("where-dept")?.toLowerCase();
 
 const log = (m = "") => console.log(m);
 const head = (t: string) => log(`\n── ${t} ${"─".repeat(Math.max(0, 58 - t.length))}`);
@@ -66,6 +84,79 @@ async function main() {
     (await WorkSchedule.find({ organization: org._id }).select("name timeZone loginTime logoutTime graceMinutes").lean() as unknown as Sched[])
       .map((w) => [String(w._id), w])
   );
+
+  // ── 0. Assign, where somebody has none ────────────────────────────────────
+  if (ASSIGN || FROM) {
+    head("Giving a schedule to people who have none");
+    const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const byName = new Map([...schedules.values()].map((w) => [norm(w.name), w]));
+
+    /** code → schedule name, when a sheet is naming them one by one. */
+    const fromSheet = new Map<string, string>();
+    if (FROM) {
+      const XLSX = (await import("xlsx")).default;
+      const wb = XLSX.readFile(FROM);
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }) as Record<string, unknown>[];
+      if (!rows.length) throw new Error(`${FROM} has no rows`);
+      const cols = Object.keys(rows[0]);
+      const codeCol = cols.find((c) => /^(employee\s*)?(code|number|no\.?|id)$/i.test(c.trim())) ?? cols[0];
+      const schedCol = cols.find((c) => /shift|schedule/i.test(c)) ?? cols[1];
+      log(`  reading ${FROM} — code column "${codeCol}", schedule column "${schedCol}"`);
+      for (const r of rows) {
+        const code = String(r[codeCol] ?? "").trim().toUpperCase();
+        const name = String(r[schedCol] ?? "").trim();
+        if (code && name) fromSheet.set(code, name);
+      }
+      log(`  ${fromSheet.size} people named in the sheet`);
+    }
+
+    let blanket: Sched | undefined;
+    if (ASSIGN) {
+      blanket = byName.get(norm(ASSIGN)) ?? [...schedules.values()].find((w) => String(w._id) === ASSIGN);
+      if (!blanket) {
+        log(`  No schedule named "${ASSIGN}". The org has:`);
+        for (const w of schedules.values()) log(`      ${w.name}  (${w.loginTime}–${w.logoutTime} ${w.timeZone})`);
+        throw new Error(`Unknown schedule "${ASSIGN}"`);
+      }
+      log(`  assigning: ${blanket.name}  ${blanket.loginTime}–${blanket.logoutTime} ${blanket.timeZone}`);
+    }
+
+    const unassigned = await Employee.find({ organization: org._id, user: { $ne: null }, status: { $ne: "terminated" }, workSchedule: null })
+      .select("name employeeCode user location department")
+      .sort({ employeeCode: 1 })
+      .lean();
+
+    let given = 0;
+    const unnamed: string[] = [];
+    for (const emp of unassigned) {
+      if (WHERE_LOCATION && String(emp.location ?? "").toLowerCase() !== WHERE_LOCATION) continue;
+      if (WHERE_DEPT && norm(String(emp.department ?? "")) !== norm(WHERE_DEPT)) continue;
+      let target = blanket;
+      if (fromSheet.size) {
+        const wanted = fromSheet.get(String(emp.employeeCode).toUpperCase());
+        if (!wanted) { if (!blanket) { unnamed.push(`${emp.employeeCode} ${emp.name}`); continue; } }
+        else {
+          const found = byName.get(norm(wanted));
+          if (!found) { unnamed.push(`${emp.employeeCode} ${emp.name} — sheet says "${wanted}", no such schedule`); continue; }
+          target = found;
+        }
+      }
+      if (!target) continue;
+      log(`  ${String(emp.employeeCode).padEnd(6)} ${String(emp.name).slice(0, 30).padEnd(31)} → ${target.loginTime}–${target.logoutTime} ${target.timeZone}`);
+      if (APPLY) {
+        // Both documents, together — that is the whole point of this seed.
+        await Employee.updateOne({ _id: emp._id }, { $set: { workSchedule: target._id } });
+        await User.updateOne({ _id: emp.user }, { $set: { workSchedule: target._id } });
+      }
+      given++;
+    }
+    log(`\n  ${given} ${APPLY ? "given a schedule on both the employee record and the login" : "would be given a schedule"}`);
+    if (unnamed.length) {
+      log(`  ${unnamed.length} left without one:`);
+      for (const u of unnamed.slice(0, 10)) log(`      ${u}`);
+      if (unnamed.length > 10) log(`      … and ${unnamed.length - 10} more`);
+    }
+  }
 
   // ── 1. Schedules ──────────────────────────────────────────────────────────
   head("Logins whose schedule does not match their employee record");
