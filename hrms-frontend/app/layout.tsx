@@ -36,6 +36,23 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Catch the install offer before React exists.
+
+          Chrome fires beforeinstallprompt within milliseconds of load, and it
+          fires once — a listener added later in a useEffect, after hydration,
+          simply never sees it. Everything needed to be installable was in
+          place (manifest, icons, an active service worker), so on Android the
+          offer was being made and missed, and the Install button never
+          appeared. Stashed here and read by the component when it mounts.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__hrmsInstallEvent=e;window.dispatchEvent(new Event('hrms:installready'))});window.addEventListener('appinstalled',function(){window.__hrmsInstallEvent=null})})();`,
+          }}
+        />
+      </head>
       <body className={inter.className}>
         <Providers>
           <NextTopLoader

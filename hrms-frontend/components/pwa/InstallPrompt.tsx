@@ -42,8 +42,14 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [dismissed, setDismissed] = useState(true);
   const [installed, setInstalled] = useState(false);
+  /** Steps unfolded because there was no prompt to fire. */
+  const [showSteps, setShowSteps] = useState(false);
+
+  // Read once on the client — the render branches on it, not only the effect.
+  const [isIosDevice, setIsIosDevice] = useState(false);
 
   useEffect(() => {
+    setIsIosDevice(isIos());
     // Nothing to offer once it is already running as an app.
     if (isStandalone()) { setInstalled(true); return; }
     // A past dismissal is only remembered where the banner arrives uninvited.
@@ -53,13 +59,27 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
     // iOS never fires this, so it gets instructions instead of a button.
     if (isIos()) { setShowIosHelp(true); return; }
 
+    // Usually already caught: the script in the document head listens before
+    // React exists, because Chrome fires this once and fires it early — long
+    // before an effect could be listening.
+    const stashed = (window as { __hrmsInstallEvent?: InstallEvent }).__hrmsInstallEvent;
+    if (stashed) setEvent(stashed);
+
     const onPrompt = (e: Event) => {
       // Chrome shows its own bar otherwise, and two offers is worse than one.
       e.preventDefault();
       setEvent(e as InstallEvent);
     };
+    const onStashed = () => {
+      const e = (window as { __hrmsInstallEvent?: InstallEvent }).__hrmsInstallEvent;
+      if (e) setEvent(e);
+    };
     window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("hrms:installready", onStashed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("hrms:installready", onStashed);
+    };
   }, [persistent]);
 
   const close = () => {
@@ -71,6 +91,8 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
     if (!event) return;
     await event.prompt();
     const { outcome } = await event.userChoice;
+    // Spent — Chrome will not accept the same event twice.
+    (window as { __hrmsInstallEvent?: InstallEvent | null }).__hrmsInstallEvent = null;
     // A page kept for this purpose does not close itself; it just stops having
     // a button once the browser has spent the prompt.
     setEvent(null);
@@ -90,23 +112,37 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">Install Delta HRMS</p>
         <p className="text-xs text-muted-foreground">
-          {showIosHelp ? (
-            <>
-              Tap <Share className="inline h-3 w-3" /> Share, then &ldquo;Add to Home Screen&rdquo; to
-              open it like an app.
-            </>
-          ) : event ? (
-            "Add it to your device to open it straight from your home screen."
+          {showIosHelp || (showSteps && !event) ? (
+            isIosDevice ? (
+              <>
+                Tap <Share className="inline h-3 w-3" /> Share, then &ldquo;Add to Home
+                Screen&rdquo; to open it like an app.
+              </>
+            ) : (
+              // The browser has not offered a prompt, so there is no prompt to
+              // fire. Where to find its own control beats a button that would
+              // do nothing when pressed.
+              <>Use <strong>Install</strong> from the address bar, or your browser&rsquo;s menu → Install
+              Delta HRMS. Chrome and Edge offer it; Safari installs through Share.</>
+            )
           ) : (
-            // No button to offer: either the browser has not decided yet, or it
-            // does not install apps at all. Saying where to look beats a banner
-            // that names a button nobody can find.
-            "Open this page in Chrome or Edge and use Install from the address bar, or your browser's menu."
+            "Add it to your device to open it straight from your home screen."
           )}
         </p>
       </div>
-      {event && (
-        <Button size="sm" onClick={install} className="shrink-0">Install</Button>
+      {/* Always a button where the offer is permanent. With a prompt in hand it
+          installs; without one it unfolds the steps for this browser, which is
+          the only honest thing a button can do when the browser has given us
+          nothing to fire. */}
+      {(event || persistent) && (
+        <Button
+          size="sm"
+          onClick={event ? install : () => setShowSteps((v) => !v)}
+          className="shrink-0"
+          variant={event ? "default" : "outline"}
+        >
+          {event ? "Install" : showSteps ? "Hide steps" : "How to install"}
+        </Button>
       )}
       {!persistent && (
         <button
