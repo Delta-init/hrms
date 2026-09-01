@@ -14,6 +14,11 @@ import type { KioskPunchResult } from "@/types";
 
 /** How long a result stays on screen before the kiosk resets for the next person. */
 const RESULT_MS = 5000;
+/** How long a kiosk runs before refreshing itself. */
+const RELOAD_EVERY_MS = 5 * 60_000;
+/** How often the reload checks whether the kiosk is free to be interrupted. */
+const IDLE_CHECK_MS = 10_000;
+
 /**
  * Frames per punch when liveness is off. Two rather than one so a blink costs
  * nothing, and no more than two because every extra frame is another round of
@@ -212,6 +217,37 @@ function CheckInScreen({
   useEffect(() => {
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  /**
+   * Reload the tablet every five minutes.
+   *
+   * This screen is left running for weeks on a device nobody logs into. A page
+   * that old is running whatever build was current when it opened, holding a
+   * camera stream that may have died quietly, and there is nobody standing
+   * there to press refresh. Reloading on a timer is how it picks up a deploy
+   * and recovers from a wedged camera without a visit.
+   *
+   * Never mid-punch. Somebody is standing in front of it having their face
+   * read, or reading the answer, and reloading under them would lose the punch
+   * or hide the confirmation that it worked. The deadline simply passes and the
+   * next check takes it, so a busy kiosk reloads a few seconds late rather than
+   * interrupting anyone.
+   */
+  const busyRef = useRef(false);
+  const resultRef = useRef<KioskPunchResult | null>(null);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+  useEffect(() => { resultRef.current = result; }, [result]);
+
+  useEffect(() => {
+    const deadline = Date.now() + RELOAD_EVERY_MS;
+    const timer = setInterval(() => {
+      if (Date.now() < deadline) return;
+      // Idle means no punch in flight and nothing on screen to read.
+      if (busyRef.current || resultRef.current) return;
+      window.location.reload();
+    }, IDLE_CHECK_MS);
     return () => clearInterval(timer);
   }, []);
 
