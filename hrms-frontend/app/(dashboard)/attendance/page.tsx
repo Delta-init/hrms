@@ -129,34 +129,48 @@ export default function AttendancePage() {
         : <span className="text-muted-foreground">—</span>,
     },
     {
+      /**
+       * Two very different things, never shown as if they were one.
+       *
+       * GPS is where the phone was, to within metres. A city derived from the
+       * IP is a guess the database itself rates as good to 200km — a mobile
+       * carrier's addresses are registered where the gateway is, not where the
+       * handset is, which is why a punch from Kerala reads as Delhi. Showing
+       * that unqualified invites somebody to challenge an employee over a
+       * number that never claimed to be their location.
+       */
       id: "location", label: "Location",
       render: (r) => {
-        // A missing fix is reported as the reason it is missing. Somebody who
-        // declined the prompt and a browser that cannot do it are different
-        // facts, and neither is the same as nothing having been recorded.
-        if (!r.punchPlace && !r.punchCoords) {
-          const why = r.punchLocationSource === "denied" ? "Declined"
-            : r.punchLocationSource === "unavailable" ? "Unavailable"
-            : r.punchLocationSource === "unsupported" ? "Not supported"
-            : null;
-          return <span className="text-muted-foreground">{why ?? "—"}</span>;
-        }
         const c = r.punchCoords;
-        const body = (
-          <span className="inline-flex items-center gap-1 text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5" />{r.punchPlace ?? `${c!.latitude.toFixed(3)}, ${c!.longitude.toFixed(3)}`}
-          </span>
-        );
-        // The coordinates are browser-reported and only ever corroborating, so
-        // they open a map rather than being presented as a finding.
-        return c ? (
-          <a
-            href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
-            target="_blank" rel="noopener noreferrer"
-            title={`${c.latitude}, ${c.longitude} — reported by the browser`}
-            className="hover:underline"
-          >{body}</a>
-        ) : body;
+        // Precise, and the only one worth calling a location.
+        if (c) {
+          return (
+            <a
+              href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
+              target="_blank" rel="noopener noreferrer"
+              title={`${c.latitude}, ${c.longitude}${r.punchPlace ? ` · the IP suggests ${r.punchPlace}` : ""}`}
+              className="inline-flex items-center gap-1 text-foreground hover:underline"
+            >
+              <MapPin className="h-3.5 w-3.5" />{r.punchPlace ?? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`}
+            </a>
+          );
+        }
+        // A guess, and marked as one.
+        if (r.punchPlace) {
+          return (
+            <span
+              className="inline-flex items-center gap-1 text-muted-foreground"
+              title="Estimated from the IP address — accurate to roughly 200km, and wrong for mobile networks. Not a location."
+            >
+              <Globe className="h-3.5 w-3.5" />~ {r.punchPlace}
+            </span>
+          );
+        }
+        const why = r.punchLocationSource === "denied" ? "Declined"
+          : r.punchLocationSource === "unavailable" ? "Unavailable"
+          : r.punchLocationSource === "unsupported" ? "Not supported"
+          : null;
+        return <span className="text-muted-foreground">{why ?? "—"}</span>;
       },
     },
     {
@@ -280,8 +294,11 @@ export default function AttendancePage() {
               "Punched from": r.deviceAnomaly ? r.deviceLabel ?? "Unknown device" : "",
               Device: r.punchDevice ?? "",
               IP: r.punchIp ?? "",
-              Location: r.punchPlace ?? (r.punchLocationSource === "denied" ? "Declined" : r.punchLocationSource === "unavailable" ? "Unavailable" : ""),
-              Coordinates: r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
+              // Kept apart in the export for the same reason as on screen: one
+              // is a measurement, the other an estimate with a 200km radius.
+              "GPS location": r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
+              "Estimated from IP": r.punchPlace ?? "",
+              "Location status": r.punchCoords ? "GPS" : r.punchLocationSource === "denied" ? "Declined by employee" : r.punchLocationSource === "unavailable" ? "Unavailable" : r.punchPlace ? "IP estimate only" : "",
             })}
           />
         </>
