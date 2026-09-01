@@ -56,6 +56,24 @@ const ASSIGN = arg("assign");
 const FROM = arg("from");
 const WHERE_LOCATION = arg("where-location")?.toLowerCase();
 const WHERE_DEPT = arg("where-dept")?.toLowerCase();
+/**
+ * Leave work-from-home staff in their own zone.
+ *
+ * A department-wide shift and "everyone remote works to Asia/Kolkata" can each
+ * be right and still disagree about one person. Where they do, the work mode
+ * wins: somebody at home in another country is not going to start their day on
+ * Gulf time because their department does.
+ */
+const KEEP_WFH_KOLKATA = args.includes("--keep-wfh-kolkata");
+/**
+ * Set the whole selection to this schedule, whatever they are on now.
+ *
+ * `--fix-timezone` stops at people already in the target zone, which is right
+ * when the zone is the thing being corrected and wrong when a department is
+ * being moved wholesale: ten o'clock and eleven o'clock in Dubai share a zone,
+ * so half a department would have been left an hour behind the rest of it.
+ */
+const REPLACE = args.includes("--replace");
 const WHERE_WORKMODE = arg("where-workmode")?.toLowerCase();
 /**
  * Also move people who already have a schedule, when its timezone is not the
@@ -132,8 +150,26 @@ async function main() {
       log(`  assigning: ${blanket.name}  ${blanket.loginTime}–${blanket.logoutTime} ${blanket.timeZone}`);
     }
 
+    // Resolved to an id first: `employee.department` is a reference, so
+    // comparing it to the name typed on the command line matched nobody and
+    // silently assigned the whole organisation instead of one department.
+    let deptId: unknown;
+    if (WHERE_DEPT) {
+      const { Department } = await import("../../models/Department.js");
+      const found = await Department.findOne({ organization: org._id, name: new RegExp(`^${WHERE_DEPT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") }).lean();
+      if (!found) {
+        const all = await Department.find({ organization: org._id }).select("name").lean();
+        log(`  No department named "${WHERE_DEPT}". The org has:`);
+        for (const d of all) log(`      ${d.name}`);
+        throw new Error(`Unknown department "${WHERE_DEPT}"`);
+      }
+      deptId = found._id;
+      log(`  department: ${found.name}`);
+    }
+
     const scope: Record<string, unknown> = { organization: org._id, user: { $ne: null }, status: { $ne: "terminated" } };
-    if (!RETIMEZONE) scope.workSchedule = null;
+    if (deptId) scope.department = deptId;
+    if (!RETIMEZONE && !REPLACE) scope.workSchedule = null;
     const unassigned = await Employee.find(scope)
       .select("name employeeCode user location department workMode workSchedule")
       .sort({ employeeCode: 1 })
@@ -141,9 +177,13 @@ async function main() {
 
     let given = 0;
     const unnamed: string[] = [];
+    const wfhKept: string[] = [];
     for (const emp of unassigned) {
       if (WHERE_LOCATION && String(emp.location ?? "").toLowerCase() !== WHERE_LOCATION) continue;
-      if (WHERE_DEPT && norm(String(emp.department ?? "")) !== norm(WHERE_DEPT)) continue;
+      if (KEEP_WFH_KOLKATA && emp.workMode === "wfh" && blanket && blanket.timeZone !== "Asia/Kolkata") {
+        wfhKept.push(`${emp.employeeCode} ${emp.name}`);
+        continue;
+      }
       if (WHERE_WORKMODE && String(emp.workMode ?? "").toLowerCase() !== WHERE_WORKMODE) continue;
       let target = blanket;
       if (fromSheet.size) {
@@ -157,8 +197,11 @@ async function main() {
       }
       if (!target) continue;
       const current = emp.workSchedule ? schedules.get(String(emp.workSchedule)) : undefined;
-      // Already in the right zone: their hours are their own, leave them.
-      if (current && current.timeZone === target.timeZone) continue;
+      // Already exactly this schedule — nothing to do either way.
+      if (current && String(current._id) === String(target._id)) continue;
+      // Correcting a zone leaves anyone already in it alone, because their
+      // hours are deliberate. Replacing a department's shift does not.
+      if (!REPLACE && current && current.timeZone === target.timeZone) continue;
       const was = current ? `${current.loginTime}–${current.logoutTime} ${current.timeZone}` : "none";
       log(`  ${String(emp.employeeCode).padEnd(6)} ${String(emp.name).slice(0, 30).padEnd(31)} ${was.padEnd(26)} → ${target.loginTime}–${target.logoutTime} ${target.timeZone}`);
       if (APPLY) {
@@ -169,6 +212,10 @@ async function main() {
       given++;
     }
     log(`\n  ${given} ${APPLY ? "given a schedule on both the employee record and the login" : "would be given a schedule"}`);
+    if (wfhKept.length) {
+      log(`  ${wfhKept.length} left on their own zone — they work from home:`);
+      for (const w of wfhKept) log(`      ${w}`);
+    }
     if (unnamed.length) {
       log(`  ${unnamed.length} left without one:`);
       for (const u of unnamed.slice(0, 10)) log(`      ${u}`);
