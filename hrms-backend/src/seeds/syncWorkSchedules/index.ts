@@ -56,6 +56,17 @@ const ASSIGN = arg("assign");
 const FROM = arg("from");
 const WHERE_LOCATION = arg("where-location")?.toLowerCase();
 const WHERE_DEPT = arg("where-dept")?.toLowerCase();
+const WHERE_WORKMODE = arg("where-workmode")?.toLowerCase();
+/**
+ * Also move people who already have a schedule, when its timezone is not the
+ * one being assigned.
+ *
+ * Work-from-home staff belong on Asia/Kolkata, and some are sitting on a Dubai
+ * shift. Widening the search to them would ordinarily risk overwriting a shift
+ * somebody chose on purpose, so the test is the timezone alone: anyone already
+ * in the right zone keeps their own hours, whatever they are.
+ */
+const RETIMEZONE = args.includes("--fix-timezone");
 
 const log = (m = "") => console.log(m);
 const head = (t: string) => log(`\n── ${t} ${"─".repeat(Math.max(0, 58 - t.length))}`);
@@ -121,8 +132,10 @@ async function main() {
       log(`  assigning: ${blanket.name}  ${blanket.loginTime}–${blanket.logoutTime} ${blanket.timeZone}`);
     }
 
-    const unassigned = await Employee.find({ organization: org._id, user: { $ne: null }, status: { $ne: "terminated" }, workSchedule: null })
-      .select("name employeeCode user location department")
+    const scope: Record<string, unknown> = { organization: org._id, user: { $ne: null }, status: { $ne: "terminated" } };
+    if (!RETIMEZONE) scope.workSchedule = null;
+    const unassigned = await Employee.find(scope)
+      .select("name employeeCode user location department workMode workSchedule")
       .sort({ employeeCode: 1 })
       .lean();
 
@@ -131,6 +144,7 @@ async function main() {
     for (const emp of unassigned) {
       if (WHERE_LOCATION && String(emp.location ?? "").toLowerCase() !== WHERE_LOCATION) continue;
       if (WHERE_DEPT && norm(String(emp.department ?? "")) !== norm(WHERE_DEPT)) continue;
+      if (WHERE_WORKMODE && String(emp.workMode ?? "").toLowerCase() !== WHERE_WORKMODE) continue;
       let target = blanket;
       if (fromSheet.size) {
         const wanted = fromSheet.get(String(emp.employeeCode).toUpperCase());
@@ -142,7 +156,11 @@ async function main() {
         }
       }
       if (!target) continue;
-      log(`  ${String(emp.employeeCode).padEnd(6)} ${String(emp.name).slice(0, 30).padEnd(31)} → ${target.loginTime}–${target.logoutTime} ${target.timeZone}`);
+      const current = emp.workSchedule ? schedules.get(String(emp.workSchedule)) : undefined;
+      // Already in the right zone: their hours are their own, leave them.
+      if (current && current.timeZone === target.timeZone) continue;
+      const was = current ? `${current.loginTime}–${current.logoutTime} ${current.timeZone}` : "none";
+      log(`  ${String(emp.employeeCode).padEnd(6)} ${String(emp.name).slice(0, 30).padEnd(31)} ${was.padEnd(26)} → ${target.loginTime}–${target.logoutTime} ${target.timeZone}`);
       if (APPLY) {
         // Both documents, together — that is the whole point of this seed.
         await Employee.updateOne({ _id: emp._id }, { $set: { workSchedule: target._id } });
