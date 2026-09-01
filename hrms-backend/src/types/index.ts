@@ -234,6 +234,12 @@ export interface IAttendance extends Document {
   user: Types.ObjectId | IUser;
   /** Calendar day this record belongs to (midnight of the local day, stored UTC). */
   date: Date;
+  /**
+   * The same day written plainly, as it reads where the person works:
+   * "2026-09-01". What every date filter matches on, because `date` is a
+   * different instant for each timezone and no single range covers them all.
+   */
+  localDay?: string | null;
   /** IANA time zone / "time region" the times are measured in, e.g. "Asia/Dubai". */
   timeZone: string;
   /** Day's first login and last logout (also mirrored across `sessions`). */

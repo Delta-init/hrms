@@ -18,12 +18,19 @@ import { parsePagination, searchRegex } from "../utils/query.js";
 import { Types } from "mongoose";
 
 /**
- * Start of `value` as a local day in `tz`. A bare YYYY-MM-DD is a calendar day
- * and has to be anchored somewhere; anything more specific is already an
- * instant and is left alone.
+ * A YYYY-MM-DD range as a plain string comparison.
+ *
+ * The keys sort lexicographically in date order, so `$gte`/`$lte` on the string
+ * is the range — and it needs no timezone, which is the whole point: there is
+ * no one zone that is right for everybody being listed. Anything that is
+ * already an instant is reduced to the day it names.
  */
-function dayBoundary(value: string, tz: string): Date {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? zonedTimeToUtc(value, "00:00", tz) : new Date(value);
+function dayRange(from?: string, to?: string): Record<string, string> {
+  const key = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : new Date(v).toISOString().slice(0, 10));
+  const r: Record<string, string> = {};
+  if (from) r.$gte = key(from);
+  if (to) r.$lte = key(to);
+  return r;
 }
 
 /**
@@ -160,15 +167,13 @@ export class AttendanceService {
         : { $in: [...ids].map((id) => new Types.ObjectId(id)) };
     }
     if (query.dateFrom || query.dateTo) {
-      // A day here means a local day, not a UTC instant. Comparing a bare
-      // YYYY-MM-DD against the stored local-midnight-in-UTC missed every
-      // record east of Greenwich — asking for today returned nothing at all —
-      // and `$lte` on the end date cut the last day off at its first second.
-      const tz = await this.orgTimeZone();
-      const range: Record<string, Date> = {};
-      if (query.dateFrom) range.$gte = dayBoundary(query.dateFrom, tz);
-      if (query.dateTo) range.$lt = new Date(dayBoundary(query.dateTo, tz).getTime() + 86_400_000);
-      filter.date = range;
+      // Matched on the day the record is written under, not on a range of
+      // instants. A range has to be anchored in one timezone, and every person
+      // outside it falls the wrong side of the edge: an Asia/Kolkata day starts
+      // ninety minutes before an Asia/Dubai one, so asking for today returned
+      // the Dubai staff, dropped all thirty on Kolkata time, and quietly
+      // included their records for tomorrow instead.
+      filter.localDay = dayRange(query.dateFrom, query.dateTo);
     }
 
     const sortable = new Set(["date", "workedMinutes", "lateMinutes", "status", "createdAt"]);

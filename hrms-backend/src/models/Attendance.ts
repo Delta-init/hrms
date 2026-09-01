@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import type { IAttendance, IAttendanceSession, IPunchSource } from "../types/index.js";
+import { localDayKey } from "../utils/schedule.js";
 
 /**
  * Where a punch came from. Optional throughout: every record written before
@@ -79,6 +80,19 @@ const attendanceSchema = new Schema<IAttendance>(
       required: [true, "Date is required"],
     },
     // "Time region" — IANA time zone the punches are measured in.
+    /**
+     * The calendar day this record belongs to, as it reads where the person
+     * works: "2026-09-01".
+     *
+     * `date` is midnight in that person's own zone, so the same calendar day is
+     * a different instant for each of them — 20:00Z for Dubai, 18:30Z for
+     * Kolkata. Filtering a range of instants therefore has to pick one zone and
+     * be wrong for everybody else: asking for today returned Dubai staff and
+     * silently dropped all thirty on Kolkata time, while pulling in their
+     * records for tomorrow. Matching on the written day instead is exact for
+     * everyone, whatever zone they keep.
+     */
+    localDay: { type: String, trim: true, maxlength: 10, index: true, default: null },
     timeZone: {
       type: String,
       required: [true, "Time zone is required"],
@@ -111,6 +125,8 @@ const attendanceSchema = new Schema<IAttendance>(
 // One attendance record per user per calendar day.
 attendanceSchema.index({ user: 1, date: 1 }, { unique: true });
 attendanceSchema.index({ date: 1 });
+// Every date-range query goes through this, scoped to one organisation.
+attendanceSchema.index({ organization: 1, localDay: 1 });
 attendanceSchema.index({ status: 1 });
 
 /** Sum of completed session durations, in whole minutes. */
@@ -143,6 +159,9 @@ attendanceSchema.pre("save", function (next) {
   // mirror can never outlive the session it was taken from.
   this.checkIn = ins.length ? ins.reduce((a, b) => (a.checkIn < b.checkIn ? a : b)).checkIn : null;
   this.checkOut = outs.length ? outs.reduce((a, b) => (a.checkOut! > b.checkOut! ? a : b)).checkOut ?? null : null;
+  // Derived from the record's own zone, so it stays right when either the day
+  // or the zone is corrected — both of which happen when a schedule changes.
+  this.localDay = localDayKey(this.date, this.timeZone || "Asia/Dubai");
   this.workedMinutes = this.computeWorkedMinutes();
   next();
 });

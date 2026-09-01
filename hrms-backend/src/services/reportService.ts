@@ -154,8 +154,15 @@ export class ReportService {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (filters.status) filter.status = filters.status;
     if (filters.department) filter.user = { $in: await this.userIdsInDepartment(filters.department) };
-    const range = dateRange(filters.dateFrom, filters.dateTo);
-    if (range) filter.date = range;
+    // Matched on the day the record is written under, for the same reason the
+    // attendance list is: a range of instants is anchored in one zone, and
+    // everybody outside it falls the wrong side of the edge. An exported month
+    // was shifting Asia/Kolkata staff by a day throughout.
+    const dayFrom = filters.dateFrom ? String(filters.dateFrom).slice(0, 10) : undefined;
+    const dayTo = filters.dateTo ? String(filters.dateTo).slice(0, 10) : undefined;
+    if (dayFrom || dayTo) {
+      filter.localDay = { ...(dayFrom ? { $gte: dayFrom } : {}), ...(dayTo ? { $lte: dayTo } : {}) };
+    }
 
     const records = await Attendance.find(filter).sort({ date: -1 }).limit(MAX_ROWS).lean();
     const empByUser = await this.employeesByUserIds([...new Set(records.map((r) => String(r.user)))]);
