@@ -18,6 +18,26 @@ import { parsePagination, searchRegex } from "../utils/query.js";
 import { Types } from "mongoose";
 
 /**
+ * The one device flag a day carries.
+ *
+ * A punch records where it came from, and either end of a session can look
+ * wrong. A day with two odd punches is not twice as odd — somebody still has
+ * to look at it exactly once — so the first flag found stands for the day.
+ */
+type SourcedSession = {
+  checkInSource?: { deviceAnomaly?: DeviceAnomaly | null } | null;
+  checkOutSource?: { deviceAnomaly?: DeviceAnomaly | null } | null;
+};
+function anomalyOf(sessions?: unknown): DeviceAnomaly | null {
+  const list = (sessions ?? []) as SourcedSession[];
+  return (
+    list
+      .flatMap((x) => [x?.checkInSource?.deviceAnomaly, x?.checkOutSource?.deviceAnomaly])
+      .find(Boolean) ?? null
+  );
+}
+
+/**
  * A YYYY-MM-DD range as a plain string comparison.
  *
  * The keys sort lexicographically in date order, so `$gte`/`$lte` on the string
@@ -180,7 +200,7 @@ export class AttendanceService {
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "date";
     const sortDir = query.sortOrder === "asc" ? 1 : -1;
 
-    const [records, total] = await Promise.all([
+    const [found, total] = await Promise.all([
       Attendance.find(filter)
         .populate("user", "name email designation")
         .sort({ [sortField]: sortDir })
@@ -189,6 +209,12 @@ export class AttendanceService {
         .lean(),
       Attendance.countDocuments(filter),
     ]);
+
+    // Flattened by the same rule the day view uses: the same punch was flagged
+    // on one tab and clean on the other, which is worse than not flagging it at
+    // all. The rows still carry their raw sessions — this only adds the summary
+    // the list actually reads.
+    const records = found.map((r) => ({ ...r, deviceAnomaly: anomalyOf(r.sessions) }));
 
     return { records, pagination: buildPagination(total, page, limit) };
   }
@@ -682,12 +708,7 @@ export class AttendanceService {
         status: a.status as string, workedMinutes: a.workedMinutes ?? 0,
         checkIn: a.checkIn ?? null, checkOut: a.checkOut ?? null,
         lateMinutes: a.lateMinutes ?? 0, note: a.note ?? "", timeZone: a.timeZone ?? null,
-        // One flag for the day. A day with two odd punches is not twice as odd
-        // — somebody still has to look at it exactly once.
-        deviceAnomaly:
-          (a.sessions ?? [])
-            .flatMap((x) => [x?.checkInSource?.deviceAnomaly, x?.checkOutSource?.deviceAnomaly])
-            .find(Boolean) ?? null,
+        deviceAnomaly: anomalyOf(a.sessions),
       };
     }
     // Per user, the leave in force on each day — "wfh" paints the calendar

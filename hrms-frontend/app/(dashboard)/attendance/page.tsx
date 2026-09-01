@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays } from "lucide-react";
+import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, ShieldAlert } from "lucide-react";
 import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -24,7 +24,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
-import { ATTENDANCE_STATUS_LABELS, type Attendance, type AttendanceStatus } from "@/types";
+import { ATTENDANCE_STATUS_LABELS, DEVICE_ANOMALY_LABELS, type Attendance, type AttendanceStatus } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<AttendanceStatus, string> = {
@@ -91,7 +91,28 @@ export default function AttendancePage() {
     { id: "login", label: "Login", render: (r) => <span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3.5 w-3.5" />{fmtTime(r.checkIn, r.timeZone)}</span> },
     { id: "logout", label: "Logout", render: (r) => <span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3.5 w-3.5" />{fmtTime(r.checkOut, r.timeZone)}</span> },
     { id: "worked", label: "Worked", sortKey: "workedMinutes", render: (r) => <span className="font-medium">{fmtWorked(r.workedMinutes)}</span> },
-    { id: "status", label: "Status", sortKey: "status", render: (r) => <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>{ATTENDANCE_STATUS_LABELS[r.status]}</span> },
+    {
+      id: "status", label: "Status", sortKey: "status",
+      render: (r) => (
+        <span className="inline-flex items-center gap-1.5">
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
+            {ATTENDANCE_STATUS_LABELS[r.status]}
+          </span>
+          {/* Beside the status rather than replacing it: the day still counts
+              as whatever it counts as, it is only the device it was punched
+              from that wants a second look. Same badge as the day view, so a
+              flagged day looks the same whichever tab you find it on. */}
+          {r.deviceAnomaly && (
+            <span
+              title={DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}
+              className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
+            >
+              <ShieldAlert className="h-3 w-3" />Device
+            </span>
+          )}
+        </span>
+      ),
+    },
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
       render: (r) => (canEdit || canDelete) ? (
@@ -207,6 +228,9 @@ export default function AttendancePage() {
               Login: fmtTime(r.checkIn, r.timeZone), Logout: fmtTime(r.checkOut, r.timeZone),
               "Worked (min)": r.workedMinutes, "Late (min)": r.lateMinutes,
               Status: ATTENDANCE_STATUS_LABELS[r.status],
+              // Spelled out rather than a flag: a spreadsheet has no tooltip,
+              // and "Device" alone says nothing about what was wrong with it.
+              "Device flag": r.deviceAnomaly ? DEVICE_ANOMALY_LABELS[r.deviceAnomaly] : "",
             })}
           />
         </>

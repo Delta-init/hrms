@@ -543,6 +543,12 @@ export interface Attendance {
   workedMinutes: number;
   lateMinutes: number;
   note?: string;
+  /**
+   * Set when a punch that day came from somewhere other than the registered
+   * device. Flattened from the punch sources by the server, the same way the
+   * day view gets it, so both tabs flag the same day.
+   */
+  deviceAnomaly?: DeviceAnomaly | null;
   createdAt: string;
   updatedAt: string;
 }
