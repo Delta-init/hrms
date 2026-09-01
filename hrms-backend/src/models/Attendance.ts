@@ -125,19 +125,24 @@ attendanceSchema.methods.computeWorkedMinutes = function (): number {
   return Math.round(total);
 };
 
-// Keep checkIn/checkOut mirrors + workedMinutes in sync with sessions on save.
+/**
+ * Keep the checkIn/checkOut mirrors and workedMinutes in step with sessions.
+ *
+ * Derived outright rather than only written when a value is found. Setting but
+ * never clearing meant erasing a logout left the mirror behind: the session
+ * said the day was still open, the record still reported a time, and the two
+ * were read by different screens. Clearing it in the dialog appeared to do
+ * nothing, because the column the table reads had not moved — while
+ * workedMinutes, computed from the sessions, dropped to zero beside it.
+ */
 attendanceSchema.pre("save", function (next) {
   const sessions = (this.sessions ?? []) as IAttendanceSession[];
-  if (sessions.length > 0) {
-    const withIn = sessions.filter((s) => s.checkIn);
-    if (withIn.length > 0) {
-      this.checkIn = withIn.reduce((a, b) => (a.checkIn < b.checkIn ? a : b)).checkIn;
-    }
-    const withOut = sessions.filter((s) => s.checkOut);
-    if (withOut.length > 0) {
-      this.checkOut = withOut.reduce((a, b) => (a.checkOut! > b.checkOut! ? a : b)).checkOut ?? null;
-    }
-  }
+  const ins = sessions.filter((s) => s.checkIn);
+  const outs = sessions.filter((s) => s.checkOut);
+  // Earliest way in, latest way out — and null when there is none, so the
+  // mirror can never outlive the session it was taken from.
+  this.checkIn = ins.length ? ins.reduce((a, b) => (a.checkIn < b.checkIn ? a : b)).checkIn : null;
+  this.checkOut = outs.length ? outs.reduce((a, b) => (a.checkOut! > b.checkOut! ? a : b)).checkOut ?? null : null;
   this.workedMinutes = this.computeWorkedMinutes();
   next();
 });

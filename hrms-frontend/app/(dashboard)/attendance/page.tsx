@@ -165,7 +165,7 @@ export default function AttendancePage() {
             loading={isLoading || isFetching}
             pagination={data?.pagination}
             query={query}
-            searchable={false}
+            searchPlaceholder="Search by name, employee code or email…"
             filters={filters}
             quickFilters={
               <DateRangeFilter

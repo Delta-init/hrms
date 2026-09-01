@@ -14,7 +14,8 @@ import { buildPagination } from "../utils/response.js";
 import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
-import { parsePagination } from "../utils/query.js";
+import { parsePagination, searchRegex } from "../utils/query.js";
+import { Types } from "mongoose";
 
 /**
  * Start of `value` as a local day in `tz`. A bare YYYY-MM-DD is a calendar day
@@ -43,6 +44,8 @@ interface AttendanceQuery extends PaginationQuery {
   user?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** Name, employee code or email of the person a row belongs to. */
+  search?: string;
 }
 
 
@@ -128,6 +131,34 @@ export class AttendanceService {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;
     if (query.status) filter.status = query.status;
+
+    /**
+     * Search by the person, not by the row.
+     *
+     * An attendance record holds only a reference to the login, so there is no
+     * name on it to match. The people are resolved first and the rows narrowed
+     * to them — as a constraint on the query rather than a filter over the
+     * page, so a search cannot return four of nine matches because the other
+     * five happened to fall on page two.
+     *
+     * The employee code is searchable too, and lives on the employee record
+     * rather than the login, so both are asked.
+     */
+    if (query.search?.trim()) {
+      const rx = searchRegex(query.search.trim());
+      const [users, employees] = await Promise.all([
+        User.find({ ...orgFilter(), $or: [{ name: rx }, { email: rx }] }).select("_id").lean(),
+        Employee.find({ ...orgFilter(), $or: [{ name: rx }, { employeeCode: rx }] }).select("user").lean(),
+      ]);
+      const ids = new Set([
+        ...users.map((u) => String(u._id)),
+        ...employees.map((e) => e.user).filter(Boolean).map(String),
+      ]);
+      // A search matching nobody must return nothing, not everybody.
+      filter.user = query.user && ids.has(String(query.user))
+        ? query.user
+        : { $in: [...ids].map((id) => new Types.ObjectId(id)) };
+    }
     if (query.dateFrom || query.dateTo) {
       // A day here means a local day, not a UTC instant. Comparing a bare
       // YYYY-MM-DD against the stored local-midnight-in-UTC missed every
