@@ -556,8 +556,12 @@ export interface Attendance {
   /** Where and from what the day was started, taken from the check-in punch. */
   punchDevice?: string | null;
   punchIp?: string | null;
-  /** "Dubai, DU, AE" — as much of it as the lookup could give. */
+  /** "Dubai, DU, AE" — as much of it as the IP lookup could give. */
   punchPlace?: string | null;
+  /** The GPS fix as a street address: road, area, city, district, state, country. */
+  punchAddress?: string | null;
+  /** The same address as the geocoder phrases it, for the tooltip. */
+  punchAddressFull?: string | null;
   punchCoords?: { latitude: number; longitude: number } | null;
   /** Why there is no fix, when there is none: denied, unavailable, unsupported. */
   punchLocationSource?: "gps" | "denied" | "unavailable" | "unsupported" | null;

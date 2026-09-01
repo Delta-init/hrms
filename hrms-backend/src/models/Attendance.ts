@@ -42,6 +42,24 @@ const punchSourceSchema = new Schema<IPunchSource>(
     },
     timeZone: { type: String, trim: true, maxlength: 60, default: null },
 
+    /**
+     * The coordinates as an address, resolved once when the punch is made.
+     *
+     * Stored rather than looked up on demand: a list of a hundred rows would
+     * otherwise be a hundred requests to somebody else's map service every time
+     * it is opened, and the address of a place does not change while the
+     * attendance record does not.
+     *
+     * Absent whenever the lookup did not happen or did not answer — there is no
+     * fix, the service was slow, it was down. The coordinates stand on their
+     * own in that case; the street is a convenience laid over them.
+     */
+    road: { type: String, trim: true, maxlength: 120, default: null },
+    suburb: { type: String, trim: true, maxlength: 120, default: null },
+    district: { type: String, trim: true, maxlength: 120, default: null },
+    postcode: { type: String, trim: true, maxlength: 20, default: null },
+    addressLabel: { type: String, trim: true, maxlength: 300, default: null },
+
     // Which registered browser this came from, and — when it was not that one —
     // why. Null is the ordinary case: the punch came from the device the person
     // is registered on, or the organization does not track devices at all.

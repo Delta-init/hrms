@@ -195,6 +195,12 @@ export type PunchMethod = "web" | "face" | "manual";
  * clocked out from a desk on the way home.
  */
 export interface IPunchSource {
+  /** The coordinates as an address, resolved once when the punch was made. */
+  road?: string | null;
+  suburb?: string | null;
+  district?: string | null;
+  postcode?: string | null;
+  addressLabel?: string | null;
   method: PunchMethod;
   kiosk?: Types.ObjectId | IKiosk | null;
   /** Similarity score that identified them, for auditing a disputed punch. */

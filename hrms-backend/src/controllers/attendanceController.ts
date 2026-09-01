@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { AttendanceService } from "../services/attendanceService.js";
 import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema } from "../validations/attendanceValidation.js";
 import { buildPunchContext } from "../utils/punchContext.js";
+import { reverseGeocode } from "../utils/reverseGeocode.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { Employee } from "../models/Employee.js";
 import { scoped } from "../utils/orgContext.js";
@@ -148,12 +149,42 @@ export const getMyAttendance = async (req: AuthenticatedRequest, res: Response, 
  * to the punch, and failing somebody's check-in because their browser sent an
  * odd accuracy value would lose the thing that actually matters.
  */
-const webSource = (req: AuthenticatedRequest) => {
+const webSource = async (req: AuthenticatedRequest) => {
   const parsed = punchContextSchema.safeParse(req.body ?? {});
   const body = parsed.success ? parsed.data : undefined;
+  const ctx = buildPunchContext(req, body);
+
+  /**
+   * The address, where there is a coordinate to resolve.
+   *
+   * Awaited rather than left to finish later: the punch is written once, and a
+   * lookup that lands after it has nowhere to go. It is bounded to a few
+   * seconds and every failure returns nothing, so the worst case is a record
+   * with coordinates and no street — which is what every record had until now.
+   */
+  const place =
+    typeof ctx.latitude === "number" && typeof ctx.longitude === "number"
+      ? await reverseGeocode(ctx.latitude, ctx.longitude)
+      : null;
+
   return {
     method: "web" as const,
-    ...buildPunchContext(req, body),
+    ...ctx,
+    // Only where the lookup answered. The city and country from the IP are
+    // already on the context and are a far coarser guess; a real address
+    // overrides them rather than sitting beside them contradicting.
+    ...(place
+      ? {
+          road: place.road ?? null,
+          suburb: place.suburb ?? null,
+          district: place.district ?? null,
+          postcode: place.postcode ?? null,
+          addressLabel: place.label ?? null,
+          city: place.city ?? ctx.city,
+          region: place.state ?? ctx.region,
+          country: place.countryCode ?? ctx.country,
+        }
+      : {}),
     // Passed straight through rather than derived: these identify the browser
     // rather than describe the punch, and the service strips them again.
     deviceKey: body?.deviceKey,
@@ -164,7 +195,7 @@ const webSource = (req: AuthenticatedRequest) => {
 
 export const clockIn = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const record = await service.clockIn(req.user!.userId, webSource(req));
+    const record = await service.clockIn(req.user!.userId, await webSource(req));
     sendSuccess(res, "Clocked in", record, 201);
   } catch (error) {
     next(error);
@@ -173,7 +204,7 @@ export const clockIn = async (req: AuthenticatedRequest, res: Response, next: Ne
 
 export const clockOut = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const record = await service.clockOut(req.user!.userId, webSource(req));
+    const record = await service.clockOut(req.user!.userId, await webSource(req));
     sendSuccess(res, "Clocked out", record);
   } catch (error) {
     next(error);

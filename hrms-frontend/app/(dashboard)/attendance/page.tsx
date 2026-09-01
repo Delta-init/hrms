@@ -142,16 +142,24 @@ export default function AttendancePage() {
       id: "location", label: "Location",
       render: (r) => {
         const c = r.punchCoords;
-        // Precise, and the only one worth calling a location.
+        // Precise, and the only one worth calling a location. The address is
+        // shown when it resolved and the coordinates when it did not, because
+        // a street somebody recognises is the point — but the coordinates are
+        // the record, and the link always goes to them rather than to a name
+        // that was looked up afterwards.
         if (c) {
           return (
             <a
               href={`https://www.google.com/maps?q=${c.latitude},${c.longitude}`}
               target="_blank" rel="noopener noreferrer"
-              title={`${c.latitude}, ${c.longitude}${r.punchPlace ? ` · the IP suggests ${r.punchPlace}` : ""}`}
-              className="inline-flex items-center gap-1 text-foreground hover:underline"
+              title={`${r.punchAddressFull ?? r.punchAddress ?? "Open on a map"}\n${c.latitude}, ${c.longitude}`}
+              className="inline-flex items-start gap-1 text-foreground hover:underline"
             >
-              <MapPin className="h-3.5 w-3.5" />{r.punchPlace ?? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`}
+              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="leading-tight">
+                {r.punchAddress ?? `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`}
+                <span className="block text-[10px] text-muted-foreground">Show on map</span>
+              </span>
             </a>
           );
         }
@@ -297,6 +305,8 @@ export default function AttendancePage() {
               // Kept apart in the export for the same reason as on screen: one
               // is a measurement, the other an estimate with a 200km radius.
               "GPS location": r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
+              Address: r.punchAddress ?? "",
+              "Map link": r.punchCoords ? `https://www.google.com/maps?q=${r.punchCoords.latitude},${r.punchCoords.longitude}` : "",
               "Estimated from IP": r.punchPlace ?? "",
               "Location status": r.punchCoords ? "GPS" : r.punchLocationSource === "denied" ? "Declined by employee" : r.punchLocationSource === "unavailable" ? "Unavailable" : r.punchPlace ? "IP estimate only" : "",
             })}

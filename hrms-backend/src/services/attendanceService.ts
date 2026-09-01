@@ -28,6 +28,8 @@ type Sourced = {
   deviceAnomaly?: DeviceAnomaly | null; deviceLabel?: string | null;
   browser?: string | null; os?: string | null; deviceType?: string | null;
   ip?: string | null; city?: string | null; region?: string | null; country?: string | null;
+  road?: string | null; suburb?: string | null; district?: string | null;
+  postcode?: string | null; addressLabel?: string | null;
   latitude?: number | null; longitude?: number | null; locationSource?: string | null;
   method?: string | null;
 } | null;
@@ -54,10 +56,26 @@ function punchOriginOf(sessions?: unknown) {
   const list = (sessions ?? []) as SourcedSession[];
   const first = list.find((x) => x?.checkInSource)?.checkInSource ?? null;
   const place = [first?.city, first?.region, first?.country].filter(Boolean).join(", ");
+  /**
+   * The address, narrowest part first, as somebody would say it aloud.
+   *
+   * Only the parts that came back — an address abroad may have no district, a
+   * rural one no street — so the line never carries a gap where a comma implies
+   * something was dropped.
+   */
+  // `region` is where the state is kept on a punch — the geocoder's state is
+  // written into it, so there is one field rather than two that disagree.
+  const street = [first?.road, first?.suburb, first?.city, first?.district, first?.region, first?.country]
+    .filter(Boolean)
+    .join(", ");
   return {
     punchDevice: deviceNameOf(first),
     punchIp: first?.ip?.trim() || null,
     punchPlace: place || null,
+    // Present only where a real fix was resolved, so it is never confused with
+    // the far coarser guess the IP gives.
+    punchAddress: street || null,
+    punchAddressFull: first?.addressLabel?.trim() || null,
     punchCoords:
       typeof first?.latitude === "number" && typeof first?.longitude === "number"
         ? { latitude: first.latitude, longitude: first.longitude }
