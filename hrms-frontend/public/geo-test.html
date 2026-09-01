@@ -47,6 +47,7 @@
     <tr><th>Geolocation available</th><td id="hasGeo">—</td></tr>
     <tr><th>Permission now</th><td id="state">—</td></tr>
     <tr><th>Last request</th><td id="result">not asked yet</td></tr>
+    <tr><th>Where that is</th><td id="place">—</td></tr>
     <tr><th>Time taken</th><td id="took">—</td></tr>
   </table>
 
@@ -123,7 +124,15 @@
           " (±" + Math.round(pos.coords.accuracy) + "m)";
         $("verdict").innerHTML = "<strong>The browser will give a location on this site.</strong> " +
           "If the app still refuses your punch, the fault is in the app, not the browser or the device.";
-        say("fix", pos.coords.latitude + "," + pos.coords.longitude + " ±" + Math.round(pos.coords.accuracy) + "m in " + ms + "ms");
+        // A link rather than a lookup. Turning coordinates into a place name
+        // means sending somebody's exact position to a third party, and this
+        // page exists to diagnose a permission, not to collect anyone. The map
+        // opens only if it is clicked, and only then does anything leave.
+        var q = pos.coords.latitude + "," + pos.coords.longitude;
+        $("place").innerHTML =
+          '<a href="https://www.google.com/maps?q=' + q + '" target="_blank" rel="noopener noreferrer">' +
+          "open this point on a map</a> · accurate to about " + Math.round(pos.coords.accuracy) + " m";
+        say("fix", q + " ±" + Math.round(pos.coords.accuracy) + "m in " + ms + "ms");
         readState();
       },
       function (err) {
