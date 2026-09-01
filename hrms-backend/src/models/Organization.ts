@@ -57,6 +57,20 @@ const settingsSchema = new Schema(
      * every new joiner at a step nothing can complete.
      */
     requireFaceEnrollment: { type: Boolean, default: false },
+    /**
+     * Whether a work-from-home punch must carry a real location fix.
+     *
+     * Only remote staff: office staff punch at a kiosk that has already seen
+     * them, so a browser's opinion of where they are adds nothing. For a remote
+     * punch it is the only account of where the day started, and an IP address
+     * is no substitute — a mobile carrier's addresses resolve to the city its
+     * gateway sits in, two hundred kilometres from the handset.
+     *
+     * Off by default, and reversible without a deploy, because it can refuse a
+     * punch: somebody whose phone genuinely cannot get a fix would otherwise
+     * have no way to clock in and no way to say so.
+     */
+    requireRemoteLocation: { type: Boolean, default: false },
   },
   { _id: false }
 );

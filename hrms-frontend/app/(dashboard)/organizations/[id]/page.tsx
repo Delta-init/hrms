@@ -4,8 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Landmark, ArrowLeft, Pencil, Loader2, Mail, ShieldCheck, ScanFace, Building2,
-  MonitorSmartphone, Clock, AlertTriangle, CheckCircle2,
-} from "lucide-react";
+  MonitorSmartphone, Clock, AlertTriangle, CheckCircle2, MapPin } from "lucide-react";
 import { useOrganization } from "@/hooks/useOrganizations";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -136,6 +135,12 @@ export default function OrganizationPage() {
               on={!!s.requireFaceEnrollment}
               detail="Adds a face on file as the last step of onboarding."
               warn="Ignored while the face matching service is unreachable, so an outage holds nobody."
+            />
+            <Setting
+              icon={MapPin} label="Require a location on work-from-home punches"
+              on={!!s.requireRemoteLocation}
+              detail="A remote punch is refused unless the browser reports where it came from."
+              warn="Anyone whose phone cannot get a fix cannot clock in — HR has to record the day for them."
             />
           </div>
         </Card>

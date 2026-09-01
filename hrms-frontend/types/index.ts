@@ -104,6 +104,8 @@ export interface OrganizationSettings {
   remoteDevice?: RemoteDevicePolicy;
   /** Hold new joiners at the induction and agreements. */
   requireAgreements?: boolean;
+  /** Refuse a work-from-home punch that carries no location fix. */
+  requireRemoteLocation?: boolean;
 }
 export interface Organization {
   _id: string;
@@ -814,6 +816,8 @@ export interface AttendanceToday {
       registered: boolean;
       label: string | null;
     };
+    /** A work-from-home punch will be refused without a location fix. */
+    locationRequired?: boolean;
   };
 }
 

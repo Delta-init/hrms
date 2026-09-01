@@ -75,6 +75,8 @@ export interface IOrganizationSettings {
   requireAgreements?: boolean;
   /** Onboarding also requires a face on file. */
   requireFaceEnrollment?: boolean;
+  /** Whether a work-from-home punch must carry a real location fix. */
+  requireRemoteLocation?: boolean;
 }
 
 export interface IOrganization extends Document {

@@ -372,13 +372,15 @@ export class AttendanceService {
     enforced: boolean;
     canSelfPunch: boolean;
     devicePolicy: RemoteDevicePolicy;
+    /** Whether this person's punch must carry a real location fix. */
+    requireLocation: boolean;
     employeeId: string | null;
     trustedDevice: ITrustedDevice | null;
   }> {
     const [org, employee] = await Promise.all([
       Organization.findById(getOrgId())
-        .select("settings.enforceWorkMode settings.remoteDevice")
-        .lean<{ settings?: { enforceWorkMode?: boolean; remoteDevice?: RemoteDevicePolicy } } | null>(),
+        .select("settings.enforceWorkMode settings.remoteDevice settings.requireRemoteLocation")
+        .lean<{ settings?: { enforceWorkMode?: boolean; remoteDevice?: RemoteDevicePolicy; requireRemoteLocation?: boolean } } | null>(),
       Employee.findOne(scoped({ user: userId }))
         .select("workMode trustedDevice")
         .lean<{ _id: unknown; workMode?: "office" | "wfh"; trustedDevice?: ITrustedDevice | null } | null>(),
@@ -397,6 +399,9 @@ export class AttendanceService {
       // Only remote staff are held to one browser. Office staff punch at a
       // kiosk, which already knows exactly which device it is.
       devicePolicy: workMode === "wfh" ? org?.settings?.remoteDevice ?? "off" : "off",
+      // Remote staff only. A kiosk has already seen the person standing at it,
+      // so a browser's opinion of where they are adds nothing there.
+      requireLocation: workMode === "wfh" && !!org?.settings?.requireRemoteLocation,
       employeeId: employee ? String(employee._id) : null,
       trustedDevice: employee?.trustedDevice ?? null,
     };
@@ -519,6 +524,37 @@ export class AttendanceService {
    * somebody is: which device is allowed depends on the same work mode that
    * decides whether they may punch here at all.
    */
+  /**
+   * Refuse a remote punch that carries no location.
+   *
+   * For somebody working from home this is the only account of where their day
+   * started — no kiosk saw them, and the IP address says only which city their
+   * carrier's gateway is in, which can be two hundred kilometres out. Recording
+   * the punch without it produces a record that looks complete and answers
+   * nothing.
+   *
+   * The reason is passed back rather than a bare refusal. "Denied" is
+   * something the person can undo in their browser; "unsupported" is not, and
+   * telling them apart is the difference between a fixable prompt and standing
+   * there unable to start the day.
+   */
+  private assertLocationRule(
+    policy: { requireLocation: boolean },
+    source: PunchSource | undefined
+  ) {
+    if (!policy.requireLocation) return;
+    const hasFix = typeof source?.latitude === "number" && typeof source?.longitude === "number";
+    if (hasFix) return;
+    const why = source?.locationSource;
+    const message =
+      why === "denied"
+        ? "Working from home means your punch has to record where you are. Allow location for this site in your browser and try again."
+        : why === "unsupported"
+          ? "This browser cannot report a location, and a work-from-home punch needs one. Use a different browser, or ask HR to record the day for you."
+          : "Your location could not be read, and a work-from-home punch needs one. Check that location is switched on for this device, then try again — or ask HR to record the day for you.";
+    throw Object.assign(new Error(message), { statusCode: 400, code: "LOCATION_REQUIRED" });
+  }
+
   private async gatePunch(
     userId: string,
     source: PunchSource | undefined,
@@ -526,6 +562,7 @@ export class AttendanceService {
   ): Promise<PunchSource | undefined> {
     const policy = await this.selfPunchPolicy(userId);
     if (!opts?.skipKioskRule) this.assertKioskRule(policy, source);
+    this.assertLocationRule(policy, source);
 
     const device = await this.bindOrCheckDevice(policy, source);
     // Drop the secret before it can reach a document, whether or not the rule
@@ -571,6 +608,9 @@ export class AttendanceService {
           registered: !!policy.trustedDevice?.keyHash,
           label: policy.trustedDevice?.label ?? null,
         },
+        // So the card can say so before somebody presses a button that will
+        // refuse them, rather than after.
+        locationRequired: policy.requireLocation,
       },
       shift: {
         shiftStart: shift.shiftStart,

@@ -35,9 +35,10 @@ interface FormValues {
   remoteDevice: RemoteDevicePolicy;
   requireAgreements: boolean;
   requireFaceEnrollment: boolean;
+  requireRemoteLocation: boolean;
 }
 
-const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off", requireAgreements: false, requireFaceEnrollment: false };
+const empty: FormValues = { name: "", code: "", status: "active", currency: "AED", timeZone: "Asia/Dubai", mailFrom: "", smtpHost: "", smtpPort: "587", smtpUser: "", smtpPass: "", enforceWorkMode: false, remoteDevice: "off", requireAgreements: false, requireFaceEnrollment: false, requireRemoteLocation: false };
 
 export function OrganizationDialog({ open, onOpenChange, organization }: Props) {
   const isEditing = !!organization;
@@ -59,6 +60,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
         remoteDevice: s.remoteDevice ?? "off",
         requireAgreements: s.requireAgreements ?? false,
         requireFaceEnrollment: s.requireFaceEnrollment ?? false,
+        requireRemoteLocation: s.requireRemoteLocation ?? false,
       });
     } else reset(empty);
   }, [open, organization, reset]);
@@ -66,7 +68,7 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
   const onSubmit = (v: FormValues) => {
     const payload = {
       name: v.name, code: v.code, status: v.status,
-      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice, requireAgreements: v.requireAgreements, requireFaceEnrollment: v.requireFaceEnrollment },
+      settings: { currency: v.currency, timeZone: v.timeZone, mailFrom: v.mailFrom || undefined, smtpHost: v.smtpHost || undefined, smtpPort: v.smtpPort || undefined, smtpUser: v.smtpUser || undefined, smtpPass: v.smtpPass || undefined, enforceWorkMode: v.enforceWorkMode, remoteDevice: v.remoteDevice, requireAgreements: v.requireAgreements, requireFaceEnrollment: v.requireFaceEnrollment, requireRemoteLocation: v.requireRemoteLocation },
     };
     if (isEditing) update({ id: organization._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -174,6 +176,26 @@ export function OrganizationDialog({ open, onOpenChange, organization }: Props) 
                 name="requireFaceEnrollment"
                 render={({ field }) => (
                   <Switch id="requireFaceEnrollment" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
+                )}
+              />
+            </div>
+
+            <div className="mt-3 flex items-start justify-between gap-4 border-t border-border pt-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="requireRemoteLocation">Require a location on work-from-home punches</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  A remote punch is refused unless the browser reports where it came from. Office staff are
+                  unaffected — a kiosk has already seen them. An IP address is not a substitute: a mobile
+                  carrier resolves to the city its gateway sits in, which can be hundreds of kilometres out.
+                  This does refuse punches, so anyone whose phone cannot get a fix will need HR to record
+                  the day for them.
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="requireRemoteLocation"
+                render={({ field }) => (
+                  <Switch id="requireRemoteLocation" checked={field.value} onCheckedChange={field.onChange} className="mt-0.5 shrink-0" />
                 )}
               />
             </div>

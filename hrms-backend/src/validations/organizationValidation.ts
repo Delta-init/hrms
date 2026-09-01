@@ -13,6 +13,7 @@ const settingsSchema = z.object({
   remoteDevice: z.enum(["off", "flag", "enforce"]).optional(),
   requireAgreements: z.boolean().optional(),
   requireFaceEnrollment: z.boolean().optional(),
+  requireRemoteLocation: z.boolean().optional(),
 });
 
 export const createOrganizationSchema = z.object({

@@ -277,7 +277,11 @@ export function ClockCard() {
         <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
           <MapPin className="mt-px h-3 w-3 shrink-0" />
           <span>
-            Working remotely — your location, IP address and device are recorded with each punch.
+            {/* Said before the button, not after it is refused: somebody who
+                has to allow a prompt should know that before they press. */}
+            {punchPolicy.locationRequired
+              ? "Working remotely — your location is required to punch, and your IP address and device are recorded with it. Allow location when your browser asks."
+              : "Working remotely — your location, IP address and device are recorded with each punch."}
             {punchPolicy.device.policy !== "off" && (
               punchPolicy.device.registered
                 ? ` Attendance is tied to ${punchPolicy.device.label || "your registered device"}.`
