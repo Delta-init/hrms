@@ -21,6 +21,8 @@ interface EmployeeQuery extends PaginationQuery {
   employmentType?: string;
   /** "office" | "wfh" — where the person works. */
   workMode?: string;
+  /** A work schedule's id, or "none" for the people who have not been given one. */
+  workSchedule?: string;
   /** "yes" | "no" — whether the person has set up face check-in. */
   faceEnrolled?: string;
   /** "current" | "leavers" | "all" — whether to include people who have left. */
@@ -162,6 +164,11 @@ export class EmployeeService {
       if (!query.status && query.staff !== "all") filter.status = "terminated";
     }
     if (query.department) filter.department = query.department;
+    // "none" is the useful half of this filter: it is the only way to see who
+    // is still falling through to the fallback shift, which is not something
+    // any other screen shows.
+    if (query.workSchedule === "none") filter.workSchedule = null;
+    else if (query.workSchedule) filter.workSchedule = query.workSchedule;
     if (query.employmentType) filter.employmentType = query.employmentType;
     // Records written before the field existed have no `workMode` at all —
     // Mongoose only applies the default when a document is saved. Asking for

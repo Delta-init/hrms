@@ -4,6 +4,7 @@ import Link from "next/link";
 import { UserRound, Plus, MoreHorizontal, Pencil, Trash2, KeyRound, ShieldCheck, Eye, ContactRound, ScanFace, House, Building2 } from "lucide-react";
 import { useEmployees, useDeleteEmployee } from "@/hooks/useEmployees";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
+import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { useAuth, useImpersonate } from "@/hooks/useAuth";
 import { toast } from "@/lib/toast";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -26,6 +27,20 @@ import { PersonAvatar } from "@/components/shared/PersonAvatar";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EXIT_TYPE_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type ExitType, type WorkMode } from "@/types";
 
 const ALL = "__all__";
+
+/**
+ * "Asia/Kolkata" → "Kolkata".
+ *
+ * The city is the part anyone here reads: the office it belongs to. The IANA
+ * prefix is the same on every row and only makes the column wider. Anything
+ * without a region falls back to the name as given rather than to a blank —
+ * a zone we do not recognise is still a zone somebody is judged by.
+ */
+function regionOf(timeZone?: string | null): string {
+  if (!timeZone) return "—";
+  const city = timeZone.split("/").pop();
+  return (city ?? timeZone).replace(/_/g, " ");
+}
 const statusStyles: Record<EmployeeStatus, string> = {
   active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   probation: "bg-sky-500/10 text-sky-600 border-sky-500/20",
@@ -63,6 +78,7 @@ export default function EmployeesPage() {
   });
   const { data, isLoading, isFetching } = useEmployees(query.params, { enabled: canView });
   const { data: departments = [] } = useDepartmentsSimple();
+  const { data: schedules = [] } = useWorkSchedulesSimple();
   const { data: faceSettings } = useFaceSettings();
   // Only the people on screen, and only when face check-in is switched on.
   const userIdsOnPage = (data?.data ?? [])
@@ -116,7 +132,26 @@ export default function EmployeesPage() {
         </span>
       ),
     },
-    { id: "schedule", label: "Schedule", defaultVisible: false, render: (e) => <span className="text-muted-foreground">{typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "—"}</span> },
+    {
+      // Shown by default, and with the hours and region rather than only the
+      // schedule's name: three of the nine schedules are named things like
+      // "General Polciy - websign in", and several different names carry
+      // identical hours. Attendance is judged on the hours and the zone, so
+      // those are what belongs on the row. "Not set" is called out rather than
+      // dashed, because it means the person is being judged against a fallback
+      // shift nobody chose for them.
+      id: "schedule", label: "Schedule",
+      render: (e) => {
+        const ws = typeof e.workSchedule === "object" ? e.workSchedule : null;
+        if (!ws) return <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-500">Not set</span>;
+        return (
+          <div className="leading-tight">
+            <div className="font-medium tabular-nums">{ws.loginTime}–{ws.logoutTime}</div>
+            <div className="text-xs text-muted-foreground">{regionOf(ws.timeZone)} · {ws.name}</div>
+          </div>
+        );
+      },
+    },
     { id: "joining", label: "Joining", defaultVisible: false, sortKey: "joiningDate", render: (e) => <span className="text-muted-foreground">{e.joiningDate ? new Date(e.joiningDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</span> },
     // Dropped entirely when the recognition service is off, rather than shown
     // as a column of dashes for a feature the server cannot perform.
@@ -208,6 +243,22 @@ export default function EmployeesPage() {
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Schedule</Label>
+        <Select value={query.filters.workSchedule ?? ALL} onValueChange={(v) => query.setFilter("workSchedule", v)}>
+          <SelectTrigger className="h-9 w-[210px]"><SelectValue placeholder="Any schedule" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Any schedule</SelectItem>
+            {/* The one nothing else surfaces: who is still on the fallback. */}
+            <SelectItem value="none">Not set</SelectItem>
+            {schedules.map((s) => (
+              <SelectItem key={s._id} value={s._id}>
+                {s.loginTime}–{s.logoutTime} · {regionOf(s.timeZone)} · {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {faceSettings?.enabled && (
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Face check-in</Label>
@@ -292,7 +343,9 @@ export default function EmployeesPage() {
           Department: typeof e.department === "object" && e.department ? e.department.name : "",
           Type: EMPLOYMENT_TYPE_LABELS[e.employmentType],
           "Work mode": WORK_MODE_LABELS[e.workMode ?? "office"],
-          Schedule: typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "",
+          Schedule: typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "Not set",
+          "Schedule hours": typeof e.workSchedule === "object" && e.workSchedule ? `${e.workSchedule.loginTime}–${e.workSchedule.logoutTime}` : "",
+          "Schedule region": typeof e.workSchedule === "object" && e.workSchedule ? regionOf(e.workSchedule.timeZone) : "",
           Status: e.status === "terminated" && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status],
           "Last working day": e.lastWorkingDay ? new Date(e.lastWorkingDay).toISOString().slice(0, 10) : "",
           Joining: e.joiningDate ? new Date(e.joiningDate).toISOString().slice(0, 10) : "",
