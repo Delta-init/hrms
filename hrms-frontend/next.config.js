@@ -87,16 +87,18 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // camera=(self), not camera=(): an empty allowlist bars every origin
-          // including our own, which silently kills getUserMedia — the browser
-          // reports the permission as denied and never prompts, whatever the
-          // user has allowed in their browser settings. Face check-in needs the
-          // camera on our own pages; (self) grants exactly that and still
-          // refuses it to anything embedded, which frame-ancestors already
-          // prevents anyway. Microphone and location stay barred outright.
+          // `(self)`, never `()`. An empty allowlist bars every origin including
+          // our own, and a header outranks anything the person has allowed in
+          // their browser: the feature reports itself denied, instantly, and no
+          // prompt is ever shown. That reads exactly like the user refusing,
+          // which is how the same mistake cost us the camera once and location
+          // again — a work-from-home punch has to record where somebody is, and
+          // the app was refusing itself. `self` grants it to our own pages and
+          // still withholds it from anything embedded. The microphone stays
+          // barred outright because nothing here asks for it.
           {
             key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=()",
+            value: "camera=(self), microphone=(), geolocation=(self)",
           },
         ],
       },

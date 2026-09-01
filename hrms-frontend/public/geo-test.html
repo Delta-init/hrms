@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Location check · Delta HRMS</title>
+<!--
+  A plain page with no React, no login and no service worker, served from the
+  same origin as the app.
+
+  The origin is the point. A browser stores a location permission per site, so a
+  test opened from a file, or from localhost, answers a question nobody asked —
+  it is a different site with its own separate answer. This has to be reached at
+  hrms.deltainstitutions.com to say anything about hrms.deltainstitutions.com.
+
+  What it separates: whether the browser will give a location at all, from
+  whether the app is asking for one correctly. If this page gets a fix and the
+  dashboard does not, the fault is the app's. If this page cannot either, it is
+  the browser or the device, and no amount of app changes will help.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; max-width: 40rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .sub { color: #6b7280; margin: 0 0 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 1.25rem; }
+  th, td { text-align: left; padding: .5rem .5rem .5rem 0; border-bottom: 1px solid #e5e7eb33; vertical-align: top; }
+  th { width: 12.5rem; font-weight: 600; color: #6b7280; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  button { font: inherit; padding: .55rem 1rem; border-radius: .5rem; border: 1px solid #4f46e5; background: #4f46e5; color: #fff; cursor: pointer; }
+  button.secondary { background: transparent; color: inherit; border-color: #9ca3af; }
+  .ok { color: #059669; font-weight: 600; }
+  .bad { color: #dc2626; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  pre { background: #6b72801a; padding: .75rem; border-radius: .5rem; overflow-x: auto; font-size: .85em; }
+  .note { border-left: 3px solid #b45309; padding-left: .75rem; color: #6b7280; font-size: .9em; }
+</style>
+</head>
+<body>
+  <h1>Location check</h1>
+  <p class="sub">Open this on the same site as the app, in the browser that is failing.</p>
+
+  <table>
+    <tr><th>Site</th><td><code id="origin">—</code></td></tr>
+    <tr><th>Secure context</th><td id="secure">—</td></tr>
+    <tr><th>Geolocation available</th><td id="hasGeo">—</td></tr>
+    <tr><th>Permission now</th><td id="state">—</td></tr>
+    <tr><th>Last request</th><td id="result">not asked yet</td></tr>
+    <tr><th>Time taken</th><td id="took">—</td></tr>
+  </table>
+
+  <div class="row">
+    <button id="ask">Ask for my location</button>
+    <button id="again" class="secondary">Re-read permission</button>
+  </div>
+
+  <p class="note" id="verdict">Press <strong>Ask for my location</strong>. A prompt should appear. If none does and it fails instantly, the browser is answering from a refusal it already remembers.</p>
+
+  <pre id="raw">—</pre>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var log = [];
+  function say(k, v) { log.push(k + ": " + v); $("raw").textContent = log.join("\n"); }
+
+  $("origin").textContent = location.origin;
+  $("secure").innerHTML = window.isSecureContext
+    ? '<span class="ok">yes</span>'
+    : '<span class="bad">no</span> — geolocation is withheld outside HTTPS';
+  $("hasGeo").innerHTML = navigator.geolocation
+    ? '<span class="ok">yes</span>'
+    : '<span class="bad">no</span>';
+  say("origin", location.origin);
+  say("isSecureContext", window.isSecureContext);
+  say("userAgent", navigator.userAgent);
+
+  function paintState(s) {
+    var cls = s === "granted" ? "ok" : s === "denied" ? "bad" : "warn";
+    $("state").innerHTML = '<span class="' + cls + '">' + s + "</span>";
+    say("permission", s);
+    if (s === "denied") {
+      $("verdict").innerHTML =
+        "The browser has this site's location <strong>blocked</strong>, so it will not prompt. " +
+        "Open the padlock beside the address, set Location to Allow — or press Reset permissions — " +
+        "then <strong>reload this page</strong>. A permission changed while a page is open does not reach it until it reloads.";
+    }
+  }
+
+  function readState() {
+    if (!navigator.permissions || !navigator.permissions.query) {
+      $("state").innerHTML = '<span class="warn">cannot be read</span> — this browser has no Permissions API for location (Safari)';
+      say("permissions API", "absent");
+      return;
+    }
+    navigator.permissions.query({ name: "geolocation" }).then(function (s) {
+      paintState(s.state);
+      s.onchange = function () { paintState(s.state); say("permission changed to", s.state); };
+    }).catch(function (e) {
+      $("state").innerHTML = '<span class="warn">query failed</span>';
+      say("permissions query error", String(e));
+    });
+  }
+
+  $("ask").addEventListener("click", function () {
+    if (!navigator.geolocation) { $("result").innerHTML = '<span class="bad">no geolocation in this browser</span>'; return; }
+    $("result").textContent = "asking…";
+    var t0 = Date.now();
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        var ms = Date.now() - t0;
+        $("took").textContent = ms + " ms";
+        $("result").innerHTML = '<span class="ok">got a fix</span> — ' +
+          pos.coords.latitude.toFixed(5) + ", " + pos.coords.longitude.toFixed(5) +
+          " (±" + Math.round(pos.coords.accuracy) + "m)";
+        $("verdict").innerHTML = "<strong>The browser will give a location on this site.</strong> " +
+          "If the app still refuses your punch, the fault is in the app, not the browser or the device.";
+        say("fix", pos.coords.latitude + "," + pos.coords.longitude + " ±" + Math.round(pos.coords.accuracy) + "m in " + ms + "ms");
+        readState();
+      },
+      function (err) {
+        var ms = Date.now() - t0;
+        var name = err.code === 1 ? "PERMISSION_DENIED" : err.code === 2 ? "POSITION_UNAVAILABLE" : "TIMEOUT";
+        $("took").textContent = ms + " ms";
+        $("result").innerHTML = '<span class="bad">' + name + "</span> — " + (err.message || "no detail");
+        say("error", name + " after " + ms + "ms — " + err.message);
+        if (err.code === 1 && ms < 500) {
+          $("verdict").innerHTML = "<strong>No prompt was shown.</strong> It failed in " + ms +
+            "ms, which means the browser answered from a refusal it already had stored. " +
+            "Allow location in site settings, then <strong>reload this page</strong> — a permission " +
+            "changed while a page is open does not reach that page until it reloads.";
+        } else if (err.code === 2) {
+          $("verdict").innerHTML = "The browser asked the device and the <strong>device could not say where it is</strong>. " +
+            "On a desktop with no GPS this is common: check location services are on for the operating system itself.";
+        }
+        readState();
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  });
+
+  $("again").addEventListener("click", readState);
+  readState();
+})();
+</script>
+</body>
+</html>
