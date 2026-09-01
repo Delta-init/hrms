@@ -8,6 +8,7 @@ import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
+import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS, type Employee } from "@/types";
 
 const statusStyles: Record<string, string> = {
@@ -56,6 +57,13 @@ export default function MyProfilePage() {
           </div>
         </div>
       </Card>
+
+      {/* Kept here permanently, unlike the one on the dashboard: this is where
+          somebody comes looking for it after dismissing that one, or on a
+          second device, so it neither remembers a dismissal nor offers one. */}
+      <div className="mb-6">
+        <InstallPrompt persistent />
+      </div>
 
       {/* Your own face is yours to set up. It sat only on the admin's view of
           a user before, so the one person who could always be trusted to
