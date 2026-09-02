@@ -10,6 +10,9 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import { notifyDepartmentHead } from "./departmentHeadService.js";
+import { notifyReviewed } from "./reviewNotifier.js";
+import { watchersFor } from "./watchers.js";
+import { notify } from "./notificationService.js";
 import { env } from "../config/env.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
@@ -247,6 +250,19 @@ export class LeaveService {
       link: `${env.CLIENT_URL}/approvals`,
     });
 
+    // And in the app, to everybody who could decide it — HR and, where there
+    // is one, the department head. The head is emailed above as well; the rest
+    // are not, because a mail per application to every possible approver is how
+    // an inbox stops being read.
+    await notify({
+      users: await watchersFor("leave", String(input.user)),
+      kind: "leave",
+      title: `${user.name ?? "Someone"} applied for ${days} day${days === 1 ? "" : "s"} of ${String(input.type).replace(/_/g, " ")} leave`,
+      body: `${day(input.startDate)} – ${day(input.endDate)}${input.reason ? ` · ${input.reason}` : ""}`,
+      href: "/approvals",
+      actor: input.user,
+    });
+
     return LeaveRequest.findById(leave._id).populate("user", "name email designation");
   }
 
@@ -373,6 +389,34 @@ export class LeaveService {
     }
 
     await record.save();
+
+    // Only once it is settled. A request that has advanced to the next step of
+    // a workflow has not been approved, and saying so would be a lie the
+    // requester acts on — booking a flight against an approval that has not
+    // happened yet.
+    if (!outcome.advance) {
+      const reviewer = await User.findById(reviewerId).select("name").lean();
+      const day = (d?: Date | null) =>
+        d ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "—";
+      await notifyReviewed({
+        userId: record.user,
+        subject: "Leave request",
+        approved: record.status === "approved",
+        details: [
+          { label: "From", value: day(record.startDate) },
+          { label: "To", value: day(record.endDate) },
+          { label: "Days", value: String(record.days ?? "") },
+          { label: "Type", value: String(record.type ?? "").replace(/_/g, " ") },
+        ],
+        note: record.reviewNote,
+        path: "/leave",
+        kind: "leave",
+        reviewer: { id: reviewerId, name: reviewer?.name },
+        // HR and the head both see this queue and either could have decided it.
+        // Telling both closes it for whoever did not.
+        watchers: await watchersFor("leave", String(record.user)),
+      });
+    }
     return LeaveRequest.findById(id)
       .populate("user", "name email designation")
       .populate("reviewedBy", "name email");

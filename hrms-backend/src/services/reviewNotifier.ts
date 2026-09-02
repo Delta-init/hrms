@@ -2,14 +2,20 @@ import { User } from "../models/User.js";
 import { sendMail } from "../utils/mailer.js";
 import { scoped } from "../utils/orgContext.js";
 import { env } from "../config/env.js";
+import { notify } from "./notificationService.js";
 
 /**
  * Tells someone what happened to a request they raised.
  *
  * Approvals were entirely silent: a decision landed in the database and the
  * person who asked found out by going and looking. This is deliberately generic
- * — regularization uses it today, and leave, resignations and reimbursements
+ * — regularization and leave use it today, and resignations and reimbursements
  * are the same shape.
+ *
+ * Two channels, on purpose. Mail reaches somebody who is not in the app, which
+ * is most of the day; the in-app notice reaches somebody who is, without making
+ * them go and check another program. Neither is a substitute: an email nobody
+ * opens and a bell nobody is looking at fail on opposite days.
  */
 
 export interface ReviewNotice {
@@ -24,6 +30,19 @@ export interface ReviewNotice {
   note?: string | null;
   /** Path on the client to see it, e.g. "/regularization". */
   path?: string;
+  /** Which bell icon and grouping the in-app notice gets. */
+  kind?: "leave" | "regularization" | "approval" | "payroll" | "system";
+  /** Who decided it, so the notice can name them rather than use the passive. */
+  reviewer?: { id: unknown; name?: string } | null;
+  /**
+   * Others to tell in-app that this was decided — HR and the department head.
+   *
+   * They are not emailed. They did not raise the request, so the outcome is
+   * something they may want to see rather than something they need to be
+   * interrupted for, and a mail per decision to everybody who could have made
+   * it is how an inbox becomes noise.
+   */
+  watchers?: Array<unknown>;
 }
 
 const esc = (v: string) =>
@@ -58,9 +77,35 @@ function html(n: ReviewNotice, name: string): string {
 export async function notifyReviewed(n: ReviewNotice): Promise<void> {
   try {
     const user = await User.findOne(scoped({ _id: n.userId })).select("name email").lean<{ name?: string; email?: string } | null>();
-    if (!user?.email) return;
-
     const verdict = n.approved ? "approved" : "rejected";
+    const who = n.reviewer?.name ? ` by ${n.reviewer.name}` : "";
+
+    // In-app first, and independently of the email: somebody with no address on
+    // file still gets told, which before this returned early and told them
+    // nothing at all.
+    await notify({
+      users: [n.userId],
+      kind: n.kind ?? "system",
+      tone: n.approved ? "positive" : "negative",
+      title: `${n.subject} ${verdict}${who}`,
+      body: [n.details[0] ? `${n.details[0].label}: ${n.details[0].value}` : "", n.note ?? ""].filter(Boolean).join(" · "),
+      href: n.path ?? "",
+      actor: n.reviewer?.id ?? null,
+    });
+
+    if (n.watchers?.length) {
+      await notify({
+        users: n.watchers,
+        kind: n.kind ?? "system",
+        tone: "neutral",
+        title: `${user?.name ?? "Someone"}'s ${n.subject.toLowerCase()} was ${verdict}${who}`,
+        body: n.details[0] ? `${n.details[0].label}: ${n.details[0].value}` : "",
+        href: n.path ?? "",
+        actor: n.reviewer?.id ?? null,
+      });
+    }
+
+    if (!user?.email) return;
     const plain = [
       `Your ${n.subject.toLowerCase()} has been ${verdict}.`,
       ...n.details.map((d) => `${d.label}: ${d.value}`),

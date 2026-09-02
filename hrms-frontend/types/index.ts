@@ -2426,3 +2426,33 @@ export interface AgreementTemplateRow {
   _id: string; kind: AgreementKind; variant: AgreementVariant; version: number;
   fileName?: string; url: string; sha256: string; createdAt: string;
 }
+
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+export type NotificationKind =
+  | "leave" | "regularization" | "approval" | "announcement" | "payroll" | "system";
+
+export interface AppNotification {
+  _id: string;
+  kind: NotificationKind;
+  /** Approved, rejected, or simply something to know about. */
+  tone: "positive" | "negative" | "neutral";
+  title: string;
+  body: string;
+  /** Where clicking it goes. Empty when there is nowhere useful to send them. */
+  href: string;
+  /** Who caused it, when a person did. */
+  actor?: { _id: string; name: string } | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+/** One thing the global search box found, whatever kind of thing it is. */
+export interface SearchHit {
+  id: string;
+  /** Which source it came from, for grouping and the icon. */
+  group: string;
+  title: string;
+  subtitle: string;
+  href: string;
+}

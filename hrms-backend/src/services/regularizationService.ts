@@ -11,6 +11,8 @@ import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from ".
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 import { notifyReviewed } from "./reviewNotifier.js";
+import { watchersFor } from "./watchers.js";
+import { notify } from "./notificationService.js";
 import { reportingManagerUserId, managerContact } from "./reportingManager.js";
 import { sendMail } from "../utils/mailer.js";
 import { notifyDepartmentHead } from "./departmentHeadService.js";
@@ -123,6 +125,15 @@ export class RegularizationService {
         ...(input.reason ? ([["Reason", String(input.reason)]] as Array<[string, string]>) : []),
       ],
       link: `${env.CLIENT_URL}/approvals`,
+    });
+
+    await notify({
+      users: await watchersFor("regularization", String(input.user)),
+      kind: "regularization",
+      title: `${user.name ?? "Someone"} asked for an attendance correction`,
+      body: `${new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: tz }).format(input.date)} · ${TYPE_LABELS[input.type] ?? input.type}`,
+      href: "/approvals",
+      actor: input.user,
     });
 
     return Regularization.findById(reg._id).populate(POP);
@@ -356,6 +367,7 @@ export class RegularizationService {
         details.push({ label: "Marked as", value: STATUS_LABELS[record.resultingStatus ?? "present"] ?? "Present" });
         details.push({ label: "Times applied", value: `${time(record.requestedCheckIn)} – ${time(record.requestedCheckOut)}` });
       }
+      const reviewer = await User.findById(reviewerId).select("name").lean();
       await notifyReviewed({
         userId: record.user,
         subject: "Regularization request",
@@ -363,6 +375,11 @@ export class RegularizationService {
         details,
         note: record.reviewNote,
         path: "/regularization",
+        kind: "regularization",
+        reviewer: { id: reviewerId, name: reviewer?.name },
+        // HR and the head both see the queue, and either could have decided
+        // this. Telling both closes it for whoever did not.
+        watchers: await watchersFor("regularization", String(record.user)),
       });
     }
 

@@ -14,10 +14,12 @@ import { PersonAvatar } from "@/components/shared/PersonAvatar";
 import { useMyEmployeeProfile } from "@/hooks/useEmployees";
 import { useUiStore } from "@/lib/store/uiStore";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { NotificationBell } from "@/components/layout/NotificationBell";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { navItems } from "@/components/layout/Sidebar";
 
 export function Header() {
-  const { user } = useAuth();
+  const { user, isKioskOnly } = useAuth();
   // Own employee record, for the avatar. Absent for accounts with no employee
   // profile, which falls back to initials.
   const { data: me } = useMyEmployeeProfile();
@@ -63,6 +65,14 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-1.5">
+        {/* Neither on the tablet by the door: it is a device, not a person,
+            and has nothing to look up and nobody to notify. */}
+        {!isKioskOnly && (
+          <>
+            <GlobalSearch />
+            <NotificationBell />
+          </>
+        )}
         <ThemeToggle />
 
         <DropdownMenu>
