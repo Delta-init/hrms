@@ -21,6 +21,14 @@ export const createRegularization = async (req: AuthenticatedRequest, res: Respo
   } catch (error) { next(error); }
 };
 
+export const getPendingRegularizationCount = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Pending corrections", { count: await service.pendingCount() });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getRegularizations = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     // Same reasoning as leave.view: `regularization.view` is also granted to plain

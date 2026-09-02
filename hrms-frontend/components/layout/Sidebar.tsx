@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
+import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
 
 export const navItems: {
   href: string;
@@ -121,9 +122,13 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   const pathname = usePathname();
   const { hasPermission, user, isKioskOnly } = useAuth();
   // Only asked for by somebody who could act on it. A queue length shown to
-  // whoever cannot open the queue is decoration.
-  const canSeeLeaveQueue = !isKioskOnly && hasPermission("leave", "view");
-  const { data: pendingLeave = 0 } = usePendingLeaveCount(canSeeLeaveQueue);
+  // whoever cannot open the queue is decoration — and Regularization is one of
+  // the ungated menu items, so every employee sees the link and must not see
+  // everybody else's backlog hanging off it.
+  const { data: pendingLeave = 0 } = usePendingLeaveCount(!isKioskOnly && hasPermission("leave", "view"));
+  const { data: pendingReg = 0 } = usePendingRegularizationCount(!isKioskOnly && hasPermission("regularization", "view"));
+  /** What waits behind each link, for the badge. Absent means no badge. */
+  const waiting: Record<string, number> = { "/leave": pendingLeave, "/regularization": pendingReg };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 
   return (
@@ -162,9 +167,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
               <Icon className="h-5 w-5" />
               {/* On the icon when the labels are hidden, so a collapsed rail
                   still says there is something waiting. */}
-              {collapsed && href === "/leave" && pendingLeave > 0 && (
+              {collapsed && (waiting[href] ?? 0) > 0 && (
                 <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
-                  {pendingLeave > 99 ? "99+" : pendingLeave}
+                  {waiting[href]! > 99 ? "99+" : waiting[href]}
                 </span>
               )}
             </span>
@@ -183,12 +188,12 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
             </AnimatePresence>
             {/* Beside the label when there is room. Amber rather than red: a
                 queue is work waiting, not something going wrong. */}
-            {!collapsed && href === "/leave" && pendingLeave > 0 && (
+            {!collapsed && (waiting[href] ?? 0) > 0 && (
               <span className={cn(
                 "relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
                 isActive ? "bg-white/25 text-white" : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
               )}>
-                {pendingLeave > 99 ? "99+" : pendingLeave}
+                {waiting[href]! > 99 ? "99+" : waiting[href]}
               </span>
             )}
           </Link>

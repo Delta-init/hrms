@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { cronSetting } from "../utils/cronSetting.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Regularization } from "../models/Regularization.js";
 import { Employee } from "../models/Employee.js";
 import { Organization } from "../models/Organization.js";
 import { env } from "../config/env.js";
@@ -34,6 +35,8 @@ interface Waiting {
   days: number;
   from: Date;
   raisedAt: Date;
+  /** Which queue it is in — both are answered by the same people. */
+  queue: "leave" | "correction";
 }
 
 async function waitingFor(orgId: unknown): Promise<Waiting[]> {
@@ -59,6 +62,40 @@ async function waitingFor(orgId: unknown): Promise<Waiting[]> {
       days: Number(r.days ?? 0),
       from: new Date(r.startDate),
       raisedAt: new Date(r.createdAt),
+      queue: "leave",
+    };
+  });
+}
+
+/**
+ * Attendance corrections, in the same mail rather than one of their own.
+ *
+ * Both queues are answered by the same people from the same chair, and two
+ * mails at noon is one more than anybody reads. They are listed together and
+ * marked, so the shape of the afternoon is visible in one glance.
+ */
+async function correctionsFor(orgId: unknown): Promise<Waiting[]> {
+  const rows = await Regularization.find({ organization: orgId, status: "pending" })
+    .select("user type date createdAt")
+    .sort({ createdAt: 1 })
+    .lean();
+  if (!rows.length) return [];
+
+  const employees = await Employee.find({ organization: orgId, user: { $in: rows.map((r) => r.user) } })
+    .select("name employeeCode user")
+    .lean();
+  const byUser = new Map(employees.map((e) => [String(e.user), e]));
+
+  return rows.map((r) => {
+    const e = byUser.get(String(r.user));
+    return {
+      name: String(e?.name ?? "Unknown"),
+      code: String(e?.employeeCode ?? ""),
+      type: String(r.type ?? ""),
+      days: 1,
+      from: new Date(r.date),
+      raisedAt: new Date(r.createdAt),
+      queue: "correction" as const,
     };
   });
 }
@@ -73,14 +110,18 @@ function buildHtml(rows: Waiting[], now: Date) {
       return `<tr>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600">${r.name}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;font-family:ui-monospace,monospace;font-size:12px">${r.code}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-transform:capitalize">${r.type.replace(/_/g, " ")}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee">${
+          r.queue === "correction"
+            ? `<span style="background:#eef2ff;color:#4338ca;border-radius:999px;padding:2px 8px;font-size:11px">Correction</span> `
+            : ""
+        }<span style="text-transform:capitalize">${r.type.replace(/_/g, " ")}</span></td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666">${r.days} day${r.days === 1 ? "" : "s"} from ${fmt(r.from)}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #eee;${old ? "color:#b45309;font-weight:600" : "color:#666"}">${waited === 0 ? "today" : `${waited} day${waited === 1 ? "" : "s"}`}</td>
       </tr>`;
     })
     .join("");
   return `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:auto">
-    <h2 style="color:#4f46e5;margin-bottom:4px">${rows.length} leave request${rows.length === 1 ? "" : "s"} waiting</h2>
+    <h2 style="color:#4f46e5;margin-bottom:4px">${rows.length} request${rows.length === 1 ? "" : "s"} waiting on you</h2>
     <p style="color:#555;margin-top:0">${
       stale.length
         ? `<strong style="color:#b45309">${stale.length} ${stale.length === 1 ? "has" : "have"} been waiting more than ${STALE_DAYS} days.</strong> `
@@ -104,7 +145,10 @@ export async function runLeaveQueueDigest(now = new Date()) {
   let waiting = 0, sent = 0;
 
   for (const org of orgs) {
-    const rows = await waitingFor(org._id);
+    const [leave, corrections] = await Promise.all([waitingFor(org._id), correctionsFor(org._id)]);
+    // Oldest first across both, because the reader is asking "what have I left
+    // longest", not "what kind of thing is it".
+    const rows = [...leave, ...corrections].sort((a, b) => a.raisedAt.getTime() - b.raisedAt.getTime());
     if (!rows.length) continue;
     waiting += rows.length;
 
@@ -116,10 +160,15 @@ export async function runLeaveQueueDigest(now = new Date()) {
     const ok = await sendMail({
       organization: org._id,
       to: recipients,
-      subject: `${rows.length} leave request${rows.length === 1 ? "" : "s"} waiting on you`,
+      subject:
+        corrections.length && leave.length
+          ? `${leave.length} leave request${leave.length === 1 ? "" : "s"} and ${corrections.length} correction${corrections.length === 1 ? "" : "s"} waiting`
+          : corrections.length
+            ? `${corrections.length} attendance correction${corrections.length === 1 ? "" : "s"} waiting`
+            : `${leave.length} leave request${leave.length === 1 ? "" : "s"} waiting on you`,
       html: buildHtml(rows, now),
       text: rows
-        .map((r) => `${r.code} ${r.name} — ${r.days} day(s) ${r.type}, raised ${Math.floor((now.getTime() - r.raisedAt.getTime()) / DAY_MS)} day(s) ago`)
+        .map((r) => `${r.code} ${r.name} — ${r.queue === "correction" ? "correction: " : ""}${r.days} day(s) ${r.type}, raised ${Math.floor((now.getTime() - r.raisedAt.getTime()) / DAY_MS)} day(s) ago`)
         .join("\n"),
     });
     if (ok) sent++;

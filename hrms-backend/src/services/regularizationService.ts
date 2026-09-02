@@ -155,6 +155,17 @@ export class RegularizationService {
     }
   }
 
+  /**
+   * How many corrections are sitting unanswered.
+   *
+   * The same shape as the leave count beside it, and for the same reason: the
+   * sidebar wants a number, and fetching a page of requests to length it would
+   * pull the queue into memory on every navigation.
+   */
+  async pendingCount(): Promise<number> {
+    return Regularization.countDocuments(scoped({ status: "pending" }));
+  }
+
   async list(query: RegQuery) {
     const { page, limit, skip } = parsePagination(query, 50, 200);
 

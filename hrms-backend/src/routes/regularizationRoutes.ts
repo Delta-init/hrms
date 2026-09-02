@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createRegularization, getRegularizations, getMyRegularizations, getMyRegularizationAllowance,
+  createRegularization, getRegularizations, getPendingRegularizationCount, getMyRegularizations, getMyRegularizationAllowance,
   getRegularizationById, updateRegularization, reviewRegularization, deleteRegularization,
 } from "../controllers/regularizationController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -15,6 +15,8 @@ router.get("/mine", getMyRegularizations);
 // off past that. No module permission — it is the caller's own allowance.
 router.get("/mine/allowance", getMyRegularizationAllowance);
 
+// Before "/:id", or "pending-count" is read as a request id.
+router.get("/pending-count", checkPermission("regularization", "view"), getPendingRegularizationCount);
 router.get("/", checkPermission("regularization", "view"), getRegularizations);
 router.post("/", checkPermission("regularization", "create"), createRegularization);
 router.get("/:id", checkPermission("regularization", "view"), getRegularizationById);

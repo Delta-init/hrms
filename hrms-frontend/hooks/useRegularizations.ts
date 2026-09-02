@@ -11,6 +11,22 @@ function errMsg(e: unknown, f: string) {
 
 /** `enabled` guards the call on the caller's `view` permission — without it the
  *  query still ran for people who cannot read the module, 403ing every load. */
+/**
+ * How many corrections are waiting on a decision.
+ *
+ * Same shape and same caching as the leave count: it sits in the sidebar on
+ * every page, so a queue length a minute old is worth what a current one is.
+ */
+export const usePendingRegularizationCount = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "pending-count"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ count: number }>>("/regularization/pending-count")).data.data?.count ?? 0,
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
 export const useRegularizations = (params?: Record<string, string>, enabled = true) =>
   useQuery({
     queryKey: [...KEY, params],
