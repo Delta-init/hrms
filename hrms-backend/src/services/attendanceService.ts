@@ -109,6 +109,16 @@ function anomalyOf(sessions?: unknown): { deviceAnomaly: DeviceAnomaly | null; d
 }
 
 /**
+ * The shortest day the system will record.
+ *
+ * Matches the hold on the clock-out button. Kept here as well as there because
+ * a rule enforced only in a browser is a suggestion: a page left open from
+ * yesterday, a second phone, or anything calling the endpoint directly would
+ * otherwise close a day that opened seconds ago.
+ */
+const MIN_SHIFT_MS = 10 * 60_000;
+
+/**
  * A YYYY-MM-DD range as a plain string comparison.
  *
  * The keys sort lexicographically in date order, so `$gte`/`$lte` on the string
@@ -699,6 +709,27 @@ export class AttendanceService {
     }).sort({ date: -1 });
     if (!att) {
       throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
+    }
+
+    /**
+     * A day cannot be closed the moment it opens.
+     *
+     * A clock-out seconds after the clock-in is somebody pressing twice — a
+     * double tap, a slow page, a button that did not look like it worked — and
+     * it produces a day of zero minutes that an admin then has to repair by
+     * hand. The button is held for the same ten minutes, but the rule lives
+     * here too: a stale page, a second device or a direct call would otherwise
+     * walk straight past it.
+     */
+    if (att.checkIn) {
+      const held = MIN_SHIFT_MS - (now.getTime() - att.checkIn.getTime());
+      if (held > 0) {
+        const mins = Math.ceil(held / 60_000);
+        throw Object.assign(
+          new Error(`You clocked in a moment ago. You can clock out in ${mins} minute${mins === 1 ? "" : "s"}.`),
+          { statusCode: 400, code: "TOO_SOON" }
+        );
+      }
     }
 
     const open = att.sessions[att.sessions.length - 1];

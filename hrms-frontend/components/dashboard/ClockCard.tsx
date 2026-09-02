@@ -86,6 +86,17 @@ async function collectPunchContext(wantsLocation: boolean): Promise<PunchClientC
 
 const NOTICE_KEY = "hrms.remote-punch-notice";
 
+/**
+ * How long a day must run before it can be closed.
+ *
+ * A clock-out arriving seconds after the clock-in is somebody pressing twice —
+ * a double tap, a slow page, a button that did not look like it worked. The day
+ * it produces reads as zero minutes worked, and correcting that means an admin
+ * editing the record by hand. Holding the button for ten minutes costs nothing
+ * to anyone actually working and removes the whole class of mistake.
+ */
+const MIN_SHIFT_MS = 10 * 60_000;
+
 function fmtDuration(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -99,6 +110,8 @@ export function ClockCard() {
   const [now, setNow] = useState(() => new Date());
   const [noticeFor, setNoticeFor] = useState<"in" | "out" | null>(null);
   const [locating, setLocating] = useState(false);
+  /** Which punch just landed, so the card can say so plainly. */
+  const [confirmed, setConfirmed] = useState<"in" | "out" | null>(null);
   /**
    * Whether the browser will even ask.
    *
@@ -177,7 +190,12 @@ export function ClockCard() {
     setLocating(recordsLocation);
     const ctx = await collectPunchContext(recordsLocation);
     setLocating(false);
-    (dir === "in" ? clockIn : clockOut)(ctx);
+    (dir === "in" ? clockIn : clockOut)(ctx, {
+      // Shown on the answer, not on the press: a punch that was refused — no
+      // location, wrong device, already clocked in — must not flash a
+      // confirmation on its way to failing.
+      onSuccess: () => setConfirmed(dir),
+    });
   };
 
   const punch = (dir: "in" | "out") => {
@@ -227,8 +245,18 @@ export function ClockCard() {
   } else if (attendance?.checkIn) {
     tone = attendance.status === "half_day" ? "red" : attendance.status === "late" ? "amber" : "green";
     title = "Clocked in";
-    sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
-    action = () => punch("out"); actionLabel = "Clock Out"; ActionIcon = Power; pulse = true;
+    const heldFor = MIN_SHIFT_MS - (t - new Date(attendance.checkIn).getTime());
+    if (heldFor > 0) {
+      // Counted down rather than merely greyed out: a disabled button with no
+      // explanation reads as broken, and somebody who has just clocked in is
+      // exactly the person who will press it again.
+      sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())} · you can clock out in ${fmtDuration(heldFor)}`;
+      actionLabel = `Clock Out in ${fmtDuration(heldFor)}`;
+      ActionIcon = Lock;
+    } else {
+      sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
+      action = () => punch("out"); actionLabel = "Clock Out"; ActionIcon = Power; pulse = true;
+    }
   } else if (kioskOnly) {
     tone = "neutral";
     title = "Check in at the kiosk";
@@ -427,6 +455,51 @@ export function ClockCard() {
             >
               Got it — check me {noticeFor === "out" ? "out" : "in"}
             </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      {/* Said back to them, on the answer.
+          A toast slides away while somebody is still looking at the button they
+          pressed, which is why the button gets pressed again. This waits to be
+          dismissed, and states the time that was recorded — the one fact worth
+          checking, and the one they will be asked about later. */}
+      <ResponsiveDialog open={confirmed !== null} onOpenChange={(o) => !o && setConfirmed(null)}>
+        <ResponsiveDialogContent desktopClassName="max-w-sm">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              {confirmed === "in" ? "Clocked in" : "Clocked out"}
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          <div className="px-1 text-sm text-muted-foreground">
+            {confirmed === "in" ? (
+              <>
+                <p>
+                  Recorded at <strong className="text-foreground">{fmtTime(attendance?.checkIn ?? new Date().toISOString(), tz)}</strong>.
+                </p>
+                <p className="mt-1.5">
+                  Clocking out is held for ten minutes, so a second tap cannot close the day you
+                  have just opened.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  Recorded at <strong className="text-foreground">{fmtTime(attendance?.checkOut ?? new Date().toISOString(), tz)}</strong>.
+                </p>
+                {attendance?.workedMinutes ? (
+                  <p className="mt-1.5">
+                    Worked <strong className="text-foreground">
+                      {Math.floor(attendance.workedMinutes / 60)}h {attendance.workedMinutes % 60}m
+                    </strong> today.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </div>
+          <ResponsiveDialogFooter>
+            <Button className="w-full" onClick={() => setConfirmed(null)}>Done</Button>
           </ResponsiveDialogFooter>
         </ResponsiveDialogContent>
       </ResponsiveDialog>
