@@ -12,7 +12,8 @@ import {
   getLeaveOptions,
 } from "../controllers/leaveController.js";
 import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/permissions.js";
+import { checkPermission, checkPermissionOrDepartmentHead, requesterFromRecord } from "../middleware/permissions.js";
+import { LeaveRequest } from "../models/LeaveRequest.js";
 
 const router = Router();
 
@@ -33,8 +34,17 @@ router.get("/pending-count", checkPermission("leave", "view"), getPendingLeaveCo
 router.get("/", checkPermission("leave", "view"), getLeaves);
 router.post("/", checkPermission("leave", "create"), createLeave);
 router.get("/:id", checkPermission("leave", "view"), getLeaveById);
-// Approve/reject is its own action, gated on leave.approve.
-router.patch("/:id/review", checkPermission("leave", "approve"), reviewLeave);
+// Approve/reject is its own action, gated on leave.approve — or on heading the
+// department the request came from, which is checked against that one record
+// rather than against the route, so a head gains their own team and nothing else.
+router.patch(
+  "/:id/review",
+  checkPermissionOrDepartmentHead(
+    "leave", "approve",
+    requesterFromRecord((id) => LeaveRequest.findById(id).select("user").lean())
+  ),
+  reviewLeave
+);
 router.put("/:id", checkPermission("leave", "edit"), updateLeave);
 router.delete("/:id", checkPermission("leave", "delete"), deleteLeave);
 

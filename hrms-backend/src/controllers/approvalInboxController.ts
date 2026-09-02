@@ -1,6 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
-import { ApprovalInboxService } from "../services/approvalInboxService.js";
+import { ApprovalInboxService, resolveInboxScope, scopeIsEmpty, type InboxScope } from "../services/approvalInboxService.js";
+import { getOrgId } from "../utils/orgContext.js";
 import { decideSchema, bulkDecideSchema } from "../validations/approvalInboxValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import type { ReviewerRole } from "../services/approvalWorkflowService.js";
@@ -8,15 +9,24 @@ import type { ReviewerRole } from "../services/approvalWorkflowService.js";
 const service = new ApprovalInboxService();
 
 /**
- * This inbox reads across every organisation, so the route is closed to
- * anybody who is not a Super Admin — the org scoping every other endpoint
- * relies on is deliberately not applied here.
+ * Who this page is for, and how much of it they get.
+ *
+ * It reads across every organisation for a Super Admin, so everybody else has
+ * to be narrowed before any query runs rather than filtered afterwards — the
+ * scope is resolved once here and handed to every call, which is what makes it
+ * impossible to add an endpoint that forgets.
+ *
+ * Refused outright only when the scope would show nothing: there is no reason
+ * to render an approvals console for somebody with no queue in it, and a 403
+ * says so more usefully than an empty page.
  */
-function requireManagement(req: AuthenticatedRequest, res: Response): boolean {
-  const role = req.user!.role as unknown as { roleName?: string; isSystemRole?: boolean };
-  if (role?.isSystemRole && role.roleName === "Super Admin") return true;
-  sendError(res, "This approvals console is for management only", 403);
-  return false;
+async function scopeFor(req: AuthenticatedRequest, res: Response): Promise<InboxScope | null> {
+  const scope = await resolveInboxScope(req.user!, getOrgId());
+  if (scopeIsEmpty(scope)) {
+    sendError(res, "You have no approvals to review", 403);
+    return null;
+  }
+  return scope;
 }
 
 const reviewerRole = (req: AuthenticatedRequest): ReviewerRole =>
@@ -24,41 +34,52 @@ const reviewerRole = (req: AuthenticatedRequest): ReviewerRole =>
 
 export const getApprovalInbox = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
-    sendSuccess(res, "Approvals", await service.list(req.query as Record<string, string>));
+    const scope = await scopeFor(req, res); if (!scope) return;
+    sendSuccess(res, "Approvals", await service.list(req.query as Record<string, string>, scope));
   } catch (error) { next(error); }
 };
 
 /** Counts only — cheap enough for the dashboard to ask on every load. */
 export const getApprovalSummary = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
-    sendSuccess(res, "Approvals summary", await service.summary());
+    // The one endpoint that answers rather than refuses. The sidebar asks it on
+    // every page load to decide whether to draw the link at all, and a hundred
+    // employees generating a 403 apiece on every navigation would bury real
+    // failures in the logs and pop an error toast at people who did nothing.
+    const scope = await resolveInboxScope(req.user!, getOrgId());
+    if (scopeIsEmpty(scope)) {
+      sendSuccess(res, "Approvals summary", {
+        canAccess: false,
+        total: 0, stale: 0, staleAfterDays: 0, oldestRaisedAt: null, organizations: 0, byModule: [],
+      });
+      return;
+    }
+    sendSuccess(res, "Approvals summary", { canAccess: true, ...(await service.summary(scope)) });
   } catch (error) { next(error); }
 };
 
 export const getApprovalModules = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
-    sendSuccess(res, "Approval types", service.modules());
+    const scope = await scopeFor(req, res); if (!scope) return;
+    sendSuccess(res, "Approval types", service.modules(scope));
   } catch (error) { next(error); }
 };
 
 /** The full record behind a row, for the view panel. */
 export const getApprovalDetail = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
-    sendSuccess(res, "Approval detail", await service.detail(req.params.module, req.params.id));
+    const scope = await scopeFor(req, res); if (!scope) return;
+    sendSuccess(res, "Approval detail", await service.detail(req.params.module, req.params.id, scope));
   } catch (error) { next(error); }
 };
 
 export const decideApproval = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
+    const scope = await scopeFor(req, res); if (!scope) return;
     const parsed = decideSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const result = await service.decide(
-      req.params.module, req.params.id, parsed.data.approve, parsed.data.note, req.user!.userId, reviewerRole(req)
+      req.params.module, req.params.id, parsed.data.approve, parsed.data.note, req.user!.userId, reviewerRole(req), scope
     );
     sendSuccess(res, parsed.data.approve ? "Approved" : "Rejected", result);
   } catch (error) { next(error); }
@@ -66,11 +87,11 @@ export const decideApproval = async (req: AuthenticatedRequest, res: Response, n
 
 export const decideApprovalsBulk = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (!requireManagement(req, res)) return;
+    const scope = await scopeFor(req, res); if (!scope) return;
     const parsed = bulkDecideSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const { module, ids, approve, note } = parsed.data;
-    const result = await service.decideMany(module, ids, approve, note, req.user!.userId, reviewerRole(req));
+    const result = await service.decideMany(module, ids, approve, note, req.user!.userId, reviewerRole(req), scope);
 
     // Partial failure is reported as such. "12 approved" while three quietly
     // failed is worse than not offering the bulk action.

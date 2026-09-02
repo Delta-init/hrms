@@ -9,6 +9,8 @@ import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
+import { notifyDepartmentHead } from "./departmentHeadService.js";
+import { env } from "../config/env.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 import {
@@ -221,6 +223,30 @@ export class LeaveService {
       status: input.status ?? "pending",
       ...workflow,
     });
+
+    // The head of their department, if they have one. Awaited rather than
+    // fired and forgotten so a mail failure cannot outlive the request that
+    // caused it, but it can only ever return false — never throw — so a
+    // saved request is never lost to a mail server.
+    const day = (d: Date) =>
+      new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d);
+    await notifyDepartmentHead({
+      requesterUserId: String(input.user),
+      requesterName: String(user.name ?? "Somebody in your team"),
+      subject: `${user.name ?? "Somebody in your team"} has applied for leave`,
+      headline:
+        `<strong>${user.name ?? "Somebody in your team"}</strong> has applied for ` +
+        `${days} day${days === 1 ? "" : "s"} of ${String(input.type).replace(/_/g, " ")} leave.`,
+      rows: [
+        ["From", day(input.startDate)],
+        ["To", day(input.endDate)],
+        ["Days", String(days)],
+        ["Type", String(input.type).replace(/_/g, " ")],
+        ...(input.reason ? ([["Reason", String(input.reason)]] as Array<[string, string]>) : []),
+      ],
+      link: `${env.CLIENT_URL}/approvals`,
+    });
+
     return LeaveRequest.findById(leave._id).populate("user", "name email designation");
   }
 

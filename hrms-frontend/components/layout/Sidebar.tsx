@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
+import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
 
 export const navItems: {
@@ -63,9 +64,14 @@ export const navItems: {
   permAction?: PermissionAction;
   /** Reads across every organisation, so no per-tenant permission can grant it. */
   superAdminOnly?: boolean;
+  /** Drawn only when the server says this person has approvals to review. */
+  approvalsOnly?: boolean;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
-  { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, superAdminOnly: true },
+  // Not gated on a permission or on Super Admin: who may see this is decided by
+  // the server, which is the only side that knows whether somebody heads a
+  // department. `canAccess` on the summary carries the answer back.
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, approvalsOnly: true },
   { href: "/employees", label: "Employees", icon: UserRound, permModule: "employees" },
   { href: "/departments", label: "Departments", icon: Building2, permModule: "departments" },
   // Everybody, because everybody is in it. The chart is names, titles,
@@ -127,13 +133,21 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // everybody else's backlog hanging off it.
   const { data: pendingLeave = 0 } = usePendingLeaveCount(!isKioskOnly && hasPermission("leave", "view"));
   const { data: pendingReg = 0 } = usePendingRegularizationCount(!isKioskOnly && hasPermission("regularization", "view"));
+  // Asked of everybody, because a department head holds no permission that
+  // would distinguish them here — the server answers with `canAccess` rather
+  // than refusing, so this costs an ordinary cached request and no error.
+  const { data: approvals } = useApprovalSummary(!isKioskOnly);
   /** What waits behind each link, for the badge. Absent means no badge. */
-  const waiting: Record<string, number> = { "/leave": pendingLeave, "/regularization": pendingReg };
+  const waiting: Record<string, number> = {
+    "/leave": pendingLeave,
+    "/regularization": pendingReg,
+    "/approvals": approvals?.total ?? 0,
+  };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         // A third of the menu is deliberately ungated — everyone can raise a
         // ticket or see their own payslip. That is right for a person and wrong
@@ -142,7 +156,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
           ? href === "/kiosk"
           : superAdminOnly
             ? isSuperAdmin
-            : permModule === null ? true : hasPermission(permModule, permAction ?? "view");
+            : approvalsOnly
+              ? !!approvals?.canAccess
+              : permModule === null ? true : hasPermission(permModule, permAction ?? "view");
         if (!allowed) return null;
 
         const linkEl = (

@@ -7,6 +7,8 @@ import { Organization } from "../models/Organization.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { hrRecipients } from "./birthdayJob.js";
+import { Department } from "../models/Department.js";
+import { User } from "../models/User.js";
 
 /**
  * What is still waiting on HR, at midday.
@@ -31,6 +33,8 @@ const STALE_DAYS = 3;
 interface Waiting {
   name: string;
   code: string;
+  /** Whose queue this belongs to, for splitting the mail by department head. */
+  userId: string;
   type: string;
   days: number;
   from: Date;
@@ -56,6 +60,7 @@ async function waitingFor(orgId: unknown): Promise<Waiting[]> {
   return rows.map((r) => {
     const e = byUser.get(String(r.user));
     return {
+      userId: String(r.user),
       name: String(e?.name ?? "Unknown"),
       code: String(e?.employeeCode ?? ""),
       type: String(r.type ?? ""),
@@ -89,6 +94,7 @@ async function correctionsFor(orgId: unknown): Promise<Waiting[]> {
   return rows.map((r) => {
     const e = byUser.get(String(r.user));
     return {
+      userId: String(r.user),
       name: String(e?.name ?? "Unknown"),
       code: String(e?.employeeCode ?? ""),
       type: String(r.type ?? ""),
@@ -100,7 +106,57 @@ async function correctionsFor(orgId: unknown): Promise<Waiting[]> {
   });
 }
 
-function buildHtml(rows: Waiting[], now: Date) {
+/**
+ * The same queue, split by whoever is now able to answer it.
+ *
+ * A head can decide their own department's leave and corrections, so telling
+ * them what is waiting is the difference between a power they have and one they
+ * use. HR still gets the whole list — nothing is moved out of their mail, only
+ * copied into somebody else's, because a head who is away must not become a
+ * queue nobody is watching.
+ *
+ * Heads with an empty department, or a department with nothing pending, are not
+ * mailed at all. The commonest reason for that is the commonest state of this
+ * system: nineteen of twenty-one departments have no head to mail.
+ */
+async function byDepartmentHead(orgId: unknown, rows: Waiting[]) {
+  const depts = await Department.find({ organization: orgId, leader: { $ne: null } })
+    .select("name leader leaderKind")
+    .lean();
+  if (!depts.length) return [];
+
+  const out: Array<{ email: string; name: string; department: string; rows: Waiting[] }> = [];
+  for (const d of depts) {
+    // The head, recorded either as an employee or as a login.
+    let headUserId: string | null = null;
+    let headName = "there";
+    if (d.leaderKind === "User") {
+      const u = await User.findById(d.leader).select("name").lean();
+      headUserId = u ? String(u._id) : null;
+      headName = String(u?.name ?? "there");
+    } else {
+      const e = await Employee.findById(d.leader).select("name user").lean();
+      headUserId = e?.user ? String(e.user) : null;
+      headName = String(e?.name ?? "there");
+    }
+    if (!headUserId) continue;
+
+    const members = await Employee.find({ organization: orgId, department: d._id, user: { $ne: null } })
+      .select("user")
+      .lean();
+    // Their own request is not theirs to decide, so it is not in their mail.
+    const ids = new Set(members.map((m) => String(m.user)).filter((id) => id !== headUserId));
+    const mine = rows.filter((r) => ids.has(r.userId));
+    if (!mine.length) continue;
+
+    const login = await User.findById(headUserId).select("email").lean();
+    if (!login?.email) continue;
+    out.push({ email: login.email, name: headName, department: String(d.name), rows: mine });
+  }
+  return out;
+}
+
+function buildHtml(rows: Waiting[], now: Date, forWhom?: string) {
   const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
   const stale = rows.filter((r) => now.getTime() - r.raisedAt.getTime() > STALE_DAYS * DAY_MS);
   const body = rows
@@ -121,7 +177,7 @@ function buildHtml(rows: Waiting[], now: Date) {
     })
     .join("");
   return `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:auto">
-    <h2 style="color:#4f46e5;margin-bottom:4px">${rows.length} request${rows.length === 1 ? "" : "s"} waiting on you</h2>
+    <h2 style="color:#4f46e5;margin-bottom:4px">${rows.length} request${rows.length === 1 ? "" : "s"} waiting on you${forWhom ? ` — ${forWhom}` : ""}</h2>
     <p style="color:#555;margin-top:0">${
       stale.length
         ? `<strong style="color:#b45309">${stale.length} ${stale.length === 1 ? "has" : "have"} been waiting more than ${STALE_DAYS} days.</strong> `
@@ -135,8 +191,10 @@ function buildHtml(rows: Waiting[], now: Date) {
       </tr></thead>
       <tbody>${body}</tbody>
     </table>
-    <p style="margin-top:18px"><a href="${env.CLIENT_URL}/leave" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open the queue</a></p>
-    <p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS. An empty queue sends no email.</p>
+    <p style="margin-top:18px"><a href="${env.CLIENT_URL}/${forWhom ? "approvals" : "leave"}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open the queue</a></p>
+    <p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS. An empty queue sends no email.${
+      forWhom ? " You receive this because you are the head of this department." : ""
+    }</p>
   </div>`;
 }
 
@@ -172,6 +230,22 @@ export async function runLeaveQueueDigest(now = new Date()) {
         .join("\n"),
     });
     if (ok) sent++;
+
+    // And the same rows again, split to whoever heads each department. HR keeps
+    // the whole list above; this only adds the people who can now act on part
+    // of it.
+    for (const head of await byDepartmentHead(org._id, rows)) {
+      const hOk = await sendMail({
+        organization: org._id,
+        to: head.email,
+        subject: `${head.rows.length} request${head.rows.length === 1 ? "" : "s"} waiting on you — ${head.department}`,
+        html: buildHtml(head.rows, now, head.department),
+        text: head.rows
+          .map((r) => `${r.code} ${r.name} — ${r.queue === "correction" ? "correction: " : ""}${r.days} day(s) ${r.type}, raised ${Math.floor((now.getTime() - r.raisedAt.getTime()) / DAY_MS)} day(s) ago`)
+          .join("\n"),
+      });
+      if (hOk) sent++;
+    }
   }
 
   if (!waiting) console.log("🗓️ leave queue: nothing pending.");

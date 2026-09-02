@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import { Organization } from "../models/Organization.js";
 import { runWithOrg } from "../utils/orgContext.js";
 import { ADAPTERS, adapterFor, chainOf, isDecided, type ApprovalRow, type ApprovalModule } from "./approvalRegistry.js";
+import { teamMemberUserIds } from "./departmentHeadService.js";
+import { hasPermission } from "../middleware/permissions.js";
+import type { AuthenticatedRequest } from "../types/index.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 /**
@@ -12,12 +15,103 @@ import type { ReviewerRole } from "./approvalWorkflowService.js";
  * discover it is waiting. Every row therefore carries its organisation's name —
  * without it you cannot tell whose leave you are approving.
  *
- * This reads directly rather than through each module's own scoped list, so the
- * queries here are explicitly unscoped and the route above is restricted to a
- * Super Admin. Deciding is not: it re-enters the record's own organisation and
- * calls that module's review method, so every rule, side effect and notification
- * that normally applies still does.
+ * Cross-organisation for a Super Admin, and for nobody else. Everyone else is
+ * narrowed by the scope resolved below before a single query is built — because
+ * these queries are hand-written rather than run through each module's own
+ * `scoped()` list, forgetting to narrow them would not fail loudly, it would
+ * quietly hand one tenant another tenant's leave requests.
+ *
+ * Deciding always re-enters the record's own organisation and calls that
+ * module's review method, so every rule, side effect and notification that
+ * normally applies still does.
  */
+
+/**
+ * Which queues somebody may see, and whose requests within them.
+ *
+ * Three answers, narrowing: a Super Admin sees everything; somebody holding a
+ * module's `approve` permission sees that queue across their own organisation;
+ * a department head sees leave and corrections from their own department and
+ * nothing else at all.
+ *
+ * The three are additive rather than exclusive, which is the point — HR that
+ * also heads a department loses nothing by heading it.
+ */
+export interface InboxScope {
+  /** Super Admin. Every organisation, every module, no filter. */
+  everything: boolean;
+  /** The one organisation everybody else is confined to. */
+  orgId: string | null;
+  /** Modules whose `approve` permission this person holds. */
+  approve: Set<ApprovalModule>;
+  /** Their department's people — empty for almost everybody. */
+  teamUserIds: string[];
+}
+
+/**
+ * What a head may decide, and deliberately only this.
+ *
+ * A head runs a team's time; they do not sign off its reimbursements, its
+ * confirmations or its resignations, all of which carry money or employment
+ * consequences that belong with HR. Widening this list is a policy decision,
+ * so it is a list rather than a rule somebody could satisfy accidentally.
+ */
+const HEAD_MODULES: ApprovalModule[] = ["leave", "regularization"];
+
+/** Nothing to show, and nothing to decide — used to refuse the page outright. */
+export const scopeIsEmpty = (scope: InboxScope) =>
+  !scope.everything && !scope.approve.size && !scope.teamUserIds.length;
+
+/**
+ * The unrestricted scope, for callers that are not a person.
+ *
+ * A scheduled digest has no session and no role to resolve, and it reads the
+ * same cross-organisation view a Super Admin does. Named rather than passed as
+ * a bare object literal so that anywhere the scoping is bypassed is greppable.
+ */
+export const SYSTEM_SCOPE: InboxScope = {
+  everything: true,
+  orgId: null,
+  approve: new Set(ADAPTERS.map((a) => a.module)),
+  teamUserIds: [],
+};
+
+export async function resolveInboxScope(
+  user: NonNullable<AuthenticatedRequest["user"]>,
+  orgId: string | null
+): Promise<InboxScope> {
+  const role = user.role;
+  if (role?.isSystemRole && role.roleName === "Super Admin") {
+    return { everything: true, orgId, approve: new Set(ADAPTERS.map((a) => a.module)), teamUserIds: [] };
+  }
+  const approve = new Set(
+    ADAPTERS.filter((a) => hasPermission(role, a.permissionModule, "approve")).map((a) => a.module)
+  );
+  // Only looked up when it could matter. Almost nobody heads a department, and
+  // this runs on every load of the page and of the sidebar badge.
+  const teamUserIds = await teamMemberUserIds(user.userId);
+  return { everything: false, orgId, approve, teamUserIds };
+}
+
+/**
+ * The filter narrowing one queue to what this person may see — or null when the
+ * queue is not theirs at all, which is the commonest answer.
+ *
+ * Returning null rather than an impossible filter matters: a caller that skips
+ * the module entirely cannot later merge something into a filter that was meant
+ * to match nothing.
+ */
+export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Record<string, unknown> | null {
+  if (scope.everything) return {};
+  // No organisation resolved means no safe way to narrow, so nothing is shown.
+  if (!scope.orgId) return null;
+  const org = { organization: new mongoose.Types.ObjectId(scope.orgId) };
+  if (scope.approve.has(module)) return org;
+  if (scope.teamUserIds.length && HEAD_MODULES.includes(module)) {
+    return { ...org, user: { $in: scope.teamUserIds.map((id) => new mongoose.Types.ObjectId(id)) } };
+  }
+  return null;
+}
 
 class InboxError extends Error {
   statusCode: number;
@@ -69,10 +163,14 @@ export class ApprovalInboxService {
    * as well as in memory — otherwise the per-module cap would keep the wrong
    * end of each queue and quietly hide exactly the rows the sort says matter.
    */
-  async list(query: InboxQuery) {
+  async list(query: InboxQuery, scope: InboxScope) {
     const decidedView = query.view === "decided";
     const names = await this.orgNames();
-    const wanted = query.module ? ADAPTERS.filter((a) => a.module === query.module) : ADAPTERS;
+    // Narrowed before the module filter, so asking for a queue that is not
+    // yours returns an empty list rather than somebody else's.
+    const wanted = (query.module ? ADAPTERS.filter((a) => a.module === query.module) : ADAPTERS)
+      .map((a) => ({ adapter: a, scopeFilter: scopeFilterFor(scope, a.module) }))
+      .filter((x): x is { adapter: typeof x.adapter; scopeFilter: Record<string, unknown> } => x.scopeFilter !== null);
 
     const window: Record<string, Date> = {};
     if (query.from) window.$gte = new Date(`${query.from}T00:00:00.000Z`);
@@ -81,9 +179,12 @@ export class ApprovalInboxService {
     // Seven small queries in parallel. Cheaper than it looks, and it cannot
     // drift from the records the way a mirrored table would.
     const perModule = await Promise.all(
-      wanted.map(async (a) => {
+      wanted.map(async ({ adapter: a, scopeFilter }) => {
+        // The scope goes on last, so an `organization` asked for in the query
+        // can narrow the scope but never widen past it.
         const filter: Record<string, unknown> = { ...(decidedView ? a.decided.filter : a.pendingFilter) };
         if (query.organization) filter.organization = new mongoose.Types.ObjectId(query.organization);
+        Object.assign(filter, scopeFilter);
 
         // On the history the dates people mean are when it was decided, not
         // when it was raised — and each module dates both differently.
@@ -148,13 +249,22 @@ export class ApprovalInboxService {
    * says "14 waiting" should not cost seven populated queries of up to 200 rows
    * each, on a page that loads on every visit.
    */
-  async summary() {
+  async summary(scope: InboxScope) {
     const cutoff = new Date(Date.now() - STALE_AFTER_DAYS * 86_400_000);
 
     const perModule = await Promise.all(
       ADAPTERS.map(async (a) => {
+        const scopeFilter = scopeFilterFor(scope, a.module);
+        // Not theirs: reported as zero rather than omitted, so the shape of the
+        // response does not change with who is asking.
+        if (!scopeFilter) {
+          return { module: a.module, label: a.label, count: 0, oldest: null, stale: 0, organizations: [] as unknown[] };
+        }
         const [row] = await a.model.aggregate([
-          { $match: a.pendingFilter },
+          // An aggregation gets no schema casting, so the ids in the scope
+          // filter are already real ObjectIds — a string here matches nothing
+          // and would report every queue as empty.
+          { $match: { ...a.pendingFilter, ...scopeFilter } },
           {
             $group: {
               _id: null,
@@ -194,9 +304,10 @@ export class ApprovalInboxService {
   }
 
   /** The whole record behind one row, for the view panel. */
-  async detail(module: string, id: string) {
+  async detail(module: string, id: string, scope: InboxScope) {
     const a = adapterFor(module);
     if (!a) throw new InboxError(`Unknown approval type: ${module}`, 404);
+    await this.assertInScope(a.module, id, scope);
 
     let q = a.model.findById(id);
     for (const p of [...a.populate, ...a.decided.populate]) q = q.populate(p as never);
@@ -236,10 +347,12 @@ export class ApprovalInboxService {
     approve: boolean,
     note: string | undefined,
     userId: string,
-    role: ReviewerRole
+    role: ReviewerRole,
+    scope: InboxScope
   ) {
     const a = adapterFor(module);
     if (!a) throw new InboxError(`Unknown approval type: ${module}`, 404);
+    await this.assertInScope(a.module, id, scope);
 
     const doc = await a.model.findById(id).select("organization").lean<{ organization?: unknown } | null>();
     if (!doc) throw new InboxError("That request no longer exists", 404);
@@ -265,12 +378,13 @@ export class ApprovalInboxService {
     approve: boolean,
     note: string | undefined,
     userId: string,
-    role: ReviewerRole
+    role: ReviewerRole,
+    scope: InboxScope
   ) {
     const results = await Promise.all(
       ids.map(async (id) => {
         try {
-          await this.decide(module, id, approve, note, userId, role);
+          await this.decide(module, id, approve, note, userId, role, scope);
           return { id, ok: true as const };
         } catch (error) {
           return { id, ok: false as const, error: error instanceof Error ? error.message : "Failed" };
@@ -285,8 +399,27 @@ export class ApprovalInboxService {
     };
   }
 
-  /** The modules this inbox knows about, for the filter. */
-  modules(): Array<{ module: ApprovalModule; label: string }> {
-    return ADAPTERS.map((a) => ({ module: a.module, label: a.label }));
+  /** The modules this person can act on, for the filter. */
+  modules(scope: InboxScope): Array<{ module: ApprovalModule; label: string }> {
+    return ADAPTERS.filter((a) => scopeFilterFor(scope, a.module) !== null)
+      .map((a) => ({ module: a.module, label: a.label }));
+  }
+
+  /**
+   * Refuse a record the caller is not entitled to, by id.
+   *
+   * Re-queried rather than trusted from the list, because the list and the
+   * action are separate requests and an id can be typed into either. Answering
+   * 404 rather than 403 on a record outside the scope is deliberate: "not
+   * yours" and "does not exist" should be indistinguishable from outside, or
+   * the error itself confirms that another tenant's request exists.
+   */
+  private async assertInScope(module: ApprovalModule, id: string, scope: InboxScope): Promise<void> {
+    const a = adapterFor(module)!;
+    const scopeFilter = scopeFilterFor(scope, module);
+    if (!scopeFilter) throw new InboxError("That request no longer exists", 404);
+    if (!Object.keys(scopeFilter).length) return;
+    const ok = await a.model.exists({ _id: id, ...scopeFilter } as never);
+    if (!ok) throw new InboxError("That request no longer exists", 404);
   }
 }

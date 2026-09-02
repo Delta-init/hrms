@@ -15,9 +15,11 @@ function errMsg(error: unknown, fallback: string) {
 /**
  * Everything waiting, or everything already decided, across every organisation.
  *
- * Deliberately unscoped: the point of this console is that somebody running
- * several tenants does not have to remember which one a request came from to
- * find out it is waiting. The API restricts it to a Super Admin.
+ * Cross-organisation for a Super Admin — the point of this console is that
+ * somebody running several tenants does not have to remember which one a
+ * request came from to find out it is waiting. Everybody else is narrowed by
+ * the server before any query runs: HR to their own organisation, a department
+ * head to their own team's leave and corrections.
  */
 export const useApprovalInbox = (params: Record<string, string>) =>
   useQuery({
@@ -30,11 +32,16 @@ export const useApprovalInbox = (params: Record<string, string>) =>
   });
 
 /**
- * Counts only, for the dashboard card.
+ * Counts only — and whether this person has any approvals at all.
  *
- * `enabled` because the dashboard renders for everyone and this endpoint is
- * management-only — asking anyway would put a 403 in every other user's console
- * on every page load.
+ * Asked of everybody, on every page load, because this is what decides whether
+ * the Approvals link is drawn: a department head holds no permission that would
+ * say so from the client side, so only the server can answer. It answers with
+ * `canAccess: false` and zeroes rather than refusing, so the hundred people
+ * with nothing here do not each generate a 403 on every navigation.
+ *
+ * One shared query key across the sidebar, the dashboard card and the console,
+ * kept a minute stale — three callers, one request.
  */
 export const useApprovalSummary = (enabled = true) =>
   useQuery({

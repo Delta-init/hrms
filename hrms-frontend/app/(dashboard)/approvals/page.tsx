@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAllOrganizations } from "@/hooks/useOrganizations";
-import { useApprovalInbox, useDecideApproval, useBulkDecideApprovals } from "@/hooks/useApprovalInbox";
+import { useApprovalInbox, useApprovalSummary, useDecideApproval, useBulkDecideApprovals } from "@/hooks/useApprovalInbox";
 import { ApprovalRowCard } from "@/components/approvals/ApprovalRowCard";
 import { ApprovalDetailDialog } from "@/components/approvals/ApprovalDetailDialog";
 import { MODULE_TONE } from "@/components/approvals/shared";
@@ -46,7 +46,14 @@ export default function ApprovalsPage() {
 function ApprovalsConsole() {
   const { user } = useAuth();
   const role = user?.role;
-  const isManagement = !!role?.isSystemRole && role.roleName === "Super Admin";
+  // Cross-organisation is a Super Admin's view alone; everybody else who can
+  // reach this page sees one organisation, or one department within it.
+  const isSuperAdmin = !!role?.isSystemRole && role.roleName === "Super Admin";
+  // Whether this person has anything here at all is the server's answer, not a
+  // guess from the role: a department head holds no permission that would say
+  // so, and only the server knows which departments they run.
+  const { data: access, isLoading: checkingAccess } = useApprovalSummary();
+  const isManagement = !!access?.canAccess;
 
   // The dashboard card links straight to one type, so arriving here from
   // "Leave 3" opens on leave rather than on everything.
@@ -71,7 +78,7 @@ function ApprovalsConsole() {
   if (range.to) params.to = range.to;
 
   const { data, isLoading } = useApprovalInbox(params);
-  const { data: orgs } = useAllOrganizations(isManagement);
+  const { data: orgs } = useAllOrganizations(isSuperAdmin);
   const { mutate: decide, isPending: deciding } = useDecideApproval();
   const { mutate: bulkDecide, isPending: bulkDeciding } = useBulkDecideApprovals();
 
@@ -136,13 +143,22 @@ function ApprovalsConsole() {
     }
   };
 
+  if (checkingAccess) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   if (!isManagement) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Approvals" description="Everything waiting on management." icon={ShieldCheck} />
+        <PageHeader title="Approvals" description="Everything waiting on you." icon={ShieldCheck} />
         <p className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-          This console reads across every organisation, so it is open to Super Admins only. Requests waiting on
-          your own role appear in each module — Leave, Hiring, Reimbursements and the rest.
+          Nothing here is yours to decide. This console shows requests waiting on you — the queues your role can
+          approve, and, if you head a department, leave and attendance corrections from your own team. Your own
+          requests are on the Leave and Regularization pages.
         </p>
       </div>
     );
@@ -181,13 +197,17 @@ function ApprovalsConsole() {
           />
         </div>
 
-        <Select value={org || ALL} onValueChange={(v) => setOrg(v === ALL ? "" : v)}>
-          <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="All organisations" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All organisations</SelectItem>
-            {(orgs ?? []).map((o) => <SelectItem key={o._id} value={o._id}>{o.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {/* Only where there is more than one organisation to choose between —
+            for everybody else the filter is a control with a single setting. */}
+        {isSuperAdmin && (
+          <Select value={org || ALL} onValueChange={(v) => setOrg(v === ALL ? "" : v)}>
+            <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="All organisations" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All organisations</SelectItem>
+              {(orgs ?? []).map((o) => <SelectItem key={o._id} value={o._id}>{o.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
 
         <DateRangeFilter
           from={range.from}

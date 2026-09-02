@@ -13,6 +13,7 @@ import { parsePagination } from "../utils/query.js";
 import { notifyReviewed } from "./reviewNotifier.js";
 import { reportingManagerUserId, managerContact } from "./reportingManager.js";
 import { sendMail } from "../utils/mailer.js";
+import { notifyDepartmentHead } from "./departmentHeadService.js";
 import { env } from "../config/env.js";
 
 interface RegQuery extends PaginationQuery {
@@ -104,6 +105,26 @@ export class RegularizationService {
     });
 
     if (overLimit) await this.notifyManagerOfEscalation(reg, user, monthlyIndex, policy.monthlyRegularizationLimit);
+
+    // The department head, separately from the escalation above: that one fires
+    // only past the monthly allowance and goes to the reporting manager, who is
+    // often somebody else entirely. This one is simply "your team has asked for
+    // something" and fires every time.
+    const tz = input.timeZone || "Asia/Dubai";
+    await notifyDepartmentHead({
+      requesterUserId: String(input.user),
+      requesterName: String(user.name ?? "Somebody in your team"),
+      subject: `${user.name ?? "Somebody in your team"} has asked for an attendance correction`,
+      headline:
+        `<strong>${user.name ?? "Somebody in your team"}</strong> has asked to correct their attendance.`,
+      rows: [
+        ["Day", new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(input.date)],
+        ["Correction", TYPE_LABELS[input.type] ?? String(input.type)],
+        ...(input.reason ? ([["Reason", String(input.reason)]] as Array<[string, string]>) : []),
+      ],
+      link: `${env.CLIENT_URL}/approvals`,
+    });
+
     return Regularization.findById(reg._id).populate(POP);
   }
 

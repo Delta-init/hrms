@@ -4,7 +4,8 @@ import {
   getRegularizationById, updateRegularization, reviewRegularization, deleteRegularization,
 } from "../controllers/regularizationController.js";
 import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/permissions.js";
+import { checkPermission, checkPermissionOrDepartmentHead, requesterFromRecord } from "../middleware/permissions.js";
+import { Regularization } from "../models/Regularization.js";
 
 const router = Router();
 router.use(authenticate);
@@ -21,8 +22,16 @@ router.get("/", checkPermission("regularization", "view"), getRegularizations);
 router.post("/", checkPermission("regularization", "create"), createRegularization);
 router.get("/:id", checkPermission("regularization", "view"), getRegularizationById);
 router.put("/:id", checkPermission("regularization", "edit"), updateRegularization);
-// Approving writes corrected punch times into Attendance — its own permission.
-router.patch("/:id/review", checkPermission("regularization", "approve"), reviewRegularization);
+// Approving writes corrected punch times into Attendance — its own permission,
+// or heading the department the correction came from, checked per record.
+router.patch(
+  "/:id/review",
+  checkPermissionOrDepartmentHead(
+    "regularization", "approve",
+    requesterFromRecord((id) => Regularization.findById(id).select("user").lean())
+  ),
+  reviewRegularization
+);
 router.delete("/:id", checkPermission("regularization", "delete"), deleteRegularization);
 
 export default router;

@@ -1,4 +1,5 @@
 import type { Model } from "mongoose";
+import type { HrmsModule } from "../types/index.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { SignedAgreement } from "../models/SignedAgreement.js";
@@ -80,6 +81,16 @@ interface DecidedConfig {
 interface Adapter {
   module: ApprovalModule;
   label: string;
+  /**
+   * The permission module that governs this queue.
+   *
+   * Named here rather than derived from `module`, because the two do not line
+   * up: three of them are pluralised, an offer is part of hiring, and a signed
+   * agreement is governed by `employees`. A reader that guessed would guess
+   * wrong four times out of eight, and each wrong guess is either a queue
+   * somebody cannot see or one they should not.
+   */
+  permissionModule: HrmsModule;
   model: Model<never>;
   /** What "still waiting" means for this module. */
   pendingFilter: Record<string, unknown>;
@@ -143,6 +154,7 @@ const reviewedDecision = (approvedWhen: string[]): Omit<DecidedConfig, "filter">
 export const ADAPTERS: Adapter[] = [
   {
     module: "agreement",
+    permissionModule: "employees",
     label: "Signed agreements",
     model: SignedAgreement as never,
     // What HR is reviewing is the act of signing, which is `signedAt` — not
@@ -178,6 +190,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "leave",
+    permissionModule: "leave",
     label: "Leave",
     model: LeaveRequest as never,
     raisedField: "createdAt",
@@ -203,6 +216,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "regularization",
+    permissionModule: "regularization",
     label: "Regularization",
     model: Regularization as never,
     raisedField: "createdAt",
@@ -227,6 +241,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "reimbursement",
+    permissionModule: "reimbursements",
     label: "Reimbursement",
     model: Reimbursement as never,
     raisedField: "createdAt",
@@ -257,6 +272,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "confirmation",
+    permissionModule: "confirmations",
     label: "Confirmation",
     model: Confirmation as never,
     raisedField: "createdAt",
@@ -290,6 +306,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "hiring",
+    permissionModule: "hiring",
     label: "Hiring requisition",
     model: JobRequisition as never,
     raisedField: "createdAt",
@@ -332,6 +349,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "offer",
+    permissionModule: "hiring",
     label: "Offer release",
     model: Application as never,
     // The only one keyed on a nested field rather than the record's own status.
@@ -375,6 +393,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "resignation",
+    permissionModule: "resignations",
     label: "Resignation",
     model: Resignation as never,
     raisedField: "createdAt",

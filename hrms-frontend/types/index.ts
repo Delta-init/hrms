@@ -2330,6 +2330,15 @@ export interface ApprovalInbox {
 
 /** Counts only — what the dashboard card needs, without the rows. */
 export interface ApprovalSummary {
+  /**
+   * Whether this person has any approvals at all.
+   *
+   * The summary answers rather than refuses so the sidebar can ask it on every
+   * page load without a hundred employees generating a 403 apiece. False means
+   * the counts below are zeroes standing in for "nothing here", not an empty
+   * queue somebody is entitled to look at — so the link is not drawn.
+   */
+  canAccess: boolean;
   total: number;
   stale: number;
   staleAfterDays: number;

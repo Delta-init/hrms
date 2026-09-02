@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ShieldCheck, ArrowUpRight, AlertTriangle, Building2, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/useAuth";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { MODULE_TONE, waitingFor } from "@/components/approvals/shared";
 import type { ApprovalModule } from "@/types";
@@ -20,14 +19,15 @@ import type { ApprovalModule } from "@/types";
  * would put a 403 in everybody else's console on every dashboard load.
  */
 export function ApprovalsCard() {
-  const { user } = useAuth();
-  const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
-  const { data, isLoading } = useApprovalSummary(isSuperAdmin);
+  // Asked of everybody: the server answers with `canAccess` rather than
+  // refusing, so a department head — who holds no permission that would mark
+  // them out here — gets the card, and everybody else quietly does not.
+  const { data, isLoading } = useApprovalSummary();
 
   const waiting = data?.byModule.filter((m) => m.count > 0) ?? [];
   const staleDays = data?.staleAfterDays ?? 7;
 
-  if (!isSuperAdmin) return null;
+  if (!data?.canAccess) return null;
 
   return (
     <Card className="p-5">
@@ -52,9 +52,13 @@ export function ApprovalsCard() {
         <>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-3xl font-bold tabular-nums tracking-tight">{data.total}</span>
-            <span className="text-sm text-muted-foreground">
-              across {data.organizations} organisation{data.organizations === 1 ? "" : "s"}
-            </span>
+            {/* Only worth saying where there is more than one — for a head or
+                for HR it is always their own, and naming it adds nothing. */}
+            {data.organizations > 1 && (
+              <span className="text-sm text-muted-foreground">
+                across {data.organizations} organisations
+              </span>
+            )}
           </div>
 
           {/* The oldest thing in the queue, said in days. A total on its own

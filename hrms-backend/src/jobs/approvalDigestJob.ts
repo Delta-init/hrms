@@ -3,7 +3,7 @@ import { Role } from "../models/Role.js";
 import { User } from "../models/User.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
-import { ApprovalInboxService, STALE_AFTER_DAYS } from "../services/approvalInboxService.js";
+import { ApprovalInboxService, STALE_AFTER_DAYS, SYSTEM_SCOPE } from "../services/approvalInboxService.js";
 import type { ApprovalRow } from "../services/approvalRegistry.js";
 
 /**
@@ -91,7 +91,7 @@ function buildHtml(rows: ApprovalRow[], stale: ApprovalRow[]): string {
 
 /** Build and send today's digest. Safe to call by hand — returns a summary. */
 export async function runApprovalDigest() {
-  const { rows } = await service.list({ view: "pending" });
+  const { rows } = await service.list({ view: "pending" }, SYSTEM_SCOPE);
   if (rows.length === 0) {
     console.log("📥 approvals digest: nothing waiting.");
     return { waiting: 0, stale: 0, emailed: false, recipients: 0 };
