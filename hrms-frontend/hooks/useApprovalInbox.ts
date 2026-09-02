@@ -21,10 +21,14 @@ function errMsg(error: unknown, fallback: string) {
  * the server before any query runs: HR to their own organisation, a department
  * head to their own team's leave and corrections.
  */
-export const useApprovalInbox = (params: Record<string, string>) =>
+export const useApprovalInbox = (params: Record<string, string>, options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: [...KEY, "inbox", params],
     queryFn: async () => (await api.get<ApiResponse<ApprovalInbox>>("/approvals", { params })).data.data!,
+    // Held back until the caller knows there is something to ask for. The
+    // department page renders before `canAccess` has arrived, and firing then
+    // would fetch the whole unfiltered queue and throw it away.
+    enabled: options?.enabled ?? true,
     // A queue read by several people at once goes stale quickly, and acting on
     // a stale row is the failure that matters here.
     refetchInterval: 60_000,

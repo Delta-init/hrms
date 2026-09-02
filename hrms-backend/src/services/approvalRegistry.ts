@@ -1,4 +1,4 @@
-import type { Model } from "mongoose";
+import type { Model, Types } from "mongoose";
 import type { HrmsModule } from "../types/index.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
@@ -78,6 +78,15 @@ interface DecidedConfig {
   outcome: (doc: Record<string, never>) => Decision;
 }
 
+/** Everyone in one department, in the three shapes the adapters key on. */
+export interface DepartmentSubjects {
+  departmentId: Types.ObjectId;
+  /** Logins — for the queues raised by a person signing in. */
+  userIds: Types.ObjectId[];
+  /** Employee records — for the queues raised about a person. */
+  employeeIds: Types.ObjectId[];
+}
+
 interface Adapter {
   module: ApprovalModule;
   label: string;
@@ -91,6 +100,20 @@ interface Adapter {
    * somebody cannot see or one they should not.
    */
   permissionModule: HrmsModule;
+  /**
+   * How this queue narrows to one department, or null when it cannot.
+   *
+   * The eight modules key their subject three different ways — four on the
+   * requester's login, two on their employee record, one on a department it
+   * names outright — so each says how rather than a reader inferring it from a
+   * field name that happens to match.
+   *
+   * Null is a real answer, not a gap: an offer is about a candidate, who is by
+   * definition in no department yet. Filtering by department drops that queue
+   * entirely rather than showing it unfiltered, because a list captioned
+   * "Sales" must not contain rows that are not Sales.
+   */
+  departmentFilter: ((ids: DepartmentSubjects) => Record<string, unknown>) | null;
   model: Model<never>;
   /** What "still waiting" means for this module. */
   pendingFilter: Record<string, unknown>;
@@ -154,6 +177,8 @@ const reviewedDecision = (approvedWhen: string[]): Omit<DecidedConfig, "filter">
 export const ADAPTERS: Adapter[] = [
   {
     module: "agreement",
+    // Signed either way round: older rows carry the login, newer the employee.
+    departmentFilter: (ids) => ({ $or: [{ user: { $in: ids.userIds } }, { employee: { $in: ids.employeeIds } }] }),
     permissionModule: "employees",
     label: "Signed agreements",
     model: SignedAgreement as never,
@@ -190,6 +215,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "leave",
+    departmentFilter: (ids) => ({ user: { $in: ids.userIds } }),
     permissionModule: "leave",
     label: "Leave",
     model: LeaveRequest as never,
@@ -216,6 +242,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "regularization",
+    departmentFilter: (ids) => ({ user: { $in: ids.userIds } }),
     permissionModule: "regularization",
     label: "Regularization",
     model: Regularization as never,
@@ -241,6 +268,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "reimbursement",
+    departmentFilter: (ids) => ({ user: { $in: ids.userIds } }),
     permissionModule: "reimbursements",
     label: "Reimbursement",
     model: Reimbursement as never,
@@ -272,6 +300,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "confirmation",
+    departmentFilter: (ids) => ({ employee: { $in: ids.employeeIds } }),
     permissionModule: "confirmations",
     label: "Confirmation",
     model: Confirmation as never,
@@ -306,6 +335,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "hiring",
+    departmentFilter: (ids) => ({ department: ids.departmentId }),
     permissionModule: "hiring",
     label: "Hiring requisition",
     model: JobRequisition as never,
@@ -349,6 +379,8 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "offer",
+    // A candidate is in no department yet, so this queue cannot be narrowed.
+    departmentFilter: null,
     permissionModule: "hiring",
     label: "Offer release",
     model: Application as never,
@@ -393,6 +425,7 @@ export const ADAPTERS: Adapter[] = [
   },
   {
     module: "resignation",
+    departmentFilter: (ids) => ({ employee: { $in: ids.employeeIds } }),
     permissionModule: "resignations",
     label: "Resignation",
     model: Resignation as never,

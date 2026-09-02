@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useAllOrganizations } from "@/hooks/useOrganizations";
+import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useApprovalInbox, useApprovalSummary, useDecideApproval, useBulkDecideApprovals } from "@/hooks/useApprovalInbox";
 import { ApprovalRowCard } from "@/components/approvals/ApprovalRowCard";
 import { ApprovalDetailDialog } from "@/components/approvals/ApprovalDetailDialog";
@@ -44,7 +45,7 @@ export default function ApprovalsPage() {
 }
 
 function ApprovalsConsole() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const role = user?.role;
   // Cross-organisation is a Super Admin's view alone; everybody else who can
   // reach this page sees one organisation, or one department within it.
@@ -63,6 +64,9 @@ function ApprovalsConsole() {
     (params0.get("module") as ApprovalModule | null) ?? ""
   );
   const [org, setOrg] = useState("");
+  // Arriving from a department's own page opens on that department, so
+  // "Approvals — Sales" is one click rather than a filter to find and set.
+  const [dept, setDept] = useState(params0.get("department") ?? "");
   const [search, setSearch] = useState("");
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
   const debounced = useDebouncedValue(search, 300);
@@ -73,12 +77,19 @@ function ApprovalsConsole() {
 
   const params: Record<string, string> = { view };
   if (org) params.organization = org;
+  if (dept) params.department = dept;
   if (debounced.trim()) params.search = debounced.trim();
   if (range.from) params.from = range.from;
   if (range.to) params.to = range.to;
 
   const { data, isLoading } = useApprovalInbox(params);
   const { data: orgs } = useAllOrganizations(isSuperAdmin);
+  // Gated on the permission that actually serves the list — a department head
+  // holds no `departments` permission, so asking on their behalf would only
+  // earn them a 403 for a filter that offers them their one department.
+  const { data: departments } = useDepartmentsSimple({
+    enabled: isManagement && hasPermission("departments", "view"),
+  });
   const { mutate: decide, isPending: deciding } = useDecideApproval();
   const { mutate: bulkDecide, isPending: bulkDeciding } = useBulkDecideApprovals();
 
@@ -209,6 +220,16 @@ function ApprovalsConsole() {
           </Select>
         )}
 
+        {(departments?.length ?? 0) > 1 && (
+          <Select value={dept || ALL} onValueChange={(v) => setDept(v === ALL ? "" : v)}>
+            <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="All departments" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All departments</SelectItem>
+              {(departments ?? []).map((d) => <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+
         <DateRangeFilter
           from={range.from}
           to={range.to}
@@ -253,7 +274,7 @@ function ApprovalsConsole() {
       {!!data?.capped?.length && (
         <p className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
           <Info className="h-3.5 w-3.5 shrink-0" />
-          Showing the first {data.limit} of {data.capped.join(", ")} — narrow by organisation or date to see the rest.
+          Showing the first {data.limit} of {data.capped.join(", ")} — narrow by department{isSuperAdmin ? ", organisation" : ""} or date to see the rest.
         </p>
       )}
 
@@ -297,10 +318,18 @@ function ApprovalsConsole() {
           <p className="mt-3 text-sm font-medium">
             {view === "pending" ? "Nothing is waiting" : "Nothing decided in this window"}
           </p>
+          {/* A filtered empty list and a genuinely empty queue mean opposite
+              things — "nothing left to do" versus "look somewhere else" — and
+              saying the first when the second is true sends somebody away from
+              work that is still waiting. */}
           <p className="mt-1 text-xs text-muted-foreground">
-            {view === "pending"
-              ? "Every request across every organisation has been dealt with."
-              : "Widen the date range, or clear the filters."}
+            {view !== "pending"
+              ? "Widen the date range, or clear the filters."
+              : dept || org || debounced.trim() || range.from || range.to
+                ? "Nothing matches these filters. Clear them to see the rest."
+                : isSuperAdmin
+                  ? "Every request across every organisation has been dealt with."
+                  : "Every request waiting on you has been dealt with."}
           </p>
         </div>
       ) : (

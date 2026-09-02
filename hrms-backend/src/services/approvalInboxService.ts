@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import { Organization } from "../models/Organization.js";
 import { runWithOrg } from "../utils/orgContext.js";
-import { ADAPTERS, adapterFor, chainOf, isDecided, type ApprovalRow, type ApprovalModule } from "./approvalRegistry.js";
+import { ADAPTERS, adapterFor, chainOf, isDecided, type ApprovalRow, type ApprovalModule, type DepartmentSubjects } from "./approvalRegistry.js";
+import { Employee } from "../models/Employee.js";
 import { teamMemberUserIds } from "./departmentHeadService.js";
 import { hasPermission } from "../middleware/permissions.js";
 import type { AuthenticatedRequest } from "../types/index.js";
@@ -101,6 +102,58 @@ export async function resolveInboxScope(
  * the module entirely cannot later merge something into a filter that was meant
  * to match nothing.
  */
+/**
+ * Everyone in one department, in the shapes the adapters key on.
+ *
+ * Resolved once per request rather than per module: eight adapters asking the
+ * same question of the same department is eight identical queries for a filter
+ * that changes nothing between them.
+ *
+ * Read across organisations deliberately — a department id belongs to exactly
+ * one organisation, so scoping this would only make a Super Admin's filter
+ * return nothing while adding no safety the per-module scope does not already
+ * provide.
+ */
+export async function departmentSubjects(departmentId: string): Promise<DepartmentSubjects> {
+  const members = await Employee.find({ department: departmentId })
+    .select("_id user")
+    .lean<Array<{ _id: unknown; user?: unknown }>>();
+  return {
+    departmentId: new mongoose.Types.ObjectId(departmentId),
+    userIds: members.filter((m) => m.user).map((m) => new mongoose.Types.ObjectId(String(m.user))),
+    employeeIds: members.map((m) => new mongoose.Types.ObjectId(String(m._id))),
+  };
+}
+
+/**
+ * Merge a department filter into a scope filter without either silently winning.
+ *
+ * Both may constrain the same field — a head's scope restricts `user` to their
+ * own team, and a department filter restricts it to that department's people.
+ * Assigning one over the other would answer the wrong question: a head who
+ * picks a department they do not head would otherwise see their own team's rows
+ * under that department's name, which is worse than seeing none.
+ *
+ * So overlapping `$in` lists are intersected, which gives the only honest
+ * answer — everyone who is in both — and an empty list where there is no
+ * overlap, which matches nothing.
+ */
+function mergeFilters(scope: Record<string, unknown>, department: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...department };
+  for (const [key, value] of Object.entries(scope)) {
+    const existing = out[key];
+    const a = (existing as { $in?: unknown[] } | undefined)?.$in;
+    const b = (value as { $in?: unknown[] } | undefined)?.$in;
+    if (a && b) {
+      const keep = new Set(b.map(String));
+      out[key] = { $in: a.filter((id) => keep.has(String(id))) };
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Record<string, unknown> | null {
   if (scope.everything) return {};
   // No organisation resolved means no safe way to narrow, so nothing is shown.
@@ -127,6 +180,8 @@ export interface InboxQuery {
   module?: string;
   organization?: string;
   search?: string;
+  /** One department, by id — everything raised by or about its people. */
+  department?: string;
   /** ISO days — on when it was raised, or when it was decided. */
   from?: string;
   to?: string;
@@ -170,7 +225,14 @@ export class ApprovalInboxService {
     // yours returns an empty list rather than somebody else's.
     const wanted = (query.module ? ADAPTERS.filter((a) => a.module === query.module) : ADAPTERS)
       .map((a) => ({ adapter: a, scopeFilter: scopeFilterFor(scope, a.module) }))
-      .filter((x): x is { adapter: typeof x.adapter; scopeFilter: Record<string, unknown> } => x.scopeFilter !== null);
+      .filter((x): x is { adapter: typeof x.adapter; scopeFilter: Record<string, unknown> } => x.scopeFilter !== null)
+      // Asking for one department drops the queues that cannot answer for one.
+      // A list captioned with a department name must not carry rows that are
+      // not that department's, and showing them unfiltered would do exactly
+      // that under a heading that says otherwise.
+      .filter((x) => !query.department || x.adapter.departmentFilter !== null);
+
+    const subjects = query.department ? await departmentSubjects(query.department) : null;
 
     const window: Record<string, Date> = {};
     if (query.from) window.$gte = new Date(`${query.from}T00:00:00.000Z`);
@@ -184,7 +246,7 @@ export class ApprovalInboxService {
         // can narrow the scope but never widen past it.
         const filter: Record<string, unknown> = { ...(decidedView ? a.decided.filter : a.pendingFilter) };
         if (query.organization) filter.organization = new mongoose.Types.ObjectId(query.organization);
-        Object.assign(filter, scopeFilter);
+        Object.assign(filter, subjects ? mergeFilters(scopeFilter, a.departmentFilter!(subjects)) : scopeFilter);
 
         // On the history the dates people mean are when it was decided, not
         // when it was raised — and each module dates both differently.

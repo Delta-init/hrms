@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useDepartmentReport } from "@/hooks/useDepartments";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { DepartmentApprovals } from "@/components/departments/DepartmentApprovals";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +92,10 @@ export default function DepartmentReportPage() {
           </div>
         }
       />
+
+      {/* Before the attendance report: a pending decision is something to act
+          on now, where the report below is something to read. */}
+      <DepartmentApprovals departmentId={id} departmentName={data.department.name} />
 
       {/* Members table with leave counts */}
       <Card className="mb-6 overflow-hidden">
