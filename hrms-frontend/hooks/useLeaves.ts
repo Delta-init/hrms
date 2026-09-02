@@ -77,6 +77,24 @@ export const useDeleteLeave = () => {
   });
 };
 
+/**
+ * How many leave requests are waiting on a decision.
+ *
+ * Asked only of people who can open the queue — a number somebody cannot act on
+ * is decoration — and kept a little stale on purpose: this sits in the sidebar
+ * on every page, and a queue length that is a minute old is worth exactly as
+ * much as one that is current.
+ */
+export const usePendingLeaveCount = (enabled = true) =>
+  useQuery({
+    queryKey: [...LEAVE_KEY, "pending-count"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ count: number }>>("/leaves/pending-count")).data.data?.count ?? 0,
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
 /** Self-service — withdraw one's own still-pending request. */
 export const useWithdrawLeave = () => {
   const qc = useQueryClient();

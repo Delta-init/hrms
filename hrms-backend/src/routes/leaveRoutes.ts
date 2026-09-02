@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createLeave,
   getLeaves,
+  getPendingLeaveCount,
   getMyLeaves,
   getLeaveById,
   updateLeave,
@@ -25,6 +26,10 @@ router.get("/options", getLeaveOptions);
 // Withdraw a still-pending request of one's own; ownership is checked in the service.
 router.patch("/:id/withdraw", withdrawLeave);
 
+// Before "/:id", or "pending-count" is read as a request id. Gated on view
+// rather than approve: a badge is a number, and anyone allowed to open the
+// queue is allowed to know how long it is.
+router.get("/pending-count", checkPermission("leave", "view"), getPendingLeaveCount);
 router.get("/", checkPermission("leave", "view"), getLeaves);
 router.post("/", checkPermission("leave", "create"), createLeave);
 router.get("/:id", checkPermission("leave", "view"), getLeaveById);

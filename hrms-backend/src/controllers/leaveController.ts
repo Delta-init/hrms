@@ -26,6 +26,14 @@ export const createLeave = async (req: AuthenticatedRequest, res: Response, next
   }
 };
 
+export const getPendingLeaveCount = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Pending leave requests", { count: await service.pendingCount() });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getLeaves = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     // The `leave.view` permission also drives self-service nav visibility, so it's

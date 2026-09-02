@@ -66,6 +66,11 @@ const envSchema = z.object({
    * mind. Sending at midnight would describe yesterday to somebody asleep.
    */
   ATTENDANCE_DIGEST_CRON: z.string().default("30 19 * * *"),
+  /**
+   * Midday, so a request raised overnight is in the queue by the time anybody
+   * is told about it and there is still an afternoon left to answer it.
+   */
+  LEAVE_QUEUE_CRON: z.string().default("0 12 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

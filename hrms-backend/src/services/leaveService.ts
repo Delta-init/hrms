@@ -224,6 +224,18 @@ export class LeaveService {
     return LeaveRequest.findById(leave._id).populate("user", "name email designation");
   }
 
+  /**
+   * How many requests are sitting unanswered, for the badge and the digest.
+   *
+   * A count rather than the rows: the sidebar needs a number and asking for a
+   * page of requests to length it would pull the whole queue into memory on
+   * every navigation. Scoped like every other read here, so one tenant's queue
+   * is never counted into another's.
+   */
+  async pendingCount(): Promise<number> {
+    return LeaveRequest.countDocuments(scoped({ status: "pending" }));
+  }
+
   async list(query: LeaveQuery) {
     const { page, limit, skip } = parsePagination(query, 50, 200);
 
