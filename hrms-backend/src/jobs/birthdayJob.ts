@@ -23,7 +23,17 @@ async function hrRecipients(orgId: string): Promise<string[]> {
   return users.map((u) => u.email).filter(Boolean);
 }
 
-function buildHtml(birthdays: Array<{ name: string; employeeCode?: string; department?: string | null; designation?: string }>, dateLabel: string) {
+type Person = { name: string; employeeCode?: string; department?: string | null; designation?: string };
+
+/**
+ * Today and tomorrow in one mail.
+ *
+ * Told on the day, HR has already missed the chance to arrange anything — a
+ * card, a cake, a mention in the morning. A day's warning is the whole point of
+ * the notice, and a second mail every morning would be one too many, so the
+ * warning rides along with the one already being sent.
+ */
+function buildHtml(birthdays: Person[], dateLabel: string, tomorrow: Person[] = [], tomorrowLabel = "") {
   const rows = birthdays
     .map((b) => `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600">${b.name}</td>
@@ -41,6 +51,17 @@ function buildHtml(birthdays: Array<{ name: string; employeeCode?: string; depar
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${tomorrow.length ? `
+    <h3 style="color:#4f46e5;margin:24px 0 4px;font-size:15px">Tomorrow — ${tomorrowLabel}</h3>
+    <p style="color:#555;margin:0 0 8px;font-size:13px">A day's notice, so there is time to arrange something.</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px">
+      <tbody>${tomorrow.map((b) => `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600">${b.name}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666">${b.employeeCode ?? ""}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666">${b.department ?? "—"}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666">${b.designation ?? ""}</td>
+      </tr>`).join("")}</tbody>
+    </table>` : ""}
     <p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS.</p>
   </div>`;
 }
@@ -57,15 +78,22 @@ export async function runBirthdayCheck(now = new Date()) {
   let emailsSent = 0;
   let totalRecipients = 0;
 
+  const next = new Date(now.getTime() + 86_400_000);
+  const tomorrowLabel = next.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+
   for (const org of orgs) {
     const orgId = String(org._id);
     const birthdays = await birthdaysOn(now, orgId);
-    if (birthdays.length === 0) continue;
+    const tomorrow = await birthdaysOn(next, orgId);
+    // Either list is reason enough to write. Sending only when somebody has a
+    // birthday today would drop exactly the notice that gives HR a day's
+    // warning — which is the half that lets them do anything about it.
+    if (birthdays.length === 0 && tomorrow.length === 0) continue;
     totalBirthdays += birthdays.length;
 
     const recipients = await hrRecipients(orgId);
     if (recipients.length === 0) {
-      console.log(`🎂 ${org.name}: ${birthdays.length} birthday(s) but no HR recipients — skipped.`);
+      console.log(`🎂 ${org.name}: ${birthdays.length} today / ${tomorrow.length} tomorrow but no HR recipients — skipped.`);
       continue;
     }
     totalRecipients += recipients.length;
@@ -75,9 +103,13 @@ export async function runBirthdayCheck(now = new Date()) {
       // each organization's mail goes out through its own SMTP.
       organization: org._id,
       to: recipients,
-      subject: `🎂 ${birthdays.length} birthday${birthdays.length === 1 ? "" : "s"} today — ${dateLabel}`,
-      html: buildHtml(birthdays, dateLabel),
-      text: `Today's birthdays: ${birthdays.map((b) => b.name).join(", ")}`,
+      subject: birthdays.length
+        ? `🎂 ${birthdays.length} birthday${birthdays.length === 1 ? "" : "s"} today — ${dateLabel}`
+        : `🎂 ${tomorrow.length} birthday${tomorrow.length === 1 ? "" : "s"} tomorrow — ${tomorrowLabel}`,
+      html: buildHtml(birthdays, dateLabel, tomorrow, tomorrowLabel),
+      text:
+        (birthdays.length ? `Today's birthdays: ${birthdays.map((b) => b.name).join(", ")}\n` : "") +
+        (tomorrow.length ? `Tomorrow (${tomorrowLabel}): ${tomorrow.map((b) => b.name).join(", ")}` : ""),
     });
     if (emailed) emailsSent += 1;
   }

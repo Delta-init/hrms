@@ -13,6 +13,7 @@ import { startResignationCron } from "./jobs/resignationJob.js";
 import { startFaceProofPurgeCron } from "./jobs/facePurgeJob.js";
 import { startApprovalDigestCron } from "./jobs/approvalDigestJob.js";
 import { startLateNoticeCron } from "./jobs/lateNoticeJob.js";
+import { startPunchReminderCron } from "./jobs/punchReminderJob.js";
 
 const app = express();
 
@@ -88,6 +89,7 @@ const start = async () => {
   startFaceProofPurgeCron();
   startApprovalDigestCron();
   startLateNoticeCron();
+  startPunchReminderCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);

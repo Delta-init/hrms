@@ -53,6 +53,13 @@ const envSchema = z.object({
   // Late enough that the morning's check-ins are in, early enough to still be
   // that morning. Anyone arriving after it is told the following day.
   LATE_NOTICE_CRON: z.string().default("30 10 * * *"),
+  /**
+   * Every five minutes, because a shift opens and closes at a different moment
+   * for everybody — ten o'clock in Dubai and eleven-thirty in Kerala are not one
+   * time to check. Each send is written down, so frequent runs do not mean
+   * frequent mail.
+   */
+  PUNCH_REMINDER_CRON: z.string().default("*/5 * * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).
