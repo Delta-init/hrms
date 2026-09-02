@@ -562,6 +562,16 @@ export interface Attendance {
   punchAddress?: string | null;
   /** The same address as the geocoder phrases it, for the tooltip. */
   punchAddressFull?: string | null;
+  /** The way out, so the two ends of a day can be read against each other. */
+  punchOutDevice?: string | null;
+  punchOutIp?: string | null;
+  punchOutAddress?: string | null;
+  punchOutAddressFull?: string | null;
+  punchOutCoords?: { latitude: number; longitude: number } | null;
+  /** "device" | "ip" | "location" — empty when clocking in and out agree. */
+  punchDiffers?: string[];
+  /** Distance between the two fixes, where both ends had one. */
+  punchMovedMetres?: number | null;
   punchCoords?: { latitude: number; longitude: number } | null;
   /** Why there is no fix, when there is none: denied, unavailable, unsupported. */
   punchLocationSource?: "gps" | "denied" | "unavailable" | "unsupported" | null;

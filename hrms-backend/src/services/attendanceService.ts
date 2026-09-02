@@ -52,36 +52,100 @@ function deviceNameOf(src: Sourced): string | null {
  * a browser that cannot do it read very differently, and neither is the same
  * as nothing having been recorded.
  */
-function punchOriginOf(sessions?: unknown) {
-  const list = (sessions ?? []) as SourcedSession[];
-  const first = list.find((x) => x?.checkInSource)?.checkInSource ?? null;
-  const place = [first?.city, first?.region, first?.country].filter(Boolean).join(", ");
-  /**
-   * The address, narrowest part first, as somebody would say it aloud.
-   *
-   * Only the parts that came back — an address abroad may have no district, a
-   * rural one no street — so the line never carries a gap where a comma implies
-   * something was dropped.
-   */
-  // `region` is where the state is kept on a punch — the geocoder's state is
-  // written into it, so there is one field rather than two that disagree.
-  const street = [first?.road, first?.suburb, first?.city, first?.district, first?.region, first?.country]
+/** One end of a day: where it was punched from, and from what. */
+function originOf(src: Sourced) {
+  const place = [src?.city, src?.region, src?.country].filter(Boolean).join(", ");
+  // Narrowest part first, as somebody would say it aloud, and only the parts
+  // that came back — an address abroad may have no district, a rural one no
+  // street — so a comma never implies something was dropped.
+  const street = [src?.road, src?.suburb, src?.city, src?.district, src?.region, src?.country]
     .filter(Boolean)
     .join(", ");
   return {
-    punchDevice: deviceNameOf(first),
-    punchIp: first?.ip?.trim() || null,
-    punchPlace: place || null,
-    // Present only where a real fix was resolved, so it is never confused with
-    // the far coarser guess the IP gives.
-    punchAddress: street || null,
-    punchAddressFull: first?.addressLabel?.trim() || null,
-    punchCoords:
-      typeof first?.latitude === "number" && typeof first?.longitude === "number"
-        ? { latitude: first.latitude, longitude: first.longitude }
+    device: deviceNameOf(src),
+    ip: src?.ip?.trim() || null,
+    place: place || null,
+    address: street || null,
+    addressFull: src?.addressLabel?.trim() || null,
+    coords:
+      typeof src?.latitude === "number" && typeof src?.longitude === "number"
+        ? { latitude: src.latitude, longitude: src.longitude }
         : null,
-    punchLocationSource: first?.locationSource ?? null,
-    punchMethod: first?.method ?? null,
+    locationSource: src?.locationSource ?? null,
+    method: src?.method ?? null,
+  };
+}
+
+/** Metres between two points. */
+function metresBetween(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
+  const R = 6_371_000, rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.latitude - a.latitude), dLng = rad(b.longitude - a.longitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+/**
+ * How far apart two punches may be before it is worth remarking on.
+ *
+ * A GPS fix is good to tens of metres and people move about a building, a
+ * campus, a car park. A kilometre is comfortably outside all of that and still
+ * well inside "somewhere else entirely", which is the thing being looked for.
+ */
+const SAME_PLACE_M = 1_000;
+
+function punchOriginOf(sessions?: unknown) {
+  const list = (sessions ?? []) as SourcedSession[];
+  const inSrc = list.find((x) => x?.checkInSource)?.checkInSource ?? null;
+  // The last one out, since a day may hold more than one session.
+  const outSrc = [...list].reverse().find((x) => x?.checkOutSource)?.checkOutSource ?? null;
+  const a = originOf(inSrc);
+  const b = outSrc ? originOf(outSrc) : null;
+
+  /**
+   * What changed between clocking in and clocking out.
+   *
+   * Named rather than counted, because the three mean different things: a
+   * different device is somebody using another machine, a different IP is
+   * usually just a phone changing tower or wifi, and a different place is the
+   * one that actually raises a question about the day. Only compared where both
+   * ends recorded the thing — a missing value is not a difference.
+   */
+  const differs: string[] = [];
+  let movedMetres: number | null = null;
+  if (b) {
+    if (a.device && b.device && a.device !== b.device) differs.push("device");
+    if (a.ip && b.ip && a.ip !== b.ip) differs.push("ip");
+    if (a.coords && b.coords) {
+      movedMetres = metresBetween(a.coords, b.coords);
+      if (movedMetres > SAME_PLACE_M) differs.push("location");
+    } else if (a.place && b.place && a.place !== b.place) {
+      // No coordinates at either end, so the city is all there is to compare.
+      differs.push("location");
+    }
+  }
+
+  return {
+    // The check-in, under the names the list already reads.
+    punchDevice: a.device,
+    punchIp: a.ip,
+    punchPlace: a.place,
+    punchAddress: a.address,
+    punchAddressFull: a.addressFull,
+    punchCoords: a.coords,
+    punchLocationSource: a.locationSource,
+    punchMethod: a.method,
+    // And the way out, so the two can be read against each other.
+    punchOutDevice: b?.device ?? null,
+    punchOutIp: b?.ip ?? null,
+    punchOutAddress: b?.address ?? null,
+    punchOutAddressFull: b?.addressFull ?? null,
+    punchOutCoords: b?.coords ?? null,
+    /** "device", "ip", "location" — empty when the two ends agree. */
+    punchDiffers: differs,
+    /** Distance between the two fixes, where both had one. */
+    punchMovedMetres: movedMetres,
   };
 }
 

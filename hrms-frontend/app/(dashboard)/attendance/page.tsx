@@ -102,6 +102,26 @@ export default function AttendancePage() {
               as whatever it counts as, it is only the device it was punched
               from that wants a second look. Same badge as the day view, so a
               flagged day looks the same whichever tab you find it on. */}
+          {/* Clocked in and out from different places, machines or networks.
+              Separate from the device flag beside it: that one says the punch
+              came from an unregistered machine, this one says the day did not
+              end where it began. Either can be innocent; both are worth a
+              second look, and neither is an accusation. */}
+          {!!r.punchDiffers?.length && (
+            <span
+              title={
+                `Clocked out from a different ${r.punchDiffers.join(", ")}.` +
+                (r.punchMovedMetres !== null && r.punchMovedMetres !== undefined
+                  ? ` About ${r.punchMovedMetres >= 1000 ? `${(r.punchMovedMetres / 1000).toFixed(1)} km` : `${r.punchMovedMetres} m`} apart.`
+                  : "") +
+                (r.punchOutAddress ? `\nOut: ${r.punchOutAddress}` : "")
+              }
+              className="inline-flex items-center gap-1 rounded-full border border-orange-500/25 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-400"
+            >
+              <ShieldAlert className="h-3 w-3" />
+              {r.punchDiffers.includes("location") ? "Moved" : r.punchDiffers.includes("device") ? "Other device" : "Other network"}
+            </span>
+          )}
           {r.deviceAnomaly && (
             <span
               title={`${DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}${r.deviceLabel ? ` — ${r.deviceLabel}` : ""}`}
@@ -117,16 +137,36 @@ export default function AttendancePage() {
       ),
     },
     {
+      /**
+       * Both ends, and only both when they differ.
+       *
+       * Repeating an identical value on every row is noise that hides the rows
+       * where it is not identical — which are the only rows anybody is looking
+       * for. So the way out is printed only when it disagrees with the way in,
+       * and marked when it does.
+       */
       id: "device", label: "Device",
-      render: (r) => r.punchDevice
-        ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Monitor className="h-3.5 w-3.5" />{r.punchDevice}</span>
-        : <span className="text-muted-foreground">—</span>,
+      render: (r) => !r.punchDevice ? <span className="text-muted-foreground">—</span> : (
+        <div className="leading-tight">
+          <span className="inline-flex items-center gap-1 text-muted-foreground"><Monitor className="h-3.5 w-3.5" />{r.punchDevice}</span>
+          {r.punchDiffers?.includes("device") && (
+            <span className="block text-[10px] font-medium text-red-600 dark:text-red-400">out: {r.punchOutDevice}</span>
+          )}
+        </div>
+      ),
     },
     {
       id: "ip", label: "IP",
-      render: (r) => r.punchIp
-        ? <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground"><Globe className="h-3.5 w-3.5" />{r.punchIp}</span>
-        : <span className="text-muted-foreground">—</span>,
+      render: (r) => !r.punchIp ? <span className="text-muted-foreground">—</span> : (
+        <div className="leading-tight">
+          <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground"><Globe className="h-3.5 w-3.5" />{r.punchIp}</span>
+          {r.punchDiffers?.includes("ip") && (
+            // Amber, not red: a phone changes tower or joins wifi and the
+            // address changes with it. Worth seeing, rarely worth chasing.
+            <span className="block font-mono text-[10px] text-amber-600 dark:text-amber-400">out: {r.punchOutIp}</span>
+          )}
+        </div>
+      ),
     },
     {
       /**
@@ -307,6 +347,11 @@ export default function AttendancePage() {
               "GPS location": r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
               Address: r.punchAddress ?? "",
               "Map link": r.punchCoords ? `https://www.google.com/maps?q=${r.punchCoords.latitude},${r.punchCoords.longitude}` : "",
+              "Out device": r.punchOutDevice ?? "",
+              "Out IP": r.punchOutIp ?? "",
+              "Out address": r.punchOutAddress ?? "",
+              "In vs out differs": (r.punchDiffers ?? []).join(", "),
+              "Distance between punches": r.punchMovedMetres != null ? `${r.punchMovedMetres} m` : "",
               "Estimated from IP": r.punchPlace ?? "",
               "Location status": r.punchCoords ? "GPS" : r.punchLocationSource === "denied" ? "Declined by employee" : r.punchLocationSource === "unavailable" ? "Unavailable" : r.punchPlace ? "IP estimate only" : "",
             })}
