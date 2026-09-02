@@ -10,43 +10,73 @@ import {
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Why a policy could not be saved, in terms of what it was aimed at.
+ *
+ * "Already exists" on its own sends somebody looking through a list for a
+ * duplicate that is not there — the existing one is aimed somewhere else, and
+ * naming the target is what makes that visible.
+ */
+function clashMessage(
+  type: string,
+  label: string | null | undefined,
+  workSchedule: string | null,
+  workMode: "office" | "wfh" | null
+): string {
+  const name = leaveLabel(type, label);
+  if (workMode) return `A policy for ${name} already covers ${workMode === "wfh" ? "work-from-home" : "office"} staff`;
+  if (workSchedule) return `A policy for ${name} already exists on that work schedule`;
+  return `An organization-wide policy for ${name} already exists`;
+}
+
 export class LeaveBalanceService {
   // ── Policies ──────────────────────────────────────────────────────────────
   async createPolicy(input: CreateLeavePolicyInput) {
-    // Clashes are per schedule now: one policy per type per schedule, plus an
-    // org-wide one that covers everybody else.
+    // Clashes are per target: one policy per type per schedule, one per type
+    // per work mode, and one org-wide that covers everybody else.
     const workSchedule = input.workSchedule ?? null;
-    const existing = await LeavePolicy.findOne(scoped({ type: input.type, workSchedule }));
-    if (existing) {
-      throw Object.assign(
-        new Error(
-          workSchedule
-            ? `A policy for ${leaveLabel(input.type, input.label)} already exists on that work schedule`
-            : `An organization-wide policy for ${leaveLabel(input.type, input.label)} already exists`
-        ),
-        { statusCode: 409 }
-      );
-    }
-    return LeavePolicy.create({ organization: getOrgId(), ...input, workSchedule });
+    const workMode = input.workMode ?? null;
+    const existing = await LeavePolicy.findOne(scoped({ type: input.type, workSchedule, workMode }));
+    if (existing) throw Object.assign(new Error(clashMessage(input.type, input.label, workSchedule, workMode)), { statusCode: 409 });
+
+    /**
+     * Stamped now, and this is the whole point of the field.
+     *
+     * Balances are computed from policies rather than stored, so without a
+     * start date a policy saved today silently governs the year already gone —
+     * turning leave people have taken and been paid for into an overdraft.
+     */
+    return LeavePolicy.create({
+      organization: getOrgId(),
+      ...input,
+      workSchedule,
+      workMode,
+      effectiveFrom: new Date(),
+    });
   }
 
   async listPolicies() {
     return LeavePolicy.find(orgFilter())
       .populate("workSchedule", "name")
-      .sort({ type: 1, workSchedule: 1 });
+      // Most specific last, matching how they override each other, so the list
+      // reads in the order the resolver applies them.
+      .sort({ type: 1, workSchedule: 1, workMode: 1 });
   }
 
   async updatePolicy(id: string, input: UpdateLeavePolicyInput) {
     const record = await LeavePolicy.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave policy not found"), { statusCode: 404 });
 
-    // Moving a policy to another schedule can collide with one already there.
-    if (input.workSchedule !== undefined) {
-      const target = input.workSchedule ?? null;
-      const clash = await LeavePolicy.findOne(scoped({ type: record.type, workSchedule: target, _id: { $ne: record._id } }));
+    // Re-aiming a policy can collide with one already covering that target.
+    if (input.workSchedule !== undefined || input.workMode !== undefined) {
+      const workSchedule = input.workSchedule !== undefined ? input.workSchedule ?? null : record.workSchedule ?? null;
+      const workMode = input.workMode !== undefined ? input.workMode ?? null : record.workMode ?? null;
+      const clash = await LeavePolicy.findOne(
+        scoped({ type: record.type, workSchedule, workMode, _id: { $ne: record._id } })
+      );
       if (clash) {
         throw Object.assign(
-          new Error(`A policy for ${leaveLabel(record.type, record.label)} already exists there`),
+          new Error(clashMessage(record.type, record.label, workSchedule as never, workMode)),
           { statusCode: 409 }
         );
       }
@@ -73,7 +103,7 @@ export class LeaveBalanceService {
     const [index, scheduleId, employee, adjustments] = await Promise.all([
       leavePolicyIndex(),
       scheduleIdFor(userId),
-      Employee.findOne(scoped({ user: userId })).select("joiningDate").lean(),
+      Employee.findOne(scoped({ user: userId })).select("joiningDate workMode").lean(),
       // Corrections the rules cannot derive — an opening balance carried over
       // from another system, or a manual credit HR owes somebody.
       LeaveAdjustment.find(scoped({ user: userId, year })).select("type days").lean(),
@@ -83,7 +113,7 @@ export class LeaveBalanceService {
       adjustedBy.set(a.type, (adjustedBy.get(a.type) ?? 0) + a.days);
     }
     const joiningDate = employee?.joiningDate ? new Date(employee.joiningDate) : null;
-    const policies = index.for(scheduleId);
+    const policies = index.for(scheduleId, employee?.workMode ?? null);
 
     // Read each policy as of the latest moment of `year` that has actually
     // happened. Anchoring a yearly policy to 1 January made someone who

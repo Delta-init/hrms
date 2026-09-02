@@ -18,6 +18,21 @@ import { LEAVE_TYPE_LABELS, type LeavePolicy, type LeavePeriod, leaveTypeLabel }
 
 /** The org-wide option. Empty string, so the Select has a real value to hold. */
 const ORG_WIDE = "";
+/**
+ * The two work-mode targets, encoded into the same field as the schedules.
+ *
+ * Prefixed so a mode can never be mistaken for a schedule id, and so adding a
+ * third kind of target later does not need a second dropdown.
+ */
+const MODE_OFFICE = "mode:office";
+const MODE_WFH = "mode:wfh";
+
+/** Split the single form value back into what the API stores. */
+function splitTarget(target: string): { workSchedule: string | null; workMode: "office" | "wfh" | null } {
+  if (target === MODE_OFFICE) return { workSchedule: null, workMode: "office" };
+  if (target === MODE_WFH) return { workSchedule: null, workMode: "wfh" };
+  return { workSchedule: target || null, workMode: null };
+}
 /** Sentinel for "a type the built-in list doesn't cover". */
 const CUSTOM = "__custom__";
 
@@ -30,7 +45,7 @@ interface Props {
 }
 
 const EMPTY: LeavePolicyFormValues = {
-  type: "annual", label: "", workSchedule: ORG_WIDE, days: 0,
+  type: "annual", label: "", target: ORG_WIDE, days: 0,
   period: "year", paid: true, eligibleAfterMonths: 0, carryForwardLimit: 0,
 };
 
@@ -55,8 +70,12 @@ function monthsLabel(months: number): string {
   return `${months} month${months === 1 ? "" : "s"}`;
 }
 
-const scheduleIdOf = (p: LeavePolicy) =>
-  !p.workSchedule ? ORG_WIDE : typeof p.workSchedule === "string" ? p.workSchedule : p.workSchedule._id;
+/** The single form value for a policy already saved. */
+const targetOf = (p: LeavePolicy): string => {
+  if (p.workMode) return p.workMode === "wfh" ? MODE_WFH : MODE_OFFICE;
+  if (!p.workSchedule) return ORG_WIDE;
+  return typeof p.workSchedule === "string" ? p.workSchedule : p.workSchedule._id;
+};
 
 export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Props) {
   const isEditing = !!policy;
@@ -71,7 +90,7 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
   });
 
   const currentType = watch("type");
-  const selectedSchedule = watch("workSchedule");
+  const selectedTarget = watch("target");
   const period = watch("period");
   const eligibleAfterMonths = Number(watch("eligibleAfterMonths") ?? 0);
   // A value the presets don't offer keeps the custom inputs open, so editing a
@@ -83,10 +102,11 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
   const customValue = customUnit === "years" ? eligibleAfterMonths / 12 : eligibleAfterMonths;
   const isCustom = !BUILTIN_LEAVE_TYPES.includes(currentType as never);
 
-  // A type is free if nothing covers it on the schedule being edited — the same
-  // type can have one policy per schedule plus an organization-wide one.
+  // A type is free if nothing covers it on the target being edited — the same
+  // type can have one policy per schedule, one per kind of staff, and one
+  // organization-wide.
   const takenHere = new Set(
-    policies.filter((p) => scheduleIdOf(p) === (selectedSchedule ?? ORG_WIDE) && p._id !== policy?._id).map((p) => p.type)
+    policies.filter((p) => targetOf(p) === (selectedTarget ?? ORG_WIDE) && p._id !== policy?._id).map((p) => p.type)
   );
   const availableTypes = BUILTIN_LEAVE_TYPES.filter((t) => !takenHere.has(t));
 
@@ -94,24 +114,24 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
     if (!open) return;
     if (policy) {
       reset({
-        type: policy.type, label: policy.label ?? "", workSchedule: scheduleIdOf(policy),
+        type: policy.type, label: policy.label ?? "", target: targetOf(policy),
         days: policy.days, period: policy.period, paid: policy.paid,
         eligibleAfterMonths: policy.eligibleAfterMonths, carryForwardLimit: policy.carryForwardLimit,
       });
     } else {
       reset({ ...EMPTY, type: availableTypes[0] ?? CUSTOM });
     }
-    // availableTypes is derived from the schedule the user may still change,
+    // availableTypes is derived from the target the user may still change,
     // so it deliberately does not re-run this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, policy, reset]);
 
-  // Changing the schedule can retire the chosen type if that pair is taken.
+  // Changing the target can retire the chosen type if that pair is taken.
   useEffect(() => {
     if (!open || isEditing || isCustom) return;
     if (!availableTypes.includes(currentType as never) && availableTypes.length) setValue("type", availableTypes[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEditing, isCustom, selectedSchedule, currentType]);
+  }, [open, isEditing, isCustom, selectedTarget, currentType]);
 
   // Reopen on the unit the saved value reads best in.
   useEffect(() => {
@@ -127,10 +147,12 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
   }, [period, setValue]);
 
   const onSubmit = (data: LeavePolicyFormValues) => {
+    const { target, ...rest } = data;
     const payload = {
-      ...data,
-      // "" is the org-wide option; the server stores that as no schedule.
-      workSchedule: data.workSchedule || null,
+      ...rest,
+      // One field on the form, two on the record — "" is the org-wide option,
+      // which the server stores as neither a schedule nor a work mode.
+      ...splitTarget(target),
       label: data.label?.trim() || undefined,
       carryForwardLimit: data.period === "month" ? 0 : data.carryForwardLimit,
     };
@@ -148,20 +170,36 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
           <div className="space-y-1.5">
             <Label>Applies to</Label>
-            <Controller name="workSchedule" control={control} render={({ field }) => (
+            <Controller name="target" control={control} render={({ field }) => (
               <Select value={field.value} onValueChange={field.onChange}>
                 <SelectTrigger><SelectValue placeholder="All employees" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ORG_WIDE}>All employees</SelectItem>
+                  {/* Grouped ahead of the schedules: office and remote cut
+                      across them, and a schedule list they were mixed into
+                      would read as though they were more of the same thing. */}
+                  <SelectItem value={MODE_OFFICE}>All office staff</SelectItem>
+                  <SelectItem value={MODE_WFH}>All work-from-home staff</SelectItem>
                   {schedules.map((w) => <SelectItem key={w._id} value={w._id}>{w.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             )} />
             <p className="text-[11px] text-muted-foreground">
-              {selectedSchedule
-                ? "Only employees on this work schedule get this leave. It overrides any organization-wide policy for the same type."
-                : "Everyone in the organization, unless their work schedule has its own policy for this type."}
+              {selectedTarget === MODE_OFFICE || selectedTarget === MODE_WFH
+                ? `Every ${selectedTarget === MODE_WFH ? "work-from-home" : "office"} employee, whatever work schedule they are on. This overrides both a work-schedule policy and the organization-wide one for the same type.`
+                : selectedTarget
+                  ? "Only employees on this work schedule get this leave. It overrides the organization-wide policy for the same type, but an office or work-from-home policy overrides it in turn."
+                  : "Everyone in the organization, unless a more specific policy covers them for this type."}
             </p>
+            {/* Said once, where the decision is made: entitlement is granted
+                whole rather than accrued, so a cut cannot be applied to a year
+                already granted and spent against. */}
+            {!isEditing && (
+              <p className="text-[11px] text-muted-foreground">
+                Takes effect from today. Anyone already granted a larger allowance for the current period keeps it
+                until the next one.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">

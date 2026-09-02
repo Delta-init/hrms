@@ -35,7 +35,7 @@ async function main() {
       status: { $ne: "terminated" },
       $or: [{ department: null }, { department: { $exists: false } }],
     })
-      .select("name employeeCode designation email user joiningDate status workMode reportingManager")
+      .select("name employeeCode designation email user joiningDate status workMode reportingTo reportingToKind")
       .sort({ employeeCode: 1 })
       .lean();
     if (!missing.length) continue;
@@ -48,9 +48,18 @@ async function main() {
     const byUser = new Map(users.map((u) => [String(u._id), u]));
     const schedules = await WorkSchedule.find({ organization: org._id }).select("name loginTime logoutTime timeZone").lean();
     const bySchedule = new Map(schedules.map((w) => [String(w._id), w]));
-    const managers = await Employee.find({ _id: { $in: missing.map((e) => e.reportingManager).filter(Boolean) } })
-      .select("name").lean();
-    const byManager = new Map(managers.map((m) => [String(m._id), m.name]));
+    // `reportingTo` points at either an Employee record or a login, so both are
+    // looked up — reading only one silently leaves the column blank for
+    // everybody stored the other way.
+    const managerIds = missing.map((e) => e.reportingTo).filter(Boolean);
+    const [mgrEmployees, mgrUsers] = await Promise.all([
+      Employee.find({ _id: { $in: managerIds } }).select("name").lean(),
+      User.find({ _id: { $in: managerIds } }).select("name").lean(),
+    ]);
+    const byManager = new Map<string, string>([
+      ...mgrEmployees.map((m) => [String(m._id), String(m.name ?? "")] as const),
+      ...mgrUsers.map((m) => [String(m._id), String(m.name ?? "")] as const),
+    ]);
 
     const pending = await LeaveRequest.find({ organization: org._id, status: "pending", user: { $in: userIds } })
       .select("user").lean();
@@ -79,7 +88,7 @@ async function main() {
         "Login Status": u?.status ?? (e.user ? "" : "no account"),
         "Work Schedule": ws?.name ?? "",
         Shift: ws ? `${ws.loginTime}–${ws.logoutTime} ${ws.timeZone}` : "",
-        "Reporting Manager": e.reportingManager ? byManager.get(String(e.reportingManager)) ?? "" : "",
+        "Reporting Manager": e.reportingTo ? byManager.get(String(e.reportingTo)) ?? "" : "",
         "Work Mode": e.workMode ?? "",
         Joined: day(e.joiningDate as Date | null),
         "Pending Leave": e.user ? pendingBy[String(e.user)] ?? 0 : 0,

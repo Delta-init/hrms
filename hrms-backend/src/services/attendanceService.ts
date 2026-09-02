@@ -853,7 +853,7 @@ export class AttendanceService {
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = employeeId;
     const employees = await Employee.find(empFilter)
-      .select("name employeeCode designation user joiningDate")
+      .select("name employeeCode designation user joiningDate workMode")
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays timeZone" } })
       .sort({ name: 1 })
       .lean();
@@ -958,7 +958,13 @@ export class AttendanceService {
       // The schedule's own name for a leave type, so a custom one reads
       // properly instead of collapsing into a generic "On leave".
       const scheduleId = (e.user as { workSchedule?: { _id?: unknown } } | null)?.workSchedule?._id;
-      const policies = policyIndex.for(scheduleId ? String(scheduleId) : null);
+      // Work mode as well as schedule: a policy written for remote staff can
+      // carry its own name for a leave type, and resolving without it would
+      // label their days from a policy that is not theirs.
+      const policies = policyIndex.for(
+        scheduleId ? String(scheduleId) : null,
+        (e as { workMode?: "office" | "wfh" }).workMode ?? null
+      );
       const describeLeave = (type: string): DayLeave => {
         const p = policies.find((x) => x.type === type);
         return { type, label: p?.label ?? leaveLabel(type), paid: p ? p.paid : type !== "unpaid" };

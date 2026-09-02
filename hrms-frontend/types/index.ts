@@ -703,6 +703,8 @@ export interface LeavePolicy {
   label?: string;
   /** The work schedule this covers; null applies to everyone in the org. */
   workSchedule?: { _id: string; name: string } | string | null;
+  /** Office or remote staff; null covers both. Beats `workSchedule`. */
+  workMode?: "office" | "wfh" | null;
   /** How many days `period` grants. */
   days: number;
   period: LeavePeriod;
@@ -711,6 +713,8 @@ export interface LeavePolicy {
   /** Months of service before this leave can be taken. 0 = from day one. */
   eligibleAfterMonths: number;
   carryForwardLimit: number;
+  /** When it started governing; null means it always has. */
+  effectiveFrom?: string | null;
   createdAt: string;
   updatedAt: string;
 }

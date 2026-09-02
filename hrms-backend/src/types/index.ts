@@ -995,6 +995,8 @@ export interface ILeavePolicy extends Document {
   label?: string;
   /** The work schedule this covers; null applies to the whole organization. */
   workSchedule?: Types.ObjectId | { _id: Types.ObjectId; name?: string } | null;
+  /** Office or remote staff; null applies to both. Beats `workSchedule`. */
+  workMode?: WorkMode | null;
   /** How many days `period` grants. */
   days: number;
   period: LeavePeriod;
@@ -1004,6 +1006,16 @@ export interface ILeavePolicy extends Document {
   eligibleAfterMonths: number;
   /** Yearly only: max unused days carried into the next year (0 = none). */
   carryForwardLimit: number;
+  /**
+   * When this policy started governing. Null means it always has.
+   *
+   * Entitlement is granted whole rather than accrued month by month, so a
+   * policy saved in September cannot simply take over a year already granted
+   * under a different one — it would turn leave somebody has already taken and
+   * been paid for into an overdraft. Within the period a policy first appears
+   * in, the larger of the two allowances stands.
+   */
+  effectiveFrom?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

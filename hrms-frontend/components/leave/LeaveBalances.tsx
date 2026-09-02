@@ -27,6 +27,19 @@ function monthsLabel(months: number): string {
 const fmtDay = (iso: string) =>
   new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
+/**
+ * Who a policy covers, in the words the form used to write it.
+ *
+ * Work mode is checked first because that is the order the resolver applies
+ * them in — a policy carrying both would be reported by whichever wins, not by
+ * whichever is listed first here.
+ */
+function policyTarget(p: LeavePolicy): string {
+  if (p.workMode) return p.workMode === "wfh" ? "All work-from-home staff" : "All office staff";
+  if (p.workSchedule && typeof p.workSchedule === "object") return p.workSchedule.name;
+  return "All employees";
+}
+
 export function LeaveBalances({ canManage }: Props) {
   const { data: policies, isLoading: policiesLoading } = useLeavePolicies(canManage);
   const { data: balances, isLoading: balancesLoading } = useMyLeaveBalances();
@@ -64,9 +77,7 @@ export function LeaveBalances({ canManage }: Props) {
                       {p.label?.trim() || leaveTypeLabel(p.type)}
                       {!p.paid && <span className="ml-1.5 text-[11px] font-normal text-amber-600">unpaid</span>}
                     </p>
-                    <p className="text-[11px] font-medium text-primary">
-                      {p.workSchedule && typeof p.workSchedule === "object" ? p.workSchedule.name : "All employees"}
-                    </p>
+                    <p className="text-[11px] font-medium text-primary">{policyTarget(p)}</p>
                     <p className="text-xs text-muted-foreground">
                       {p.days}d {p.period === "month" ? "a month" : "a year"}
                       {p.eligibleAfterMonths > 0 && ` · after ${monthsLabel(p.eligibleAfterMonths)}`}

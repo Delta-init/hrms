@@ -2,7 +2,7 @@ import { LeavePolicy } from "../models/LeavePolicy.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
-import type { LeavePeriod } from "../types/index.js";
+import type { LeavePeriod, WorkMode } from "../types/index.js";
 import { scoped, orgFilter } from "../utils/orgContext.js";
 
 /**
@@ -26,6 +26,19 @@ export interface EffectivePolicy {
   carryForwardLimit: number;
   /** Which schedule granted it — null when it is the organization-wide one. */
   workSchedule: string | null;
+  /** Which work mode granted it — null when it is not written against one. */
+  workMode: WorkMode | null;
+  /** When it started governing; null means it always has. */
+  effectiveFrom: Date | null;
+  /**
+   * What the policy this one displaced granted, or null if it displaced none.
+   *
+   * Carried so the changeover period can be settled without re-resolving:
+   * entitlement is granted whole rather than accrued, so a policy that takes
+   * over part-way through a year cannot simply replace the number somebody has
+   * already been granted and spent against.
+   */
+  supersededDays: number | null;
 }
 
 export const BUILTIN_LEAVE_LABELS: Record<string, string> = {
@@ -42,6 +55,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 function shape(p: {
   _id: unknown; type: string; label?: string | null; days: number; period?: LeavePeriod;
   paid?: boolean; eligibleAfterMonths?: number; carryForwardLimit?: number; workSchedule?: unknown;
+  workMode?: WorkMode | null; effectiveFrom?: Date | null;
 }): EffectivePolicy {
   return {
     _id: p._id,
@@ -53,6 +67,11 @@ function shape(p: {
     eligibleAfterMonths: p.eligibleAfterMonths ?? 0,
     carryForwardLimit: p.carryForwardLimit ?? 0,
     workSchedule: p.workSchedule ? String(p.workSchedule) : null,
+    workMode: p.workMode ?? null,
+    effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : null,
+    // Filled in by the resolver, which is the only place that knows what this
+    // policy displaced for a given person.
+    supersededDays: null,
   };
 }
 
@@ -65,18 +84,45 @@ export async function leavePolicyIndex() {
   const all = await LeavePolicy.find(orgFilter()).lean();
   const shaped = all.map((p) => shape(p as never));
 
+  /**
+   * How strongly a policy claims one person. Higher wins.
+   *
+   * Work mode beats work schedule deliberately. The two are orthogonal — two of
+   * the schedules in use carry both office and remote staff — so "every remote
+   * employee" is not expressible as a set of schedules, and a rule that let a
+   * schedule override it would silently miss most of the people it named.
+   */
+  const rank = (p: EffectivePolicy) => (p.workMode ? 2 : p.workSchedule ? 1 : 0);
+
   return {
-    /** The policies in force for someone on `scheduleId` (null = no schedule). */
-    for(scheduleId: string | null): EffectivePolicy[] {
+    /**
+     * The policies in force for one person, most specific claim per type.
+     *
+     * The runner-up is kept on the winner as `supersededDays`, because the
+     * winner may only have taken effect part-way through the period in progress
+     * and the number it displaced is what settles that.
+     */
+    for(scheduleId: string | null, workMode: WorkMode | null = null): EffectivePolicy[] {
       const byType = new Map<string, EffectivePolicy>();
+      const runnerUp = new Map<string, EffectivePolicy>();
       for (const p of shaped) {
-        // A policy written for another schedule is not this person's.
+        // A policy written for another schedule, or another kind of staff, is
+        // not this person's.
         if (p.workSchedule && p.workSchedule !== scheduleId) continue;
+        if (p.workMode && p.workMode !== workMode) continue;
+
         const chosen = byType.get(p.type);
-        // Their schedule's own policy overrides the organization-wide default.
-        if (!chosen || (p.workSchedule && !chosen.workSchedule)) byType.set(p.type, p);
+        if (!chosen) { byType.set(p.type, p); continue; }
+        if (rank(p) > rank(chosen)) {
+          byType.set(p.type, p);
+          runnerUp.set(p.type, chosen);
+        } else if (!runnerUp.has(p.type) || rank(p) > rank(runnerUp.get(p.type)!)) {
+          runnerUp.set(p.type, p);
+        }
       }
-      return [...byType.values()].sort((a, b) => a.label.localeCompare(b.label));
+      return [...byType.values()]
+        .map((p) => ({ ...p, supersededDays: runnerUp.get(p.type)?.days ?? null }))
+        .sort((a, b) => a.label.localeCompare(b.label));
     },
   };
 }
@@ -94,10 +140,29 @@ export async function scheduleIdFor(userId: unknown): Promise<string | null> {
   return id ? String(id) : null;
 }
 
+/**
+ * Where somebody works, for the policies written against office or remote staff.
+ *
+ * Only the employee record carries this — a login does not have one — so
+ * somebody with no employee record resolves to null and is reached only by
+ * schedule and org-wide policies, which is the right answer for an account that
+ * is not a person.
+ */
+export async function workModeFor(userId: unknown): Promise<WorkMode | null> {
+  const emp = await Employee.findOne(scoped({ user: userId }))
+    .select("workMode")
+    .lean<{ workMode?: WorkMode } | null>();
+  return emp?.workMode ?? null;
+}
+
 /** The policies in force for one person. */
 export async function policiesForUser(userId: unknown): Promise<EffectivePolicy[]> {
-  const [index, scheduleId] = await Promise.all([leavePolicyIndex(), scheduleIdFor(userId)]);
-  return index.for(scheduleId);
+  const [index, scheduleId, workMode] = await Promise.all([
+    leavePolicyIndex(),
+    scheduleIdFor(userId),
+    workModeFor(userId),
+  ]);
+  return index.for(scheduleId, workMode);
 }
 
 // ── Entitlement ──────────────────────────────────────────────────────────────
@@ -167,14 +232,34 @@ export function eligibilityFor(
  * you qualify, the whole allowance afterwards.
  */
 export function accruedFor(
-  policy: Pick<EffectivePolicy, "days" | "period" | "eligibleAfterMonths">,
+  policy: Pick<EffectivePolicy, "days" | "period" | "eligibleAfterMonths" | "effectiveFrom" | "supersededDays">,
   joiningDate: Date | null,
   on: Date
 ): number {
-  const { end } = periodWindow(policy.period, on);
+  const { start, end } = periodWindow(policy.period, on);
   // Joined after this period had already finished — nothing for it.
   if (joiningDate && joiningDate >= end) return 0;
-  return eligibilityFor(policy, joiningDate, on).eligible ? round(policy.days) : 0;
+  if (!eligibilityFor(policy, joiningDate, on).eligible) return 0;
+
+  const from = policy.effectiveFrom ?? null;
+  // In force for the whole period, or for all time — the ordinary case, and
+  // the only one for every policy written before this field existed.
+  if (!from || from <= start) return round(policy.days);
+
+  // Not yet in force at all: whatever it displaced still governs.
+  if (from >= end) return round(policy.supersededDays ?? 0);
+
+  /**
+   * It took over part-way through this period.
+   *
+   * The allowance is granted whole rather than accrued month by month, so there
+   * is no fraction of a year to hand over — the period has already been granted
+   * under the old number and possibly spent against it. Taking the larger of
+   * the two means a rise lands immediately and a cut waits for the next period,
+   * which is the only reading that cannot turn leave somebody has already taken
+   * and been paid for into an overdraft.
+   */
+  return round(Math.max(policy.days, policy.supersededDays ?? 0));
 }
 
 /** Days of `type` already booked in the period containing `on`. */
@@ -199,7 +284,10 @@ export async function usedInPeriod(
 
 /** Unused days brought forward from last year. Yearly policies only. */
 export function carriedForward(
-  policy: Pick<EffectivePolicy, "days" | "period" | "eligibleAfterMonths" | "carryForwardLimit">,
+  policy: Pick<
+    EffectivePolicy,
+    "days" | "period" | "eligibleAfterMonths" | "carryForwardLimit" | "effectiveFrom" | "supersededDays"
+  >,
   joiningDate: Date | null,
   year: number,
   usedLastYear: number

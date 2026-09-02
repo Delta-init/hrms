@@ -10,8 +10,16 @@ export const leavePolicyFormSchema = z
     type: z.string().trim().toLowerCase().min(1, "Leave type is required").max(40)
       .regex(/^[a-z0-9_]+$/, "Use lowercase letters, numbers or underscores"),
     label: z.string().trim().max(60).optional(),
-    /** "" means every employee in the organization. */
-    workSchedule: z.string(),
+    /**
+     * Who the policy covers, as one value.
+     *
+     * "" is everyone; "mode:office" and "mode:wfh" are the two kinds of staff;
+     * anything else is a work-schedule id. One field rather than two because
+     * the targets are mutually exclusive — two dropdowns would let somebody
+     * pick a combination the server rejects, and the form should not offer a
+     * choice that cannot be saved.
+     */
+    target: z.string(),
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]),
     paid: z.boolean(),

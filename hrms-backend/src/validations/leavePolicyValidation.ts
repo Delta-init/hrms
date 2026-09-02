@@ -13,6 +13,15 @@ export const createLeavePolicySchema = z
     label: z.string().trim().max(60).optional(),
     /** Empty means the organization-wide policy, same as omitting it. */
     workSchedule: z.string().trim().min(1).nullish().transform((v) => v ?? null),
+    /**
+     * Office or remote staff, or null for both.
+     *
+     * Mutually exclusive with `workSchedule` below — the two are orthogonal
+     * ways of naming a group, and a policy aimed at both would need a
+     * precedence rule of its own on top of the one that already decides
+     * between them.
+     */
+    workMode: z.enum(["office", "wfh"]).nullish().transform((v) => v ?? null),
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]).default("year"),
     paid: z.boolean().default(true),
@@ -20,6 +29,16 @@ export const createLeavePolicySchema = z
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366).default(0),
   })
   .superRefine((v, ctx) => {
+    // One target or the other. Allowing both would create a fourth level of
+    // precedence for the resolver to arbitrate, and a policy nobody can
+    // predict the reach of is worse than one they have to write twice.
+    if (v.workSchedule && v.workMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workMode"],
+        message: "Aim a policy at a work schedule or at office/remote staff, not both",
+      });
+    }
     if (!BUILTIN_LEAVE_TYPES.includes(v.type as never) && !v.label?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["label"], message: "Give this leave type a name" });
     }
@@ -37,6 +56,7 @@ export const updateLeavePolicySchema = z
   .object({
     label: z.string().trim().max(60).optional(),
     workSchedule: z.string().trim().min(1).nullish().transform((v) => v ?? null),
+    workMode: z.enum(["office", "wfh"]).nullish().transform((v) => v ?? null),
     days: z.coerce.number().min(0, "Cannot be negative").max(366),
     period: z.enum(["month", "year"]),
     paid: z.boolean(),
@@ -45,6 +65,16 @@ export const updateLeavePolicySchema = z
   })
   .partial()
   .superRefine((v, ctx) => {
+    // One target or the other. Allowing both would create a fourth level of
+    // precedence for the resolver to arbitrate, and a policy nobody can
+    // predict the reach of is worse than one they have to write twice.
+    if (v.workSchedule && v.workMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workMode"],
+        message: "Aim a policy at a work schedule or at office/remote staff, not both",
+      });
+    }
     if (v.period === "month" && (v.carryForwardLimit ?? 0) > 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["carryForwardLimit"], message: "Monthly leave cannot carry forward" });
     }
