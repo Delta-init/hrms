@@ -9,6 +9,7 @@ import { useMyOnboardingChecklist, useSetMyOnboardingTaskStatus } from "@/hooks/
 import { useDashboardWishes } from "@/hooks/useDashboard";
 import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { ClockCard } from "@/components/dashboard/ClockCard";
+import { LocationCard } from "@/components/dashboard/LocationCard";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
@@ -38,6 +39,10 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <FaceEnrolmentPrompt />
+        {/* Above the fold and above the greeting: a punch that will be refused
+            is worth knowing about before the day starts, not at the moment the
+            button is pressed. */}
+        <LocationCard />
         <HrDashboard />
       </div>
     );
@@ -82,6 +87,10 @@ function EmployeeDashboard() {
       {/* Left / main */}
       <div className="space-y-6 lg:col-span-2">
         <FaceEnrolmentPrompt />
+        {/* Above the fold and above the greeting: a punch that will be refused
+            is worth knowing about before the day starts, not at the moment the
+            button is pressed. */}
+        <LocationCard />
         {/* Greeting hero */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-indigo-600 to-indigo-800 p-7 text-white shadow-lg">

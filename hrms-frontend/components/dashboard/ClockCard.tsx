@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/responsive-dialog";
 import { cn } from "@/lib/utils";
 import { useTodayAttendance, useClockIn, useClockOut } from "@/hooks/useSelfAttendance";
+import { LocationGuide } from "@/components/shared/LocationGuide";
+import type { LocationState } from "@/lib/geolocation";
 import { deviceKey, deviceLabel, deviceFingerprint } from "@/lib/device";
 import type { PunchClientContext } from "@/types";
 
@@ -41,7 +43,9 @@ function fmtClock(d: Date, tz?: string) {
  * Needs a secure context. Over plain http on a LAN address the browser
  * withholds geolocation entirely, which surfaces here as "unsupported".
  */
-async function collectPunchContext(wantsLocation: boolean): Promise<PunchClientContext> {
+async function collectPunchContext(
+  wantsLocation: boolean
+): Promise<{ context: PunchClientContext; failure: LocationState | null }> {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   // Sent on every punch, not only when binding is on. The server decides
   // whether it matters; the client asking first would just be a round trip,
@@ -51,9 +55,9 @@ async function collectPunchContext(wantsLocation: boolean): Promise<PunchClientC
     ? { deviceKey: key, deviceLabel: deviceLabel(), deviceFingerprint: deviceFingerprint() }
     : {};
 
-  if (!wantsLocation) return { timeZone, ...device };
+  if (!wantsLocation) return { context: { timeZone, ...device }, failure: null };
   if (typeof navigator === "undefined" || !navigator.geolocation) {
-    return { timeZone, ...device, locationSource: "unsupported" };
+    return { context: { timeZone, ...device, locationSource: "unsupported" }, failure: "unsupported" };
   }
 
   try {
@@ -67,19 +71,30 @@ async function collectPunchContext(wantsLocation: boolean): Promise<PunchClientC
       });
     });
     return {
-      timeZone,
-      ...device,
-      latitude: pos.coords.latitude,
-      longitude: pos.coords.longitude,
-      accuracy: pos.coords.accuracy,
-      locationSource: "gps",
+      context: {
+        timeZone,
+        ...device,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        locationSource: "gps",
+      },
+      failure: null,
     };
   } catch (e) {
     const code = (e as GeolocationPositionError | undefined)?.code;
+    // The record keeps the two values it has always kept, because the server's
+    // enum is the wire contract and widening it would be a migration. The
+    // finer answer stays on the client, which is the only place it is used:
+    // a timeout indoors and a device with location switched off are the same
+    // "unavailable" to the record and two different fixes to the person.
     return {
-      timeZone,
-      ...device,
-      locationSource: code === 1 /* PERMISSION_DENIED */ ? "denied" : "unavailable",
+      context: {
+        timeZone,
+        ...device,
+        locationSource: code === 1 /* PERMISSION_DENIED */ ? "denied" : "unavailable",
+      },
+      failure: code === 1 ? "denied" : code === 2 ? "device-off" : "timeout",
     };
   }
 }
@@ -122,6 +137,15 @@ export function ClockCard() {
    * actually has to happen — which is in the browser's own settings, not here.
    */
   const [geoState, setGeoState] = useState<PermissionState | "unknown">("unknown");
+  /**
+   * Why the last attempt failed, which the permission alone cannot say.
+   *
+   * A device with location services switched off reports the permission as
+   * granted and then refuses every request — so "denied" and "the machine has
+   * it turned off" look identical here until something actually asks.
+   */
+  const [lastFailure, setLastFailure] = useState<LocationState | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -166,8 +190,12 @@ export function ClockCard() {
     if (!wantsLocation || geoState !== "prompt") return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      () => setGeoState("granted"),
-      () => { /* Their answer either way; the card reads it from the permission. */ },
+      () => { setGeoState("granted"); setLastFailure(null); },
+      (err) => {
+        // Their answer either way — but which answer decides which settings
+        // screen they are sent to, so it is kept.
+        setLastFailure(err.code === 1 ? "denied" : err.code === 2 ? "device-off" : "timeout");
+      },
       { timeout: 12_000, maximumAge: 60_000 }
     );
   }, [wantsLocation, geoState]);
@@ -184,13 +212,18 @@ export function ClockCard() {
   const recordsLocation = punchPolicy.workMode === "wfh";
   // Required and refused: pressing the button can only fail, and the browser
   // will not re-ask. Say so where the button is.
-  const locationBlocked = !!punchPolicy.locationRequired && geoState === "denied";
+  const locationBlocked =
+    !!punchPolicy.locationRequired && (geoState === "denied" || lastFailure === "device-off");
 
   const send = async (dir: "in" | "out") => {
     setLocating(recordsLocation);
-    const ctx = await collectPunchContext(recordsLocation);
+    const { context, failure } = await collectPunchContext(recordsLocation);
     setLocating(false);
-    (dir === "in" ? clockIn : clockOut)(ctx, {
+    // What the punch itself found, which is the most reliable signal there is:
+    // the permission can read "granted" on a machine whose location services
+    // are off, and only an actual request discovers that.
+    if (recordsLocation) setLastFailure(failure);
+    (dir === "in" ? clockIn : clockOut)(context, {
       // Shown on the answer, not on the press: a punch that was refused — no
       // location, wrong device, already clocked in — must not flash a
       // confirmation on its way to failing.
@@ -374,13 +407,27 @@ export function ClockCard() {
 
       {locationBlocked && !needsReload && (
         <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
-          <p className="font-medium">Location is blocked for this site, so your punch will be refused.</p>
-          <p className="mt-0.5">
-            Your browser remembers that it was declined and will not ask again. Open the padlock
-            (or <span className="font-mono">ⓘ</span>) beside the address, set <strong>Location</strong> to
-            <strong> Allow</strong>, then reload this page. On iPhone also check Settings → Privacy → Location
-            Services → Safari.
+          <p className="font-medium">
+            {lastFailure === "device-off"
+              ? "Location is switched off on this device, so your punch will be refused."
+              : "Location is blocked for this site, so your punch will be refused."}
           </p>
+          <p className="mt-0.5">
+            {lastFailure === "device-off"
+              ? "Your device is not giving any app a location. That is a system setting, so allowing it in the browser will not be enough."
+              : "Your browser remembers that it was declined and will not ask again."}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="mt-1 font-medium underline underline-offset-2"
+          >
+            {showGuide ? "Hide the steps" : "Show me how to fix it"}
+          </button>
+          {/* The same guide the dashboard card uses, rather than a second set
+              of instructions beside it. Two copies of a settings path is two
+              things to keep correct as the operating systems move them. */}
+          {showGuide && <LocationGuide state={lastFailure ?? "denied"} className="mt-2" />}
           {/* For the case the browser has quietly changed its mind — a reset in
               site settings, or a different answer on another device — so it can
               be tried without hunting for the reload button. */}
