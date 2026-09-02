@@ -14,7 +14,7 @@ import { birthdaysOn } from "../services/dashboardService.js";
  * names, codes and departments to every tenant's HR — a cross-tenant leak that
  * left the system over email.
  */
-async function hrRecipients(orgId: string): Promise<string[]> {
+export async function hrRecipients(orgId: string): Promise<string[]> {
   const role = await Role.findOne({ roleName: "HR Manager", organization: null }).select("_id");
   if (!role) return [];
   const users = await User.find({ role: role._id, organization: orgId, status: { $ne: "inactive" } })

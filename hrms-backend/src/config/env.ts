@@ -60,6 +60,12 @@ const envSchema = z.object({
    * frequent mail.
    */
   PUNCH_REMINDER_CRON: z.string().default("*/5 * * * *"),
+  /**
+   * After the last shift closes — 20:30 in Kerala is 19:00 UTC — so the digest
+   * describes a day that has finished and is still the day the reader has in
+   * mind. Sending at midnight would describe yesterday to somebody asleep.
+   */
+  ATTENDANCE_DIGEST_CRON: z.string().default("30 19 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

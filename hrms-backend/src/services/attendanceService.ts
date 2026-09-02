@@ -180,7 +180,7 @@ function anomalyOf(sessions?: unknown): { deviceAnomaly: DeviceAnomaly | null; d
  * yesterday, a second phone, or anything calling the endpoint directly would
  * otherwise close a day that opened seconds ago.
  */
-const MIN_SHIFT_MS = 10 * 60_000;
+export const MIN_SHIFT_MS = 10 * 60_000;
 
 /**
  * A YYYY-MM-DD range as a plain string comparison.

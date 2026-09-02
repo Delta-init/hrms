@@ -4,7 +4,7 @@ import { Kiosk } from "../models/Kiosk.js";
 import { User } from "../models/User.js";
 import type { IKiosk } from "../types/index.js";
 import { scoped } from "../utils/orgContext.js";
-import { AttendanceService, type PunchSource } from "./attendanceService.js";
+import { AttendanceService, MIN_SHIFT_MS, type PunchSource } from "./attendanceService.js";
 import { FaceServiceError, recognize, type LivenessReason, type RecognizeReason } from "./faceClient.js";
 import { FaceEnrollmentService } from "./faceEnrollmentService.js";
 import { LivenessService, livenessRequired } from "./livenessService.js";
@@ -17,7 +17,7 @@ const OPEN_SESSION_WINDOW_MS = 2 * 86_400_000;
 
 export type PunchOutcome =
   | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number }
-  | { status: "cooldown"; user: { id: string; name: string }; at: Date }
+  | { status: "cooldown"; user: { id: string; name: string }; at: Date; message?: string }
   | { status: "not_recognised"; reason: RecognizeReason; hint: string }
   | { status: "not_live"; reason: LivenessReason; hint: string }
   | { status: "refused"; message: string };
@@ -143,7 +143,30 @@ export class FacePunchService {
       return { status: "cooldown", user: { id: userId, name: user.name }, at: previous };
     }
 
-    const direction = (await this.hasOpenSession(userId)) ? "out" : "in";
+    const open = await this.openSession(userId);
+    const direction = open ? "out" : "in";
+
+    /**
+     * A day cannot be closed the moment it opens, at a kiosk either.
+     *
+     * The service behind this refuses it regardless — the rule lives there so
+     * nothing can walk past it — but a kiosk that simply reports an error tells
+     * somebody standing in front of a camera nothing they can act on. Caught
+     * here so the screen can say how long is left, in the same shape it already
+     * uses for a face seen twice in a row.
+     */
+    if (direction === "out" && open?.checkIn) {
+      const held = MIN_SHIFT_MS - (Date.now() - open.checkIn.getTime());
+      if (held > 0) {
+        const mins = Math.ceil(held / 60_000);
+        return {
+          status: "cooldown",
+          user: { id: userId, name: user.name },
+          at: open.checkIn,
+          message: `Checked in a moment ago. You can check out in ${mins} minute${mins === 1 ? "" : "s"}.`,
+        };
+      }
+    }
     const source: PunchSource = {
       method: "face",
       kiosk: String(kiosk._id),
@@ -202,15 +225,16 @@ export class FacePunchService {
    * close, so the direction shown at the kiosk and the punch that follows can
    * never disagree.
    */
-  private async hasOpenSession(userId: string): Promise<boolean> {
+  private async openSession(userId: string): Promise<{ checkIn?: Date | null } | null> {
     const cutoff = new Date(Date.now() - OPEN_SESSION_WINDOW_MS);
-    const open = await Attendance.findOne({
+    // The check-in comes back too, because how long ago it was decides whether
+    // this punch may close the day.
+    return Attendance.findOne({
       user: userId,
       checkIn: { $ne: null },
       checkOut: null,
       date: { $gte: cutoff },
-    }).select("_id");
-    return !!open;
+    }).select("checkIn").lean<{ checkIn?: Date | null } | null>();
   }
 
   /**

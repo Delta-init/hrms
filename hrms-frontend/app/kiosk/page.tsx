@@ -564,10 +564,19 @@ function Result({ result }: { result: KioskPunchResult }) {
           )}
         </div>
         <p className="text-3xl font-semibold">{result.user?.name}</p>
-        <p className="text-lg text-neutral-300">
-          {isIn ? "Checked in" : "Checked out"} at{" "}
+        {/* The word first and largest, then the time. Somebody reads this from
+            a step away while already turning to go, and "checked in" is the
+            part they came for — the clock beneath it is the part they will be
+            asked about later. */}
+        <p className={cn("text-2xl font-bold", isIn ? "text-emerald-400" : "text-sky-400")}>
+          {isIn ? "Checked in" : "Checked out"}
+        </p>
+        <p className="text-4xl font-semibold tabular-nums">
           {result.at ? new Date(result.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
         </p>
+        {isIn && (
+          <p className="text-sm text-neutral-400">Checking out is held for ten minutes.</p>
+        )}
         {isIn && (result.lateMinutes ?? 0) > 0 && (
           <p className="text-sm text-amber-400">{result.lateMinutes} minutes late</p>
         )}
@@ -582,7 +591,13 @@ function Result({ result }: { result: KioskPunchResult }) {
           <CheckCircle2 className="h-10 w-10 text-neutral-300" />
         </div>
         <p className="text-2xl font-semibold">{result.user?.name}</p>
-        <p className="text-lg text-neutral-300">That&apos;s already recorded. You&apos;re all set.</p>
+        {/* Two different holds arrive here. A face seen twice in a minute is
+            "already recorded"; a day ten minutes old is "not yet", and the
+            server sends the wait in words because a person standing at a
+            camera needs to know whether to wait or walk away. */}
+        <p className="text-lg text-neutral-300">
+          {result.message ?? "That's already recorded. You're all set."}
+        </p>
       </div>
     );
   }
