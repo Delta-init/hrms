@@ -201,6 +201,17 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
+      /**
+       * Carried out to the browser deliberately.
+       *
+       * A refresh that fails leaves the old access token in place and only sets
+       * this — so a session whose refresh token has expired or been revoked
+       * still answers with a token and looks alive. Anything asking "is this
+       * session still good?" was reading the token and being told yes, which is
+       * how somebody ended up watching "session expired" over and over without
+       * ever being signed out.
+       */
+      session.error = token.error as string | undefined;
       session.impersonatedBy = token.impersonatedBy as ImpersonatedBy | undefined;
       session.user = {
         ...(session.user ?? {}),

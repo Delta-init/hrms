@@ -11,6 +11,12 @@ interface ImpersonatedBy {
 declare module "next-auth" {
   interface Session {
     accessToken?: string;
+    /**
+     * Set when the refresh failed, so the browser can tell a live session from
+     * a dead one. Without it the session still carries the stale access token
+     * and looks perfectly healthy from the outside.
+     */
+    error?: string;
     impersonatedBy?: ImpersonatedBy;
     user: AuthUser & DefaultSession["user"];
   }

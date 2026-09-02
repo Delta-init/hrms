@@ -40,6 +40,39 @@ function signOutOnce() {
   return signingOut;
 }
 
+/** Milliseconds until a JWT expires, from its own `exp` claim. */
+function expiresInMs(token?: string): number | null {
+  try {
+    const part = (token ?? "").split(".")[1];
+    if (!part) return null;
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp * 1000 - Date.now() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether this session is finished, as opposed to momentarily out of step.
+ *
+ * Three ways to be finished, and only the first was being checked. No token at
+ * all is the obvious one. A refresh that failed is the common one — it leaves
+ * the old token in place and sets `error`, so the session still answers with a
+ * token and reads as healthy; that is how somebody sat watching "session
+ * expired" over and over while the app declined to sign them out. And a token
+ * already past its own expiry is finished whatever else the session says.
+ *
+ * Everything else — a token that rotated under an in-flight request, a single
+ * unlucky 401 — is left alone, because signing somebody out of a working
+ * session is worse than one failed request.
+ */
+function isDead(session: { accessToken?: string; error?: string } | null): boolean {
+  if (!session?.accessToken) return true;
+  if (session.error) return true;
+  const left = expiresInMs(session.accessToken);
+  return left !== null && left <= 0;
+}
+
 /**
  * The session behind concurrent requests, fetched once.
  *
@@ -86,7 +119,7 @@ api.interceptors.response.use(
         // that session is still perfectly good. Ask before ending it: only a
         // session that is genuinely gone gets signed out.
         const session = await sessionOnce().catch(() => null);
-        if (!session?.accessToken) {
+        if (isDead(session)) {
           setActiveOrg(null);
           await signOutOnce();
         }
