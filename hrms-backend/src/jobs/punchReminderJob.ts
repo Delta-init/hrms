@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { cronSetting } from "../utils/cronSetting.js";
 import { Attendance } from "../models/Attendance.js";
 import { Employee } from "../models/Employee.js";
 import { Holiday } from "../models/Holiday.js";
@@ -196,11 +197,8 @@ export async function runPunchReminders(now = new Date()) {
 }
 
 export function startPunchReminderCron() {
-  const expr = env.PUNCH_REMINDER_CRON;
-  if (!cron.validate(expr)) {
-    console.error(`⏰ invalid PUNCH_REMINDER_CRON "${expr}" — punch reminders disabled.`);
-    return;
-  }
+  const expr = cronSetting("PUNCH_REMINDER_CRON", env.PUNCH_REMINDER_CRON);
+  if (!expr) return;
   cron.schedule(expr, () => {
     runPunchReminders().catch((e) => console.error("⏰ punch reminder job failed:", e));
   });

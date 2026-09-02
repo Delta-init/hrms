@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { cronSetting } from "../utils/cronSetting.js";
 import { Attendance } from "../models/Attendance.js";
 import { Employee } from "../models/Employee.js";
 import { Holiday } from "../models/Holiday.js";
@@ -211,11 +212,8 @@ export async function runAttendanceDigest(now = new Date()) {
 }
 
 export function startAttendanceDigestCron() {
-  const expr = env.ATTENDANCE_DIGEST_CRON;
-  if (!cron.validate(expr)) {
-    console.error(`📋 invalid ATTENDANCE_DIGEST_CRON "${expr}" — attendance digest disabled.`);
-    return;
-  }
+  const expr = cronSetting("ATTENDANCE_DIGEST_CRON", env.ATTENDANCE_DIGEST_CRON);
+  if (!expr) return;
   cron.schedule(expr, () => {
     runAttendanceDigest().catch((e) => console.error("📋 attendance digest failed:", e));
   });

@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { cronSetting } from "../utils/cronSetting.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
 import { Organization } from "../models/Organization.js";
@@ -130,11 +131,8 @@ export async function runLeaveQueueDigest(now = new Date()) {
 }
 
 export function startLeaveQueueCron() {
-  const expr = env.LEAVE_QUEUE_CRON;
-  if (!cron.validate(expr)) {
-    console.error(`🗓️ invalid LEAVE_QUEUE_CRON "${expr}" — leave queue digest disabled.`);
-    return;
-  }
+  const expr = cronSetting("LEAVE_QUEUE_CRON", env.LEAVE_QUEUE_CRON);
+  if (!expr) return;
   cron.schedule(expr, () => {
     runLeaveQueueDigest().catch((e) => console.error("🗓️ leave queue digest failed:", e));
   });
