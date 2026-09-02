@@ -36,8 +36,14 @@ interface Props {
 
 export function DepartmentDialog({ open, onOpenChange, department }: Props) {
   const isEditing = !!department;
-  const { data: empData } = useEmployees({ limit: "200" });
-  const { data: usersData } = useUsers({ limit: "200" });
+  // Current staff only. Somebody who has left cannot lead a department, and
+  // offering them made the list longer in exactly the way that hides the person
+  // being looked for — sixty leavers among a hundred names.
+  const { data: empData } = useEmployees({ limit: "200", staff: "current" });
+  // 100, because that is what the server will give: asking for 200 and being
+  // handed 100 silently dropped three of the hundred and three logins, and the
+  // picker had no way to know it was showing an incomplete list.
+  const { data: usersData } = useUsers({ limit: "100" });
   const { mutate: create, isPending: creating } = useCreateDepartment();
   const { mutate: update, isPending: updating } = useUpdateDepartment();
   const isPending = creating || updating;
@@ -105,7 +111,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
    * in THIS department isn't blocked — re-selecting them is how you keep them.
    */
   const blockedFor = (p: Person, slot: "leader" | "member"): BlockedReason => {
-    if (slot === "member" && currentLeader === p.key) return { label: "Team leader", tone: "leader" };
+    if (slot === "member" && currentLeader === p.key) return { label: "Department head", tone: "leader" };
     if (slot === "member" && currentMembers.includes(p.key)) return { label: "Added", tone: "member" };
     if (slot === "leader" && currentMembers.includes(p.key)) return { label: "Member", tone: "member" };
     // Already belongs to a different department — moving them is a deliberate
@@ -149,9 +155,9 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
             <Input id="code" placeholder="e.g. ENG" {...register("code")} />
           </div>
 
-          {/* Team leader (Employee or User) */}
+          {/* The department head — an employee or a login. */}
           <div className="space-y-1.5">
-            <Label>Team Leader</Label>
+            <Label>Department Head</Label>
             <Controller
               name="leader"
               control={control}
@@ -170,7 +176,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
                       onClick={() => field.onChange("")}
                       className="text-xs font-medium text-muted-foreground hover:text-destructive"
                     >
-                      Clear team leader
+                      Clear department head
                     </button>
                   )}
                 </div>

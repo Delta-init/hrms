@@ -101,7 +101,16 @@ export default function DepartmentsPage() {
                       <span className="inline-flex items-center gap-1.5"><UsersIcon className="h-4 w-4" />{d.employeeCount ?? 0} employees</span>
                       <span>· {memberCount} member{memberCount === 1 ? "" : "s"}</span>
                     </div>
-                    {leader && <div>Leader: <span className="font-medium text-foreground">{leader}</span></div>}
+                    {/* Said either way. A department with nobody at the top is
+                        the thing worth seeing on this page — nineteen of the
+                        twenty-one are in that state and the card said nothing,
+                        so it read as though they all had one. */}
+                    <div>
+                      Head:{" "}
+                      {leader
+                        ? <span className="font-medium text-foreground">{leader}</span>
+                        : <span className="font-medium text-amber-600 dark:text-amber-400">not set</span>}
+                    </div>
                   </div>
 
                   <div className="mt-4 flex gap-2 border-t border-border pt-4">

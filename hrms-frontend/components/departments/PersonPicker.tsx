@@ -45,7 +45,7 @@ const toneClass: Record<NonNullable<BlockedReason>["tone"], string> = {
  * Searchable person picker.
  *
  * Blocked people stay in the list rather than being filtered out, so it is
- * visible *why* someone can't be chosen — "already the team leader", "already a
+ * visible *why* someone can't be chosen — "already the department head", "already a
  * member", or the department they belong to — instead of them silently not
  * being there.
  */
