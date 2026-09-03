@@ -14,47 +14,70 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WorkScheduleSelect } from "@/components/pickers";
 import { holidayFormSchema, type HolidayFormValues } from "@/lib/validations/leaveSchema";
-import { useCreateHoliday } from "@/hooks/useLeaves";
-import { TIME_ZONES } from "@/types";
+import { useCreateHoliday, useUpdateHoliday } from "@/hooks/useLeaves";
+import { TIME_ZONES, type Holiday } from "@/types";
 
 const NONE = "__none__";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Present to edit that holiday; absent to create a new one. */
+  holiday?: Holiday | null;
 }
 
-export function HolidayDialog({ open, onOpenChange }: Props) {
-  const { mutate: create, isPending } = useCreateHoliday();
+const scheduleIdOf = (h: Holiday) =>
+  !h.workSchedule ? "" : typeof h.workSchedule === "string" ? h.workSchedule : h.workSchedule._id;
+
+const EMPTY: HolidayFormValues = {
+  name: "", date: "", timeZone: "Asia/Dubai", type: "public", recurring: false,
+  workSchedule: "", workMode: "", provisional: false, description: "",
+};
+
+export function HolidayDialog({ open, onOpenChange, holiday }: Props) {
+  const isEditing = !!holiday;
+  const { mutate: create, isPending: creating } = useCreateHoliday();
+  const { mutate: update, isPending: updating } = useUpdateHoliday();
+  const isPending = creating || updating;
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<HolidayFormValues>({
     resolver: zodResolver(holidayFormSchema),
-    defaultValues: { name: "", date: "", timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", workMode: "", provisional: false, description: "" },
+    defaultValues: EMPTY,
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", workMode: "", provisional: false, description: "" });
-  }, [open, reset]);
+    if (!open) return;
+    reset(
+      holiday
+        ? {
+            name: holiday.name, date: holiday.date.slice(0, 10), timeZone: holiday.timeZone,
+            type: holiday.type, recurring: holiday.recurring, workSchedule: scheduleIdOf(holiday),
+            workMode: holiday.workMode ?? "", provisional: !!holiday.provisional,
+            description: holiday.description ?? "",
+          }
+        : { ...EMPTY, date: new Date().toISOString().slice(0, 10) }
+    );
+  }, [open, holiday, reset]);
 
   const onSubmit = (data: HolidayFormValues) => {
-    create(
-      {
-        ...data,
-        workSchedule: data.workSchedule || null,
-        // "" is the everybody option; the server stores that as no work mode,
-        // which is what every holiday written before this field meant.
-        workMode: data.workMode || null,
-        description: data.description || undefined,
-      },
-      { onSuccess: () => onOpenChange(false) }
-    );
+    const payload = {
+      ...data,
+      workSchedule: data.workSchedule || null,
+      // "" is the everybody option; the server stores that as no work mode,
+      // which is what every holiday written before this field meant.
+      workMode: data.workMode || null,
+      description: data.description || undefined,
+    };
+    const done = { onSuccess: () => onOpenChange(false) };
+    if (isEditing) update({ id: holiday._id, data: payload }, done);
+    else create(payload, done);
   };
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-md">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Add Holiday</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{isEditing ? "Edit Holiday" : "Add Holiday"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4 px-4 sm:px-0">
@@ -175,7 +198,7 @@ export function HolidayDialog({ open, onOpenChange }: Props) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Add Holiday
+              {isEditing ? "Save" : "Add Holiday"}
             </Button>
           </ResponsiveDialogFooter>
         </form>

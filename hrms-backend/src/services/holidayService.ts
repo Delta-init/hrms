@@ -53,6 +53,13 @@ export class HolidayService {
       ...(input.type !== undefined && { type: input.type }),
       ...(input.recurring !== undefined && { recurring: input.recurring }),
       ...(input.workSchedule !== undefined && { workSchedule: input.workSchedule || null }),
+      // Whoever this belongs to. Written explicitly rather than left to fall
+      // through: this whitelist pre-dates the field, and the two new fields
+      // below were added here for the same reason — a field validated by the
+      // schema and accepted by the controller still has to be named here, or
+      // it is silently dropped before the save and the edit appears to work.
+      ...(input.workMode !== undefined && { workMode: input.workMode || null }),
+      ...(input.provisional !== undefined && { provisional: input.provisional }),
       ...(input.description !== undefined && { description: input.description ?? undefined }),
     });
     await record.save();

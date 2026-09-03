@@ -131,6 +131,18 @@ export const useCreateHoliday = () => {
   });
 };
 
+export const useUpdateHoliday = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await api.put<ApiResponse<Holiday>>(`/holidays/${id}`, data);
+      return res.data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: HOLIDAY_KEY }); toast.success("Holiday updated"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to update holiday")),
+  });
+};
+
 export const useDeleteHoliday = () => {
   const qc = useQueryClient();
   return useMutation({

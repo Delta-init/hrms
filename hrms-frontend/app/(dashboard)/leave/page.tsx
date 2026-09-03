@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
 import { canActOnWorkflowStep, workflowStepLabel } from "@/lib/workflow";
-import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus, type LeaveType, leaveTypeLabel, BUILTIN_LEAVE_TYPES } from "@/types";
+import { LEAVE_TYPE_LABELS, type LeaveRequest, type LeaveStatus, type LeaveType, leaveTypeLabel, BUILTIN_LEAVE_TYPES, type Holiday } from "@/types";
 
 const ALL = "__all__";
 const statusStyles: Record<LeaveStatus, string> = {
@@ -132,6 +132,7 @@ export default function LeavePage() {
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [applyDialog, setApplyDialog] = useState(false);
   const [holidayDialog, setHolidayDialog] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<LeaveRequest | null>(null);
   const [review, setReview] = useState<{ leave: LeaveRequest; action: "approved" | "rejected" } | null>(null);
@@ -260,15 +261,48 @@ export default function LeavePage() {
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Holiday Calendar</h3></div>
-            {canCreate && <Button size="sm" variant="outline" className="h-8" onClick={() => setHolidayDialog(true)}><Plus className="h-3.5 w-3.5" />Add</Button>}
+            {canCreate && <Button size="sm" variant="outline" className="h-8" onClick={() => { setEditingHoliday(null); setHolidayDialog(true); }}><Plus className="h-3.5 w-3.5" />Add</Button>}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {holidays.length === 0 ? <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">No holidays added.</p>
             : holidays.map((h) => (
               <div key={h._id} className="group flex items-center gap-3 rounded-lg border border-border p-2.5">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><PartyPopper className="h-4 w-4" /></div>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{h.name}</p><p className="text-xs text-muted-foreground">{fmtDate(h.date, h.timeZone)} · {h.type}{h.recurring ? " · yearly" : ""}</p></div>
-                {canDelete && <button onClick={() => removeHoliday(h._id)} className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button>}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{h.name}</p>
+                  <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                    <span>{fmtDate(h.date, h.timeZone)} · {h.type}{h.recurring ? " · yearly" : ""}</span>
+                    {/* Who this is for, right where it can be misread — the list
+                        has no other way to tell a WFH-only day from everybody's. */}
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        h.workMode === "office" ? "bg-sky-500/10 text-sky-600 dark:text-sky-400"
+                          : h.workMode === "wfh" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {h.workMode === "office" ? "Office only" : h.workMode === "wfh" ? "WFH only" : "Everyone"}
+                    </span>
+                    {h.provisional && (
+                      <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                        Date may move
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  {canEdit && (
+                    <button onClick={() => { setEditingHoliday(h); setHolidayDialog(true); }} className="p-1 text-muted-foreground hover:text-foreground">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button onClick={() => removeHoliday(h._id)} className="p-1 text-muted-foreground hover:text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -277,7 +311,11 @@ export default function LeavePage() {
 
       <LeaveDialog open={leaveDialog} onOpenChange={setLeaveDialog} leave={selected} />
       <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={user?._id} />
-      <HolidayDialog open={holidayDialog} onOpenChange={setHolidayDialog} />
+      <HolidayDialog
+        open={holidayDialog}
+        onOpenChange={(v) => { setHolidayDialog(v); if (!v) setEditingHoliday(null); }}
+        holiday={editingHoliday}
+      />
       <ConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete leave request" description="This leave request will be permanently removed." isPending={deleting} onConfirm={() => selected && removeLeave(selected._id, { onSuccess: () => setDeleteOpen(false) })} />
       <ConfirmDialog
         open={!!withdrawTarget} onOpenChange={(o) => !o && setWithdrawTarget(null)}
