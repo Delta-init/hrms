@@ -2517,3 +2517,50 @@ export const PROGRAM_STATUS_LABELS: Record<ProgramStatus, string> = {
   closed: "Closed",
   cancelled: "Cancelled",
 };
+
+
+// ─── Backups ─────────────────────────────────────────────────────────────────
+export interface BackupCollection {
+  name: string;
+  documents: number;
+  bytes: number;
+  /** included — in the archive. skipped/failed — `reason` says why. */
+  status: "included" | "skipped" | "failed";
+  reason: string;
+}
+
+export interface BackupRun {
+  _id: string;
+  key: string;
+  filename: string;
+  bytes: number;
+  status: "running" | "complete" | "failed";
+  error: string;
+  trigger: "scheduled" | "manual";
+  triggeredBy?: { _id: string; name: string } | string | null;
+  collections: BackupCollection[];
+  totals: {
+    collections: number;
+    included: number;
+    skipped: number;
+    failed: number;
+    documents: number;
+  };
+  durationMs: number;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+/** What restoring one collection would do, before anything is written. */
+export interface RestorePreview {
+  collection: string;
+  inArchive: number;
+  liveNow: number;
+  /** Present now and would be overwritten. */
+  wouldReplace: number;
+  /** Missing now and would come back. */
+  wouldRestore: number;
+  /** Live rows the archive does not mention — never touched. */
+  untouched: number;
+  sample: unknown[];
+}

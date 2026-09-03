@@ -35,7 +35,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
-  ShieldCheck, GraduationCap,
+  ShieldCheck, GraduationCap, DatabaseBackup,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -124,6 +124,8 @@ export const navItems: {
   { href: "/users", label: "Users", icon: Users, permModule: "users" },
   { href: "/roles", label: "Roles & Permissions", icon: Shield, permModule: "roles" },
   { href: "/approval-workflows", label: "Approval Workflows", icon: GitBranch, permModule: "approvalWorkflows" },
+  // Super Admin only, like Approvals — an archive is every collection at once.
+  { href: "/backups", label: "Backups", icon: DatabaseBackup, permModule: null, superAdminOnly: true },
   { href: "/settings", label: "Settings", icon: Settings, permModule: null },
 ];
 

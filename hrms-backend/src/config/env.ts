@@ -66,6 +66,8 @@ const envSchema = z.object({
    * mind. Sending at midnight would describe yesterday to somebody asleep.
    */
   ATTENDANCE_DIGEST_CRON: z.string().default("30 19 * * *"),
+  /** Nightly full-database backup. "off" disables it without a deploy. */
+  BACKUP_CRON: z.string().default("30 2 * * *"),
   /**
    * Midday, so a request raised overnight is in the queue by the time anybody
    * is told about it and there is still an afternoon left to answer it.
