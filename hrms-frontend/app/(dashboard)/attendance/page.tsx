@@ -73,7 +73,21 @@ export default function AttendancePage() {
     { key: "calendar", label: "Calendar", icon: CalendarRange },
   ];
 
-  const columns: DataTableColumn<Attendance>[] = [
+  /**
+   * Where a punch came from is for whoever manages attendance, and nobody else.
+   *
+   * The server already withholds these fields from anyone without the manage
+   * permission, so for an ordinary employee the columns would render as a row
+   * of dashes — three empty columns that look like a fault rather than a
+   * boundary. They are dropped instead.
+   *
+   * The gate is the same permission the server checks, so the two cannot drift
+   * into disagreeing about who sees what.
+   */
+  /** The three columns that describe a punch's origin rather than the punch. */
+  const PROVENANCE = new Set(["device", "ip", "location"]);
+
+  const allColumns: DataTableColumn<Attendance>[] = [
     {
       id: "employee", label: "Employee", alwaysVisible: true,
       render: (r) => {
@@ -107,7 +121,11 @@ export default function AttendancePage() {
               came from an unregistered machine, this one says the day did not
               end where it began. Either can be innocent; both are worth a
               second look, and neither is an accusation. */}
-          {!!r.punchDiffers?.length && (
+          {/* Both badges live in the always-visible Employee column, so the
+              column filter below does not reach them. The server withholds the
+              fields they read, and this states the same rule at the point of
+              render rather than depending on an empty payload. */}
+          {canManage && !!r.punchDiffers?.length && (
             <span
               title={
                 `Clocked out from a different ${r.punchDiffers.join(", ")}.` +
@@ -122,7 +140,7 @@ export default function AttendancePage() {
               {r.punchDiffers.includes("location") ? "Moved" : r.punchDiffers.includes("device") ? "Other device" : "Other network"}
             </span>
           )}
-          {r.deviceAnomaly && (
+          {canManage && r.deviceAnomaly && (
             <span
               title={`${DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}${r.deviceLabel ? ` — ${r.deviceLabel}` : ""}`}
               className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
@@ -234,6 +252,9 @@ export default function AttendancePage() {
       ) : null,
     },
   ];
+  // Annotated before filtering: the literal has to be typed as the column
+  // array for `align` to narrow, and filtering it first widens it back.
+  const columns = allColumns.filter((c) => canManage || !PROVENANCE.has(c.id));
 
   const filters = (
     <>
@@ -336,24 +357,31 @@ export default function AttendancePage() {
               Login: fmtTime(r.checkIn, r.timeZone), Logout: fmtTime(r.checkOut, r.timeZone),
               "Worked (min)": r.workedMinutes, "Late (min)": r.lateMinutes,
               Status: ATTENDANCE_STATUS_LABELS[r.status],
-              // Spelled out rather than a flag: a spreadsheet has no tooltip,
-              // and "Device" alone says nothing about what was wrong with it.
-              "Device flag": r.deviceAnomaly ? DEVICE_ANOMALY_LABELS[r.deviceAnomaly] : "",
-              "Punched from": r.deviceAnomaly ? r.deviceLabel ?? "Unknown device" : "",
-              Device: r.punchDevice ?? "",
-              IP: r.punchIp ?? "",
-              // Kept apart in the export for the same reason as on screen: one
-              // is a measurement, the other an estimate with a 200km radius.
-              "GPS location": r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
-              Address: r.punchAddress ?? "",
-              "Map link": r.punchCoords ? `https://www.google.com/maps?q=${r.punchCoords.latitude},${r.punchCoords.longitude}` : "",
-              "Out device": r.punchOutDevice ?? "",
-              "Out IP": r.punchOutIp ?? "",
-              "Out address": r.punchOutAddress ?? "",
-              "In vs out differs": (r.punchDiffers ?? []).join(", "),
-              "Distance between punches": r.punchMovedMetres != null ? `${r.punchMovedMetres} m` : "",
-              "Estimated from IP": r.punchPlace ?? "",
-              "Location status": r.punchCoords ? "GPS" : r.punchLocationSource === "denied" ? "Declined by employee" : r.punchLocationSource === "unavailable" ? "Unavailable" : r.punchPlace ? "IP estimate only" : "",
+              // The provenance columns leave the spreadsheet too. An export is
+              // the easiest thing to forward, so it is the last place these
+              // should survive a rule that removed them from the screen.
+              ...(canManage
+                ? {
+                    // Spelled out rather than a flag: a spreadsheet has no tooltip,
+                    // and "Device" alone says nothing about what was wrong with it.
+                    "Device flag": r.deviceAnomaly ? DEVICE_ANOMALY_LABELS[r.deviceAnomaly] : "",
+                    "Punched from": r.deviceAnomaly ? r.deviceLabel ?? "Unknown device" : "",
+                    Device: r.punchDevice ?? "",
+                    IP: r.punchIp ?? "",
+                    // Kept apart in the export for the same reason as on screen: one
+                    // is a measurement, the other an estimate with a 200km radius.
+                    "GPS location": r.punchCoords ? `${r.punchCoords.latitude}, ${r.punchCoords.longitude}` : "",
+                    Address: r.punchAddress ?? "",
+                    "Map link": r.punchCoords ? `https://www.google.com/maps?q=${r.punchCoords.latitude},${r.punchCoords.longitude}` : "",
+                    "Out device": r.punchOutDevice ?? "",
+                    "Out IP": r.punchOutIp ?? "",
+                    "Out address": r.punchOutAddress ?? "",
+                    "In vs out differs": (r.punchDiffers ?? []).join(", "),
+                    "Distance between punches": r.punchMovedMetres != null ? `${r.punchMovedMetres} m` : "",
+                    "Estimated from IP": r.punchPlace ?? "",
+                    "Location status": r.punchCoords ? "GPS" : r.punchLocationSource === "denied" ? "Declined by employee" : r.punchLocationSource === "unavailable" ? "Unavailable" : r.punchPlace ? "IP estimate only" : "",
+                  }
+                : {}),
             })}
           />
         </>

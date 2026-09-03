@@ -14,6 +14,85 @@ function canManage(req: AuthenticatedRequest): boolean {
   return !!req.user?.role?.permissions?.attendance?.edit || req.user?.role?.roleName === "Super Admin";
 }
 
+/**
+ * Where a punch came from, and who is allowed to know.
+ *
+ * An IP address, a browser fingerprint and a street address are the provenance
+ * of a punch, not the punch itself. They exist so somebody investigating an odd
+ * day can tell a forgotten clock-out from a punch made from somewhere it should
+ * not have been — which is a question for whoever manages attendance, and for
+ * nobody else, including the person the record is about.
+ *
+ * Showing somebody their own is not harmless either. An IP the database itself
+ * rates as accurate to 200km reads as a claim about where they were, and the
+ * first thing it produces is an argument about a city they were never in.
+ */
+const ORIGIN_FIELDS = [
+  "punchDevice", "punchIp", "punchPlace", "punchAddress", "punchAddressFull", "punchCoords",
+  "punchLocationSource", "punchMethod", "punchOutDevice", "punchOutIp", "punchOutAddress",
+  "punchOutAddressFull", "punchOutCoords", "punchDiffers", "punchMovedMetres",
+  "deviceAnomaly", "deviceLabel",
+] as const;
+
+/**
+ * Strip the provenance from one record, raw sessions included.
+ *
+ * The sessions are the part that is easy to forget: the list flattens a summary
+ * onto each row, but the rows still carry the sessions the summary was built
+ * from, so removing the summary alone would hide the columns while leaving
+ * every value one level down in the same response.
+ */
+function redactOrigin<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const f of ORIGIN_FIELDS) delete out[f];
+
+  const sessions = out.sessions;
+  if (Array.isArray(sessions)) {
+    out.sessions = sessions.map((sn) => {
+      if (!sn || typeof sn !== "object") return sn;
+      // Keep the times — those are the record. Drop what surrounds them.
+      const { checkInSource: _in, checkOutSource: _out, ...rest } = sn as Record<string, unknown>;
+      return rest;
+    });
+  }
+  return out as T;
+}
+
+/** The same, for a page of them, applied only where it is not the reader's to see. */
+const redactUnlessManager = <T extends Record<string, unknown>>(req: AuthenticatedRequest, rows: T[]): T[] =>
+  canManage(req) ? rows : rows.map(redactOrigin);
+
+/**
+ * The calendar and the day view carry the same provenance in a different shape.
+ *
+ * They are built from `anomalyOf`, not from the flattened summary, so the field
+ * list above does not reach them — a redaction that only knew about the list
+ * would leave "this was not their device" on every calendar cell.
+ */
+function redactCalendar(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") return payload;
+  const p = payload as { employees?: unknown };
+  if (!Array.isArray(p.employees)) return payload;
+  const strip = (d: unknown) => {
+    if (!d || typeof d !== "object") return d;
+    const { deviceAnomaly: _a, deviceLabel: _l, ...rest } = d as Record<string, unknown>;
+    return rest;
+  };
+  return {
+    ...(payload as Record<string, unknown>),
+    employees: p.employees.map((e) => {
+      if (!e || typeof e !== "object") return e;
+      const row = e as Record<string, unknown>;
+      // The calendar nests a map of days; the day view spreads one day onto the
+      // row itself. Both shapes come through here.
+      const days = row.days && typeof row.days === "object"
+        ? Object.fromEntries(Object.entries(row.days as Record<string, unknown>).map(([k, v]) => [k, strip(v)]))
+        : row.days;
+      return { ...(strip(row) as Record<string, unknown>), ...(days ? { days } : {}) };
+    }),
+  };
+}
+
 
 export const createAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -38,7 +117,7 @@ export const getAttendance = async (req: AuthenticatedRequest, res: Response, ne
     const query = { ...(req.query as Record<string, string>) };
     if (!canManage(req)) query.user = req.user!.userId;
     const { records, pagination } = await service.list(query);
-    sendSuccess(res, "Attendance retrieved successfully", records, 200, pagination);
+    sendSuccess(res, "Attendance retrieved successfully", redactUnlessManager(req, records), 200, pagination);
   } catch (error) {
     next(error);
   }
@@ -57,7 +136,8 @@ export const getAttendanceCalendar = async (req: AuthenticatedRequest, res: Resp
       // the unscoped (whole-org) query.
       employee = own ? String(own._id) : "000000000000000000000000";
     }
-    sendSuccess(res, "Attendance calendar", await service.calendar(month, employee));
+    const calendar = await service.calendar(month, employee);
+    sendSuccess(res, "Attendance calendar", canManage(req) ? calendar : redactCalendar(calendar));
   } catch (error) { next(error); }
 };
 
@@ -73,7 +153,8 @@ export const getAttendanceDaily = async (req: AuthenticatedRequest, res: Respons
       const own = await Employee.findOne(scoped({ user: req.user!.userId })).select("_id");
       employee = own ? String(own._id) : "000000000000000000000000";
     }
-    sendSuccess(res, "Daily attendance", await service.daily(date, employee));
+    const daily = await service.daily(date, employee);
+    sendSuccess(res, "Daily attendance", canManage(req) ? daily : redactCalendar(daily));
   } catch (error) { next(error); }
 };
 
@@ -136,7 +217,9 @@ export const getTodayAttendance = async (req: AuthenticatedRequest, res: Respons
 export const getMyAttendance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { records, pagination } = await service.listMine(req.user!.userId, req.query as Record<string, string>);
-    sendSuccess(res, "Your attendance", records, 200, pagination);
+    // Redacted for the person it is about too — see redactOrigin. Their own IP
+    // is not something they need, and it is wrong often enough to start rows.
+    sendSuccess(res, "Your attendance", redactUnlessManager(req, records), 200, pagination);
   } catch (error) {
     next(error);
   }

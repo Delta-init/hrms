@@ -115,7 +115,10 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
             {/* Beside the status rather than replacing it: the day still counts
                 as present, it is only the device it was punched from that wants
                 a second look. */}
-            {r.deviceAnomaly && (
+            {/* Manager-only, like the equivalent badge on the records tab: the
+                machine a punch came from is provenance, and the server withholds
+                it from everyone else. */}
+            {canManage && r.deviceAnomaly && (
               <span
                 title={`${DEVICE_ANOMALY_LABELS[r.deviceAnomaly]}${r.deviceLabel ? ` — ${r.deviceLabel}` : ""}`}
                 className="inline-flex items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400"
