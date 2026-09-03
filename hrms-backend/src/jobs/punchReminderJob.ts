@@ -11,6 +11,7 @@ import { WorkSchedule } from "../models/WorkSchedule.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { DEFAULT_SCHEDULE, localDayKey, resolveShift, type ShiftSchedule } from "../utils/schedule.js";
+import { holidayScope } from "../utils/holidayScope.js";
 
 /**
  * A nudge to whoever has not clocked in, or has not clocked out.
@@ -49,6 +50,8 @@ interface Candidate {
   employeeName: string;
   email: string;
   schedule: ShiftSchedule;
+  /** Which holiday calendar they keep — a Kerala day off is not a Dubai one. */
+  workMode: "office" | "wfh" | null;
 }
 
 /** The shift a person is on, or the fallback where nobody has said. */
@@ -65,7 +68,7 @@ function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: stri
 /** Everybody in one organisation who could be expected to punch today. */
 async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
   const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null } })
-    .select("name user")
+    .select("name user workMode")
     .lean();
   if (!employees.length) return [];
 
@@ -87,16 +90,19 @@ async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
       employeeName: String(e.name ?? "there"),
       email: u.email,
       schedule: shiftFor(u.workSchedule ? byId.get(String(u.workSchedule)) ?? null : null),
+      workMode: (e as { workMode?: "office" | "wfh" }).workMode ?? null,
     });
   }
   return out;
 }
 
 /** True when the day is one this person was never expected to work. */
-async function excusedToday(orgId: unknown, userId: unknown, dayStart: Date, dayEnd: Date) {
+async function excusedToday(orgId: unknown, userId: unknown, dayStart: Date, dayEnd: Date, workMode: "office" | "wfh" | null) {
   const [onLeave, holiday] = await Promise.all([
     LeaveRequest.exists({ user: userId, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
-    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd } }),
+    // Their own calendar: a Kerala holiday must not excuse a Dubai employee
+    // from a punch they were expected to make.
+    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode) }),
   ]);
   return !!onLeave || !!holiday;
 }
@@ -148,7 +154,7 @@ export async function runPunchReminders(now = new Date()) {
         // reminding somebody to punch a day HR has already accounted for is
         // noise that makes every other reminder easier to ignore.
         if (att?.status && att.status !== "present" && att.status !== "late") continue;
-        if (await excusedToday(org._id, p.userId, dayStart, dayEnd)) continue;
+        if (await excusedToday(org._id, p.userId, dayStart, dayEnd, p.workMode)) continue;
         if (!(await claim(org._id, p.userId, day, "missing_in"))) continue;
         const at = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: p.schedule.timeZone, hour12: false }).format(shift.shiftStart);
         const ok = await sendMail({

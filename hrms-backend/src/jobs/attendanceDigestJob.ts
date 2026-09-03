@@ -11,6 +11,7 @@ import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { hrRecipients } from "./birthdayJob.js";
 import { DEFAULT_SCHEDULE, localDayKey, resolveShift, type ShiftSchedule } from "../utils/schedule.js";
+import { holidayScope } from "../utils/holidayScope.js";
 
 /**
  * What went wrong today, to HR, at the end of the day.
@@ -75,7 +76,7 @@ const SAME_PLACE_M = 1_000;
  */
 export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exception[]> {
   const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null } })
-    .select("name employeeCode user")
+    .select("name employeeCode user workMode")
     .lean();
   if (!employees.length) return [];
 
@@ -107,9 +108,12 @@ export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exceptio
       // exceptions — they are the day being accounted for.
       const dayStart = shift.dateMidnightUtc;
       const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+      const workMode = (e as { workMode?: "office" | "wfh" }).workMode ?? null;
       const [onLeave, holiday] = await Promise.all([
         LeaveRequest.exists({ user: e.user, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
-        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd } }),
+        // Their own calendar, so a Kerala holiday does not quietly drop a Dubai
+        // employee out of the exceptions HR is reading.
+        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode) }),
       ]);
       if (onLeave || holiday) continue;
       if (att?.status && !["present", "late", "half_day"].includes(att.status)) continue;

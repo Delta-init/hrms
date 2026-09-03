@@ -943,7 +943,9 @@ export class AttendanceService {
                 "sessions.checkInSource.deviceAnomaly sessions.checkOutSource.deviceAnomaly").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
         .select("user startDate endDate type halfDay").lean(),
-      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name").lean(),
+      // Carrying the work mode, because this draws everybody at once and each
+      // row has to be judged against its own calendar.
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name workMode").lean(),
       rosterWorkDaysByUser(userIds.map((id) => String(id)), start, end),
       // Corrections in flight or already applied. Shown on the day they concern
       // so a disputed day is visible as disputed, rather than looking settled.
@@ -1012,8 +1014,18 @@ export class AttendanceService {
         resultingStatus: (r as { resultingStatus?: string }).resultingStatus,
       });
     }
-    const holidayMap = new Map<string, string>();
-    for (const h of holidays) holidayMap.set(new Date(h.date).toISOString().slice(0, 10), h.name);
+    /**
+     * A day off, and what it is called — for one person's calendar.
+     *
+     * Not one map for the organisation: this view draws everybody at once, and
+     * a Kerala holiday drawn across a Dubai row would mark a day they worked as
+     * a day off, on the screen HR reads to decide who was absent.
+     */
+    const holidaysByMode = holidays as Array<{ date: Date; name: string; workMode?: string | null }>;
+    const holidayNameFor = (mode: string | null | undefined, key: string): string | undefined =>
+      holidaysByMode.find(
+        (h) => new Date(h.date).toISOString().slice(0, 10) === key && (!h.workMode || h.workMode === mode)
+      )?.name;
 
     const countable = new Set(["present", "late", "half_day", "absent", "on_leave", "holiday", "weekend", "wfh"]);
     const employeesOut = employees.map((e) => {
@@ -1026,6 +1038,8 @@ export class AttendanceService {
       const regMap = regsByUser.get(uid) ?? new Map<string, DayReg>();
       // The schedule's own name for a leave type, so a custom one reads
       // properly instead of collapsing into a generic "On leave".
+      // Which calendar this person keeps — a Kerala holiday is not a Dubai one.
+      const empWorkMode = (e as { workMode?: "office" | "wfh" }).workMode ?? null;
       const scheduleId = (e.user as { workSchedule?: { _id?: unknown } } | null)?.workSchedule?._id;
       // Work mode as well as schedule: a policy written for remote staff can
       // carry its own name for a leave type, and resolving without it would
@@ -1057,7 +1071,7 @@ export class AttendanceService {
           if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
         } else if (!employedOn(window, key)) entry = null;
         else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
-        else if (holidayMap.has(key)) entry = { status: "holiday", note: holidayMap.get(key) };
+        else if (holidayNameFor(empWorkMode, key)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
         else if (key < todayKey) entry = { status: "absent" };
         else entry = null;

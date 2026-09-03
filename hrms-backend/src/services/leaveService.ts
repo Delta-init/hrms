@@ -10,6 +10,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { compOffBalanceFor } from "./compOffService.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import { notifyDepartmentHead } from "./departmentHeadService.js";
+import { holidayScope, workModeOfUser } from "../utils/holidayScope.js";
 import { notifyReviewed } from "./reviewNotifier.js";
 import { watchersFor } from "./watchers.js";
 import { notify } from "./notificationService.js";
@@ -159,10 +160,22 @@ const LEAVE_TYPE_LABEL: Record<string, string> = {
 
 export class LeaveService {
   /** Working days in [start,end], excluding non-work-days (weekends) and org holidays. */
-  private async countWorkingDays(start: Date, end: Date, workDays: number[]): Promise<number> {
+  private async countWorkingDays(
+    start: Date,
+    end: Date,
+    workDays: number[],
+    /**
+     * Whose calendar to count against.
+     *
+     * Without it a Kerala holiday shortens a Dubai employee's leave request by
+     * a day they would actually have worked — they ask for five days, are
+     * charged four, and turn up to a company that expected them.
+     */
+    workMode?: "office" | "wfh" | null
+  ): Promise<number> {
     const su = new Date(Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth(), new Date(start).getUTCDate()));
     const eu = new Date(Date.UTC(new Date(end).getUTCFullYear(), new Date(end).getUTCMonth(), new Date(end).getUTCDate()));
-    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu } })).select("date").lean();
+    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu }, ...holidayScope(workMode) })).select("date").lean();
     const holSet = new Set(holidays.map((h) => new Date(h.date).toISOString().slice(0, 10)));
     let count = 0;
     const cur = new Date(su);
@@ -198,7 +211,9 @@ export class LeaveService {
     }
 
     const schedule = await scheduleFor(input.user, user);
-    const days = input.halfDay ? 0.5 : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(schedule));
+    const days = input.halfDay
+      ? 0.5
+      : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(schedule), await workModeOfUser(input.user));
 
     await assertLeaveAllowed(input.user, schedule?.name, input.type, input.startDate, days, null);
 
@@ -349,7 +364,14 @@ export class LeaveService {
       if (clash) throw Object.assign(new Error("This overlaps an existing leave request for these dates"), { statusCode: 409 });
     }
     const subject = await User.findById(record.user).populate("workSchedule", "workDays");
-    record.days = record.halfDay ? 0.5 : await this.countWorkingDays(record.startDate, record.endDate, workDaysOf(await scheduleFor(record.user, subject ?? undefined)));
+    record.days = record.halfDay
+      ? 0.5
+      : await this.countWorkingDays(
+          record.startDate,
+          record.endDate,
+          workDaysOf(await scheduleFor(record.user, subject ?? undefined)),
+          await workModeOfUser(record.user)
+        );
 
     const owner = await User.findOne(scoped({ _id: record.user })).populate("workSchedule", "workDays name");
     await assertLeaveAllowed(record.user, (await scheduleFor(record.user, owner ?? undefined))?.name, record.type, record.startDate, record.days, id);

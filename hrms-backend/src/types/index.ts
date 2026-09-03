@@ -353,6 +353,10 @@ export interface IHoliday extends Document {
   description?: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Whose calendar this belongs to; null is everybody's. */
+  workMode?: WorkMode | null;
+  /** True where the date may move — a holiday set by moon sighting. */
+  provisional?: boolean;
 }
 
 // ─── Announcements (org-wide engagement feed) ────────────────────────────────

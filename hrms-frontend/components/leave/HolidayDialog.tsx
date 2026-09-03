@@ -29,16 +29,23 @@ export function HolidayDialog({ open, onOpenChange }: Props) {
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<HolidayFormValues>({
     resolver: zodResolver(holidayFormSchema),
-    defaultValues: { name: "", date: "", timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", description: "" },
+    defaultValues: { name: "", date: "", timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", workMode: "", provisional: false, description: "" },
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", description: "" });
+    if (open) reset({ name: "", date: new Date().toISOString().slice(0, 10), timeZone: "Asia/Dubai", type: "public", recurring: false, workSchedule: "", workMode: "", provisional: false, description: "" });
   }, [open, reset]);
 
   const onSubmit = (data: HolidayFormValues) => {
     create(
-      { ...data, workSchedule: data.workSchedule || null, description: data.description || undefined },
+      {
+        ...data,
+        workSchedule: data.workSchedule || null,
+        // "" is the everybody option; the server stores that as no work mode,
+        // which is what every holiday written before this field meant.
+        workMode: data.workMode || null,
+        description: data.description || undefined,
+      },
       { onSuccess: () => onOpenChange(false) }
     );
   };
@@ -101,6 +108,47 @@ export function HolidayDialog({ open, onOpenChange }: Props) {
             />
             <Label htmlFor="recurring">Recurring yearly</Label>
           </div>
+          {/* Whose calendar this is. The most consequential field on the form:
+              a holiday left as everybody's is counted by payroll, leave and the
+              attendance calendar for every employee in the organisation. */}
+          <div className="col-span-2 space-y-1.5">
+            <Label>Applies to</Label>
+            <Controller
+              name="workMode"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value || "all"} onValueChange={(v) => field.onChange(v === "all" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Everyone in the organisation</SelectItem>
+                    <SelectItem value="office">Office staff only</SelectItem>
+                    <SelectItem value="wfh">Work-from-home staff only</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              A regional holiday is rarely everybody&apos;s — this decides who is paid for it, whose leave request
+              skips it, and who is not expected to clock in.
+            </p>
+          </div>
+
+          <div className="col-span-2 flex items-center gap-2">
+            <Controller
+              name="provisional"
+              control={control}
+              render={({ field }) => (
+                <Switch id="provisional" checked={!!field.value} onCheckedChange={field.onChange} />
+              )}
+            />
+            <Label htmlFor="provisional" className="font-normal">
+              Date may move
+              <span className="ml-1 text-[11px] text-muted-foreground">
+                — set by moon sighting, or not yet confirmed
+              </span>
+            </Label>
+          </div>
+
           {/* Tag to a work schedule's leave calendar (optional) */}
           <div className="col-span-2 space-y-1.5">
             <Label>Work Schedule (calendar)</Label>

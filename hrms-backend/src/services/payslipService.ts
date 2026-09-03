@@ -20,6 +20,7 @@ import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendance
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { STANDARD_MONTH_DAYS, dayValue, dailyRate } from "../utils/payMonth.js";
 import { policiesForUser } from "./leavePolicyResolver.js";
+import { holidayScope, workModeOfUser } from "../utils/holidayScope.js";
 import { employmentWindowFor, employmentWindows, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
 
@@ -657,7 +658,10 @@ export class PayslipService {
       // Any approved leave counts as accounted for, paid or not — the day is
       // explained, which is what the coverage check is asking about.
       LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("startDate endDate").lean(),
-      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date").lean(),
+      // This person's calendar, not the organisation's — a Kerala holiday must
+      // not pay a Dubai employee for a day they worked.
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end }, ...holidayScope(await workModeOfUser(userId)) })
+        .select("date").lean(),
     ]);
 
     // Build day-level sets so a day that is both absent and on unpaid leave

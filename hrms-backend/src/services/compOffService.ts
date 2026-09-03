@@ -97,16 +97,28 @@ export class CompOffService {
         ...orgFilter(), date: { $gte: start, $lt: end },
         status: { $in: ["present", "late", "half_day"] }, workedMinutes: { $gt: 0 },
       }).select("user date status workedMinutes").lean(),
-      Employee.find({ ...orgFilter(), user: { $ne: null } }).select("name employeeCode user").lean(),
+      Employee.find({ ...orgFilter(), user: { $ne: null } }).select("name employeeCode user workMode").lean(),
       CompOffCredit.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("user date").lean(),
-      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date").lean(),
+      // Every calendar in play, kept apart below: this walks the whole
+      // organisation, and one person's holiday is another's working day.
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date workMode").lean(),
     ]);
 
     const empByUser = new Map(employees.map((e) => [String(e.user), e]));
     const dateKeyOf = (d: Date) => new Date(d).toISOString().slice(0, 10);
     const creditKey = (u: string, d: string) => `${u}|${d}`;
     const creditSet = new Set(existingCredits.map((c) => creditKey(String(c.user), dateKeyOf(c.date))));
-    const holidaySet = new Set(holidays.map((h) => dateKeyOf(h.date)));
+    /**
+     * A day off, for whoever is being asked about.
+     *
+     * One set per calendar rather than one for the organisation: a Kerala
+     * holiday is an ordinary working day in Dubai, and crediting comp-off
+     * against it would hand seventy-four people a day back they never lost.
+     */
+    const holidayFor = (mode: string | null | undefined, key: string) =>
+      holidays.some(
+        (h) => dateKeyOf(h.date) === key && (!h.workMode || h.workMode === mode)
+      );
 
     const results: Suggestion[] = [];
     for (const a of att) {
@@ -116,7 +128,7 @@ export class CompOffService {
       const emp = empByUser.get(uid);
       if (!emp) continue;
 
-      const isHoliday = holidaySet.has(dateKey);
+      const isHoliday = holidayFor((emp as { workMode?: string }).workMode, dateKey);
       let isWeekend = false;
       if (!isHoliday) {
         const ws = await resolveWorkScheduleForUser(uid, new Date(a.date));

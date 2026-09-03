@@ -680,6 +680,10 @@ export interface Holiday {
   type: HolidayType;
   recurring: boolean;
   workSchedule?: WorkScheduleSimple | string | null;
+  /** Whose calendar this belongs to; null is everybody's. */
+  workMode?: "office" | "wfh" | null;
+  /** True where the date may move — a holiday set by moon sighting. */
+  provisional?: boolean;
   description?: string;
   createdAt: string;
   updatedAt: string;

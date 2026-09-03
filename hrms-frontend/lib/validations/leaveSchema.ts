@@ -26,6 +26,9 @@ export const holidayFormSchema = z.object({
   recurring: z.boolean().default(false),
   workSchedule: z.string().optional(),
   description: z.string().max(300).optional(),
+  /** "" is everybody's calendar, which is what every holiday used to be. */
+  workMode: z.string().optional(),
+  provisional: z.boolean().optional(),
 });
 
 export type HolidayFormValues = z.infer<typeof holidayFormSchema>;
