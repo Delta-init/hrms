@@ -4,6 +4,7 @@ import { ProgramRegistration } from "../models/ProgramRegistration.js";
 import { User } from "../models/User.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { notify } from "./notificationService.js";
+import { putObject, deleteObject, attachmentKey, publicUrl } from "./uploadService.js";
 import type { CreateProgramInput, UpdateProgramInput } from "../validations/programValidation.js";
 
 /**
@@ -14,6 +15,19 @@ import type { CreateProgramInput, UpdateProgramInput } from "../validations/prog
  */
 
 const err = (message: string, statusCode: number) => Object.assign(new Error(message), { statusCode });
+
+/**
+ * Add the banner's URL to a `lean()` row.
+ *
+ * `lean()` skips the schema's toJSON transform, so every read that uses it has
+ * to do this itself — the same shape the employee list uses for photos. Missed,
+ * the field is simply absent and the card silently renders without an image,
+ * which is the kind of bug that survives review because nothing errors.
+ */
+const withImage = <T extends { image?: string }>(row: T): T & { imageUrl: string } => ({
+  ...row,
+  imageUrl: row.image ? publicUrl(String(row.image)) : "",
+});
 
 /** A program with the caller's own place in it, for the staff-facing list. */
 export interface ProgramForUser {
@@ -33,13 +47,13 @@ export class ProgramService {
   async list(query: { status?: string } = {}) {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status;
-    return Program.find(filter).sort({ startsAt: 1 }).populate("createdBy", "name").lean();
+    return (await Program.find(filter).sort({ startsAt: 1 }).populate("createdBy", "name").lean()).map(withImage);
   }
 
   async getById(id: string) {
     const program = await Program.findOne(scoped({ _id: id })).populate("createdBy", "name").lean();
     if (!program) throw err("Program not found", 404);
-    return program;
+    return withImage(program);
   }
 
   /**
@@ -69,7 +83,8 @@ export class ProgramService {
 
     Object.assign(program, input);
     await program.save();
-    return Program.findById(program._id).populate("createdBy", "name").lean();
+    const saved = await Program.findById(program._id).populate("createdBy", "name").lean();
+    return saved ? withImage(saved) : saved;
   }
 
   /**
@@ -84,7 +99,32 @@ export class ProgramService {
     const program = await Program.findOneAndDelete(scoped({ _id: id }));
     if (!program) throw err("Program not found", 404);
     await ProgramRegistration.deleteMany(scoped({ program: id }));
+    // The banner goes too — an orphaned object nothing references is a bill
+    // nobody can trace back to anything.
+    if (program.image) await deleteObject(String(program.image));
     return { message: "Program deleted" };
+  }
+
+  /**
+   * Replace the banner.
+   *
+   * The previous object is deleted after the new key is stored, not before: if
+   * the upload fails the program keeps the image it had, rather than losing the
+   * old one and gaining nothing.
+   */
+  async setImage(id: string, file: { buffer: Buffer; mimetype: string }, ext: string) {
+    const program = await Program.findOne(scoped({ _id: id }));
+    if (!program) throw err("Program not found", 404);
+
+    const previous = program.image;
+    const key = attachmentKey(getOrgId(), String(program._id), "programs", ext, Date.now());
+    await putObject(key, file.buffer, file.mimetype);
+    program.image = key;
+    await program.save();
+    if (previous && previous !== key) await deleteObject(String(previous));
+
+    const saved = await Program.findById(program._id).lean();
+    return withImage(saved as { image?: string });
   }
 
   /** Who is on it, for the manager's view. */
@@ -223,7 +263,7 @@ export class ProgramService {
     const capacity = Number(program.capacity ?? 0);
     const taken = Number(program.seatsTaken ?? 0);
     return {
-      program,
+      program: withImage(program as { image?: string }) as Record<string, unknown>,
       registered,
       // Null rather than a large number where there is no limit: "unlimited" and
       // "lots left" read differently and the screen says different things.

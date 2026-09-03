@@ -1742,6 +1742,8 @@ export interface IProgram extends Document {
   /** Places claimed. Written only by the atomic claim in the service. */
   seatsTaken: number;
   status: ProgramStatus;
+  /** R2 key for the banner; the URL is built at read time. */
+  image?: string;
   createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;

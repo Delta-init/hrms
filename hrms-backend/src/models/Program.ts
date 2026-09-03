@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import type { IProgram } from "../types/index.js";
+import { publicUrl } from "../config/r2.js";
 
 /**
  * Something staff can put their name down for: a training session, a workshop,
@@ -43,6 +44,14 @@ const programSchema = new Schema<IProgram>(
      * register readable but takes no more; cancelled means it is not happening.
      */
     status: { type: String, enum: ["draft", "open", "closed", "cancelled"], default: "draft", index: true },
+    /**
+     * A banner, stored as an R2 key rather than a URL.
+     *
+     * The key is what survives: a stored URL bakes in the host and the signing
+     * scheme, and both have changed here before. `publicUrl()` builds the link
+     * at read time from whatever the configuration says today.
+     */
+    image: { type: String, trim: true, default: "" },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true, versionKey: false }
@@ -50,5 +59,22 @@ const programSchema = new Schema<IProgram>(
 
 // The list everybody sees: this organisation's open programs, soonest first.
 programSchema.index({ organization: 1, status: 1, startsAt: 1 });
+
+/**
+ * Serve the stored key as a URL, the way the employee photo does.
+ *
+ * Added on read rather than stored, so a page never has to know how files are
+ * hosted — and `lean()` reads bypass this, which is why the service adds it
+ * explicitly there.
+ */
+programSchema.set("toJSON", {
+  transform(_doc, ret) {
+    // Cast the way the employee schema does — Mongoose types `ret` as the
+    // document, and the added field is not on it.
+    const out = ret as unknown as Record<string, unknown>;
+    out.imageUrl = out.image ? publicUrl(String(out.image)) : "";
+    return out;
+  },
+});
 
 export const Program = mongoose.model<IProgram>("Program", programSchema);

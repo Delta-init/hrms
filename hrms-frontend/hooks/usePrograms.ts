@@ -66,6 +66,25 @@ export const useUpdateProgram = () => {
   });
 };
 
+/**
+ * Replace a program's banner.
+ *
+ * Sent as multipart on its own endpoint rather than as a field on the edit
+ * form — otherwise every ordinary text change would have to be a file upload.
+ */
+export const useUploadProgramImage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const body = new FormData();
+      body.append("file", file);
+      return (await api.post<ApiResponse<Program>>(`/programs/${id}/image`, body)).data;
+    },
+    onSuccess: (res) => { invalidate(qc); toast.success(res.message ?? "Image updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not upload that image")),
+  });
+};
+
 export const useDeleteProgram = () => {
   const qc = useQueryClient();
   return useMutation({

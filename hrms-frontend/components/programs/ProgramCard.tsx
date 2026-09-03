@@ -31,7 +31,14 @@ export function ProgramCard({
   const scarce = seatsLeft !== null && seatsLeft > 0 && seatsLeft <= 3;
 
   return (
-    <Card className={cn("flex flex-col gap-3 p-4", registered && "border-primary/40 bg-primary/5")}>
+    <Card className={cn("flex flex-col overflow-hidden", registered && "border-primary/40 bg-primary/5")}>
+      {/* Only when there is one. An empty grey box in its place makes every
+          program without a banner look like it failed to load. */}
+      {p.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={p.imageUrl} alt="" className="h-32 w-full object-cover" loading="lazy" />
+      )}
+      <div className="flex flex-1 flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold leading-snug">{p.title}</h3>
@@ -94,6 +101,7 @@ export function ProgramCard({
             {full ? "Full" : "Register"}
           </Button>
         )}
+      </div>
       </div>
     </Card>
   );

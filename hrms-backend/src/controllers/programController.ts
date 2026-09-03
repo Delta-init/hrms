@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { ProgramService } from "../services/programService.js";
 import { createProgramSchema, updateProgramSchema } from "../validations/programValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { extFromMime } from "../middleware/upload.js";
 
 const service = new ProgramService();
 
@@ -51,6 +52,18 @@ export const updateProgram = async (req: AuthenticatedRequest, res: Response, ne
 export const deleteProgram = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Program deleted", await service.remove(req.params.id));
+  } catch (error) { next(error); }
+};
+
+/** Replace a program's banner. */
+export const uploadProgramImage = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) { sendError(res, "Choose an image to upload", 400); return; }
+    // The middleware already allows PDFs, which is right for a document and
+    // wrong for a banner — a program card cannot render one.
+    if (!file.mimetype.startsWith("image/")) { sendError(res, "That needs to be an image — JPG, PNG or WEBP", 400); return; }
+    sendSuccess(res, "Image updated", await service.setImage(req.params.id, file, extFromMime(file.mimetype)));
   } catch (error) { next(error); }
 };
 

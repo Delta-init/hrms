@@ -1,10 +1,11 @@
 import { Router } from "express";
 import {
   createProgram, getPrograms, getProgramById, updateProgram, deleteProgram,
-  getProgramRegistrations, getMyPrograms, registerForProgram, cancelMyRegistration,
+  getProgramRegistrations, getMyPrograms, registerForProgram, cancelMyRegistration, uploadProgramImage,
 } from "../controllers/programController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
+import { uploadSingle } from "../middleware/upload.js";
 
 const router = Router();
 router.use(authenticate);
@@ -22,6 +23,9 @@ router.post("/", checkPermission("programs", "create"), createProgram);
 router.get("/:id/registrations", checkPermission("programs", "edit"), getProgramRegistrations);
 router.get("/:id", checkPermission("programs", "view"), getProgramById);
 router.put("/:id", checkPermission("programs", "edit"), updateProgram);
+// Its own route rather than a field on the form: the body is multipart, and
+// mixing that into the JSON update would make every ordinary edit a file upload.
+router.post("/:id/image", checkPermission("programs", "edit"), uploadSingle, uploadProgramImage);
 router.delete("/:id", checkPermission("programs", "delete"), deleteProgram);
 
 export default router;

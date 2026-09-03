@@ -2486,6 +2486,10 @@ export interface Program {
   /** Places claimed. Written only by the server's atomic seat claim. */
   seatsTaken: number;
   status: ProgramStatus;
+  /** R2 key. Prefer `imageUrl`, which the server builds at read time. */
+  image?: string;
+  /** Ready-to-use banner URL, or "" when there is none. */
+  imageUrl?: string;
   createdBy?: { _id: string; name: string } | string | null;
   createdAt: string;
   updatedAt: string;

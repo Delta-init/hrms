@@ -82,6 +82,12 @@ export function UpcomingProgramPrompt() {
   return (
     <ResponsiveDialog open={open} onOpenChange={(v) => (v ? setOpen(true) : dismiss())}>
       <ResponsiveDialogContent desktopClassName="max-w-md">
+        {/* The banner, where there is one. It is the first thing that makes a
+            program look like an event rather than a row in a list. */}
+        {next.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={next.imageUrl} alt="" className="mb-1 h-36 w-full rounded-t-lg object-cover" />
+        )}
         <ResponsiveDialogHeader>
           <div className="flex items-center gap-3 px-4 sm:px-0">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
