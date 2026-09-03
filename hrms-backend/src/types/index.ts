@@ -41,6 +41,10 @@ export const HRMS_MODULES = [
   "letters",
   "announcements",
   "surveys",
+  // Staff programmes with a limited number of places — training, workshops,
+  // inductions. New: existing role documents do not carry it, so it has to be
+  // granted before anybody can reach the pages. See seeds/grantProgramsAccess.
+  "programs",
   "approvalWorkflows",
   "helpdesk",
   "reports",
@@ -1715,4 +1719,36 @@ export interface IInterviewFeedback extends Document {
   submittedAt: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+
+// ─── Programs ────────────────────────────────────────────────────────────────
+export type ProgramStatus = "draft" | "open" | "closed" | "cancelled";
+
+export interface IProgram extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  title: string;
+  description?: string;
+  location?: string;
+  startsAt: Date;
+  endsAt?: Date | null;
+  /** Places available; 0 means unlimited. */
+  capacity: number;
+  /** Places claimed. Written only by the atomic claim in the service. */
+  seatsTaken: number;
+  status: ProgramStatus;
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IProgramRegistration extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  program: Types.ObjectId | IProgram;
+  user: Types.ObjectId | IUser;
+  status: "registered" | "cancelled";
+  registeredAt: Date;
+  cancelledAt?: Date | null;
 }

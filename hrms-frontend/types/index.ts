@@ -42,6 +42,10 @@ export const HRMS_MODULES = [
   "letters",
   "announcements",
   "surveys",
+  // Staff programmes with a limited number of places. Mirrors the backend list;
+  // the two are separate copies and a module missing from either is a page
+  // nobody can reach.
+  "programs",
   "approvalWorkflows",
   "helpdesk",
   "reports",
@@ -76,6 +80,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   letters: "Letters",
   announcements: "Announcements",
   surveys: "Surveys",
+  programs: "Programs",
   approvalWorkflows: "Approval Workflows",
   helpdesk: "Helpdesk",
   reports: "Reports",
@@ -2460,3 +2465,47 @@ export interface SearchHit {
   subtitle: string;
   href: string;
 }
+
+
+// ─── Programs ────────────────────────────────────────────────────────────────
+export type ProgramStatus = "draft" | "open" | "closed" | "cancelled";
+
+export interface Program {
+  _id: string;
+  title: string;
+  description?: string;
+  location?: string;
+  startsAt: string;
+  endsAt?: string | null;
+  /** Places available; 0 means unlimited. */
+  capacity: number;
+  /** Places claimed. Written only by the server's atomic seat claim. */
+  seatsTaken: number;
+  status: ProgramStatus;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A program as one person sees it: the thing, plus their place in it. */
+export interface ProgramForUser {
+  program: Program;
+  registered: boolean;
+  /** Null where the program has no limit — "unlimited" is not "lots left". */
+  seatsLeft: number | null;
+  full: boolean;
+}
+
+export interface ProgramRegistration {
+  _id: string;
+  user: { _id: string; name: string; email: string } | string;
+  status: "registered" | "cancelled";
+  registeredAt: string;
+}
+
+export const PROGRAM_STATUS_LABELS: Record<ProgramStatus, string> = {
+  draft: "Draft",
+  open: "Open",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};

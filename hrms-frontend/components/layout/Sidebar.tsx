@@ -35,7 +35,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
-  ShieldCheck,
+  ShieldCheck, GraduationCap,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -113,6 +113,9 @@ export const navItems: {
   // Always reachable: everyone can see/respond to Open Surveys; the Manage tab is gated inside the page.
   { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
   // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.
+  // Ungated: taking a place on a staff program is self-service, so everybody
+  // needs the link. The manage half of the page is gated inside it.
+  { href: "/programs", label: "Programs", icon: GraduationCap, permModule: null },
   { href: "/helpdesk", label: "Helpdesk", icon: LifeBuoy, permModule: null },
   { href: "/reports", label: "Reports", icon: FileBarChart, permModule: "reports" },
   // Always reachable: everyone can view/manage their own appraisal; the Manage tab is gated inside the page.
