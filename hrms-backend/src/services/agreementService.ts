@@ -304,6 +304,7 @@ export const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("
 
 // ── Orchestration ────────────────────────────────────────────────────────────
 import { Employee } from "../models/Employee.js";
+import { User } from "../models/User.js";
 import { SignedAgreement } from "../models/SignedAgreement.js";
 import { putObject } from "./uploadService.js";
 import { getOrgId } from "../utils/orgContext.js";
@@ -326,10 +327,24 @@ async function employeeFor(userId: string) {
 /** Everything the onboarding gate needs to render itself. */
 export async function myState(userId: string) {
   const employee = await employeeFor(userId);
-  const org = await Organization.findById(getOrgId())
-    .select("settings.requireAgreements settings.requireFaceEnrollment")
-    .lean<{ settings?: { requireAgreements?: boolean; requireFaceEnrollment?: boolean } } | null>();
-  const required = !!org?.settings?.requireAgreements;
+  const [org, user] = await Promise.all([
+    Organization.findById(getOrgId())
+      .select("settings.requireAgreements settings.requireFaceEnrollment")
+      .lean<{ settings?: { requireAgreements?: boolean; requireFaceEnrollment?: boolean } } | null>(),
+    User.findById(userId).select("agreementsRequired").lean<{ agreementsRequired?: boolean } | null>(),
+  ]);
+  /**
+   * Held, or not — both conditions, not either.
+   *
+   * `agreementsRequired` is a permanent stamp made once at activation, and on
+   * its own it would only ever grow: nobody it was set on could ever be let go
+   * of again, even by an admin switching the whole policy back off. The live
+   * setting is what makes that an actual switch — turning it off relieves
+   * everybody immediately, stamped or not, the same as every other setting in
+   * this application. Turning it back on does not retroactively catch anyone;
+   * the stamp is the record of who activated while it was already on.
+   */
+  const required = !!user?.agreementsRequired && !!org?.settings?.requireAgreements;
 
   /**
    * Whether a face is part of finishing onboarding.

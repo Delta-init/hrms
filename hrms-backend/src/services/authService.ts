@@ -146,7 +146,7 @@ export class AuthService {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
       .populate("role")
-      .populate("organization", "name code logo settings.currency settings.timeZone");
+      .populate("organization", "name code logo settings.currency settings.timeZone settings.requireAgreements");
 
     if (!user) {
       throw Object.assign(new Error("Invalid email or temporary password"), { statusCode: 401 });
@@ -155,6 +155,18 @@ export class AuthService {
     const isValid = await user.comparePassword(input.temporaryPassword);
     if (!isValid) {
       throw Object.assign(new Error("Invalid email or temporary password"), { statusCode: 401 });
+    }
+
+    /**
+     * The one moment "invited" is true. Read before the status line below
+     * overwrites it, and turned into a permanent stamp rather than trusted to
+     * still be readable later — by the next request `status` already says
+     * "active", indistinguishable from someone who joined years ago.
+     */
+    const activatingFromInvite = user.status === "invited";
+    const org = user.organization as unknown as { settings?: { requireAgreements?: boolean } } | undefined;
+    if (activatingFromInvite && org?.settings?.requireAgreements) {
+      user.agreementsRequired = true;
     }
 
     user.password = input.newPassword;

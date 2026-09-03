@@ -66,6 +66,29 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    /**
+     * Whether this particular account is held at the agreements wall.
+     *
+     * Stamped once, at activation — see `AuthService.setPassword` — rather than
+     * derived live from the organisation's setting on every login. The org
+     * setting is a switch that says "require it of new joiners going forward";
+     * checking it live at login time cannot express "going forward", because it
+     * has no memory of who was already using the system before the switch was
+     * turned on. Read literally, it would hold everyone with no signature —
+     * which the day this ships is nearly the whole company, since agreements
+     * are new and almost nobody who joined before this feature existed has one.
+     *
+     * True only for an account that was `status: "invited"` at the exact moment
+     * it set its first password, with the organisation's setting on at that
+     * moment. An account created directly as active, or one that activated
+     * before the setting existed, never has this set and is never held —
+     * matching "invited employees only" precisely, because it is captured at
+     * the one point in the lifecycle where that phrase is unambiguous.
+     */
+    agreementsRequired: {
+      type: Boolean,
+      default: false,
+    },
     // Stamped into every issued token; bumping it invalidates all outstanding
     // access and refresh tokens for this user (logout, password change, or an
     // admin revoking a compromised session).
