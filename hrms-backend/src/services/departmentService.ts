@@ -9,6 +9,7 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
 import { localDayKey, DEFAULT_SCHEDULE } from "../utils/schedule.js";
+import { departmentsHeadedBy } from "./departmentHeadService.js";
 
 const POP = [
   { path: "leader", select: "name email employeeCode" },
@@ -159,6 +160,22 @@ export class DepartmentService {
     return Department.find(scoped({ status: "active" })).select("name code").sort({ name: 1 }).lean();
   }
 
+  /**
+   * The department(s) this login heads. Empty for almost everybody.
+   *
+   * Self-service and permission-free on purpose, the same shape as the
+   * approvals summary: it answers rather than refusing, so the sidebar can ask
+   * it on every page load without generating a 403 for the other hundred
+   * people who head nothing. It is also what turns a bare department id into
+   * something worth linking to — a head with no base `departments` permission
+   * still needs to know their own department's id to reach its page at all.
+   */
+  async mine(userId: string) {
+    const ids = await departmentsHeadedBy(userId);
+    if (!ids.length) return [];
+    return Department.find(scoped({ _id: { $in: ids } })).select("name code").sort({ name: 1 }).lean();
+  }
+
   async getById(id: string) {
     const record = await Department.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
@@ -221,18 +238,38 @@ export class DepartmentService {
 
     const [att, leaves, monthLeaves] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: new Date(start.getTime() - DAY), $lt: new Date(end.getTime() + DAY) } })
-        .select("user date status timeZone").lean(),
+        .select("user date status timeZone checkIn checkOut").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: yearEnd }, endDate: { $gte: yearStart } }).select("user days").lean(),
       // Approved leaves that intersect the report month — used to paint the calendar.
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("user startDate endDate type").lean(),
     ]);
 
-    const attByUser = new Map<string, Record<string, string>>();
+    /**
+     * A day's status, and the two clock times behind it.
+     *
+     * The calendar used to carry only the status — a colour and a label — which
+     * answers "was this person here" but not "when". A department head or HR
+     * looking at a late mark wants the actual time without opening the
+     * Attendance page for that one person, so the punches ride along with the
+     * status they produced.
+     */
+    interface DayEntry { status: string; checkIn: Date | null; checkOut: Date | null; timeZone: string }
+    const attByUser = new Map<string, Record<string, DayEntry>>();
     for (const a of att) {
       const uid = String(a.user);
-      const key = localDayKey(a.date, a.timeZone || orgTz);
+      const tz = a.timeZone || orgTz;
+      const key = localDayKey(a.date, tz);
       if (!attByUser.has(uid)) attByUser.set(uid, {});
-      attByUser.get(uid)![key] = a.status as string;
+      attByUser.get(uid)![key] = {
+        status: a.status as string,
+        checkIn: (a as { checkIn?: Date | null }).checkIn ?? null,
+        checkOut: (a as { checkOut?: Date | null }).checkOut ?? null,
+        // Carried per day rather than assumed from the org: a WFH employee's
+        // punch is in Asia/Kolkata regardless of which zone the org defaults
+        // to, and printing it in the wrong one is worse than not printing a
+        // time at all — it reads as a specific, wrong fact.
+        timeZone: tz,
+      };
     }
     const leaveByUser = new Map<string, number>();
     for (const l of leaves) {
@@ -257,15 +294,17 @@ export class DepartmentService {
     const members = employees.map((e) => {
       const uid = e.user ? String(e.user) : null;
       // Start from attendance, then paint approved-leave days that have no
-      // attendance record (an actual attendance status always wins).
-      const calendar: Record<string, string> = uid ? { ...(attByUser.get(uid) ?? {}) } : {};
+      // attendance record (an actual attendance status always wins). A leave
+      // day has no punch to show, so both times stay null — the frontend
+      // already only prints a time when one is there.
+      const calendar: Record<string, DayEntry> = uid ? { ...(attByUser.get(uid) ?? {}) } : {};
       if (uid) {
         for (const [key, type] of leaveDaysByUser.get(uid) ?? []) {
-          if (!calendar[key]) calendar[key] = type === "wfh" ? "wfh" : "on_leave";
+          if (!calendar[key]) calendar[key] = { status: type === "wfh" ? "wfh" : "on_leave", checkIn: null, checkOut: null, timeZone: orgTz };
         }
       }
       const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, wfh: 0 };
-      for (const st of Object.values(calendar)) {
+      for (const { status: st } of Object.values(calendar)) {
         if ((countKeys as readonly string[]).includes(st)) summary[st]++;
       }
       return {

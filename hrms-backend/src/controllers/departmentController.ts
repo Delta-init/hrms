@@ -28,6 +28,13 @@ export const getAllDepartmentsSimple = async (req: AuthenticatedRequest, res: Re
   } catch (error) { next(error); }
 };
 
+/** The department(s) this login heads — self-service, no module permission. */
+export const getMyDepartments = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Your departments", await service.mine(req.user!.userId));
+  } catch (error) { next(error); }
+};
+
 export const getDepartmentById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Department retrieved successfully", await service.getById(req.params.id));

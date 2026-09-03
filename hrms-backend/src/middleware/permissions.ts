@@ -121,3 +121,36 @@ export const requesterFromRecord =
     const doc = await load(req.params.id);
     return doc?.user ? String(doc.user) : null;
   };
+
+/**
+ * The permission, or heading the department in the URL itself.
+ *
+ * Simpler than the gate above because there is no requester to resolve first —
+ * `req.params.id` already names the exact department being asked for, so the
+ * check is direct: is this one of the departments the caller heads. Built for
+ * opening a department's own page to its head without handing them
+ * `departments.view`, which would open every department's page and the
+ * company-wide list along with it — a much wider grant than "let me see my
+ * own team."
+ *
+ * Additive by construction, same as the gate above: whoever already holds the
+ * permission is admitted first and never reaches the department lookup.
+ */
+export const checkPermissionOrHeadsDepartment = (module: HrmsModule, action: PermissionAction) => {
+  const permission = checkPermission(module, action);
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    if (hasPermission(req.user?.role, module, action)) {
+      next();
+      return;
+    }
+    const userId = req.user?.userId;
+    const heads = userId ? await departmentsHeadedBy(userId) : [];
+    if (heads.includes(req.params.id)) {
+      next();
+      return;
+    }
+    // Not a head of this one either: the ordinary refusal, unchanged from
+    // before this gate existed.
+    permission(req, res, next);
+  };
+};

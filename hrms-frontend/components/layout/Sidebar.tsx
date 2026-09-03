@@ -53,6 +53,7 @@ import {
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
+import { useMyDepartments } from "@/hooks/useDepartments";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
 
 export const navItems: {
@@ -66,6 +67,8 @@ export const navItems: {
   superAdminOnly?: boolean;
   /** Drawn only when the server says this person has approvals to review. */
   approvalsOnly?: boolean;
+  /** Also drawn for someone who heads a department, even without the permission. */
+  orHeadsADepartment?: boolean;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
   // Not gated on a permission or on Super Admin: who may see this is decided by
@@ -73,7 +76,7 @@ export const navItems: {
   // department. `canAccess` on the summary carries the answer back.
   { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, approvalsOnly: true },
   { href: "/employees", label: "Employees", icon: UserRound, permModule: "employees" },
-  { href: "/departments", label: "Departments", icon: Building2, permModule: "departments" },
+  { href: "/departments", label: "Departments", icon: Building2, permModule: "departments", orHeadsADepartment: true },
   // Everybody, because everybody is in it. The chart is names, titles,
   // departments and reporting lines — nothing an employee could not read off a
   // door — and hiding who reports to whom from the people doing the reporting
@@ -142,6 +145,10 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // would distinguish them here — the server answers with `canAccess` rather
   // than refusing, so this costs an ordinary cached request and no error.
   const { data: approvals } = useApprovalSummary(!isKioskOnly);
+  // Same shape as the approvals summary above: asked of everybody so the
+  // sidebar can tell a head from an ordinary employee without needing the
+  // `departments` permission to ask the question. Empty for almost everyone.
+  const { data: myDepartments = [] } = useMyDepartments();
   /** What waits behind each link, for the badge. Absent means no badge. */
   const waiting: Record<string, number> = {
     "/leave": pendingLeave,
@@ -152,8 +159,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
+        const hasBasePermission = permModule !== null && hasPermission(permModule, permAction ?? "view");
         // A third of the menu is deliberately ungated — everyone can raise a
         // ticket or see their own payslip. That is right for a person and wrong
         // for a tablet by the door, which is nobody: it gets the kiosk alone.
@@ -163,12 +171,25 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
             ? isSuperAdmin
             : approvalsOnly
               ? !!approvals?.canAccess
-              : permModule === null ? true : hasPermission(permModule, permAction ?? "view");
+              : orHeadsADepartment
+                ? hasBasePermission || myDepartments.length > 0
+                : permModule === null ? true : hasBasePermission;
         if (!allowed) return null;
+
+        // A head with no company-wide list access is sent straight to the one
+        // department that is theirs, rather than to a list the server would
+        // refuse them. Only meaningful while there is exactly one — a head of
+        // several with no list access has no page here that could show them a
+        // choice, so they land on the first and the rest stay reachable only
+        // to whoever holds the real permission.
+        const resolvedHref =
+          orHeadsADepartment && !hasBasePermission && myDepartments.length > 0
+            ? `${href}/${myDepartments[0]._id}`
+            : href;
 
         const linkEl = (
           <Link
-            href={href}
+            href={resolvedHref}
             onClick={() => onNavigate?.()}
             className={cn(
               "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150",

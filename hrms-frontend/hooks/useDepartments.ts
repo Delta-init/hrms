@@ -30,6 +30,21 @@ export const useDepartmentsSimple = (options?: { enabled?: boolean }) =>
     enabled: options?.enabled ?? true,
   });
 
+/**
+ * The department(s) this login heads. Empty for almost everybody.
+ *
+ * Asked for unconditionally, like the approvals summary beside it — the
+ * server answers with an empty array rather than refusing, so this is what
+ * lets the sidebar decide whether to show a head their own department without
+ * needing the `departments` permission to ask the question in the first place.
+ */
+export const useMyDepartments = () =>
+  useQuery({
+    queryKey: [...KEY, "mine"],
+    queryFn: async () => (await api.get<ApiResponse<DepartmentSimple[]>>("/departments/mine")).data.data ?? [],
+    staleTime: 5 * 60 * 1000,
+  });
+
 export const useDepartmentReport = (id: string, month: string) =>
   useQuery({
     queryKey: [...KEY, "report", id, month],

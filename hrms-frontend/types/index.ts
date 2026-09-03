@@ -1265,12 +1265,21 @@ export interface DailyAttendanceData {
 }
 
 // ─── Department report ───────────────────────────────────────────────────────
+/** One day on a department member's calendar — the status, and what produced it. */
+export interface DepartmentCalendarDay {
+  status: AttendanceStatus;
+  /** Null on a day with no punch — a leave day, or one nobody clocked into. */
+  checkIn: string | null;
+  checkOut: string | null;
+  /** The zone the punch was made in — a WFH employee's is not the org default. */
+  timeZone: string;
+}
 export interface DepartmentReportMember {
   employee: { _id: string; name: string; employeeCode: string; designation?: string };
   hasUser: boolean;
   leaveDays: number;
   summary: { present: number; late: number; half_day: number; absent: number; on_leave: number; wfh: number };
-  calendar: Record<string, AttendanceStatus>;
+  calendar: Record<string, DepartmentCalendarDay>;
 }
 export interface DepartmentReport {
   department: { _id: string; name: string; code?: string; leader?: PersonRef | string | null; status: string; memberCount: number };

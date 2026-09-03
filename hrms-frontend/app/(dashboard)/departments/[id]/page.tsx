@@ -28,6 +28,17 @@ const STATUS: Partial<Record<AttendanceStatus, { c: string; l: string }>> = {
 };
 const nowMonth = () => new Date().toISOString().slice(0, 7);
 const dayKey = (month: string, d: number) => `${month}-${String(d).padStart(2, "0")}`;
+const fmtTime = (iso: string | null, tz: string) =>
+  iso ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(iso)) : null;
+/** "Present · 09:58–18:04", or just the label where there is no punch to show. */
+function cellLabel(entry: { status: AttendanceStatus; checkIn: string | null; checkOut: string | null; timeZone: string } | undefined): string {
+  if (!entry) return "";
+  const label = STATUS[entry.status]?.l ?? entry.status;
+  const inAt = fmtTime(entry.checkIn, entry.timeZone);
+  const outAt = fmtTime(entry.checkOut, entry.timeZone);
+  if (!inAt) return label;
+  return `${label} · ${inAt}–${outAt ?? "…"}`;
+}
 
 export default function DepartmentReportPage() {
   const params = useParams();
@@ -58,7 +69,7 @@ export default function DepartmentReportPage() {
     }));
     const calSheet = members.map((mm) => {
       const row: Record<string, string> = { Employee: mm.employee.name };
-      dayNums.forEach((d) => { const st = mm.calendar[dayKey(month, d)]; row[String(d)] = st ? (STATUS[st]?.l ?? st) : ""; });
+      dayNums.forEach((d) => { row[String(d)] = cellLabel(mm.calendar[dayKey(month, d)]); });
       return row;
     });
     exportSheetsToExcel(`${data.department.name}-report-${month}`, [
@@ -162,9 +173,9 @@ export default function DepartmentReportPage() {
                   <tr key={mm.employee._id}>
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-background pr-2 text-xs font-medium">{mm.employee.name.split(" ")[0]}</td>
                     {dayNums.map((d) => {
-                      const st = mm.calendar[dayKey(month, d)];
-                      const s = st ? STATUS[st] : undefined;
-                      return <td key={d}><div title={st ? `${d}: ${s?.l ?? st}` : `${d}`} className={cn("h-5 w-5 rounded", s ? s.c : "bg-muted/60")} /></td>;
+                      const entry = mm.calendar[dayKey(month, d)];
+                      const s = entry ? STATUS[entry.status] : undefined;
+                      return <td key={d}><div title={entry ? `${d}: ${cellLabel(entry)}` : `${d}`} className={cn("h-5 w-5 rounded", s ? s.c : "bg-muted/60")} /></td>;
                     })}
                   </tr>
                 ))}
@@ -195,10 +206,10 @@ function MemberCalendar({ month, year, monthIndex, days, member }: {
         {WEEKDAYS.map((w) => <div key={w} className="text-[10px] font-semibold text-muted-foreground">{w[0]}</div>)}
         {cells.map((d, i) => {
           if (!d) return <div key={i} />;
-          const st = member.calendar[`${month}-${String(d).padStart(2, "0")}`];
-          const s = st ? STATUS[st] : undefined;
+          const entry = member.calendar[`${month}-${String(d).padStart(2, "0")}`];
+          const s = entry ? STATUS[entry.status] : undefined;
           return (
-            <div key={i} title={st ? `${d}: ${s?.l ?? st}` : String(d)}
+            <div key={i} title={entry ? `${d}: ${cellLabel(entry)}` : String(d)}
               className={cn("flex aspect-square items-center justify-center rounded-md text-[11px] font-medium", s ? `${s.c} text-white` : "bg-muted/50 text-muted-foreground")}>
               {d}
             </div>
