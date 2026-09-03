@@ -1,7 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { AttendanceService } from "../services/attendanceService.js";
-import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema } from "../validations/attendanceValidation.js";
+import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema, setDayStatusSchema } from "../validations/attendanceValidation.js";
 import { buildPunchContext } from "../utils/punchContext.js";
 import { reverseGeocode } from "../utils/reverseGeocode.js";
 import { sendSuccess, sendError } from "../utils/response.js";
@@ -200,6 +200,38 @@ export const bulkSetAttendanceStatus = async (req: AuthenticatedRequest, res: Re
     if (!status) throw Object.assign(new Error("A status is required"), { statusCode: 400 });
     const result = await service.setStatusMany(ids, status);
     sendSuccess(res, `${result.modified} record${result.modified === 1 ? "" : "s"} updated`, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Set one day's status for several people, whether or not they have a record.
+ *
+ * Separate from the endpoint above because the two are addressed differently:
+ * that one takes record ids, and the people this is usually needed for — a day
+ * nobody clocked into — have no record and therefore no id. This takes the
+ * employee and the day instead, which is what the day view already knows.
+ */
+export const setDayStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = setDayStatusSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const { employees, date, status, note } = parsed.data;
+    const result = await service.setDayStatusMany(employees, date, status, note);
+
+    // Created and amended are counted apart: "12 updated" when nine of them
+    // did not exist a moment ago describes something different from what
+    // happened, and creating attendance is the half worth being sure about.
+    const parts = [
+      result.created ? `${result.created} record${result.created === 1 ? "" : "s"} created` : "",
+      result.modified ? `${result.modified} updated` : "",
+    ].filter(Boolean);
+    sendSuccess(
+      res,
+      parts.length ? parts.join(", ") : "Nothing to change",
+      result
+    );
   } catch (error) {
     next(error);
   }

@@ -61,3 +61,22 @@ export const updateAttendanceSchema = z.object({
 
 export type CreateAttendanceInput = z.infer<typeof createAttendanceSchema>;
 export type UpdateAttendanceInput = z.infer<typeof updateAttendanceSchema>;
+
+/**
+ * Setting one day's status for several people at once.
+ *
+ * Addressed by employee and calendar day rather than by record id, because the
+ * case this exists for is a day with no record: nobody clocked in, so there is
+ * nothing to name. The service resolves the day into each person's own
+ * timezone, so a bare "2026-09-03" is the right shape here.
+ */
+export const setDayStatusSchema = z.object({
+  employees: z.array(z.string().trim().min(1)).min(1, "Select at least one person").max(500),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  // The same list the manual-entry form validates against, so the two
+  // cannot drift into accepting different statuses for the same records.
+  status: statusEnum,
+  note: z.string().trim().max(300).optional(),
+});
+
+export type SetDayStatusInput = z.infer<typeof setDayStatusSchema>;

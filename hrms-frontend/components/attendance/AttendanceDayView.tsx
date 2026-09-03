@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, LogIn, LogOut, RotateCcw, ShieldAlert, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useAttendanceDaily, useAttendanceById, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
+import { useAttendanceDaily, useAttendanceById, useDeleteAttendance, useSetDayStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -67,14 +67,15 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
   const canEdit = canManage && hasPermission("attendance", "edit");
   const canDelete = canManage && hasPermission("attendance", "delete");
 
-  // A row here is a person; only some of them have a record behind them, and
-  // only those can be edited, deleted or restated.
+  // A row here is a person; only some of them have a record behind them. Those
+  // are the ones that can be edited or deleted individually — but the status
+  // can be set on any of them, because the server creates what is missing.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(() => new Set());
   const { data: editing, isLoading: loadingRecord } = useAttendanceById(editingId ?? undefined);
   const { mutate: remove, isPending: removing } = useDeleteAttendance();
-  const bulkStatus = useBulkSetAttendanceStatus();
+  const setDayStatus = useSetDayStatus();
 
   const statusFilter = query.filters.status ?? ALL;
   const rows = useMemo(() => {
@@ -215,7 +216,14 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
         <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 px-4 py-3 text-sm text-orange-700 dark:text-orange-400">
           <strong>{data.counts.not_marked}</strong> {data.counts.not_marked === 1 ? "person has" : "people have"} nothing recorded for this day —
           no attendance, no leave, no holiday.
-          {data.isToday ? " The day is still going." : " Record attendance or approve leave, or payroll may treat it as a day off."}
+          {data.isToday
+            ? " The day is still going."
+            : canEdit
+              // Now that the rows can be selected, the warning says how to answer
+              // it. A number nobody can act on from where they are reading it is
+              // a number they learn to scroll past.
+              ? " Tick them below and set a status, or approve leave — otherwise payroll may treat it as a day off."
+              : " Until it is recorded or leave is approved, payroll may treat it as a day off."}
         </div>
       )}
 
@@ -231,23 +239,32 @@ export function AttendanceDayView({ canManage }: { canManage: boolean }) {
         selectable={canEdit}
         selected={chosen}
         onSelectedChange={setChosen}
-        isSelectable={(r) => !!r.attendanceId}
+        /**
+         * Everybody the day applies to, recorded or not.
+         *
+         * This used to require an existing record, which excluded exactly the
+         * people the banner above is warning about — the ones with nothing
+         * recorded, whom payroll may read as unpaid. Somebody who had not
+         * joined yet is still excluded: there is no day to mark.
+         */
+        isSelectable={(r) => r.status !== "not_employed"}
         bulkActions={(keys, clear) => (
           <Select
             value=""
             onValueChange={(status) => {
-              // The table hands back row keys, which are people. The change
-              // applies to their records, so they are translated here rather
-              // than the table being keyed by something half its rows lack.
-              const ids = rows
-                .filter((r) => keys.includes(r.employee._id) && r.attendanceId)
-                .map((r) => r.attendanceId!);
-              if (ids.length) bulkStatus.mutate({ ids, status }, { onSuccess: clear });
+              // Addressed by person and day rather than by record id, so the
+              // rows with nothing recorded are included — the server creates
+              // what is missing and amends what is not. Sending ids would have
+              // silently dropped exactly the rows worth acting on.
+              const employees = rows
+                .filter((r) => keys.includes(r.employee._id) && r.status !== "not_employed")
+                .map((r) => r.employee._id);
+              if (employees.length) setDayStatus.mutate({ employees, date, status }, { onSuccess: clear });
             }}
-            disabled={bulkStatus.isPending}
+            disabled={setDayStatus.isPending}
           >
             <SelectTrigger className="h-8 w-[190px]">
-              <SelectValue placeholder={bulkStatus.isPending ? "Updating…" : "Set status…"} />
+              <SelectValue placeholder={setDayStatus.isPending ? "Updating…" : "Set status…"} />
             </SelectTrigger>
             <SelectContent>
               {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (

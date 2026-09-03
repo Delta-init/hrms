@@ -95,6 +95,29 @@ export const useBulkSetAttendanceStatus = () => {
   });
 };
 
+/**
+ * Set one day's status for several people, record or no record.
+ *
+ * The bulk endpoint above takes record ids, so it cannot touch the people this
+ * is usually wanted for: a day nobody clocked into has no record and therefore
+ * no id. This addresses them by employee and day, and the server creates what
+ * is missing.
+ */
+export const useSetDayStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { employees: string[]; date: string; status: string; note?: string }) => {
+      const res = await api.patch<ApiResponse<{ matched: number; modified: number; created: number; skipped: number }>>(
+        "/attendance/day-status",
+        input
+      );
+      return res.data;
+    },
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not set that status")),
+  });
+};
+
 export const useDeleteAttendance = () => {
   const qc = useQueryClient();
   return useMutation({

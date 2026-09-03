@@ -427,6 +427,75 @@ export class AttendanceService {
     return { matched: res.matchedCount, modified: res.modifiedCount };
   }
 
+  /**
+   * Set one day's status for several people, creating the record where none exists.
+   *
+   * `setStatusMany` above can only amend records that already exist, which
+   * leaves out exactly the people this is usually needed for: a day nobody
+   * clocked into has no record at all, so there was no row to select and no id
+   * to send. The day view counts those and warns that payroll may read them as
+   * unpaid, and then offered no way to answer it in bulk — the only route was
+   * adding records one at a time.
+   *
+   * Keyed by employee and a calendar day rather than by record id, because that
+   * is what the caller has when the record is the thing that is missing. The
+   * day is resolved per person into midnight in their own timezone, the same
+   * key a clock-in would have written, so this cannot quietly create a second
+   * record for a day somebody later punches.
+   */
+  async setDayStatusMany(employeeIds: string[], date: string, status: string, note?: string) {
+    const valid = employeeIds.filter((id) => Types.ObjectId.isValid(id));
+    if (!valid.length) return { matched: 0, modified: 0, created: 0, skipped: 0 };
+
+    // Employee ids, because the day view is a list of people. Their logins are
+    // what attendance is stored against.
+    const employees = await Employee.find(scoped({ _id: { $in: valid }, user: { $ne: null } }))
+      .select("user")
+      .lean<Array<{ _id: unknown; user: unknown }>>();
+
+    let modified = 0, created = 0;
+    for (const emp of employees) {
+      const userId = String(emp.user);
+      const { key, timeZone } = await this.dayKeyFor(userId, new Date(`${date}T00:00:00.000Z`));
+
+      const existing = await Attendance.findOne(scoped({ user: userId, date: key }));
+      if (existing) {
+        existing.status = status as never;
+        // Only a late or half day carries late minutes; anything else keeps
+        // them at zero rather than inheriting a number from what it used to be.
+        if (status !== "late" && status !== "half_day") existing.lateMinutes = 0;
+        if (note !== undefined) existing.note = note;
+        await existing.save();
+        modified++;
+        continue;
+      }
+
+      // Saved rather than inserted, so the pre-save hook derives `localDay`
+      // from the timezone — the field every date filter reads. An insertMany
+      // would skip it and the record would be invisible to the very list it
+      // was created from.
+      const record = new Attendance({
+        organization: getOrgId(),
+        user: userId,
+        date: key,
+        timeZone,
+        status,
+        lateMinutes: 0,
+        note,
+      });
+      await record.save();
+      created++;
+    }
+
+    return {
+      matched: employees.length,
+      modified,
+      created,
+      /** Asked for but not found, or holding no login to store attendance against. */
+      skipped: valid.length - employees.length,
+    };
+  }
+
   async remove(id: string) {
     const record = await Attendance.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });
