@@ -90,7 +90,7 @@ export default function UsersPage() {
             {canEdit && u._id !== me?._id && !(typeof u.role === "object" && u.role.isSystemRole) && (
               <DropdownMenuItem onClick={() => doImpersonate(u._id)} className="cursor-pointer"><Eye className="mr-2 h-4 w-4" />Impersonate</DropdownMenuItem>
             )}
-            {canDelete && <DropdownMenuItem onClick={() => { setSelected(u); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
+            {canDelete && <DropdownMenuItem onClick={() => { setSelected(u); setDeleteOpen(true); }} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Deactivate</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
       ),

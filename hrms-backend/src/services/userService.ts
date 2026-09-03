@@ -141,15 +141,33 @@ export class UserService {
       throw Object.assign(new Error("Super Admin user cannot be deleted"), { statusCode: 403 });
     }
 
-    await User.findOneAndDelete(scoped({ _id: id }));
+    /**
+     * Deactivated, not destroyed.
+     *
+     * This used to be a hard delete that also nulled the employee's reference
+     * in the same breath, which left nothing anywhere saying the account had
+     * existed — not even on the employee record that had pointed at it. The
+     * only trace was the id still carried by whatever the person had done:
+     * their leave, their payslips, their attendance. Recovering one meant
+     * reading those back and rebuilding the row by hand from the migration
+     * spreadsheets, and the database is a standalone with no oplog behind it,
+     * so there was nothing else to fall back on.
+     *
+     * `inactive` already means exactly this everywhere else. Sign-in refuses
+     * it, refresh tokens are refused, and every scheduled job that mails people
+     * already filters it out — so the account goes as quiet as a deleted one
+     * while staying recoverable by flipping one field back.
+     */
+    user.status = "inactive";
+    // Retires every outstanding access and refresh token, so an open session
+    // does not keep working until it happens to expire.
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    await user.save();
 
-    // Release any employee that pointed at this login. Left behind, the
-    // reference is worse than useless: createLogin reads the raw field, sees an
-    // id and refuses with "already has a login account", while every read
-    // populates the same field to null and offers to create one — so the
-    // employee is shown the only action that would help and denied it.
-    await Employee.updateMany(scoped({ user: id }), { $set: { user: null } });
-
-    return { message: "User deleted successfully" };
+    // The employee keeps pointing at it, which is what makes this reversible.
+    // `createLogin` would otherwise refuse a replacement for an employee whose
+    // login was deactivated, so it releases the link itself when it finds one
+    // that is no longer usable.
+    return { message: "User deactivated. Their records and history are kept." };
   }
 }

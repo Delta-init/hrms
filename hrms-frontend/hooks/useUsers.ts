@@ -72,12 +72,15 @@ export const useDeleteUser = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/users/${id}`);
+      // The response is kept rather than discarded: the server's own wording is
+      // the one that stays true if this behaviour changes again.
+      const res = await api.delete<ApiResponse<unknown>>(`/users/${id}`);
+      return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: USERS_KEY });
-      toast.success("User deleted successfully");
+      toast.success(data?.message ?? "User deactivated");
     },
-    onError: (error) => toast.error(errMsg(error, "Failed to delete user")),
+    onError: (error) => toast.error(errMsg(error, "Failed to deactivate user")),
   });
 };

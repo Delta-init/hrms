@@ -429,10 +429,22 @@ export class EmployeeService {
     // Unscoped on purpose: an account in another tenant still exists, and
     // issuing a second login for it would be wrong.
     if (employee.user) {
-      const linked = await User.exists({ _id: employee.user });
-      if (linked) {
+      const linked = await User.findById(employee.user).select("status email").lean<{ status?: string; email?: string } | null>();
+      if (linked && linked.status !== "inactive") {
         throw Object.assign(new Error("This employee already has a login account"), { statusCode: 409 });
       }
+      /**
+       * A deactivated login is not a login they can use.
+       *
+       * Deleting an account deactivates it now rather than destroying it, and
+       * the employee keeps pointing at it so the deactivation can be undone.
+       * Refusing a new login on the strength of that reference would lock the
+       * employee out on the basis of an account nobody can sign in to — the
+       * same trap the hard delete used to set, arrived at from the other side.
+       *
+       * The old row is left where it is, still holding the person's history.
+       * Only the employee's pointer moves.
+       */
       employee.user = null;
     }
 
