@@ -57,6 +57,20 @@ export class ProgramService {
   }
 
   /**
+   * Whether an ordinary employee could already know this program exists —
+   * open for booking, or closed after filling. A draft is not staff's to see
+   * the register of; it is not staff's to know exists at all, and cancelled
+   * drops out of `/mine` the moment it happens, so neither ever reaches
+   * anyone without the `programs` permission through any other route.
+   */
+  async isVisibleToStaff(id: string): Promise<boolean> {
+    const program = await Program.findOne(scoped({ _id: id, status: { $in: ["open", "closed"] } }))
+      .select("_id")
+      .lean();
+    return !!program;
+  }
+
+  /**
    * Amend a program.
    *
    * `capacity` is allowed to move, including below what is already taken — a

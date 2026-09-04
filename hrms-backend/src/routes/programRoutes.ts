@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createProgram, getPrograms, getProgramById, updateProgram, deleteProgram,
   getProgramRegistrations, getMyPrograms, registerForProgram, cancelMyRegistration, uploadProgramImage,
+  canViewRegistrations,
 } from "../controllers/programController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -18,9 +19,10 @@ router.delete("/:id/register", cancelMyRegistration);
 
 router.get("/", checkPermission("programs", "view"), getPrograms);
 router.post("/", checkPermission("programs", "create"), createProgram);
-// The register names everybody who is going, so it sits with managing the
-// program rather than with booking a place on it.
-router.get("/:id/registrations", checkPermission("programs", "edit"), getProgramRegistrations);
+// Positioned here, after the module-permission routes, only because it needs
+// req.params.id and reads naturally beside getProgramById below — the gate
+// itself is not restricted to managers. See canViewRegistrations.
+router.get("/:id/registrations", canViewRegistrations, getProgramRegistrations);
 router.get("/:id", checkPermission("programs", "view"), getProgramById);
 router.put("/:id", checkPermission("programs", "edit"), updateProgram);
 // Its own route rather than a field on the form: the body is multipart, and

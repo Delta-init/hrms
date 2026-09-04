@@ -97,6 +97,7 @@ export default function ProgramsPage() {
                 pending={busyId === row.program._id}
                 onRegister={() => act(row.program._id, register)}
                 onCancel={() => act(row.program._id, cancel)}
+                onViewRegister={() => setViewingRegister(row.program)}
               />
             ))}
           </div>

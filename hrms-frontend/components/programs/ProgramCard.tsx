@@ -13,11 +13,12 @@ import type { ProgramForUser } from "@/types";
  * reads as an inventory report and makes somebody do the subtraction.
  */
 export function ProgramCard({
-  row, onRegister, onCancel, pending,
+  row, onRegister, onCancel, onViewRegister, pending,
 }: {
   row: ProgramForUser;
   onRegister: () => void;
   onCancel: () => void;
+  onViewRegister: () => void;
   pending: boolean;
 }) {
   const { program: p, registered, seatsLeft, full } = row;
@@ -64,10 +65,16 @@ export function ProgramCard({
             <span className="truncate">{p.location}</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onViewRegister}
+          className="flex items-center gap-1.5 hover:text-foreground"
+          title="See who is registered"
+        >
           <Users className="h-3.5 w-3.5 shrink-0" />
           <span
             className={cn(
+              "underline decoration-dotted underline-offset-2",
               full && "font-semibold text-amber-600 dark:text-amber-400",
               scarce && "font-semibold text-amber-600 dark:text-amber-400"
             )}
@@ -78,7 +85,7 @@ export function ProgramCard({
                 ? "Full"
                 : `${seatsLeft} place${seatsLeft === 1 ? "" : "s"} left`}
           </span>
-        </div>
+        </button>
       </dl>
 
       <div className="mt-auto pt-1">

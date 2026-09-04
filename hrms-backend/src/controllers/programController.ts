@@ -4,8 +4,30 @@ import { ProgramService } from "../services/programService.js";
 import { createProgramSchema, updateProgramSchema } from "../validations/programValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { extFromMime } from "../middleware/upload.js";
+import { hasPermission } from "../middleware/permissions.js";
 
 const service = new ProgramService();
+
+/**
+ * The `edit` permission, or a program anyone could already find via `/mine`.
+ *
+ * Booking is self-service, so who else booked should be too — a training
+ * roster is not the sensitive part of HR data, withholding a name list is.
+ * Additive by construction, same as the department gates: whoever holds
+ * `programs:edit` is admitted first and never reaches the visibility check,
+ * so this can only add readers, never remove one.
+ */
+export const canViewRegistrations = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (hasPermission(req.user?.role, "programs", "edit")) { next(); return; }
+    if (await service.isVisibleToStaff(req.params.id)) { next(); return; }
+    sendError(res, "Program not found", 404);
+  } catch (error) { next(error); }
+};
 
 // ── Managing ────────────────────────────────────────────────────────────────
 

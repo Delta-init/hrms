@@ -78,7 +78,14 @@ export const useUploadProgramImage = () => {
     mutationFn: async ({ id, file }: { id: string; file: File }) => {
       const body = new FormData();
       body.append("file", file);
-      return (await api.post<ApiResponse<Program>>(`/programs/${id}/image`, body)).data;
+      // The shared client defaults every request to Content-Type: application/json.
+      // Left in place, that default wins over what FormData needs — the body
+      // still serialises as multipart, but without the boundary parameter the
+      // header is supposed to carry, so the server cannot split it back into
+      // parts. Every other upload in this app clears it for this exact reason.
+      return (await api.post<ApiResponse<Program>>(`/programs/${id}/image`, body, {
+        headers: { "Content-Type": undefined },
+      })).data;
     },
     onSuccess: (res) => { invalidate(qc); toast.success(res.message ?? "Image updated"); },
     onError: (e) => toast.error(errMsg(e, "Could not upload that image")),
