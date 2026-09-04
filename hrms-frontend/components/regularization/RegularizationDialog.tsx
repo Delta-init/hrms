@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
-  ResponsiveDialogTitle, ResponsiveDialogFooter,
+  ResponsiveDialogTitle, ResponsiveDialogDescription, ResponsiveDialogFooter,
 } from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserSelect } from "@/components/pickers";
 import { regularizationFormSchema, type RegularizationFormValues } from "@/lib/validations/regularizationSchema";
-import { useCreateRegularization, useUpdateRegularization } from "@/hooks/useRegularizations";
+import { useCreateRegularization, useUpdateRegularization, useMyRegularizationAllowance, type CreateRegularizationResult } from "@/hooks/useRegularizations";
 import { useUser } from "@/hooks/useUsers";
 import { useAttendancePenaltyPolicy } from "@/hooks/useAttendancePenaltyPolicy";
 import { zonedInputToUtcIso, toLocalInput, toDateInput } from "@/lib/timezone";
@@ -39,6 +39,15 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
   const { data: policy } = useAttendancePenaltyPolicy(open);
   const defaultStatus = policy?.defaultRegularizationStatus ?? "present";
 
+  // Only meaningful for a fresh request about the caller's own month — an
+  // admin picking somebody else here would otherwise be shown their own
+  // allowance instead of the person they are filing for.
+  const { data: allowance } = useMyRegularizationAllowance(open && selfMode && !editing);
+  const blocked = selfMode && !editing && !!allowance?.blocked;
+  // Replaces the form once a fresh request goes through, so "who did this
+  // reach" is something the person sees, not something they have to trust.
+  const [justSubmitted, setJustSubmitted] = useState<CreateRegularizationResult | null>(null);
+
   const { register, handleSubmit, control, reset, setValue, watch, formState: { errors, touchedFields } } = useForm<RegularizationFormValues>({
     resolver: zodResolver(regularizationFormSchema),
     defaultValues: { user: "", date: "", timeZone: "Asia/Dubai", type: "missing_checkout", resultingStatus: "present", requestedCheckIn: "", requestedCheckOut: "", reason: "" },
@@ -60,6 +69,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
 
   useEffect(() => {
     if (!open) return;
+    setJustSubmitted(null);
     if (record) {
       const tz = record.timeZone || "Asia/Dubai";
       reset({
@@ -87,6 +97,7 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
   const resultingStatus = watch("resultingStatus");
 
   const onSubmit = (data: RegularizationFormValues) => {
+    if (blocked) return;
     const payload: Record<string, unknown> = {
       date: data.date,
       timeZone: data.timeZone,
@@ -96,12 +107,34 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
       requestedCheckOut: zonedInputToUtcIso(data.requestedCheckOut, data.timeZone),
       reason: data.reason || undefined,
     };
-    const done = { onSuccess: () => onOpenChange(false) };
     // Who the request belongs to is fixed once raised — an edit never moves it
     // to a different person.
-    if (record) save({ id: record._id, data: payload }, done);
-    else create({ ...payload, user: lockToUserId ?? data.user }, done);
+    if (record) save({ id: record._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    else create({ ...payload, user: lockToUserId ?? data.user }, { onSuccess: (res) => setJustSubmitted(res) });
   };
+
+  if (justSubmitted) {
+    return (
+      <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+        <ResponsiveDialogContent desktopClassName="max-w-md">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Request submitted</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>Here&apos;s who was told about it.</ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <div className="space-y-2 px-4 pb-2 sm:px-0">
+            <MailedRow ok={justSubmitted.mailedDepartmentHead} label="Department head / reporting manager" />
+            <MailedRow ok={justSubmitted.mailedHr} label="HR" />
+            {!justSubmitted.mailedDepartmentHead && (
+              <p className="text-xs text-muted-foreground">No department head or reporting manager is set for you, so nobody was mailed on that side.</p>
+            )}
+          </div>
+          <ResponsiveDialogFooter>
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+  }
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -208,15 +241,31 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
             <Textarea id="reason" rows={2} placeholder="Why does this day need correcting?" {...register("reason")} />
           </div>
 
+          {blocked && (
+            <p className="col-span-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
+              You have used all {allowance?.limit} corrections for this month. It resets next month.
+            </p>
+          )}
+
           <ResponsiveDialogFooter className="col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || blocked}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editing ? "Save Changes" : "Submit Request"}
+              {editing ? "Save Changes" : blocked ? "Limit reached" : "Submit Request"}
             </Button>
           </ResponsiveDialogFooter>
         </form>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+function MailedRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+      {ok ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : <XCircle className="h-4 w-4 shrink-0 text-muted-foreground" />}
+      <span className={ok ? "font-medium" : "text-muted-foreground"}>{label}</span>
+      <span className="ml-auto text-xs text-muted-foreground">{ok ? "Mailed" : "Not mailed"}</span>
+    </div>
   );
 }

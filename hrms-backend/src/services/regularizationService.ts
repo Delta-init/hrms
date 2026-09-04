@@ -13,9 +13,10 @@ import { parsePagination } from "../utils/query.js";
 import { notifyReviewed } from "./reviewNotifier.js";
 import { watchersFor } from "./watchers.js";
 import { notify } from "./notificationService.js";
-import { reportingManagerUserId, managerContact } from "./reportingManager.js";
+import { managerContact } from "./reportingManager.js";
 import { sendMail } from "../utils/mailer.js";
 import { notifyDepartmentHead } from "./departmentHeadService.js";
+import { hrRecipients } from "../jobs/birthdayJob.js";
 import { env } from "../config/env.js";
 
 interface RegQuery extends PaginationQuery {
@@ -74,9 +75,8 @@ export class RegularizationService {
       used,
       limit,
       remaining: Math.max(0, limit - used),
-      /** True when the *next* request would need the manager. */
-      nextNeedsManager: used >= limit,
-      managerId: used >= limit ? await reportingManagerUserId(userId) : null,
+      /** True once nothing more can be raised until next month. */
+      blocked: used >= limit,
     };
   }
 
@@ -89,11 +89,13 @@ export class RegularizationService {
     const policy = await getAttendancePenaltyPolicy();
 
     const already = await this.raisedThisMonth(input.user);
+    if (already >= policy.monthlyRegularizationLimit) {
+      throw Object.assign(
+        new Error(`Already raised ${already} correction${already === 1 ? "" : "s"} this month — that is the limit. It resets next month.`),
+        { statusCode: 400 }
+      );
+    }
     const monthlyIndex = already + 1;
-    const overLimit = monthlyIndex > policy.monthlyRegularizationLimit;
-    // Only looked up when it matters — most requests are within the allowance
-    // and should not pay for two extra queries.
-    const escalatedTo = overLimit ? await reportingManagerUserId(input.user) : null;
 
     const reg = await Regularization.create({
       ...input,
@@ -101,31 +103,27 @@ export class RegularizationService {
       organization: getOrgId(),
       status: input.status ?? "pending",
       monthlyIndex,
-      escalated: overLimit,
-      escalatedTo,
       ...workflow,
     });
 
-    if (overLimit) await this.notifyManagerOfEscalation(reg, user, monthlyIndex, policy.monthlyRegularizationLimit);
-
-    // The department head, separately from the escalation above: that one fires
-    // only past the monthly allowance and goes to the reporting manager, who is
-    // often somebody else entirely. This one is simply "your team has asked for
-    // something" and fires every time.
+    // Both fire every time — this is simply "your team has asked for
+    // something", not conditioned on anything about the request itself.
     const tz = input.timeZone || "Asia/Dubai";
-    await notifyDepartmentHead({
+    const requesterName = String(user.name ?? "Somebody in your team");
+    const rows: Array<[string, string]> = [
+      ["Day", new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(input.date)],
+      ["Correction", TYPE_LABELS[input.type] ?? String(input.type)],
+      ...(input.reason ? ([["Reason", String(input.reason)]] as Array<[string, string]>) : []),
+    ];
+    const mailedDepartmentHead = await notifyDepartmentHead({
       requesterUserId: String(input.user),
-      requesterName: String(user.name ?? "Somebody in your team"),
-      subject: `${user.name ?? "Somebody in your team"} has asked for an attendance correction`,
-      headline:
-        `<strong>${user.name ?? "Somebody in your team"}</strong> has asked to correct their attendance.`,
-      rows: [
-        ["Day", new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(input.date)],
-        ["Correction", TYPE_LABELS[input.type] ?? String(input.type)],
-        ...(input.reason ? ([["Reason", String(input.reason)]] as Array<[string, string]>) : []),
-      ],
+      requesterName,
+      subject: `${requesterName} has asked for an attendance correction`,
+      headline: `<strong>${requesterName}</strong> has asked to correct their attendance.`,
+      rows,
       link: `${env.CLIENT_URL}/approvals`,
     });
+    const mailedHr = await this.notifyHr(requesterName, rows);
 
     await notify({
       users: await watchersFor("regularization", String(input.user)),
@@ -136,54 +134,43 @@ export class RegularizationService {
       actor: input.user,
     });
 
-    return Regularization.findById(reg._id).populate(POP);
+    const record = await Regularization.findById(reg._id).populate(POP);
+    return { record, mailedDepartmentHead, mailedHr };
   }
 
   /**
-   * Tell the manager a correction needs them.
+   * Tell HR a correction has been raised — the same notice the department
+   * head gets, to whoever holds `regularization:approve` instead of to one
+   * person's own line.
    *
    * Best-effort and deliberately after the record is saved: a mail server
    * having a bad afternoon must not lose somebody's request.
    */
-  private async notifyManagerOfEscalation(
-    reg: { _id: unknown; date: Date; timeZone?: string; type: string; reason?: string; escalatedTo?: unknown },
-    requester: { name?: string },
-    index: number,
-    limit: number
-  ) {
+  private async notifyHr(requesterName: string, rows: Array<[string, string]>): Promise<boolean> {
     try {
-      if (!reg.escalatedTo) return;
-      const manager = await managerContact(String(reg.escalatedTo));
-      if (!manager?.email) return;
-
-      const tz = reg.timeZone || "Asia/Dubai";
-      const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(reg.date);
-      const who = requester.name ?? "Somebody in your team";
+      const recipients = await hrRecipients(String(getOrgId() ?? ""));
+      if (!recipients.length) return false;
       const link = `${env.CLIENT_URL}/regularization`;
-
-      await sendMail({
-        to: manager.email,
-        subject: `${who} has asked for a ${index}${index === 2 ? "nd" : index === 3 ? "rd" : "th"} attendance correction this month`,
-        text:
-          `${who} has raised ${index} attendance corrections this month; the allowance is ${limit}.\n\n` +
-          `Date: ${day}\nCorrection: ${TYPE_LABELS[reg.type] ?? reg.type}\n` +
-          (reg.reason ? `Reason: ${reg.reason}\n` : "") +
-          `\nThis one needs your approval: ${link}`,
+      const cells = rows
+        .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#888">${k}</td><td style="padding:4px 0;font-weight:600">${v}</td></tr>`)
+        .join("");
+      return await sendMail({
+        to: recipients,
+        organization: getOrgId() ?? undefined,
+        subject: `${requesterName} has asked for an attendance correction`,
+        text: `${requesterName} has asked to correct their attendance.\n\n` +
+          rows.map(([k, v]) => `${k}: ${v}`).join("\n") +
+          `\n\nReview it: ${link}`,
         html:
           `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
-          `<h2 style="color:#4f46e5;margin-bottom:4px">An attendance correction needs you</h2>` +
-          `<p style="color:#555"><strong>${who}</strong> has raised <strong>${index}</strong> corrections this month. ` +
-          `The allowance is ${limit}, so this one comes to you rather than going through on its own.</p>` +
-          `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">` +
-          `<tr><td style="padding:4px 12px 4px 0;color:#888">Date</td><td style="padding:4px 0;font-weight:600">${day}</td></tr>` +
-          `<tr><td style="padding:4px 12px 4px 0;color:#888">Correction</td><td style="padding:4px 0;font-weight:600">${TYPE_LABELS[reg.type] ?? reg.type}</td></tr>` +
-          (reg.reason ? `<tr><td style="padding:4px 12px 4px 0;color:#888">Reason</td><td style="padding:4px 0">${reg.reason}</td></tr>` : "") +
-          `</table>` +
+          `<h2 style="color:#4f46e5;margin-bottom:4px">An attendance correction needs review</h2>` +
+          `<p style="color:#555"><strong>${requesterName}</strong> has asked to correct their attendance.</p>` +
+          `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">${cells}</table>` +
           `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review it</a></p>` +
           `</div>`,
       });
     } catch {
-      /* the request is saved; a failed notice is not worth failing the write */
+      return false;
     }
   }
 

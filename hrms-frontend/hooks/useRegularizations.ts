@@ -53,13 +53,14 @@ export const useMyRegularizations = (params?: Record<string, string>) =>
  * page: the count includes requests that are already approved and no longer on
  * screen, and recomputing it from the visible rows would understate it.
  */
-export const useMyRegularizationAllowance = () =>
+export const useMyRegularizationAllowance = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "mine", "allowance"],
     queryFn: async () =>
-      (await api.get<ApiResponse<{ used: number; limit: number; remaining: number; nextNeedsManager: boolean; managerId: string | null }>>(
+      (await api.get<ApiResponse<{ used: number; limit: number; remaining: number; blocked: boolean }>>(
         "/regularizations/mine/allowance"
       )).data.data!,
+    enabled,
   });
 
 /**
@@ -73,11 +74,21 @@ export const useMyMissedRegularizations = () =>
       (await api.get<ApiResponse<MissedRegularizationDay[]>>("/regularizations/mine/missed")).data.data ?? [],
   });
 
+export interface CreateRegularizationResult {
+  record: Regularization;
+  /** Whether the department head (or reporting manager) actually got mailed — false where neither is set. */
+  mailedDepartmentHead: boolean;
+  mailedHr: boolean;
+}
+
 export const useCreateRegularization = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Record<string, unknown>) => (await api.post<ApiResponse<Regularization>>("/regularizations", data)).data.data!,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Regularization submitted"); },
+    mutationFn: async (data: Record<string, unknown>) =>
+      (await api.post<ApiResponse<CreateRegularizationResult>>("/regularizations", data)).data.data!,
+    // No toast here — the dialog shows a popup with exactly who got mailed,
+    // which a generic "submitted" toast would only repeat less usefully.
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); },
     onError: (e) => toast.error(errMsg(e, "Failed to submit regularization")),
   });
 };

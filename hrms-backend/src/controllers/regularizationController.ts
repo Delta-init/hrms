@@ -18,8 +18,8 @@ export const createRegularization = async (req: AuthenticatedRequest, res: Respo
     if (!canApproveOthers || !body.user) body.user = req.user?.userId;
     const parsed = createRegularizationSchema.safeParse(body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    const record = await service.create(parsed.data);
-    sendSuccess(res, "Regularization request created", record, 201);
+    const result = await service.create(parsed.data);
+    sendSuccess(res, "Regularization request created", result, 201);
   } catch (error) { next(error); }
 };
 

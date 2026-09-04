@@ -248,14 +248,13 @@ export default function RegularizationPage() {
             <div>
               <h3 className="text-base font-semibold">Request a correction</h3>
               <p className="text-sm text-muted-foreground">Raise a regularization for a day you missed a punch.</p>
-              {/* Said before they submit, not after. The allowance is not a
-                  refusal, so the wording is about who sees it rather than
-                  whether they may ask. */}
+              {/* Said before they submit, not after — the limit refuses
+                  outright once it's spent, so this is their warning. */}
               {allowance && (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {allowance.nextNeedsManager ? (
-                    <span className="text-amber-600">
-                      You have used {allowance.used} of {allowance.limit} this month — your next one goes to your reporting manager.
+                  {allowance.blocked ? (
+                    <span className="text-destructive">
+                      You have used all {allowance.limit} corrections this month. It resets next month.
                     </span>
                   ) : (
                     <>{allowance.remaining} of {allowance.limit} left this month</>
@@ -263,7 +262,7 @@ export default function RegularizationPage() {
                 </p>
               )}
             </div>
-            <Button onClick={() => setApplyOpen(true)}><Plus className="h-4 w-4" />New Request</Button>
+            <Button onClick={() => setApplyOpen(true)} disabled={!!allowance?.blocked}><Plus className="h-4 w-4" />New Request</Button>
           </Card>
           <SimpleRegTable
             rows={mine} loading={mineLoading} error={mineError} emptyText="You have no regularization requests."
