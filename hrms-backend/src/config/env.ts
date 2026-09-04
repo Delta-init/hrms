@@ -78,6 +78,13 @@ const envSchema = z.object({
    * does not compete with the working week. Saturday 8am server-local time.
    */
   REGULARIZATION_PROMPT_CRON: z.string().default("0 8 * * 6"),
+  /**
+   * Daily, after the attendance digest (19:30) has had time to settle the
+   * day's punches. Looks back over the last 60 days each run, so a day
+   * missed by an outage or a late deploy is picked up the next time it runs
+   * rather than lost.
+   */
+  COMP_OFF_AUTO_CREDIT_CRON: z.string().default("0 21 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).
