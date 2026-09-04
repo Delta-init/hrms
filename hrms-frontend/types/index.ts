@@ -722,6 +722,10 @@ export interface LeavePolicy {
   /** Months of service before this leave can be taken. 0 = from day one. */
   eligibleAfterMonths: number;
   carryForwardLimit: number;
+  /** How far ahead a request longer than `noticeThresholdDays` must be raised. 0 = no such rule. */
+  minNoticeDays: number;
+  /** The length that triggers `minNoticeDays`. Meaningless while that is 0. */
+  noticeThresholdDays: number;
   /** When it started governing; null means it always has. */
   effectiveFrom?: string | null;
   createdAt: string;

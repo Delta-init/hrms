@@ -16,7 +16,7 @@ import { accruedFor, type EffectivePolicy } from "../services/leavePolicyResolve
 
 const P = (o: Partial<EffectivePolicy>): EffectivePolicy => ({
   _id: o._id ?? "x", type: "annual", label: "Annual leave", days: 0, period: "year",
-  paid: true, eligibleAfterMonths: 0, carryForwardLimit: 0,
+  paid: true, eligibleAfterMonths: 0, carryForwardLimit: 0, minNoticeDays: 0, noticeThresholdDays: 0,
   workSchedule: null, workMode: null, effectiveFrom: null, supersededDays: null, ...o,
 });
 

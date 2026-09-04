@@ -27,6 +27,8 @@ export const createLeavePolicySchema = z
     paid: z.boolean().default(true),
     eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600).default(0),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366).default(0),
+    minNoticeDays: z.coerce.number().int().min(0, "Cannot be negative").max(365).default(0),
+    noticeThresholdDays: z.coerce.number().int().min(0, "Cannot be negative").max(366).default(0),
   })
   .superRefine((v, ctx) => {
     // One target or the other. Allowing both would create a fourth level of
@@ -62,6 +64,8 @@ export const updateLeavePolicySchema = z
     paid: z.boolean(),
     eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366),
+    minNoticeDays: z.coerce.number().int().min(0, "Cannot be negative").max(365),
+    noticeThresholdDays: z.coerce.number().int().min(0, "Cannot be negative").max(366),
   })
   .partial()
   .superRefine((v, ctx) => {

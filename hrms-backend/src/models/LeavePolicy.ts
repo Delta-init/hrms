@@ -64,6 +64,17 @@ const leavePolicySchema = new Schema<ILeavePolicy>(
     /** Yearly only: max unused days carried into the next year (0 = none). */
     carryForwardLimit: { type: Number, default: 0, min: 0 },
     /**
+     * How far ahead a longer request must be raised. 0 = no such rule.
+     *
+     * Only requests longer than `noticeThresholdDays` are held to this — a
+     * single day off does not need the same warning as a fortnight away, and
+     * a policy that made every request wait would just be a slower version of
+     * the same allowance.
+     */
+    minNoticeDays: { type: Number, default: 0, min: 0, max: 365 },
+    /** The length that triggers `minNoticeDays`. Meaningless while that is 0. */
+    noticeThresholdDays: { type: Number, default: 0, min: 0, max: 366 },
+    /**
      * When this policy started governing. Null means it always has.
      *
      * Balances are computed from policies rather than stored, so without this a

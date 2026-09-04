@@ -47,6 +47,7 @@ interface Props {
 const EMPTY: LeavePolicyFormValues = {
   type: "annual", label: "", target: ORG_WIDE, days: 0,
   period: "year", paid: true, eligibleAfterMonths: 0, carryForwardLimit: 0,
+  minNoticeDays: 0, noticeThresholdDays: 0,
 };
 
 /** Waiting periods people actually write down, in months. */
@@ -93,6 +94,8 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
   const selectedTarget = watch("target");
   const period = watch("period");
   const eligibleAfterMonths = Number(watch("eligibleAfterMonths") ?? 0);
+  const minNoticeDays = Number(watch("minNoticeDays") ?? 0);
+  const noticeThresholdDays = Number(watch("noticeThresholdDays") ?? 0);
   // A value the presets don't offer keeps the custom inputs open, so editing a
   // policy set to 18 months doesn't silently snap it to the nearest preset.
   const isPreset = ELIGIBILITY_CHOICES.some((c) => c.months === eligibleAfterMonths);
@@ -117,6 +120,7 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
         type: policy.type, label: policy.label ?? "", target: targetOf(policy),
         days: policy.days, period: policy.period, paid: policy.paid,
         eligibleAfterMonths: policy.eligibleAfterMonths, carryForwardLimit: policy.carryForwardLimit,
+        minNoticeDays: policy.minNoticeDays ?? 0, noticeThresholdDays: policy.noticeThresholdDays ?? 0,
       });
     } else {
       reset({ ...EMPTY, type: availableTypes[0] ?? CUSTOM });
@@ -325,6 +329,29 @@ export function LeavePolicyDialog({ open, onOpenChange, policy, policies }: Prop
               {eligibleAfterMonths > 0
                 ? `Nobody can take this leave until they have served ${monthsLabel(eligibleAfterMonths)}, counted from their joining date.`
                 : "Available from an employee's first day."}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Advance notice</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="noticeThresholdDays" className="text-[11px] font-normal text-muted-foreground">
+                  For requests longer than (days)
+                </Label>
+                <Input id="noticeThresholdDays" type="number" min="0" step="1" {...register("noticeThresholdDays")} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="minNoticeDays" className="text-[11px] font-normal text-muted-foreground">
+                  Notice required (days)
+                </Label>
+                <Input id="minNoticeDays" type="number" min="0" step="1" {...register("minNoticeDays")} />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {minNoticeDays > 0
+                ? `A request longer than ${noticeThresholdDays} day${noticeThresholdDays === 1 ? "" : "s"} must be raised at least ${minNoticeDays} day${minNoticeDays === 1 ? "" : "s"} before it starts.`
+                : "0 = no advance notice required, whatever the request's length."}
             </p>
           </div>
 

@@ -1016,6 +1016,10 @@ export interface ILeavePolicy extends Document {
   eligibleAfterMonths: number;
   /** Yearly only: max unused days carried into the next year (0 = none). */
   carryForwardLimit: number;
+  /** How far ahead a request longer than `noticeThresholdDays` must be raised. 0 = no such rule. */
+  minNoticeDays: number;
+  /** The length that triggers `minNoticeDays`. Meaningless while that is 0. */
+  noticeThresholdDays: number;
   /**
    * When this policy started governing. Null means it always has.
    *

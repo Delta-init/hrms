@@ -140,6 +140,28 @@ async function assertLeaveAllowed(
     );
   }
 
+  // A longer request needs more warning than a single day off — but only
+  // longer than the policy's own threshold, and only where a notice period is
+  // actually set. Compared in whole UTC days, the same footing every other
+  // date in this file is counted on.
+  if (policy.minNoticeDays > 0 && days > policy.noticeThresholdDays) {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const startDay = new Date(startDate);
+    startDay.setUTCHours(0, 0, 0, 0);
+    const daysAhead = Math.round((startDay.getTime() - today.getTime()) / 86_400_000);
+    if (daysAhead < policy.minNoticeDays) {
+      const earliestFrom = new Date(today.getTime() + policy.minNoticeDays * 86_400_000);
+      throw Object.assign(
+        new Error(
+          `${policy.label} longer than ${policy.noticeThresholdDays} day${policy.noticeThresholdDays === 1 ? "" : "s"} ` +
+          `needs ${policy.minNoticeDays} days' notice — the earliest start date is ${earliestFrom.toISOString().slice(0, 10)}`
+        ),
+        { statusCode: 400 }
+      );
+    }
+  }
+
   const { remaining, used } = await remainingFor(policy, userId, startDate, excludeId);
   if (days > remaining) {
     const per = policy.period === "month" ? "this month" : "this year";

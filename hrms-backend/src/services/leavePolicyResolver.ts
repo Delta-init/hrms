@@ -24,6 +24,10 @@ export interface EffectivePolicy {
   /** Months of service before this leave can be taken. 0 = from day one. */
   eligibleAfterMonths: number;
   carryForwardLimit: number;
+  /** How far ahead a request longer than `noticeThresholdDays` must be raised. 0 = no such rule. */
+  minNoticeDays: number;
+  /** The length that triggers `minNoticeDays`. Meaningless while that is 0. */
+  noticeThresholdDays: number;
   /** Which schedule granted it — null when it is the organization-wide one. */
   workSchedule: string | null;
   /** Which work mode granted it — null when it is not written against one. */
@@ -56,6 +60,7 @@ function shape(p: {
   _id: unknown; type: string; label?: string | null; days: number; period?: LeavePeriod;
   paid?: boolean; eligibleAfterMonths?: number; carryForwardLimit?: number; workSchedule?: unknown;
   workMode?: WorkMode | null; effectiveFrom?: Date | null;
+  minNoticeDays?: number; noticeThresholdDays?: number;
 }): EffectivePolicy {
   return {
     _id: p._id,
@@ -66,6 +71,8 @@ function shape(p: {
     paid: p.paid !== false,
     eligibleAfterMonths: p.eligibleAfterMonths ?? 0,
     carryForwardLimit: p.carryForwardLimit ?? 0,
+    minNoticeDays: p.minNoticeDays ?? 0,
+    noticeThresholdDays: p.noticeThresholdDays ?? 0,
     workSchedule: p.workSchedule ? String(p.workSchedule) : null,
     workMode: p.workMode ?? null,
     effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : null,

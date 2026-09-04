@@ -25,6 +25,8 @@ export const leavePolicyFormSchema = z
     paid: z.boolean(),
     eligibleAfterMonths: z.coerce.number().int().min(0, "Cannot be negative").max(600),
     carryForwardLimit: z.coerce.number().min(0, "Cannot be negative").max(366),
+    minNoticeDays: z.coerce.number().int().min(0, "Cannot be negative").max(365),
+    noticeThresholdDays: z.coerce.number().int().min(0, "Cannot be negative").max(366),
   })
   .superRefine((v, ctx) => {
     if (!BUILTIN_LEAVE_TYPES.includes(v.type as never) && !v.label?.trim()) {
