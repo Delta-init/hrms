@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createRegularization, getRegularizations, getPendingRegularizationCount, getMyRegularizations, getMyRegularizationAllowance,
+  getMyMissedRegularizations,
   getRegularizationById, updateRegularization, reviewRegularization, deleteRegularization,
 } from "../controllers/regularizationController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -15,6 +16,9 @@ router.get("/mine", getMyRegularizations);
 // Self-service: how many corrections are left this month, and who has to sign
 // off past that. No module permission — it is the caller's own allowance.
 router.get("/mine/allowance", getMyRegularizationAllowance);
+// Self-service: this month's own days worth a second look. No module
+// permission — same reasoning, it is the caller's own calendar.
+router.get("/mine/missed", getMyMissedRegularizations);
 
 // Before "/:id", or "pending-count" is read as a request id.
 router.get("/pending-count", checkPermission("regularization", "view"), getPendingRegularizationCount);

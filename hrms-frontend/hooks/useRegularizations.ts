@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Regularization, RegularizationOutcome } from "@/types";
+import type { ApiResponse, MissedRegularizationDay, Regularization, RegularizationOutcome } from "@/types";
 
 const KEY = ["regularizations"] as const;
 function errMsg(e: unknown, f: string) {
@@ -60,6 +60,17 @@ export const useMyRegularizationAllowance = () =>
       (await api.get<ApiResponse<{ used: number; limit: number; remaining: number; nextNeedsManager: boolean; managerId: string | null }>>(
         "/regularizations/mine/allowance"
       )).data.data!,
+  });
+
+/**
+ * This month's own days worth a second look — the same list the weekend
+ * reminder mail sends. Drives the dashboard prompt.
+ */
+export const useMyMissedRegularizations = () =>
+  useQuery({
+    queryKey: [...KEY, "mine", "missed"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<MissedRegularizationDay[]>>("/regularizations/mine/missed")).data.data ?? [],
   });
 
 export const useCreateRegularization = () => {

@@ -11,6 +11,7 @@ import { useAnnouncements } from "@/hooks/useAnnouncements";
 import { ClockCard } from "@/components/dashboard/ClockCard";
 import { LocationCard } from "@/components/dashboard/LocationCard";
 import { UpcomingProgramPrompt } from "@/components/dashboard/UpcomingProgramPrompt";
+import { RegularizationPromptDialog } from "@/components/dashboard/RegularizationPromptDialog";
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
@@ -41,6 +42,7 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <FaceEnrolmentPrompt />
         <UpcomingProgramPrompt />
+        <RegularizationPromptDialog />
         {/* Above the fold and above the greeting: a punch that will be refused
             is worth knowing about before the day starts, not at the moment the
             button is pressed. */}
@@ -90,6 +92,7 @@ function EmployeeDashboard() {
       <div className="space-y-6 lg:col-span-2">
         <FaceEnrolmentPrompt />
         <UpcomingProgramPrompt />
+        <RegularizationPromptDialog />
         {/* Above the fold and above the greeting: a punch that will be refused
             is worth knowing about before the day starts, not at the moment the
             button is pressed. */}

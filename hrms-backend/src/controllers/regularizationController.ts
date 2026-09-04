@@ -3,6 +3,8 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { RegularizationService } from "../services/regularizationService.js";
 import { createRegularizationSchema, updateRegularizationSchema, reviewRegularizationSchema } from "../validations/regularizationValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { getOrgId } from "../utils/orgContext.js";
+import { flaggedDaysThisMonth } from "../jobs/regularizationPromptJob.js";
 
 const service = new RegularizationService();
 
@@ -86,5 +88,12 @@ export const deleteRegularization = async (req: AuthenticatedRequest, res: Respo
 export const getMyRegularizationAllowance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Allowance retrieved", await service.monthlyAllowance(req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+/** This month's own days worth a second look — same list the weekend mail sends. */
+export const getMyMissedRegularizations = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Days to review", await flaggedDaysThisMonth(req.user!.userId, getOrgId()));
   } catch (error) { next(error); }
 };

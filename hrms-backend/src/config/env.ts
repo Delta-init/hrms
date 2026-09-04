@@ -73,6 +73,11 @@ const envSchema = z.object({
    * is told about it and there is still an afternoon left to answer it.
    */
   LEAVE_QUEUE_CRON: z.string().default("0 12 * * *"),
+  /**
+   * Weekly, on everybody's day off, so fixing a half day or a missed punch
+   * does not compete with the working week. Saturday 8am server-local time.
+   */
+  REGULARIZATION_PROMPT_CRON: z.string().default("0 8 * * 6"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

@@ -798,6 +798,24 @@ export interface Regularization extends WorkflowState {
   updatedAt: string;
 }
 
+/** A day this month a regularization could fix — not yet raised for it. */
+export type MissedRegularizationKind = "not_marked" | "half_day" | "late" | "early_out";
+
+export interface MissedRegularizationDay {
+  /** YYYY-MM-DD, local to the employee's own shift. */
+  date: string;
+  kind: MissedRegularizationKind;
+  checkIn: string | null;
+  checkOut: string | null;
+}
+
+export const MISSED_REGULARIZATION_LABELS: Record<MissedRegularizationKind, string> = {
+  not_marked: "Not marked",
+  half_day: "Half day",
+  late: "Late",
+  early_out: "Left early",
+};
+
 // ─── Self attendance (clock-in/out) ──────────────────────────────────────────
 export interface ShiftInfo {
   shiftStart: string;
