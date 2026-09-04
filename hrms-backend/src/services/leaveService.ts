@@ -417,13 +417,17 @@ export class LeaveService {
     // requester acts on — booking a flight against an approval that has not
     // happened yet.
     if (!outcome.advance) {
-      const reviewer = await User.findById(reviewerId).select("name").lean();
+      const [reviewer, requester] = await Promise.all([
+        User.findById(reviewerId).select("name").lean(),
+        User.findById(record.user).select("name").lean(),
+      ]);
       const day = (d?: Date | null) =>
         d ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "—";
+      const approved = record.status === "approved";
       await notifyReviewed({
         userId: record.user,
         subject: "Leave request",
-        approved: record.status === "approved",
+        approved,
         details: [
           { label: "From", value: day(record.startDate) },
           { label: "To", value: day(record.endDate) },
@@ -437,6 +441,31 @@ export class LeaveService {
         // HR and the head both see this queue and either could have decided it.
         // Telling both closes it for whoever did not.
         watchers: await watchersFor("leave", String(record.user)),
+      });
+
+      // The head/manager mail, on the same terms as the one they got when this
+      // was raised: whoever asked to know when their team applies presumably
+      // also wants to know how it was settled, not just that it happened.
+      const requesterName = String(requester?.name ?? "Someone in your team");
+      await notifyDepartmentHead({
+        requesterUserId: String(record.user),
+        requesterName,
+        subject: `${requesterName}'s leave request was ${approved ? "approved" : "rejected"}`,
+        headline:
+          `<strong>${requesterName}'s</strong> leave request (${day(record.startDate)} – ${day(record.endDate)}) was ` +
+          `<strong style="color:${approved ? "#059669" : "#dc2626"}">${approved ? "approved" : "rejected"}</strong>` +
+          `${reviewer?.name ? ` by ${reviewer.name}` : ""}.`,
+        rows: [
+          ["From", day(record.startDate)],
+          ["To", day(record.endDate)],
+          ["Days", String(record.days ?? "")],
+          ["Type", String(record.type ?? "").replace(/_/g, " ")],
+          ...(record.reviewNote ? ([["Note", String(record.reviewNote)]] as Array<[string, string]>) : []),
+        ],
+        link: `${env.CLIENT_URL}/leave`,
+        heading: approved ? "Approved" : "Rejected",
+        ctaLabel: "View it",
+        accentColor: approved ? "#059669" : "#dc2626",
       });
     }
     return LeaveRequest.findById(id)

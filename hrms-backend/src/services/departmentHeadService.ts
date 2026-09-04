@@ -3,6 +3,7 @@ import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 import { sendMail } from "../utils/mailer.js";
+import { reportingManagerUserId, managerContact } from "./reportingManager.js";
 
 /**
  * Who a department head may decide for.
@@ -101,16 +102,50 @@ export async function headContactFor(
 }
 
 /**
- * Tell the head that one of their people has asked for something.
+ * Everyone who runs this person's line: the department head, and the
+ * reporting manager, wherever each is set and however they differ.
  *
- * Best-effort, and always after the record is saved: a mail server having a bad
- * afternoon must not lose somebody's leave request. Silent where there is no
- * head — that is the normal state of most departments, not a fault worth
+ * The two are separate relationships in this system — `Department.leader` and
+ * `Employee.reportingTo` — and do not have to agree. Most of the customer
+ * service teams built recently have the same person as both, because the head
+ * is also who members report to; elsewhere they can be two different people,
+ * and someone with only one of the two set should not go unmailed because the
+ * other happens to be empty.
+ *
+ * Deduplicated by user id, so a person who is both — the common case — gets
+ * one mail, not two. The requester themself is always excluded, whichever
+ * relationship would have produced them: nobody needs telling that their own
+ * request is waiting on them.
+ */
+export async function chainOfCommandFor(
+  requesterUserId: string
+): Promise<Array<{ name: string; email: string; userId: string }>> {
+  const seen = new Map<string, { name: string; email: string; userId: string }>();
+  const add = (c: { name: string; email: string; userId: string } | null) => {
+    if (!c) return;
+    if (String(c.userId) === String(requesterUserId)) return;
+    seen.set(String(c.userId), c);
+  };
+
+  add(await headContactFor(requesterUserId));
+
+  const managerId = await reportingManagerUserId(requesterUserId);
+  if (managerId) {
+    const m = await managerContact(managerId);
+    if (m?.email) add({ name: String(m.name ?? "there"), email: m.email, userId: managerId });
+  }
+
+  return [...seen.values()];
+}
+
+/**
+ * Tell whoever runs this person's line that they've asked for something.
+ *
+ * Best-effort, and always after the record is saved: a mail server having a
+ * bad afternoon must not lose somebody's leave request. Silent where nobody
+ * resolves — most people currently have neither a department head nor a
+ * distinct reporting manager set, which is a data gap, not a fault worth
  * logging on every application.
- *
- * A head applying for their own leave is not mailed about it; the request is
- * HR's to decide, and telling somebody their own request is waiting for them
- * would be both useless and misleading.
  */
 export async function notifyDepartmentHead(opts: {
   requesterUserId: string;
@@ -119,39 +154,56 @@ export async function notifyDepartmentHead(opts: {
   headline: string;
   rows: Array<[string, string]>;
   link: string;
+  /**
+   * The two things that differ between "somebody has asked for something" and
+   * "something was decided" — everything else about the mail is identical.
+   * Defaults match the original apply-only notice exactly, so neither existing
+   * call site needs to change to keep behaving as it always did.
+   */
+  heading?: string;
+  ctaLabel?: string;
+  accentColor?: string;
 }): Promise<boolean> {
-  try {
-    const head = await headContactFor(opts.requesterUserId);
-    if (!head) return false;
-    if (String(head.userId) === String(opts.requesterUserId)) return false;
+  const recipients = await chainOfCommandFor(opts.requesterUserId);
+  if (!recipients.length) return false;
 
-    const cells = opts.rows
-      .map(
-        ([k, v]) =>
-          `<tr><td style="padding:4px 12px 4px 0;color:#888">${k}</td><td style="padding:4px 0;font-weight:600">${v}</td></tr>`
-      )
-      .join("");
+  const heading = opts.heading ?? "Waiting on you";
+  const ctaLabel = opts.ctaLabel ?? "Review it";
+  const accent = opts.accentColor ?? "#4f46e5";
+  const cells = opts.rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:4px 12px 4px 0;color:#888">${k}</td><td style="padding:4px 0;font-weight:600">${v}</td></tr>`
+    )
+    .join("");
 
-    await sendMail({
-      to: head.email,
-      organization: getOrgId() ?? undefined,
-      subject: opts.subject,
-      text:
-        `${opts.headline}\n\n` +
-        opts.rows.map(([k, v]) => `${k}: ${v}`).join("\n") +
-        `\n\nReview it: ${opts.link}\n`,
-      html:
-        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
-        `<h2 style="color:#4f46e5;margin-bottom:4px">Waiting on you</h2>` +
-        `<p style="color:#555">${opts.headline}</p>` +
-        `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">${cells}</table>` +
-        `<p><a href="${opts.link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Review it</a></p>` +
-        `<p style="color:#999;font-size:12px;margin-top:20px">You receive this because you are the head of ${opts.requesterName}'s department.</p>` +
-        `</div>`,
-    });
-    return true;
-  } catch {
-    /* the request is saved; a failed notice is not worth failing the write */
-    return false;
+  // One at a time rather than a single To: list — a mail server rejecting one
+  // bad address must not cost every other recipient their copy, and each
+  // person's reason for receiving this ("head of" vs "reports to") differs.
+  let sentAny = false;
+  for (const person of recipients) {
+    try {
+      await sendMail({
+        to: person.email,
+        organization: getOrgId() ?? undefined,
+        subject: opts.subject,
+        text:
+          `${opts.headline}\n\n` +
+          opts.rows.map(([k, v]) => `${k}: ${v}`).join("\n") +
+          `\n\n${ctaLabel}: ${opts.link}\n`,
+        html:
+          `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+          `<h2 style="color:${accent};margin-bottom:4px">${heading}</h2>` +
+          `<p style="color:#555">${opts.headline}</p>` +
+          `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">${cells}</table>` +
+          `<p><a href="${opts.link}" style="display:inline-block;background:${accent};color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">${ctaLabel}</a></p>` +
+          `<p style="color:#999;font-size:12px;margin-top:20px">You receive this because you are ${opts.requesterName}'s department head or reporting manager.</p>` +
+          `</div>`,
+      });
+      sentAny = true;
+    } catch {
+      /* the request is saved; a failed notice to one recipient must not cost the others */
+    }
   }
+  return sentAny;
 }

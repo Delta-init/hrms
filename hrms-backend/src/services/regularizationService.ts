@@ -367,11 +367,15 @@ export class RegularizationService {
         details.push({ label: "Marked as", value: STATUS_LABELS[record.resultingStatus ?? "present"] ?? "Present" });
         details.push({ label: "Times applied", value: `${time(record.requestedCheckIn)} – ${time(record.requestedCheckOut)}` });
       }
-      const reviewer = await User.findById(reviewerId).select("name").lean();
+      const [reviewer, requester] = await Promise.all([
+        User.findById(reviewerId).select("name").lean(),
+        User.findById(record.user).select("name").lean(),
+      ]);
+      const approved = record.status === "approved";
       await notifyReviewed({
         userId: record.user,
         subject: "Regularization request",
-        approved: record.status === "approved",
+        approved,
         details,
         note: record.reviewNote,
         path: "/regularization",
@@ -380,6 +384,24 @@ export class RegularizationService {
         // HR and the head both see the queue, and either could have decided
         // this. Telling both closes it for whoever did not.
         watchers: await watchersFor("regularization", String(record.user)),
+      });
+
+      // Same mail, decided rather than raised — see leaveService's review()
+      // for why this is worth a second notice rather than only the apply one.
+      const requesterName = String(requester?.name ?? "Someone in your team");
+      await notifyDepartmentHead({
+        requesterUserId: String(record.user),
+        requesterName,
+        subject: `${requesterName}'s attendance correction was ${approved ? "approved" : "rejected"}`,
+        headline:
+          `<strong>${requesterName}'s</strong> attendance correction for ${day} was ` +
+          `<strong style="color:${approved ? "#059669" : "#dc2626"}">${approved ? "approved" : "rejected"}</strong>` +
+          `${reviewer?.name ? ` by ${reviewer.name}` : ""}.`,
+        rows: details.map((d) => [d.label, d.value] as [string, string]),
+        link: `${env.CLIENT_URL}/regularization`,
+        heading: approved ? "Approved" : "Rejected",
+        ctaLabel: "View it",
+        accentColor: approved ? "#059669" : "#dc2626",
       });
     }
 
