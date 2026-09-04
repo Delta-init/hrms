@@ -132,6 +132,8 @@ const documentSchema = new Schema(
       enum: [
         "passport",
         "visa_copy",
+        "emirates_id",
+        "labour_card",
         "aadhaar",
         "photo",
         "education_certificate",

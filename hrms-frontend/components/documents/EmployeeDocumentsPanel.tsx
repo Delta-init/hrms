@@ -7,17 +7,24 @@ import { OtherDocumentsPanel } from "@/components/documents/OtherDocumentsPanel"
 import { Card } from "@/components/ui/card";
 
 interface Props {
-  employeeId: string;
-  /** Uploading and removing need employees.edit; viewing only needs employees.view. */
+  /** Omit for the signed-in user's own documents — same self-service switch `DocumentSlots` itself uses. */
+  employeeId?: string;
+  /** Uploading and removing need employees.edit when viewing someone else; always true for your own. */
   canEdit: boolean;
 }
 
 /**
- * An employee's document file, managed by HR.
+ * An employee's document file — HR managing someone else's, or the person's
+ * own from their profile. Same panel either way, so what an employee sees of
+ * their own documents is never a stripped-down copy of what HR sees.
  *
  * The required slots come from the employee's work location; everything else is
  * offered as optional, so a passport can still be filed for someone whose
  * location hasn't been set.
+ *
+ * `OtherDocumentsPanel` covers free-form documents beyond the fixed slots —
+ * admin-only today, with no self-service route behind it, so it is left out
+ * entirely here rather than shown broken.
  */
 export function EmployeeDocumentsPanel({ employeeId, canEdit }: Props) {
   const { data, isLoading } = useDocuments(employeeId);
@@ -62,9 +69,11 @@ export function EmployeeDocumentsPanel({ employeeId, canEdit }: Props) {
 
       <DocumentSlots slots={slots} documents={documents} employeeId={employeeId} readOnly={!canEdit} />
 
-      <div className="mt-6 border-t border-border pt-5">
-        <OtherDocumentsPanel employeeId={employeeId} canEdit={canEdit} bare />
-      </div>
+      {employeeId && (
+        <div className="mt-6 border-t border-border pt-5">
+          <OtherDocumentsPanel employeeId={employeeId} canEdit={canEdit} bare />
+        </div>
+      )}
     </Card>
   );
 }

@@ -4,6 +4,8 @@ import { useMyEmployeeProfile } from "@/hooks/useEmployees";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
+import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
+import { MyAgreementsCard } from "@/components/documents/MyAgreementsCard";
 import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -75,6 +77,16 @@ export default function MyProfilePage() {
       )}
 
       <EmployeeProfileSections employee={e} canEdit selfService />
+
+      {/* No employeeId — the self-service half of the same panel HR sees on
+          the admin employee page, so uploading a passport or a certificate
+          works the same way it always has, just reachable from here too. */}
+      <div className="mt-6">
+        <EmployeeDocumentsPanel canEdit />
+      </div>
+      <div className="mt-6">
+        <MyAgreementsCard />
+      </div>
     </div>
   );
 }
