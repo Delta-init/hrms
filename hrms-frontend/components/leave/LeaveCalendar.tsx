@@ -3,6 +3,9 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { cn } from "@/lib/utils";
 import { LEAVE_TYPE_LABELS, type LeaveRequest, type Holiday, WEEKDAYS, leaveTypeLabel } from "@/types";
 
@@ -23,6 +26,7 @@ interface Props {
 export function LeaveCalendar({ leaves, holidays }: Props) {
   const now = new Date();
   const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() });
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const grid = useMemo(() => {
     const first = new Date(cursor.y, cursor.m, 1);
@@ -38,7 +42,7 @@ export function LeaveCalendar({ leaves, holidays }: Props) {
   // Map each day → entries. A leave spans its date range.
   const entriesFor = (date: Date) => {
     const key = ymd(date);
-    const items: { label: string; kind: "approved" | "pending" | "rejected" | "holiday" }[] = [];
+    const items: { label: string; kind: "approved" | "pending" | "rejected" | "holiday"; detail?: string }[] = [];
     for (const h of holidays) {
       if (dayKey(h.date) === key) items.push({ label: h.name, kind: "holiday" });
     }
@@ -47,9 +51,17 @@ export function LeaveCalendar({ leaves, holidays }: Props) {
       const e = dayKey(l.endDate);
       if (key >= s && key <= e && l.status !== "cancelled") {
         const who = l.user && typeof l.user === "object" ? l.user.name.split(" ")[0] : "";
+        // A day in the middle of a longer request reads the same in the cell
+        // as a single day off would — the range only earns its place in the
+        // detail view, where there is room to say it.
+        const spansMultiple = s !== e;
+        const range = spansMultiple
+          ? `${new Date(l.startDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} – ${new Date(l.endDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}`
+          : null;
         items.push({
           label: `${who} · ${leaveTypeLabel(l.type)}`,
           kind: l.status === "approved" ? "approved" : l.status === "rejected" ? "rejected" : "pending",
+          detail: [range, l.halfDay ? "half day" : null, l.reason].filter(Boolean).join(" · ") || undefined,
         });
       }
     }
@@ -84,28 +96,59 @@ export function LeaveCalendar({ leaves, holidays }: Props) {
         {WEEKDAYS.map((d) => (
           <div key={d} className="bg-muted/50 py-2 text-center text-xs font-semibold text-muted-foreground">{d}</div>
         ))}
-        {grid.map((date, i) => (
-          <div key={i} className={cn("min-h-[92px] bg-background p-1.5", !date && "bg-muted/20")}>
-            {date && (
-              <>
-                <div className={cn("mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(date) ? "bg-primary font-bold text-primary-foreground" : "text-muted-foreground")}>
-                  {date.getDate()}
-                </div>
-                <div className="space-y-1">
-                  {entriesFor(date).slice(0, 3).map((it, j) => (
-                    <motion.div key={j} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn("truncate rounded px-1.5 py-0.5 text-[10px] font-medium", kindStyle[it.kind])} title={it.label}>
-                      {it.label}
-                    </motion.div>
-                  ))}
-                  {entriesFor(date).length > 3 && (
-                    <div className="px-1.5 text-[10px] text-muted-foreground">+{entriesFor(date).length - 3} more</div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
+        {grid.map((date, i) => {
+          const entries = date ? entriesFor(date) : [];
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!date || !entries.length}
+              onClick={() => date && setSelectedDay(date)}
+              className={cn(
+                "min-h-[92px] bg-background p-1.5 text-left transition",
+                !date && "bg-muted/20",
+                date && entries.length > 0 && "cursor-pointer hover:bg-muted/40"
+              )}
+            >
+              {date && (
+                <>
+                  <div className={cn("mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs", isToday(date) ? "bg-primary font-bold text-primary-foreground" : "text-muted-foreground")}>
+                    {date.getDate()}
+                  </div>
+                  <div className="space-y-1">
+                    {entries.slice(0, 3).map((it, j) => (
+                      <motion.div key={j} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn("truncate rounded px-1.5 py-0.5 text-[10px] font-medium", kindStyle[it.kind])} title={it.label}>
+                        {it.label}
+                      </motion.div>
+                    ))}
+                    {entries.length > 3 && (
+                      <div className="px-1.5 text-[10px] text-muted-foreground">+{entries.length - 3} more</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </button>
+          );
+        })}
       </div>
+
+      <ResponsiveDialog open={!!selectedDay} onOpenChange={(v) => !v && setSelectedDay(null)}>
+        <ResponsiveDialogContent desktopClassName="max-w-sm">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>
+              {selectedDay?.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          <div className="max-h-[min(24rem,55vh)] space-y-2 overflow-y-auto px-4 pb-4 sm:px-0">
+            {(selectedDay ? entriesFor(selectedDay) : []).map((it, j) => (
+              <div key={j} className={cn("rounded-lg px-3 py-2 text-sm", kindStyle[it.kind])}>
+                <p className="font-medium">{it.label}</p>
+                {it.detail && <p className="mt-0.5 text-xs opacity-80">{it.detail}</p>}
+              </div>
+            ))}
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
         {[["approved", "Approved"], ["pending", "Pending"], ["holiday", "Holiday"]].map(([k, l]) => (
