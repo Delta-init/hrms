@@ -22,11 +22,15 @@ import { WEEKDAYS, MISSED_REGULARIZATION_LABELS, type MissedRegularizationDay, t
 const KEY = "hrms.regularization-prompt-dismissed";
 const curMonth = () => new Date().toISOString().slice(0, 7);
 
-const DOT: Record<MissedRegularizationKind, string> = {
-  not_marked: "bg-red-500",
-  half_day: "bg-orange-400",
-  late: "bg-amber-500",
-  early_out: "bg-rose-500",
+/** Matches the letter-coded, solid-cell convention the full attendance
+ *  calendar already uses, so a flagged day reads the same in both places.
+ *  A soft tint was tried first and washed the four colors toward the same
+ *  pale cream — solid is what actually keeps them apart at a glance. */
+const CELL: Record<MissedRegularizationKind, { cell: string; code: string }> = {
+  not_marked: { cell: "bg-red-500 text-white", code: "NM" },
+  half_day: { cell: "bg-orange-400 text-white", code: "½" },
+  late: { cell: "bg-amber-500 text-white", code: "L" },
+  early_out: { cell: "bg-rose-500 text-white", code: "EO" },
 };
 
 function lastDismissed(): string | null {
@@ -104,15 +108,24 @@ export function RegularizationPromptDialog() {
                   onClick={() => setSelected(flagged ?? null)}
                   className={cn(
                     "relative flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition",
-                    flagged ? "bg-muted hover:ring-2 hover:ring-primary/40 cursor-pointer" : "text-muted-foreground/50",
+                    flagged ? `${CELL[flagged.kind].cell} hover:ring-2 hover:ring-primary/40 cursor-pointer` : "text-muted-foreground/50",
                     selected?.date === key && "ring-2 ring-primary"
                   )}
                 >
                   <span>{d}</span>
-                  {flagged && <span className={cn("mt-0.5 h-1.5 w-1.5 rounded-full", DOT[flagged.kind])} />}
+                  {flagged && <span className="text-[9px] font-bold opacity-90">{CELL[flagged.kind].code}</span>}
                 </button>
               );
             })}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            {(Object.keys(CELL) as MissedRegularizationKind[]).map((k) => (
+              <span key={k} className="flex items-center gap-1">
+                <span className={cn("flex h-3.5 w-3.5 items-center justify-center rounded text-[8px] font-bold", CELL[k].cell)}>{CELL[k].code}</span>
+                {MISSED_REGULARIZATION_LABELS[k]}
+              </span>
+            ))}
           </div>
 
           {selected && (
