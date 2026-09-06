@@ -11,7 +11,7 @@ import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { IPunchSource, ITrustedDevice, RemoteDevicePolicy, DeviceAnomaly, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
-import { resolveShift, statusForClockIn, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
+import { resolveShift, statusForClockIn, durationStatus, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination, searchRegex } from "../utils/query.js";
@@ -507,7 +507,10 @@ export class AttendanceService {
   private async scheduleFor(userId: string): Promise<ShiftSchedule> {
     const ws = await resolveWorkScheduleForUser(userId, new Date());
     if (ws && ws.timeZone) {
-      return { timeZone: ws.timeZone, loginTime: ws.loginTime, logoutTime: ws.logoutTime, graceMinutes: ws.graceMinutes ?? 15 };
+      return {
+        timeZone: ws.timeZone, loginTime: ws.loginTime, logoutTime: ws.logoutTime, graceMinutes: ws.graceMinutes ?? 15,
+        mode: ws.mode ?? "fixed", requiredHours: ws.requiredHours ?? 8,
+      };
     }
     return DEFAULT_SCHEDULE;
   }
@@ -817,7 +820,9 @@ export class AttendanceService {
       throw Object.assign(new Error("You have already clocked in today"), { statusCode: 409 });
     }
 
-    const status = statusForClockIn(now, shift);
+    // Duration-based staff have no shift start to be late against — the day
+    // is judged by total hours worked, decided once it closes at clockOut.
+    const status = schedule.mode === "duration" ? "present" : statusForClockIn(now, shift);
     // On-time within grace = not late; only count minutes when actually late.
     const lateMinutes = status === "present" ? 0 : Math.max(0, Math.round((now.getTime() - shift.shiftStart.getTime()) / 60000));
 
@@ -883,6 +888,17 @@ export class AttendanceService {
     } else {
       att.sessions = [{ checkIn: att.checkIn!, checkOut: now, checkOutSource: source ?? null }] as never;
     }
+
+    // Duration-based staff have nothing decided yet at this point — clockIn
+    // always left them "present" — so this is where the day is actually
+    // judged, against the total now that it's closed rather than an arrival
+    // time that was never the point for them.
+    const schedule = await this.scheduleFor(userId);
+    if (schedule.mode === "duration") {
+      const workedMinutes = att.computeWorkedMinutes();
+      att.status = durationStatus(workedMinutes, schedule.requiredHours ?? 8, schedule.graceMinutes ?? 15);
+    }
+
     await att.save();
     return Attendance.findById(att._id).populate("user", "name email designation");
   }

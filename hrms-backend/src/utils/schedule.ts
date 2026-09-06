@@ -17,6 +17,16 @@ export interface ShiftSchedule {
   loginTime: string; // "HH:mm"
   logoutTime: string; // "HH:mm"
   graceMinutes: number;
+  /**
+   * Fixed: a shift judged by arrival time against `loginTime`. Duration:
+   * `loginTime`/`logoutTime` become the window staff may punch within, and
+   * the day is judged by total hours worked instead. Optional and defaulted
+   * to "fixed" everywhere it's read, so every caller written before duration
+   * mode existed keeps behaving exactly as it always did.
+   */
+  mode?: "fixed" | "duration";
+  /** Duration mode only — hours required within the window for a full day. */
+  requiredHours?: number;
 }
 
 export const DEFAULT_SCHEDULE: ShiftSchedule = {
@@ -24,6 +34,7 @@ export const DEFAULT_SCHEDULE: ShiftSchedule = {
   loginTime: "09:00",
   logoutTime: "18:00",
   graceMinutes: 15,
+  mode: "fixed",
 };
 
 /** The wall-clock date (YYYY-MM-DD) "now" in the given time zone. */
@@ -94,4 +105,26 @@ export function statusForClockIn(now: Date, shift: ResolvedShift): "present" | "
   if (now.getTime() <= shift.lateThreshold.getTime()) return "present";
   if (now.getTime() <= shift.halfDayThreshold.getTime()) return "late";
   return "half_day";
+}
+
+/**
+ * Status for a duration-based day, once it's closed and the total is known.
+ *
+ * There is no arrival time to judge, so nothing is decided at clock-in — this
+ * runs at clock-out instead, against the day's total worked minutes. The same
+ * three-way ceiling a fixed shift has (present/late/half_day tops out at
+ * half_day for a bad-enough arrival) has an equivalent here: met the hours is
+ * present, some real progress is half_day, and negligible progress is treated
+ * the same as not having shown up — which is also how payroll already treats
+ * a day with no punch at all, so this needs no new rule downstream of it.
+ */
+export function durationStatus(
+  workedMinutes: number,
+  requiredHours: number,
+  graceMinutes: number
+): "present" | "half_day" | "absent" {
+  const requiredMinutes = requiredHours * 60;
+  if (workedMinutes >= requiredMinutes - graceMinutes) return "present";
+  if (workedMinutes >= requiredMinutes / 2) return "half_day";
+  return "absent";
 }

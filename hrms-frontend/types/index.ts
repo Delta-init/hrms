@@ -167,6 +167,10 @@ export interface WorkSchedule {
   workDays: number[];
   halfDays: number[];
   graceMinutes: number;
+  /** Fixed: judged by arrival time. Duration: loginTime/logoutTime become a punch window, judged by total hours worked. */
+  mode: "fixed" | "duration";
+  /** Duration mode only — hours required within the window for a full day. */
+  requiredHours: number;
   status: "active" | "inactive";
   createdAt: string;
   updatedAt: string;
@@ -849,7 +853,13 @@ export interface PunchClientContext {
 
 export interface AttendanceToday {
   attendance: Attendance | null;
-  schedule: { timeZone: string; loginTime: string; logoutTime: string; graceMinutes: number };
+  schedule: {
+    timeZone: string; loginTime: string; logoutTime: string; graceMinutes: number;
+    /** Fixed: judged by arrival time. Duration: loginTime/logoutTime become a punch window, judged by total hours worked. */
+    mode?: "fixed" | "duration";
+    /** Duration mode only. */
+    requiredHours?: number;
+  };
   shift: ShiftInfo;
   punchPolicy: {
     /** null when no employee record stands behind the login, so no policy applies. */

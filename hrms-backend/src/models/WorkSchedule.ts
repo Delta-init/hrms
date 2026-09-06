@@ -63,6 +63,24 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
       default: 10,
       min: 0,
     },
+    /**
+     * Fixed: a shift judged by arrival time against `loginTime`. Duration:
+     * `loginTime`/`logoutTime` become the window staff may punch within, and
+     * the day is judged by total hours worked instead — there is no "late"
+     * without a fixed start to be late against.
+     */
+    mode: {
+      type: String,
+      enum: ["fixed", "duration"],
+      default: "fixed",
+    },
+    /** Duration mode only. Hours required within the window for a full day. */
+    requiredHours: {
+      type: Number,
+      default: 8,
+      min: 0,
+      max: 24,
+    },
     status: {
       type: String,
       enum: ["active", "inactive"],

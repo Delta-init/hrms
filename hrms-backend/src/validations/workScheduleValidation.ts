@@ -12,6 +12,8 @@ export const createWorkScheduleSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5, 6]),
   halfDays: z.array(z.number().int().min(0).max(6)).default([]),
   graceMinutes: z.number().min(0).max(240).default(10),
+  mode: z.enum(["fixed", "duration"]).default("fixed"),
+  requiredHours: z.number().min(0).max(24).default(8),
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
@@ -24,6 +26,8 @@ export const updateWorkScheduleSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).optional(),
   halfDays: z.array(z.number().int().min(0).max(6)).optional(),
   graceMinutes: z.number().min(0).max(240).optional(),
+  mode: z.enum(["fixed", "duration"]).optional(),
+  requiredHours: z.number().min(0).max(24).optional(),
   status: z.enum(["active", "inactive"]).optional(),
 });
 

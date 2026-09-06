@@ -862,8 +862,19 @@ export interface IWorkSchedule extends Document {
   workDays: number[];
   /** Subset of workDays that are half-days (0 = Sunday … 6 = Saturday). */
   halfDays: number[];
-  /** Late tolerance (minutes) before an arrival is counted as late. */
+  /**
+   * Late tolerance (minutes). Fixed: before an arrival is counted as late.
+   * Duration: how far short of `requiredHours` still counts as a full day.
+   */
   graceMinutes: number;
+  /**
+   * Fixed: judged against `loginTime`, arriving late costs the day. Duration:
+   * `loginTime`/`logoutTime` become the window they may punch within, and the
+   * day is judged by total hours worked rather than when they showed up.
+   */
+  mode: "fixed" | "duration";
+  /** Duration mode only — hours required within the window to count as a full day. */
+  requiredHours: number;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;

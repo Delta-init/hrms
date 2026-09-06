@@ -34,12 +34,15 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
     defaultValues: {
       name: "", description: "", timeZone: "Asia/Dubai",
       loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10,
+      mode: "fixed", requiredHours: 8,
       status: "active",
     },
   });
 
   const workDays = watch("workDays");
   const halfDays = watch("halfDays");
+  const mode = watch("mode");
+  const isDuration = mode === "duration";
 
   // Cycle a weekday: Off → Full → Half → Off.
   const cycleDay = (idx: number) => {
@@ -67,10 +70,12 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
         workDays: schedule.workDays,
         halfDays: schedule.halfDays ?? [],
         graceMinutes: schedule.graceMinutes,
+        mode: schedule.mode ?? "fixed",
+        requiredHours: schedule.requiredHours ?? 8,
         status: schedule.status,
       });
     } else {
-      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, status: "active" });
+      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, mode: "fixed", requiredHours: 8, status: "active" });
     }
   }, [open, schedule, reset]);
 
@@ -126,16 +131,46 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
             />
           </div>
 
+          <div className="col-span-2 space-y-1.5">
+            <Label>How this schedule works</Label>
+            <Controller
+              name="mode"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixed">Fixed shift</SelectItem>
+                    <SelectItem value="duration">Duration-based</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {isDuration
+                ? "Staff may punch in and out any time within the window below, and the day is judged by total hours worked rather than arrival time — there's no such thing as \"late\" here."
+                : "Staff are expected at the login time below; arriving late costs the day, same as it always has."}
+            </p>
+          </div>
+
           <div className="space-y-1.5">
-            <Label htmlFor="loginTime">Login Time *</Label>
+            <Label htmlFor="loginTime">{isDuration ? "Window opens *" : "Login Time *"}</Label>
             <Input id="loginTime" type="time" {...register("loginTime")} />
             {errors.loginTime && <p className="text-xs text-destructive">{errors.loginTime.message}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="logoutTime">Logout Time *</Label>
+            <Label htmlFor="logoutTime">{isDuration ? "Window closes *" : "Logout Time *"}</Label>
             <Input id="logoutTime" type="time" {...register("logoutTime")} />
             {errors.logoutTime && <p className="text-xs text-destructive">{errors.logoutTime.message}</p>}
           </div>
+
+          {isDuration && (
+            <div className="space-y-1.5">
+              <Label htmlFor="requiredHours">Hours required for a full day *</Label>
+              <Input id="requiredHours" type="number" min={0} max={24} step={0.5} {...register("requiredHours")} />
+              {errors.requiredHours && <p className="text-xs text-destructive">{errors.requiredHours.message}</p>}
+            </div>
+          )}
 
           {/* Work days — tap to cycle Off → Full → Half */}
           <div className="col-span-2 space-y-1.5">
@@ -169,7 +204,7 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="graceMinutes">Grace (minutes)</Label>
+            <Label htmlFor="graceMinutes">{isDuration ? "Shortfall allowed (minutes)" : "Grace (minutes)"}</Label>
             <Input id="graceMinutes" type="number" min={0} {...register("graceMinutes")} />
           </div>
           <div className="space-y-1.5">

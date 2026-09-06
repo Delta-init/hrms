@@ -45,13 +45,14 @@ const ORDER: Kind[] = ["not_marked", "half_day", "late", "early_out"];
 
 const attendance = new AttendanceService();
 
-function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number } | null): ShiftSchedule {
+function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number; mode?: "fixed" | "duration" } | null): ShiftSchedule {
   if (!ws?.timeZone) return DEFAULT_SCHEDULE;
   return {
     timeZone: ws.timeZone,
     loginTime: ws.loginTime ?? DEFAULT_SCHEDULE.loginTime,
     logoutTime: ws.logoutTime ?? DEFAULT_SCHEDULE.logoutTime,
     graceMinutes: ws.graceMinutes ?? 15,
+    mode: ws.mode ?? "fixed",
   };
 }
 
@@ -65,8 +66,8 @@ export async function flaggedDaysThisMonth(userId: string, orgId: unknown, now =
 
   const user = await User.findById(userId)
     .select("workSchedule")
-    .populate("workSchedule", "timeZone loginTime logoutTime graceMinutes")
-    .lean<{ workSchedule?: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number } | null } | null>();
+    .populate("workSchedule", "timeZone loginTime logoutTime graceMinutes mode")
+    .lean<{ workSchedule?: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number; mode?: "fixed" | "duration" } | null } | null>();
   const schedule = shiftFor(user?.workSchedule ?? null);
 
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -91,7 +92,12 @@ export async function flaggedDaysThisMonth(userId: string, orgId: unknown, now =
     if (day.status === "half_day") out.push({ date, kind: "half_day", checkIn, checkOut });
     else if (day.status === "late") out.push({ date, kind: "late", checkIn, checkOut });
 
-    if (day.checkOut) {
+    // Duration-based staff have no shift end to leave "early" against — a
+    // short day already surfaced above as half_day/not_marked from the
+    // total they actually worked, so flagging the clock time too would be
+    // both redundant and, for someone who compressed their hours into a
+    // shorter window, simply wrong.
+    if (day.checkOut && schedule.mode !== "duration") {
       // Noon on that calendar date resolves to that date's own shift end,
       // whichever timezone the schedule is in — the org only spans Dubai and
       // Kolkata, both comfortably inside noon UTC's twelve hours of slack.

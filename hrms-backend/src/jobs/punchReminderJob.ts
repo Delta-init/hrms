@@ -55,13 +55,14 @@ interface Candidate {
 }
 
 /** The shift a person is on, or the fallback where nobody has said. */
-function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number } | null): ShiftSchedule {
+function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: string; graceMinutes?: number; mode?: "fixed" | "duration" } | null): ShiftSchedule {
   if (!ws?.timeZone) return DEFAULT_SCHEDULE;
   return {
     timeZone: ws.timeZone,
     loginTime: ws.loginTime ?? DEFAULT_SCHEDULE.loginTime,
     logoutTime: ws.logoutTime ?? DEFAULT_SCHEDULE.logoutTime,
     graceMinutes: ws.graceMinutes ?? 15,
+    mode: ws.mode ?? "fixed",
   };
 }
 
@@ -76,7 +77,7 @@ async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
     .select("email workSchedule")
     .lean();
   const schedules = await WorkSchedule.find({ organization: orgId })
-    .select("timeZone loginTime logoutTime graceMinutes")
+    .select("timeZone loginTime logoutTime graceMinutes mode")
     .lean();
   const byId = new Map(schedules.map((w) => [String(w._id), w]));
   const byUser = new Map(users.map((u) => [String(u._id), u]));
@@ -141,7 +142,10 @@ export async function runPunchReminders(now = new Date()) {
 
       const sinceOpen = (now.getTime() - shift.shiftStart.getTime()) / 60_000;
       const sinceClose = (now.getTime() - shift.shiftEnd.getTime()) / 60_000;
-      const wantIn = sinceOpen >= LATE_IN_AFTER_MIN && sinceOpen <= WINDOW_MIN;
+      // Duration-based staff may start anywhere in the window, so there is no
+      // "should have started by now" — only the window's own close still
+      // means anything to them, the same as it does for a fixed shift.
+      const wantIn = p.schedule.mode !== "duration" && sinceOpen >= LATE_IN_AFTER_MIN && sinceOpen <= WINDOW_MIN;
       const wantOut = sinceClose >= LATE_OUT_AFTER_MIN && sinceClose <= WINDOW_MIN;
       if (!wantIn && !wantOut) continue;
 

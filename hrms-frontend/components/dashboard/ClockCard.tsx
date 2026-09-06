@@ -118,6 +118,15 @@ function fmtDuration(ms: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+/** half_day and absent both read as "short of the day" — absent is new here:
+ *  a duration-based day can close short without ever having missed a punch. */
+function toneForStatus(status?: string): Tone {
+  if (status === "half_day" || status === "absent") return "red";
+  if (status === "late") return "amber";
+  return "green";
+}
+const STATUS_LABEL: Record<string, string> = { half_day: "Half Day", late: "Late", present: "Present", absent: "Absent" };
+
 export function ClockCard() {
   const { data, isLoading } = useTodayAttendance();
   const { mutate: clockIn, isPending: clockingIn } = useClockIn();
@@ -206,6 +215,11 @@ export function ClockCard() {
 
   const { attendance, schedule, shift, punchPolicy } = data;
   const tz = schedule.timeZone;
+  // Duration-based staff have no shift to arrive late against — the window
+  // below still bounds when they may punch, but nothing is judged until the
+  // day closes and the total is known.
+  const isDuration = schedule.mode === "duration";
+  const requiredHours = schedule.requiredHours ?? 8;
 
   // Only remote staff are asked for a location: they are the ones no kiosk
   // sees, and whose punch is the sole account of where the day started.
@@ -265,8 +279,15 @@ export function ClockCard() {
   // before it was switched on, which the server still allows.
   const kioskOnly = !punchPolicy.canSelfPunch;
 
+  // While actively clocked in, worked-so-far — completed sessions plus the
+  // one still open — is what a duration-based day is judged against; a fixed
+  // shift never reads this.
+  const workedSoFarMs = attendance?.checkIn
+    ? attendance.workedMinutes * 60_000 + (t - new Date(attendance.checkIn).getTime())
+    : 0;
+
   if (attendance?.checkOut) {
-    tone = attendance.status === "half_day" ? "red" : attendance.status === "late" ? "amber" : "green";
+    tone = toneForStatus(attendance.status);
     title = "Shift complete";
     sub = `Worked ${Math.floor(attendance.workedMinutes / 60)}h ${attendance.workedMinutes % 60}m`;
     actionLabel = "Done"; ActionIcon = CheckCircle2;
@@ -276,18 +297,21 @@ export function ClockCard() {
     sub = `Clocked in ${fmtTime(attendance.checkIn, tz)} · elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
     actionLabel = "Kiosk only"; ActionIcon = MonitorSmartphone;
   } else if (attendance?.checkIn) {
-    tone = attendance.status === "half_day" ? "red" : attendance.status === "late" ? "amber" : "green";
+    tone = toneForStatus(attendance.status);
     title = "Clocked in";
     const heldFor = MIN_SHIFT_MS - (t - new Date(attendance.checkIn).getTime());
+    const elapsed = isDuration
+      ? `Worked ${fmtDuration(workedSoFarMs)} of ${requiredHours}h required`
+      : `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
     if (heldFor > 0) {
       // Counted down rather than merely greyed out: a disabled button with no
       // explanation reads as broken, and somebody who has just clocked in is
       // exactly the person who will press it again.
-      sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())} · you can clock out in ${fmtDuration(heldFor)}`;
+      sub = `${elapsed} · you can clock out in ${fmtDuration(heldFor)}`;
       actionLabel = `Clock Out in ${fmtDuration(heldFor)}`;
       ActionIcon = Lock;
     } else {
-      sub = `Elapsed ${fmtDuration(t - new Date(attendance.checkIn).getTime())}`;
+      sub = elapsed;
       action = () => punch("out"); actionLabel = "Clock Out"; ActionIcon = Power; pulse = true;
     }
   } else if (kioskOnly) {
@@ -300,6 +324,14 @@ export function ClockCard() {
     title = "Not open yet";
     sub = `Opens at ${fmtTime(shift.windowOpen, tz)}`;
     actionLabel = "Locked"; ActionIcon = Lock;
+  } else if (isDuration) {
+    // Ready to clock in — no arrival-time judgment: any punch within the
+    // window is as good as any other, so there is nothing to praise or warn
+    // about yet, only the window itself and what it asks for.
+    tone = "primary";
+    sub = `Complete ${requiredHours}h before the window closes at ${fmtTime(shift.shiftEnd, tz)}`;
+    title = "Ready to clock in";
+    action = () => punch("in"); actionLabel = "Clock In"; ActionIcon = Fingerprint; pulse = true;
   } else {
     // ready to clock in
     if (t <= lateAt) { tone = "green"; sub = "You're on time"; }
@@ -310,12 +342,16 @@ export function ClockCard() {
   }
 
   const c = TONES[tone];
-  const statusLabel = attendance ? (attendance.status === "half_day" ? "Half Day" : attendance.status === "late" ? "Late" : attendance.status === "present" ? "Present" : attendance.status) : "Not clocked in";
+  const statusLabel = attendance ? (STATUS_LABEL[attendance.status] ?? attendance.status) : "Not clocked in";
 
-  // Radial progress = fraction of the shift elapsed.
+  // Radial progress: fraction of the shift elapsed for a fixed shift, or
+  // fraction of the required hours completed for a duration-based one — the
+  // same ring, answering the question that actually matters for the mode.
   const shiftStartMs = new Date(shift.shiftStart).getTime();
   const shiftEndMs = new Date(shift.shiftEnd).getTime();
-  const progress = Math.max(0, Math.min(1, (t - shiftStartMs) / (shiftEndMs - shiftStartMs || 1)));
+  const progress = isDuration
+    ? Math.max(0, Math.min(1, workedSoFarMs / (requiredHours * 60 * 60_000 || 1)))
+    : Math.max(0, Math.min(1, (t - shiftStartMs) / (shiftEndMs - shiftStartMs || 1)));
   const R = 45, CIRC = 2 * Math.PI * R;
 
   return (
@@ -323,7 +359,9 @@ export function ClockCard() {
       <div className="flex items-start justify-between">
         <div>
           <h3 className="text-lg font-semibold">Daily Attendance</h3>
-          <p className="text-sm text-muted-foreground">{schedule.loginTime}–{schedule.logoutTime} · {tz}</p>
+          <p className="text-sm text-muted-foreground">
+            {isDuration ? `Complete ${requiredHours}h within ${schedule.loginTime}–${schedule.logoutTime} · ${tz}` : `${schedule.loginTime}–${schedule.logoutTime} · ${tz}`}
+          </p>
         </div>
         <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize", c.badge)}>{statusLabel}</span>
       </div>

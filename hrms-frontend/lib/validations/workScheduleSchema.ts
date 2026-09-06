@@ -11,6 +11,8 @@ export const workScheduleFormSchema = z.object({
   workDays: z.array(z.number().int().min(0).max(6)).min(1, "Pick at least one work day"),
   halfDays: z.array(z.number().int().min(0).max(6)).default([]),
   graceMinutes: z.coerce.number().min(0).max(240),
+  mode: z.enum(["fixed", "duration"]),
+  requiredHours: z.coerce.number().min(0).max(24),
   status: z.enum(["active", "inactive"]),
 });
 
