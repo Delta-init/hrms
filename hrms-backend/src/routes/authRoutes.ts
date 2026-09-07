@@ -15,6 +15,7 @@ import {
   uploadDocument,
   deleteDocument,
 } from "../controllers/documentController.js";
+import { getMyOnboardingForm } from "../controllers/onboardingFormController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadSingle } from "../middleware/upload.js";
 import { authLimiter, tokenLimiter } from "../middleware/rateLimit.js";
@@ -39,5 +40,8 @@ router.post("/complete-profile", authenticate, completeProfile);
 router.get("/documents", authenticate, listDocuments);
 router.post("/documents", authenticate, uploadSingle, uploadDocument);
 router.delete("/documents/:type", authenticate, deleteDocument);
+// Self-service: the filled joining form, generated from whatever the
+// employee record already holds. Nothing to upload — this only reads.
+router.get("/onboarding-form", authenticate, getMyOnboardingForm);
 
 export default router;

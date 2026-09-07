@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
 import { MyAgreementsCard } from "@/components/documents/MyAgreementsCard";
+import { OnboardingFormCard } from "@/components/documents/OnboardingFormCard";
 import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -86,6 +87,9 @@ export default function MyProfilePage() {
       </div>
       <div className="mt-6">
         <MyAgreementsCard />
+      </div>
+      <div className="mt-6">
+        <OnboardingFormCard />
       </div>
     </div>
   );

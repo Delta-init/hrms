@@ -8,6 +8,7 @@ import {
   listDocumentsForEmployee, uploadDocumentForEmployee, deleteDocumentForEmployee,
   listOtherDocs, addOtherDoc, updateOtherDoc, deleteOtherDoc,
 } from "../controllers/documentController.js";
+import { getEmployeeOnboardingForm } from "../controllers/onboardingFormController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 import { uploadSingle } from "../middleware/upload.js";
@@ -46,5 +47,9 @@ router.get("/:id/other-documents", checkPermission("employees", "view"), listOth
 router.post("/:id/other-documents", checkPermission("employees", "edit"), uploadSingle, addOtherDoc);
 router.put("/:id/other-documents/:recordId", checkPermission("employees", "edit"), uploadSingle, updateOtherDoc);
 router.delete("/:id/other-documents/:recordId", checkPermission("employees", "edit"), deleteOtherDoc);
+
+// The joining form, filled from this employee's own record — same reasoning
+// as documents above, riding on the view permission.
+router.get("/:id/onboarding-form", checkPermission("employees", "view"), getEmployeeOnboardingForm);
 
 export default router;

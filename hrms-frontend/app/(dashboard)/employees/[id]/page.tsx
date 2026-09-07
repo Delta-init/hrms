@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { EmployeeProfileSections } from "@/components/employees/EmployeeProfileSections";
 import { EmployeeAdminControls } from "@/components/employees/EmployeeAdminControls";
 import { EmployeeDocumentsPanel } from "@/components/documents/EmployeeDocumentsPanel";
+import { OnboardingFormCard } from "@/components/documents/OnboardingFormCard";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
 import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import { TITLE_LABELS, type Employee } from "@/types";
@@ -99,6 +100,9 @@ function EmployeeDetail() {
 
       <div className="mt-6">
         <EmployeeDocumentsPanel employeeId={e._id} canEdit={canEdit} />
+      </div>
+      <div className="mt-6">
+        <OnboardingFormCard employeeId={e._id} />
       </div>
     </div>
   );
