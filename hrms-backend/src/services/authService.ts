@@ -235,12 +235,16 @@ export class AuthService {
       }
     }
 
-    const { education, emergencyContact, ...rest } = input;
-    if (rest.personalEmail === "") rest.personalEmail = undefined;
-    Object.assign(employee, rest, {
-      education: [education],
-      emergencyContacts: [emergencyContact],
-    });
+    const rest = { ...input };
+    // An empty optional field arrives as "" (the form has nowhere else to put
+    // "not answered"), which would otherwise sit in the record as a blank
+    // string forever rather than genuinely absent.
+    for (const key of [
+      "personalEmail", "alternatePhone", "placeOfBirth", "fatherOrSpouseName", "religion", "aadhaarNumber", "panNumber",
+    ] as const) {
+      if (rest[key] === "") rest[key] = undefined;
+    }
+    Object.assign(employee, rest);
     await employee.save();
 
     const user = await User.findByIdAndUpdate(

@@ -584,12 +584,24 @@ export interface IEducation {
   from?: string;
   to?: string;
   institute?: string;
+  fieldOfStudy?: string;
+  grade?: string;
+}
+/** One row of employment before this one. */
+export interface IPreviousExperience {
+  organisation?: string;
+  designation?: string;
+  from?: string;
+  to?: string;
+  lastCTC?: string;
+  reasonForLeaving?: string;
 }
 export interface IAddress {
   address?: string;
   city?: string;
   state?: string;
   country?: string;
+  pin?: string;
 }
 export interface IEmergencyContact {
   name?: string;
@@ -606,6 +618,8 @@ export interface IBankDetails {
   ibanIfsc?: string;
   bankName?: string;
   nameInBank?: string;
+  branchName?: string;
+  accountType?: "savings" | "current" | null;
 }
 export interface IFamilyMember {
   name?: string;
@@ -670,10 +684,19 @@ export interface IEmployee extends Document {
   gender?: Gender;
   personalEmail?: string;
   mobileNumber?: string;
+  /** A second number, next to `mobileNumber`. */
+  alternatePhone?: string;
   dob?: Date | null;
+  placeOfBirth?: string;
   bloodGroup?: string;
   nationality?: string;
   maritalStatus?: MaritalStatus;
+  /** Named for whichever applies. */
+  fatherOrSpouseName?: string;
+  religion?: string;
+  /** The number itself, distinct from the `aadhaar` document upload. */
+  aadhaarNumber?: string;
+  panNumber?: string;
 
   // ── Employment ──
   oldCompanyExperience?: string;
@@ -686,6 +709,8 @@ export interface IEmployee extends Document {
   // ── Bank / education / addresses / emergency ──
   bank?: IBankDetails;
   education?: IEducation[];
+  /** Structured rows, alongside the older free-text `oldCompanyExperience`. */
+  previousExperience?: IPreviousExperience[];
   currentAddress?: IAddress;
   permanentAddress?: IAddress;
   emergencyContacts?: IEmergencyContact[];

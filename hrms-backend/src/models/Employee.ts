@@ -8,6 +8,21 @@ const educationSchema = new Schema(
     from: { type: String, trim: true, maxlength: 20 },
     to: { type: String, trim: true, maxlength: 20 },
     institute: { type: String, trim: true, maxlength: 160 },
+    fieldOfStudy: { type: String, trim: true, maxlength: 120 },
+    grade: { type: String, trim: true, maxlength: 20 },
+  },
+  { _id: false }
+);
+
+/** One row of a person's employment before this one. */
+const previousExperienceSchema = new Schema(
+  {
+    organisation: { type: String, trim: true, maxlength: 160 },
+    designation: { type: String, trim: true, maxlength: 120 },
+    from: { type: String, trim: true, maxlength: 20 },
+    to: { type: String, trim: true, maxlength: 20 },
+    lastCTC: { type: String, trim: true, maxlength: 40 },
+    reasonForLeaving: { type: String, trim: true, maxlength: 300 },
   },
   { _id: false }
 );
@@ -18,6 +33,7 @@ const addressSchema = new Schema(
     city: { type: String, trim: true, maxlength: 80 },
     state: { type: String, trim: true, maxlength: 80 },
     country: { type: String, trim: true, maxlength: 80 },
+    pin: { type: String, trim: true, maxlength: 20 },
   },
   { _id: false }
 );
@@ -42,6 +58,8 @@ const bankSchema = new Schema(
     ibanIfsc: { type: String, trim: true, maxlength: 40 },
     bankName: { type: String, trim: true, maxlength: 120 },
     nameInBank: { type: String, trim: true, maxlength: 120 },
+    branchName: { type: String, trim: true, maxlength: 160 },
+    accountType: { type: String, enum: ["savings", "current", null], default: null },
   },
   { _id: false }
 );
@@ -241,10 +259,19 @@ const employeeSchema = new Schema<IEmployee>(
     gender: { type: String, enum: ["male", "female", "other"], default: undefined },
     personalEmail: { type: String, trim: true, lowercase: true, maxlength: 120 },
     mobileNumber: { type: String, trim: true, maxlength: 30 },
+    /** A second number, next to `mobileNumber` — not everyone has one, so it stays optional. */
+    alternatePhone: { type: String, trim: true, maxlength: 30 },
     dob: { type: Date, default: null },
+    placeOfBirth: { type: String, trim: true, maxlength: 120 },
     bloodGroup: { type: String, trim: true, maxlength: 8 },
     nationality: { type: String, trim: true, maxlength: 80 },
     maritalStatus: { type: String, enum: ["married", "unmarried"], default: undefined },
+    /** Named for whichever applies — the joining form asks for one line, not two. */
+    fatherOrSpouseName: { type: String, trim: true, maxlength: 120 },
+    religion: { type: String, trim: true, maxlength: 60 },
+    /** The number itself, distinct from the `aadhaar` document upload in `documents[]`. */
+    aadhaarNumber: { type: String, trim: true, maxlength: 20 },
+    panNumber: { type: String, trim: true, uppercase: true, maxlength: 20 },
 
     // ── Employment ──
     oldCompanyExperience: { type: String, trim: true, maxlength: 1000 },
@@ -258,6 +285,9 @@ const employeeSchema = new Schema<IEmployee>(
     // ── Bank / education / addresses / emergency ──
     bank: { type: bankSchema, default: undefined },
     education: { type: [educationSchema], default: [] },
+    /** Structured rows, alongside the older free-text `oldCompanyExperience`
+     *  rather than replacing it — existing data stays exactly as it is. */
+    previousExperience: { type: [previousExperienceSchema], default: [] },
     currentAddress: { type: addressSchema, default: undefined },
     permanentAddress: { type: addressSchema, default: undefined },
     emergencyContacts: { type: [emergencyContactSchema], default: [] },

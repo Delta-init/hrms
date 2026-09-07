@@ -13,12 +13,23 @@ const educationSchema = z.object({
   from: z.string().max(20).optional(),
   to: z.string().max(20).optional(),
   institute: z.string().max(160).optional(),
+  fieldOfStudy: z.string().max(120).optional(),
+  grade: z.string().max(20).optional(),
+});
+const previousExperienceSchema = z.object({
+  organisation: z.string().max(160).optional(),
+  designation: z.string().max(120).optional(),
+  from: z.string().max(20).optional(),
+  to: z.string().max(20).optional(),
+  lastCTC: z.string().max(40).optional(),
+  reasonForLeaving: z.string().max(300).optional(),
 });
 const addressSchema = z.object({
   address: z.string().max(300).optional(),
   city: z.string().max(80).optional(),
   state: z.string().max(80).optional(),
   country: z.string().max(80).optional(),
+  pin: z.string().max(20).optional(),
 });
 const emergencySchema = z.object({
   name: z.string().max(100).optional(),
@@ -35,6 +46,8 @@ const bankSchema = z.object({
   ibanIfsc: z.string().max(40).optional(),
   bankName: z.string().max(120).optional(),
   nameInBank: z.string().max(120).optional(),
+  branchName: z.string().max(160).optional(),
+  accountType: z.enum(["savings", "current"]).optional().nullable(),
 });
 const familyMemberSchema = z.object({
   name: z.string().max(100).optional(),
@@ -71,10 +84,14 @@ const profileFields = {
   gender: gender.optional(),
   personalEmail: z.string().email("Invalid email").optional().or(z.literal("")).nullable(),
   mobileNumber: z.string().max(30).optional().nullable(),
+  alternatePhone: z.string().max(30).optional().nullable(),
   dob: z.coerce.date().optional().nullable(),
+  placeOfBirth: z.string().max(120).optional().nullable(),
   bloodGroup: z.string().max(8).optional().nullable(),
   nationality: z.string().max(80).optional().nullable(),
   maritalStatus: marital.optional(),
+  fatherOrSpouseName: z.string().max(120).optional().nullable(),
+  religion: z.string().max(60).optional().nullable(),
   oldCompanyExperience: z.string().max(1000).optional().nullable(),
   confirmationDate: z.coerce.date().optional().nullable(),
   probationPeriodDays: z.coerce.number().min(0).optional(),
@@ -83,6 +100,7 @@ const profileFields = {
   reportingToKind: z.enum(["Employee", "User"]).optional(),
   bank: bankSchema.optional(),
   education: z.array(educationSchema).optional(),
+  previousExperience: z.array(previousExperienceSchema).optional(),
   currentAddress: addressSchema.optional(),
   permanentAddress: addressSchema.optional(),
   emergencyContacts: z.array(emergencySchema).optional(),
@@ -91,6 +109,11 @@ const profileFields = {
   visa: visaSchema.optional(),
   labourCard: labourCardSchema.optional(),
   emiratesId: emiratesIdSchema.optional(),
+  // Grouped with the other government-id fields — admin-only, like
+  // passport/visa/labourCard/emiratesId below, and left out of
+  // updateMyProfileSchema for the same reason.
+  aadhaarNumber: z.string().max(20).optional().nullable(),
+  panNumber: z.string().max(20).optional().nullable(),
 };
 
 /** Provision a login in the same step as the employee. */
@@ -152,13 +175,18 @@ export const updateMyProfileSchema = z.object({
   gender: profileFields.gender,
   personalEmail: profileFields.personalEmail,
   mobileNumber: profileFields.mobileNumber,
+  alternatePhone: profileFields.alternatePhone,
   dob: profileFields.dob,
+  placeOfBirth: profileFields.placeOfBirth,
   bloodGroup: profileFields.bloodGroup,
   nationality: profileFields.nationality,
   maritalStatus: profileFields.maritalStatus,
+  fatherOrSpouseName: profileFields.fatherOrSpouseName,
+  religion: profileFields.religion,
   oldCompanyExperience: profileFields.oldCompanyExperience,
   bank: profileFields.bank,
   education: profileFields.education,
+  previousExperience: profileFields.previousExperience,
   currentAddress: profileFields.currentAddress,
   permanentAddress: profileFields.permanentAddress,
   emergencyContacts: profileFields.emergencyContacts,
