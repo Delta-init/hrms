@@ -218,6 +218,14 @@ const employeeSchema = new Schema<IEmployee>(
     workMode: { type: String, enum: ["office", "wfh"], default: "office" },
 
     /**
+     * Forces the kiosk-only punch rule for this one person, regardless of
+     * `enforceWorkMode` or their own `workMode` — for someone HR wants off
+     * the web app specifically, without switching on the org-wide policy for
+     * everybody else marked "office".
+     */
+    kioskOnly: { type: Boolean, default: false },
+
+    /**
      * The one browser a remote employee may punch from.
      *
      * `keyHash` is a SHA-256 of a secret the browser minted for itself and

@@ -667,6 +667,8 @@ export interface IEmployee extends Document {
   status: EmployeeStatus;
   location?: EmployeeLocation;
   workMode: WorkMode;
+  /** Forces kiosk-only punching for this person alone. See the model. */
+  kioskOnly?: boolean;
   /** The single browser a remote employee may punch from. See the model. */
   trustedDevice?: ITrustedDevice | null;
   /** Monthly base salary (used to prefill payslips). */

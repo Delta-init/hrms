@@ -546,8 +546,8 @@ export class AttendanceService {
         .select("settings.enforceWorkMode settings.remoteDevice settings.requireRemoteLocation")
         .lean<{ settings?: { enforceWorkMode?: boolean; remoteDevice?: RemoteDevicePolicy; requireRemoteLocation?: boolean } } | null>(),
       Employee.findOne(scoped({ user: userId }))
-        .select("workMode trustedDevice")
-        .lean<{ _id: unknown; workMode?: "office" | "wfh"; trustedDevice?: ITrustedDevice | null } | null>(),
+        .select("workMode trustedDevice kioskOnly")
+        .lean<{ _id: unknown; workMode?: "office" | "wfh"; trustedDevice?: ITrustedDevice | null; kioskOnly?: boolean } | null>(),
     ]);
 
     const enforced = !!org?.settings?.enforceWorkMode;
@@ -559,7 +559,10 @@ export class AttendanceService {
     return {
       workMode,
       enforced,
-      canSelfPunch: !enforced || workMode !== "office",
+      // `kioskOnly` overrides the org policy for one person specifically —
+      // set for someone who should never self-punch, without switching on
+      // `enforceWorkMode` for every other "office" employee too.
+      canSelfPunch: !employee?.kioskOnly && (!enforced || workMode !== "office"),
       // Only remote staff are held to one browser. Office staff punch at a
       // kiosk, which already knows exactly which device it is.
       devicePolicy: workMode === "wfh" ? org?.settings?.remoteDevice ?? "off" : "off",

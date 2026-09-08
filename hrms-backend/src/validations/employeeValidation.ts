@@ -138,6 +138,7 @@ export const createEmployeeSchema = z.object({
   status: status.default("active"),
   location: location.optional(),
   workMode: workMode.default("office"),
+  kioskOnly: z.boolean().optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,
@@ -159,6 +160,7 @@ export const updateEmployeeSchema = z.object({
   // Not nullable, unlike `location`: how somebody punches has to resolve to an
   // answer, and clearing it back to nothing would leave that undecidable.
   workMode: workMode.optional(),
+  kioskOnly: z.boolean().optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,

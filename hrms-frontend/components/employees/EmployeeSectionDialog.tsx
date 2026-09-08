@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DepartmentSelect, ManagerSelect } from "@/components/pickers";
 import { useUpdateEmployee, useUpdateMyProfile } from "@/hooks/useEmployees";
@@ -57,7 +58,7 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
     case "employment":
       return {
         designation: e.designation ?? "", department: idOf(e.department), location: e.location ?? "",
-        workMode: e.workMode ?? "office",
+        workMode: e.workMode ?? "office", kioskOnly: e.kioskOnly ?? false,
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
         noticePeriodDays: e.noticePeriodDays ?? 60,
@@ -196,6 +197,15 @@ export function EmployeeSectionDialog({
                 <SelectCtl control={control} name="workMode" placeholder="Select" clearable={false}>
                   {(Object.keys(WORK_MODE_LABELS) as WorkMode[]).map((m) => <SelectItem key={m} value={m}>{WORK_MODE_LABELS[m]}</SelectItem>)}
                 </SelectCtl>
+              </div>
+              <div className={`${field} flex flex-row items-center justify-between gap-3 pt-1`}>
+                <div>
+                  <Label htmlFor="kioskOnly">Kiosk-only attendance</Label>
+                  <p className="text-xs text-muted-foreground">Hides web check-in/out; only face punches at a kiosk count.</p>
+                </div>
+                <Controller control={control} name="kioskOnly" render={({ field }) => (
+                  <Switch id="kioskOnly" checked={!!field.value} onCheckedChange={field.onChange} />
+                )} />
               </div>
               <div className={field}><Label>Currency</Label><Input className="uppercase" {...register("currency")} /></div>
               <div className={field}><Label>Status</Label>

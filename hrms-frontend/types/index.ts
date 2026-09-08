@@ -438,6 +438,8 @@ export interface Employee {
   location?: EmployeeLocation;
   /** Absent on records written before the field existed; those are office. */
   workMode?: WorkMode;
+  /** Forces kiosk-only punching for this person, regardless of workMode. */
+  kioskOnly?: boolean;
   /** The one browser this person may punch from, when binding is on. */
   trustedDevice?: {
     label?: string;
