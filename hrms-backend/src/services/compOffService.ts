@@ -1,4 +1,4 @@
-import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
+import { DEFAULT_WORK_DAYS, DEFAULT_SCHEDULE, localDayKey } from "../utils/schedule.js";
 import { CompOffCredit } from "../models/CompOffCredit.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
@@ -105,36 +105,77 @@ export class CompOffService {
     ]);
 
     const empByUser = new Map(employees.map((e) => [String(e.user), e]));
-    const dateKeyOf = (d: Date) => new Date(d).toISOString().slice(0, 10);
+    /*
+     * The day a record belongs to, read in the timezone it was written for.
+     *
+     * Attendance stores a day as its local midnight expressed in UTC: a Dubai
+     * day of the 8th is 20:00Z on the 7th, an Indian one 18:30Z. Reading that
+     * back with `toISOString()` lands a day earlier — which quietly turned
+     * every Monday into a Sunday and paid comp-off for an ordinary working
+     * day, while the genuine Sunday behind it read as Saturday and earned
+     * nothing at all.
+     */
+    const dateKeyOf = (d: Date, tz: string) => localDayKey(d, tz);
+    /** Day of week of a calendar key, with no timezone left in it to shift. */
+    const weekdayOf = (key: string) => new Date(`${key}T00:00:00Z`).getUTCDay();
     const creditKey = (u: string, d: string) => `${u}|${d}`;
-    const creditSet = new Set(existingCredits.map((c) => creditKey(String(c.user), dateKeyOf(c.date))));
     /**
      * A day off, for whoever is being asked about.
      *
      * One set per calendar rather than one for the organisation: a Kerala
      * holiday is an ordinary working day in Dubai, and crediting comp-off
      * against it would hand seventy-four people a day back they never lost.
+     *
+     * Read in the same timezone as the day being asked about, since a holiday
+     * is stored at its own local midnight too.
      */
-    const holidayFor = (mode: string | null | undefined, key: string) =>
+    const holidayFor = (mode: string | null | undefined, key: string, tz: string) =>
       holidays.some(
-        (h) => dateKeyOf(h.date) === key && (!h.workMode || h.workMode === mode)
+        (h) => dateKeyOf(h.date, tz) === key && (!h.workMode || h.workMode === mode)
       );
+
+    // One schedule lookup per person rather than per attendance row: sixty days
+    // of attendance for one employee asked the same question sixty times.
+    const scheduleCache = new Map<string, { tz: string; workDays: number[] }>();
+    const scheduleFor = async (uid: string, on: Date) => {
+      const cached = scheduleCache.get(uid);
+      if (cached) return cached;
+      const ws = await resolveWorkScheduleForUser(uid, on);
+      const resolved = {
+        tz: (ws as { timeZone?: string } | null)?.timeZone || DEFAULT_SCHEDULE.timeZone,
+        workDays: ws?.workDays?.length ? ws.workDays : DEFAULT_WORK_DAYS,
+      };
+      scheduleCache.set(uid, resolved);
+      return resolved;
+    };
+
+    // Credits keyed the same way as the rows they would block, in that
+    // person's timezone — a credit records the attendance day it was earned on.
+    const creditsByUser = new Map<string, typeof existingCredits>();
+    for (const c of existingCredits) {
+      const k = String(c.user);
+      const list = creditsByUser.get(k) ?? [];
+      list.push(c);
+      creditsByUser.set(k, list);
+    }
+    const creditSet = new Set<string>();
+    for (const [uid, list] of creditsByUser) {
+      const { tz } = await scheduleFor(uid, new Date(list[0]!.date));
+      for (const c of list) creditSet.add(creditKey(uid, dateKeyOf(c.date, tz)));
+    }
 
     const results: Suggestion[] = [];
     for (const a of att) {
       const uid = String(a.user);
-      const dateKey = dateKeyOf(a.date);
-      if (creditSet.has(creditKey(uid, dateKey))) continue;
       const emp = empByUser.get(uid);
       if (!emp) continue;
 
-      const isHoliday = holidayFor((emp as { workMode?: string }).workMode, dateKey);
-      let isWeekend = false;
-      if (!isHoliday) {
-        const ws = await resolveWorkScheduleForUser(uid, new Date(a.date));
-        const workDays = ws?.workDays ?? DEFAULT_WORK_DAYS;
-        isWeekend = !workDays.includes(new Date(a.date).getUTCDay());
-      }
+      const { tz, workDays } = await scheduleFor(uid, new Date(a.date));
+      const dateKey = dateKeyOf(a.date, tz);
+      if (creditSet.has(creditKey(uid, dateKey))) continue;
+
+      const isHoliday = holidayFor((emp as { workMode?: string }).workMode, dateKey, tz);
+      const isWeekend = isHoliday ? false : !workDays.includes(weekdayOf(dateKey));
       if (!isHoliday && !isWeekend) continue;
 
       results.push({
