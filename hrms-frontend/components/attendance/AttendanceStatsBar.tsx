@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { UserCheck, Clock3, Plane, UserX, Home, Timer } from "lucide-react";
+import { UserCheck, Clock3, Hourglass, Plane, UserX, Home, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Attendance, AttendanceStatus } from "@/types";
 
@@ -88,7 +88,8 @@ export function AttendanceStatsBar({ records, loading }: { records: Attendance[]
 
   const by = (s: AttendanceStatus) => records.filter((r) => r.status === s).length;
   const present = by("present") + by("wfh");
-  const late = by("late") + by("half_day");
+  const late = by("late");
+  const halfDay = by("half_day");
   const onLeave = by("on_leave");
   const absent = by("absent");
   const wfh = by("wfh");
@@ -98,7 +99,8 @@ export function AttendanceStatsBar({ records, loading }: { records: Attendance[]
 
   const cards = [
     { icon: UserCheck, label: "Present today", value: present, tone: TONES.emerald },
-    { icon: Clock3, label: "Late / half-day", value: late, tone: TONES.amber },
+    { icon: Clock3, label: "Late", value: late, tone: TONES.amber },
+    { icon: Hourglass, label: "Half-day", value: halfDay, tone: TONES.amber },
     { icon: Plane, label: "On leave", value: onLeave, tone: TONES.violet },
     { icon: UserX, label: "Absent", value: absent, tone: TONES.rose },
     { icon: Home, label: "Working remote", value: wfh, tone: TONES.sky },
@@ -125,7 +127,7 @@ export function AttendanceStatsBar({ records, loading }: { records: Attendance[]
           </p>
         )}
       </div>
-      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6", loading && "opacity-60")}>
+      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7", loading && "opacity-60")}>
         {cards.map((c, i) => (
           <StatCard key={c.label} icon={c.icon} label={c.label} value={c.value} suffix={c.suffix} decimals={c.decimals} tone={c.tone} delay={i * 0.06} />
         ))}
