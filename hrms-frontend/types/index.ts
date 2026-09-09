@@ -322,6 +322,8 @@ export interface EmployeeDocument {
   mimeType?: string;
   size?: number;
   uploadedAt?: string;
+  /** Who put this on file — only "self" is the employee's own to replace or remove. */
+  uploadedBy?: "self" | "hr";
   url: string;
 }
 /** A document or credential outside the fixed passport/visa/labour-card set. */

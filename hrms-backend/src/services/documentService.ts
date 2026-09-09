@@ -61,6 +61,7 @@ function serializeDocs(employee: IEmployee) {
     mimeType: d.mimeType,
     size: d.size,
     uploadedAt: d.uploadedAt,
+    uploadedBy: d.uploadedBy ?? "self",
     url: publicUrl(d.fileKey),
   }));
 }
@@ -76,19 +77,33 @@ function documentsFor(employee: IEmployee) {
   };
 }
 
+/**
+ * A self-service call touching a document HR put on file. Their own uploads,
+ * and anything predating the distinction, remain theirs to change — only
+ * HR's own copy is off limits, and only from this side.
+ */
+function assertMayTouch(existing: { uploadedBy?: "self" | "hr" } | undefined, actor: "self" | "hr") {
+  if (actor === "hr") return;
+  if (existing && existing.uploadedBy === "hr") {
+    throw new DocError("This document was uploaded by HR — contact HR to change it.", 403);
+  }
+}
+
 /** Store (or replace) one document of a given type on an employee. */
-async function putDocument(employee: IEmployee, type: string, file: Express.Multer.File) {
+async function putDocument(employee: IEmployee, type: string, file: Express.Multer.File, actor: "self" | "hr") {
   if (!DOC_TYPES.includes(type as DocumentType)) {
     throw new DocError(`Unknown document type: ${type}`);
   }
   const docType = type as DocumentType;
 
+  // Replace any existing document of the same type (and clean up its object).
+  const existing = (employee.documents ?? []).find((d) => d.type === docType);
+  assertMayTouch(existing, actor);
+
   const ext = (file.originalname.split(".").pop() || "").toLowerCase();
   const key = documentKey(getOrgId(), String(employee._id), docType, ext, Date.now());
   await putObject(key, file.buffer, file.mimetype);
 
-  // Replace any existing document of the same type (and clean up its object).
-  const existing = (employee.documents ?? []).find((d) => d.type === docType);
   if (existing?.fileKey) await deleteObject(existing.fileKey);
   employee.documents = (employee.documents ?? []).filter((d) => d.type !== docType);
   employee.documents.push({
@@ -98,6 +113,7 @@ async function putDocument(employee: IEmployee, type: string, file: Express.Mult
     mimeType: file.mimetype,
     size: file.size,
     uploadedAt: new Date(),
+    uploadedBy: actor,
   });
 
   // The photo doubles as the profile/portal photo.
@@ -108,8 +124,9 @@ async function putDocument(employee: IEmployee, type: string, file: Express.Mult
 }
 
 /** Drop one document of a given type from an employee. */
-async function dropDocument(employee: IEmployee, type: string) {
+async function dropDocument(employee: IEmployee, type: string, actor: "self" | "hr") {
   const doc = (employee.documents ?? []).find((d) => d.type === type);
+  assertMayTouch(doc, actor);
   if (doc?.fileKey) await deleteObject(doc.fileKey);
   employee.documents = (employee.documents ?? []).filter((d) => d.type !== type);
   if (PHOTO_TYPES.includes(type as DocumentType)) employee.photo = "";
@@ -124,12 +141,12 @@ export async function listMyDocuments(userId: string) {
 
 /** Upload (or replace) one document of a given type on the caller's employee. */
 export async function uploadMyDocument(userId: string, type: string, file: Express.Multer.File) {
-  return putDocument(await myEmployee(userId), type, file);
+  return putDocument(await myEmployee(userId), type, file, "self");
 }
 
 /** Remove a document of a given type from the caller's employee. */
 export async function deleteMyDocument(userId: string, type: string) {
-  return dropDocument(await myEmployee(userId), type);
+  return dropDocument(await myEmployee(userId), type, "self");
 }
 
 /*
@@ -146,12 +163,12 @@ export async function listEmployeeDocuments(employeeId: string) {
 
 /** Upload (or replace) a document on another employee's record. */
 export async function uploadEmployeeDocument(employeeId: string, type: string, file: Express.Multer.File) {
-  return putDocument(await employeeById(employeeId), type, file);
+  return putDocument(await employeeById(employeeId), type, file, "hr");
 }
 
 /** Remove a document from another employee's record. */
 export async function deleteEmployeeDocument(employeeId: string, type: string) {
-  return dropDocument(await employeeById(employeeId), type);
+  return dropDocument(await employeeById(employeeId), type, "hr");
 }
 
 /*

@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Upload, Loader2, Trash2, ExternalLink, CheckCircle2, FileText, ImageIcon } from "lucide-react";
+import { Upload, Loader2, Trash2, ExternalLink, CheckCircle2, FileText, ImageIcon, Lock } from "lucide-react";
 import { useUploadDocument, useDeleteDocument } from "@/hooks/useDocuments";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -76,6 +76,9 @@ function DocSlot({
   const [chosenType, setChosenType] = useState<DocumentType>(r.accepts[0]);
   const multi = r.accepts.length > 1;
   const accept = r.isPhoto ? "image/*" : "image/*,application/pdf";
+  // HR's own copy is not the employee's to replace or remove — only from this
+  // side; HR viewing the same document on the admin page keeps full control.
+  const lockedBySelf = !employeeId && current?.uploadedBy === "hr";
 
   const pick = () => inputRef.current?.click();
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -123,7 +126,16 @@ function DocSlot({
           </Select>
         )}
 
-        {!readOnly && (
+        {lockedBySelf && (
+          <span
+            title="Uploaded by HR — contact HR to change this"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+          >
+            <Lock className="h-3 w-3" />Uploaded by HR
+          </span>
+        )}
+
+        {!readOnly && !lockedBySelf && (
           <>
             <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onFile} />
             {current ? (

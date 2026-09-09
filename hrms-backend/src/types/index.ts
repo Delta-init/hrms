@@ -562,6 +562,11 @@ export interface IEmployeeDocument {
   mimeType?: string;
   size?: number;
   uploadedAt?: Date;
+  /** Who put this on file. HR's own copy is not the employee's to replace or
+   *  remove — only something they uploaded themselves is. Defaults to "self"
+   *  so every document that predates this field keeps working exactly as it
+   *  does today; the lock only bites a document HR uploads from here on. */
+  uploadedBy?: "self" | "hr";
 }
 
 /** A document or credential outside the fixed passport/visa/labour-card set. */

@@ -163,6 +163,13 @@ const documentSchema = new Schema(
     mimeType: { type: String, trim: true, maxlength: 100 },
     size: { type: Number, min: 0 },
     uploadedAt: { type: Date, default: Date.now },
+    /**
+     * Who put this on file. Self-service may replace or remove their own
+     * upload; HR's own copy is not theirs to touch. Defaults to "self" so
+     * every document predating this field — everything before today — keeps
+     * behaving exactly as it always has.
+     */
+    uploadedBy: { type: String, enum: ["self", "hr"], default: "self" },
   },
   { _id: false }
 );
