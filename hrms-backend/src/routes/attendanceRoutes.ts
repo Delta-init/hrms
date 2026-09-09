@@ -11,6 +11,7 @@ import {
   getMyAttendance,
   getAttendanceCalendar,
   getAttendanceDaily,
+  getTeamAttendanceDaily,
   clockIn,
   clockOut,
 } from "../controllers/attendanceController.js";
@@ -26,6 +27,10 @@ router.get("/today", getTodayAttendance);
 router.get("/mine", getMyAttendance);
 router.post("/clock-in", clockIn);
 router.post("/clock-out", clockOut);
+// A department head's own team — earned by heading it, not by an attendance
+// permission, so no module check here either. Empty for anyone who heads
+// nothing, which is most logins.
+router.get("/team/daily", getTeamAttendanceDaily);
 
 router.get("/", checkPermission("attendance", "view"), getAttendance);
 router.get("/calendar", checkPermission("attendance", "view"), getAttendanceCalendar);

@@ -152,6 +152,8 @@ export interface User {
   workSchedule?: WorkScheduleSimple | string | null;
   status: "active" | "inactive" | "invited";
   mustResetPassword?: boolean;
+  /** Heads at least one department — earns the "My Team" attendance tab regardless of role permissions. */
+  isDepartmentHead?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -499,6 +501,8 @@ export interface AuthUser {
   designation?: string;
   status: "active" | "inactive" | "invited";
   profileCompleted?: boolean;
+  /** Heads at least one department — earns the "My Team" attendance tab regardless of role permissions. */
+  isDepartmentHead?: boolean;
 }
 
 export interface LoginResponse {
@@ -1296,6 +1300,15 @@ export interface DailyAttendanceData {
   counts: Partial<Record<DayViewStatus, number>>;
   total: number;
   employees: DailyAttendanceRow[];
+}
+
+/** A department-head's own team, one row per member — same shape as the admin
+ *  day view, plus which of the head's departments each row belongs to. */
+export interface TeamAttendanceRow extends DailyAttendanceRow {
+  department: string;
+}
+export interface TeamAttendanceData extends Omit<DailyAttendanceData, "employees"> {
+  employees: TeamAttendanceRow[];
 }
 
 // ─── Department report ───────────────────────────────────────────────────────

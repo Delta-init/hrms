@@ -6,6 +6,8 @@ import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
 import { Organization } from "../models/Organization.js";
+import { Department } from "../models/Department.js";
+import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
@@ -912,7 +914,7 @@ export class AttendanceService {
    * holidays, weekends (from the work schedule) and absent (past working days
    * with no record). One record per employee-day drives the calendar UI.
    */
-  async calendar(month: string, employeeId?: string) {
+  async calendar(month: string, employeeId?: string | string[]) {
     const start = new Date(`${month}-01T00:00:00.000Z`);
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
@@ -939,7 +941,7 @@ export class AttendanceService {
     const policyIndex = await leavePolicyIndex();
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
-    if (employeeId) empFilter._id = employeeId;
+    if (employeeId) empFilter._id = Array.isArray(employeeId) ? { $in: employeeId } : employeeId;
     const employees = await Employee.find(empFilter)
       .select("name employeeCode designation user joiningDate workMode")
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays timeZone" } })
@@ -1124,7 +1126,7 @@ export class AttendanceService {
    * would otherwise drift, and one screen calling a day absent while another
    * calls it blank is exactly the confusion this is meant to settle.
    */
-  async daily(date: string, employeeId?: string) {
+  async daily(date: string, employeeId?: string | string[]) {
     const { employees } = await this.calendar(date.slice(0, 7), employeeId);
     const orgTz = await this.orgTimeZone();
     const todayKey = todayInTz(orgTz);
@@ -1150,6 +1152,48 @@ export class AttendanceService {
       counts,
       total: rows.filter((r) => r.status !== "not_employed").length,
       employees: rows,
+    };
+  }
+
+  /**
+   * One day, for the departments this login heads — the same shape `daily()`
+   * gives HR, narrowed to a head's own team rather than the whole
+   * organization.
+   *
+   * Reachable without `attendance.view`: a department head sees their team by
+   * heading it, not by holding an org-wide permission that would also open
+   * everybody else's records. Empty for the (ordinary) case of heading
+   * nothing, rather than an error — a head with one department and a head
+   * with none ask the same question and only differ in the answer.
+   */
+  async teamDaily(date: string, headUserId: string) {
+    const orgTz = await this.orgTimeZone();
+    const todayKey = todayInTz(orgTz);
+    const empty = { date, isToday: date === todayKey, isFuture: date > todayKey, timeZone: orgTz, total: 0, counts: {}, employees: [] };
+
+    const deptIds = await departmentsHeadedBy(headUserId);
+    if (!deptIds.length) return empty;
+
+    const members = await Employee.find({
+      ...orgFilter(),
+      department: { $in: deptIds },
+      user: { $ne: null },
+      status: { $in: ["active", "probation"] },
+    }).select("_id user department").lean();
+
+    // A head's own record belongs on their own dashboard, not their team's —
+    // the same line `teamMemberUserIds` draws for the leave queue.
+    const team = members.filter((m) => String(m.user) !== String(headUserId));
+    if (!team.length) return empty;
+
+    const depts = await Department.find({ _id: { $in: deptIds } }).select("name").lean();
+    const deptName = new Map(depts.map((d) => [String(d._id), d.name]));
+    const deptOfEmployee = new Map(team.map((m) => [String(m._id), deptName.get(String(m.department)) ?? ""]));
+
+    const result = await this.daily(date, team.map((m) => String(m._id)));
+    return {
+      ...result,
+      employees: result.employees.map((r) => ({ ...r, department: deptOfEmployee.get(String(r.employee._id)) ?? "" })),
     };
   }
 }

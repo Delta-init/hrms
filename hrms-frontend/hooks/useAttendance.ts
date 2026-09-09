@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Attendance, AttendanceCalendarData, DailyAttendanceData } from "@/types";
+import type { ApiResponse, Attendance, AttendanceCalendarData, DailyAttendanceData, TeamAttendanceData } from "@/types";
 
 const KEY = ["attendance"] as const;
 
@@ -22,6 +22,16 @@ export const useAttendanceDaily = (date: string, employee?: string) =>
   useQuery({
     queryKey: [...KEY, "daily", date, employee ?? "all"],
     queryFn: async () => (await api.get<ApiResponse<DailyAttendanceData>>("/attendance/daily", { params: { date, ...(employee ? { employee } : {}) } })).data.data!,
+    enabled: !!date,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+/** One day, for the departments the caller heads. Empty for anyone who heads none. */
+export const useTeamAttendanceDaily = (date: string) =>
+  useQuery({
+    queryKey: [...KEY, "team-daily", date],
+    queryFn: async () => (await api.get<ApiResponse<TeamAttendanceData>>("/attendance/team/daily", { params: { date } })).data.data!,
     enabled: !!date,
     staleTime: 30_000,
     refetchOnWindowFocus: true,

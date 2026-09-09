@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, ShieldAlert, Monitor, Globe, MapPin } from "lucide-react";
+import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, Users, ShieldAlert, Monitor, Globe, MapPin } from "lucide-react";
 import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -10,6 +10,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { AttendanceDialog } from "@/components/attendance/AttendanceDialog";
 import { AttendanceCalendar } from "@/components/attendance/AttendanceCalendar";
 import { AttendanceDayView } from "@/components/attendance/AttendanceDayView";
+import { AttendanceTeamView } from "@/components/attendance/AttendanceTeamView";
 import { AttendanceStatsBar } from "@/components/attendance/AttendanceStatsBar";
 import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { useOrgTimeZone } from "@/hooks/useOrgTimeZone";
@@ -42,7 +43,7 @@ const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", {
 const fmtWorked = (m: number) => (m > 0 ? `${Math.floor(m / 60)}h ${m % 60}m` : "—");
 
 export default function AttendancePage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   // `edit` is the manager-level flag: recording attendance for someone else,
   // and browsing/filtering by employee, are admin actions. Plain Employees
   // only ever see their own records (enforced server-side too).
@@ -71,6 +72,10 @@ export default function AttendancePage() {
     { key: "records", label: "Records", icon: ListChecks },
     { key: "day", label: "Day view", icon: CalendarDays },
     { key: "calendar", label: "Calendar", icon: CalendarRange },
+    // Earned by heading a department, not by an attendance permission — shown
+    // to the (usually small) set of people it actually applies to, same as
+    // the other tabs are gated on what the viewer can do.
+    ...(user?.isDepartmentHead ? [{ key: "team", label: "My Team", icon: Users }] : []),
   ];
 
   /**
@@ -306,6 +311,8 @@ export default function AttendancePage() {
         <AttendanceDayView canManage={canManage} />
       ) : tab === "calendar" ? (
         <AttendanceCalendar />
+      ) : tab === "team" ? (
+        <AttendanceTeamView />
       ) : (
         <>
           <AttendanceStatsBar records={todayData?.data ?? []} loading={todayLoading} />

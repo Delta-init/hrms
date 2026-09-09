@@ -158,6 +158,22 @@ export const getAttendanceDaily = async (req: AuthenticatedRequest, res: Respons
   } catch (error) { next(error); }
 };
 
+/**
+ * One day, for the departments the caller heads — not gated on `canManage`,
+ * because heading a department is what earns this, not an attendance
+ * permission. Always redacted: a head sees clock-in/out, not punch
+ * provenance, the same boundary `canManage` draws for everyone else.
+ */
+export const getTeamAttendanceDaily = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const date = String(req.query.date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { sendError(res, "date (YYYY-MM-DD) is required", 400); return; }
+
+    const daily = await service.teamDaily(date, req.user!.userId);
+    sendSuccess(res, "Team daily attendance", redactCalendar(daily));
+  } catch (error) { next(error); }
+};
+
 export const getAttendanceById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const record = await service.getById(req.params.id);

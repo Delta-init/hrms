@@ -10,6 +10,7 @@ import type { IUser, IRole } from "../types/index.js";
 import { scoped } from "../utils/orgContext.js";
 import { missingRequiredDocs } from "../config/documentRequirements.js";
 import { publicUrl } from "./uploadService.js";
+import { departmentsHeadedBy } from "./departmentHeadService.js";
 
 /**
  * A valid bcrypt hash (of a random string) compared against when no user
@@ -17,6 +18,15 @@ import { publicUrl } from "./uploadService.js";
  * can't be distinguished by response latency.
  */
 const DUMMY_HASH = "$2a$12$vvxe7fcKuugHyGlVDs9h5u71eN2FnKco8UCqdd6BpcubJhQy0MPY2";
+
+/**
+ * A login-response user, with the one extra flag the "My Team" attendance tab
+ * needs to decide whether it applies — cheap, and false for almost everybody.
+ */
+async function withHeadFlag(user: { _id: unknown; toJSON: () => unknown }): Promise<Omit<IUser, "password"> & { isDepartmentHead: boolean }> {
+  const isDepartmentHead = (await departmentsHeadedBy(String(user._id))).length > 0;
+  return { ...(user.toJSON() as Omit<IUser, "password">), isDepartmentHead };
+}
 
 export class AuthService {
   async login(input: LoginInput) {
@@ -60,7 +70,7 @@ export class AuthService {
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
-    const userObj = user.toJSON() as unknown as Omit<IUser, "password">;
+    const userObj = await withHeadFlag(user);
 
     return { accessToken, refreshToken, user: userObj };
   }
@@ -105,7 +115,7 @@ export class AuthService {
     if (!user) {
       throw Object.assign(new Error("User not found"), { statusCode: 404 });
     }
-    return user;
+    return withHeadFlag(user);
   }
 
   async changePassword(userId: string, input: ChangePasswordInput) {
@@ -185,7 +195,7 @@ export class AuthService {
 
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
-    const userObj = user.toJSON() as unknown as Omit<IUser, "password">;
+    const userObj = await withHeadFlag(user);
 
     return { accessToken, refreshToken, user: userObj };
   }
@@ -340,7 +350,7 @@ export class AuthService {
       return {
         accessToken,
         refreshToken,
-        user: target.toJSON() as unknown as Omit<IUser, "password">,
+        user: await withHeadFlag(target),
         impersonatedBy: { id: decoded.impersonatorId, name: decoded.impersonatorName, restoreTicket },
       };
     }
@@ -369,7 +379,7 @@ export class AuthService {
         target: target?._id ?? null,
         targetName: target?.name ?? null,
       });
-      return { accessToken, refreshToken, user: admin.toJSON() as unknown as Omit<IUser, "password"> };
+      return { accessToken, refreshToken, user: await withHeadFlag(admin) };
     }
 
     throw Object.assign(new Error("Unknown ticket"), { statusCode: 400 });
