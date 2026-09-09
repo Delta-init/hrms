@@ -582,6 +582,8 @@ export interface IEmployeeOtherDocument {
   mimeType?: string;
   size?: number;
   uploadedAt?: Date | null;
+  /** Who added this entry — only "self" is the employee's own to edit or remove. */
+  uploadedBy?: "self" | "hr";
 }
 
 export interface IEducation {

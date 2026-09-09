@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Plus, Pencil, Trash2, Loader2, ExternalLink, FileText, CalendarDays, FilePlus2,
+  Plus, Pencil, Trash2, Loader2, ExternalLink, FileText, CalendarDays, FilePlus2, Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,7 +21,8 @@ function daysLeft(iso?: string | null): number | null {
 }
 
 interface Props {
-  employeeId: string;
+  /** Omit for the signed-in user's own documents. */
+  employeeId?: string;
   canEdit: boolean;
   /** Renders inside an existing card rather than providing its own. */
   bare?: boolean;
@@ -73,6 +74,7 @@ export function OtherDocumentsPanel({ employeeId, canEdit, bare }: Props) {
               key={d._id}
               doc={d}
               canEdit={canEdit}
+              lockedBySelf={!employeeId && d.uploadedBy === "hr"}
               onEdit={() => setEditing(d)}
               onDelete={() => setConfirming(d)}
             />
@@ -104,8 +106,8 @@ export function OtherDocumentsPanel({ employeeId, canEdit, bare }: Props) {
 }
 
 function Row({
-  doc, canEdit, onEdit, onDelete,
-}: { doc: EmployeeOtherDocument; canEdit: boolean; onEdit: () => void; onDelete: () => void }) {
+  doc, canEdit, lockedBySelf, onEdit, onDelete,
+}: { doc: EmployeeOtherDocument; canEdit: boolean; lockedBySelf: boolean; onEdit: () => void; onDelete: () => void }) {
   const left = daysLeft(doc.expiryDate);
   const expired = left !== null && left < 0;
   const soon = left !== null && left >= 0 && left <= 90;
@@ -143,7 +145,14 @@ function Row({
         {doc.notes && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{doc.notes}</p>}
       </div>
 
-      {canEdit && (
+      {lockedBySelf ? (
+        <span
+          title="Uploaded by HR — contact HR to change this"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+        >
+          <Lock className="h-3 w-3" />Uploaded by HR
+        </span>
+      ) : canEdit && (
         <div className="flex shrink-0 items-center gap-1">
           <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} aria-label={`Edit ${doc.label}`}>
             <Pencil className="h-4 w-4" />

@@ -12,6 +12,10 @@ import {
   addOtherDocument,
   updateOtherDocument,
   deleteOtherDocument,
+  listMyOtherDocuments,
+  addMyOtherDocument,
+  updateMyOtherDocument,
+  deleteMyOtherDocument,
 } from "../services/documentService.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -166,6 +170,61 @@ export const deleteOtherDoc = async (
 ): Promise<void> => {
   try {
     const data = await deleteOtherDocument(req.params.id, req.params.recordId);
+    sendSuccess(res, "Document removed", data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * Self-service — the same four operations against the caller's own record.
+ */
+
+export const listMyOtherDocs = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    sendSuccess(res, "Documents retrieved", await listMyOtherDocuments(req.user!.userId));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addMyOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await addMyOtherDocument(req.user!.userId, req.body ?? {}, req.file);
+    sendSuccess(res, "Document added", data, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateMyOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await updateMyOtherDocument(req.user!.userId, req.params.recordId, req.body ?? {}, req.file);
+    sendSuccess(res, "Document updated", data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteMyOtherDoc = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await deleteMyOtherDocument(req.user!.userId, req.params.recordId);
     sendSuccess(res, "Document removed", data);
   } catch (error) {
     next(error);

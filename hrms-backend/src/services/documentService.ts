@@ -223,21 +223,27 @@ export async function listOtherDocuments(employeeId: string) {
   return serializeOther(await employeeById(employeeId));
 }
 
-export async function addOtherDocument(
-  employeeId: string,
+/** The caller's own free-form documents. */
+export async function listMyOtherDocuments(userId: string) {
+  return serializeOther(await myEmployee(userId));
+}
+
+async function createOtherDocument(
+  employee: IEmployee,
   input: OtherDocumentInput,
-  file?: Express.Multer.File
+  file: Express.Multer.File | undefined,
+  actor: "self" | "hr"
 ) {
   const label = (input.label ?? "").trim();
   if (!label) throw new DocError("A name for this document is required");
 
-  const employee = await employeeById(employeeId);
   const entry: Record<string, unknown> = {
     label,
     number: input.number?.trim() || undefined,
     issueDate: toDate(input.issueDate),
     expiryDate: toDate(input.expiryDate),
     notes: input.notes?.trim() || undefined,
+    uploadedBy: actor,
   };
   if (file) await attachFile(employee, entry as never, file);
 
@@ -246,15 +252,25 @@ export async function addOtherDocument(
   return serializeOther(employee);
 }
 
-export async function updateOtherDocument(
-  employeeId: string,
+export async function addOtherDocument(employeeId: string, input: OtherDocumentInput, file?: Express.Multer.File) {
+  return createOtherDocument(await employeeById(employeeId), input, file, "hr");
+}
+
+/** Add one of the caller's own free-form documents. */
+export async function addMyOtherDocument(userId: string, input: OtherDocumentInput, file?: Express.Multer.File) {
+  return createOtherDocument(await myEmployee(userId), input, file, "self");
+}
+
+async function updateOtherDocumentEntry(
+  employee: IEmployee,
   recordId: string,
   input: Partial<OtherDocumentInput>,
-  file?: Express.Multer.File
+  file: Express.Multer.File | undefined,
+  actor: "self" | "hr"
 ) {
-  const employee = await employeeById(employeeId);
   const entry = (employee.otherDocuments ?? []).find((d) => String(d._id) === String(recordId));
   if (!entry) throw new DocError("That document could not be found on this employee", 404);
+  assertMayTouch(entry, actor);
 
   if (input.label !== undefined) {
     const label = input.label.trim();
@@ -272,10 +288,29 @@ export async function updateOtherDocument(
   return serializeOther(employee);
 }
 
-export async function deleteOtherDocument(employeeId: string, recordId: string) {
-  const employee = await employeeById(employeeId);
+export async function updateOtherDocument(
+  employeeId: string,
+  recordId: string,
+  input: Partial<OtherDocumentInput>,
+  file?: Express.Multer.File
+) {
+  return updateOtherDocumentEntry(await employeeById(employeeId), recordId, input, file, "hr");
+}
+
+/** Update one of the caller's own free-form documents — refused for one HR added. */
+export async function updateMyOtherDocument(
+  userId: string,
+  recordId: string,
+  input: Partial<OtherDocumentInput>,
+  file?: Express.Multer.File
+) {
+  return updateOtherDocumentEntry(await myEmployee(userId), recordId, input, file, "self");
+}
+
+async function dropOtherDocumentEntry(employee: IEmployee, recordId: string, actor: "self" | "hr") {
   const entry = (employee.otherDocuments ?? []).find((d) => String(d._id) === String(recordId));
   if (!entry) throw new DocError("That document could not be found on this employee", 404);
+  assertMayTouch(entry, actor);
 
   if (entry.fileKey) await deleteObject(entry.fileKey);
   employee.otherDocuments = (employee.otherDocuments ?? []).filter(
@@ -283,4 +318,13 @@ export async function deleteOtherDocument(employeeId: string, recordId: string) 
   );
   await employee.save();
   return serializeOther(employee);
+}
+
+export async function deleteOtherDocument(employeeId: string, recordId: string) {
+  return dropOtherDocumentEntry(await employeeById(employeeId), recordId, "hr");
+}
+
+/** Remove one of the caller's own free-form documents — refused for one HR added. */
+export async function deleteMyOtherDocument(userId: string, recordId: string) {
+  return dropOtherDocumentEntry(await myEmployee(userId), recordId, "self");
 }

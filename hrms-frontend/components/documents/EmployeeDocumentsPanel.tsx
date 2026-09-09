@@ -22,9 +22,8 @@ interface Props {
  * offered as optional, so a passport can still be filed for someone whose
  * location hasn't been set.
  *
- * `OtherDocumentsPanel` covers free-form documents beyond the fixed slots —
- * admin-only today, with no self-service route behind it, so it is left out
- * entirely here rather than shown broken.
+ * `OtherDocumentsPanel` covers free-form documents beyond the fixed slots,
+ * self-service the same way as the slots above.
  */
 export function EmployeeDocumentsPanel({ employeeId, canEdit }: Props) {
   const { data, isLoading } = useDocuments(employeeId);
@@ -69,11 +68,9 @@ export function EmployeeDocumentsPanel({ employeeId, canEdit }: Props) {
 
       <DocumentSlots slots={slots} documents={documents} employeeId={employeeId} readOnly={!canEdit} />
 
-      {employeeId && (
-        <div className="mt-6 border-t border-border pt-5">
-          <OtherDocumentsPanel employeeId={employeeId} canEdit={canEdit} bare />
-        </div>
-      )}
+      <div className="mt-6 border-t border-border pt-5">
+        <OtherDocumentsPanel employeeId={employeeId} canEdit={canEdit} bare />
+      </div>
     </Card>
   );
 }

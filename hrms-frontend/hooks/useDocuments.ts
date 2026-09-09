@@ -69,19 +69,19 @@ export const useDeleteDocument = (employeeId?: string) => {
 
 /*
  * Free-form documents and credentials — anything the fixed passport/visa slots
- * don't cover. Administrator-only, like the passport and visa details they sit
- * beside, so there is no self-service variant.
+ * don't cover. Same self/administrator split as the fixed slots above: omit
+ * `employeeId` for the caller's own.
  */
 
-const otherKey = (employeeId: string) => ["documents", employeeId, "other"] as const;
-const otherPath = (employeeId: string) => `/employees/${employeeId}/other-documents`;
+const otherKey = (employeeId?: string) => ["documents", employeeId ?? "me", "other"] as const;
+const otherPath = (employeeId?: string) => (employeeId ? `/employees/${employeeId}/other-documents` : "/auth/other-documents");
 
-export const useOtherDocuments = (employeeId: string, enabled = true) =>
+export const useOtherDocuments = (employeeId?: string, enabled = true) =>
   useQuery({
     queryKey: otherKey(employeeId),
     queryFn: async () =>
       (await api.get<ApiResponse<EmployeeOtherDocument[]>>(otherPath(employeeId))).data.data ?? [],
-    enabled: enabled && !!employeeId,
+    enabled,
   });
 
 /** Details plus an optional file in one multipart request. */
@@ -106,13 +106,13 @@ export interface OtherDocumentInput {
 }
 
 /** Expiring entries feed the dashboard's renewal list, so that goes stale too. */
-function afterOtherChange(qc: ReturnType<typeof useQueryClient>, employeeId: string) {
+function afterOtherChange(qc: ReturnType<typeof useQueryClient>, employeeId?: string) {
   qc.invalidateQueries({ queryKey: otherKey(employeeId) });
   qc.invalidateQueries({ queryKey: ["employees"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
 }
 
-export const useAddOtherDocument = (employeeId: string) => {
+export const useAddOtherDocument = (employeeId?: string) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: OtherDocumentInput) =>
@@ -124,7 +124,7 @@ export const useAddOtherDocument = (employeeId: string) => {
   });
 };
 
-export const useUpdateOtherDocument = (employeeId: string) => {
+export const useUpdateOtherDocument = (employeeId?: string) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ recordId, ...input }: OtherDocumentInput & { recordId: string }) =>
@@ -136,7 +136,7 @@ export const useUpdateOtherDocument = (employeeId: string) => {
   });
 };
 
-export const useDeleteOtherDocument = (employeeId: string) => {
+export const useDeleteOtherDocument = (employeeId?: string) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (recordId: string) =>

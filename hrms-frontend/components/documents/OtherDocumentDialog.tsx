@@ -32,7 +32,8 @@ const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  employeeId: string;
+  /** Omit for the signed-in user's own documents. */
+  employeeId?: string;
   /** Absent when adding. */
   doc?: EmployeeOtherDocument | null;
 }

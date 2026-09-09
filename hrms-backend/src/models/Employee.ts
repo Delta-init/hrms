@@ -138,6 +138,10 @@ const otherDocumentSchema = new Schema(
     mimeType: { type: String, trim: true, maxlength: 100 },
     size: { type: Number, min: 0 },
     uploadedAt: { type: Date, default: null },
+    /** Same rule as the fixed document slots: HR's own entry is not the
+     *  employee's to edit or remove. Defaults to "self" for the same reason —
+     *  nothing existing should change behavior. */
+    uploadedBy: { type: String, enum: ["self", "hr"], default: "self" },
   },
   { timestamps: true }
 );

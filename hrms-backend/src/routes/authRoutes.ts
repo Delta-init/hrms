@@ -14,6 +14,10 @@ import {
   listDocuments,
   uploadDocument,
   deleteDocument,
+  listMyOtherDocs,
+  addMyOtherDoc,
+  updateMyOtherDoc,
+  deleteMyOtherDoc,
 } from "../controllers/documentController.js";
 import { getMyOnboardingForm } from "../controllers/onboardingFormController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -40,6 +44,11 @@ router.post("/complete-profile", authenticate, completeProfile);
 router.get("/documents", authenticate, listDocuments);
 router.post("/documents", authenticate, uploadSingle, uploadDocument);
 router.delete("/documents/:type", authenticate, deleteDocument);
+// Self-service: free-form documents beyond the fixed slots above.
+router.get("/other-documents", authenticate, listMyOtherDocs);
+router.post("/other-documents", authenticate, uploadSingle, addMyOtherDoc);
+router.put("/other-documents/:recordId", authenticate, uploadSingle, updateMyOtherDoc);
+router.delete("/other-documents/:recordId", authenticate, deleteMyOtherDoc);
 // Self-service: the filled joining form, generated from whatever the
 // employee record already holds. Nothing to upload — this only reads.
 router.get("/onboarding-form", authenticate, getMyOnboardingForm);

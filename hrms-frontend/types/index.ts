@@ -339,6 +339,8 @@ export interface EmployeeOtherDocument {
   mimeType?: string;
   size?: number;
   uploadedAt?: string | null;
+  /** Who added this entry — only "self" is the employee's own to edit or remove. */
+  uploadedBy?: "self" | "hr";
 }
 
 /** What a person may request, and how much of it is left this month. */
