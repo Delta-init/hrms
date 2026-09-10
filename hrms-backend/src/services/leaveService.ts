@@ -29,7 +29,7 @@ interface LeaveQuery extends PaginationQuery {
   dateTo?: string;
 }
 
-type ScheduleRef = { name?: string; workDays?: number[] } | null;
+type ScheduleRef = { _id?: unknown; name?: string; workDays?: number[] } | null;
 
 /**
  * The schedule governing someone: the one on their login, else the one on their
@@ -193,11 +193,13 @@ export class LeaveService {
      * a day they would actually have worked — they ask for five days, are
      * charged four, and turn up to a company that expected them.
      */
-    workMode?: "office" | "wfh" | null
+    workMode?: "office" | "wfh" | null,
+    /** Narrows a work-mode holiday down to one schedule's own calendar — see holidayScope. */
+    scheduleId?: unknown
   ): Promise<number> {
     const su = new Date(Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth(), new Date(start).getUTCDate()));
     const eu = new Date(Date.UTC(new Date(end).getUTCFullYear(), new Date(end).getUTCMonth(), new Date(end).getUTCDate()));
-    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu }, ...holidayScope(workMode) })).select("date").lean();
+    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu }, ...holidayScope(workMode, scheduleId) })).select("date").lean();
     const holSet = new Set(holidays.map((h) => new Date(h.date).toISOString().slice(0, 10)));
     let count = 0;
     const cur = new Date(su);
@@ -235,7 +237,7 @@ export class LeaveService {
     const schedule = await scheduleFor(input.user, user);
     const days = input.halfDay
       ? 0.5
-      : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(schedule), await workModeOfUser(input.user));
+      : await this.countWorkingDays(input.startDate, input.endDate, workDaysOf(schedule), await workModeOfUser(input.user), schedule?._id);
 
     await assertLeaveAllowed(input.user, schedule?.name, input.type, input.startDate, days, null);
 
@@ -386,13 +388,15 @@ export class LeaveService {
       if (clash) throw Object.assign(new Error("This overlaps an existing leave request for these dates"), { statusCode: 409 });
     }
     const subject = await User.findById(record.user).populate("workSchedule", "workDays");
+    const recordSchedule = await scheduleFor(record.user, subject ?? undefined);
     record.days = record.halfDay
       ? 0.5
       : await this.countWorkingDays(
           record.startDate,
           record.endDate,
-          workDaysOf(await scheduleFor(record.user, subject ?? undefined)),
-          await workModeOfUser(record.user)
+          workDaysOf(recordSchedule),
+          await workModeOfUser(record.user),
+          recordSchedule?._id
         );
 
     const owner = await User.findOne(scoped({ _id: record.user })).populate("workSchedule", "workDays name");

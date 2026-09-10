@@ -101,7 +101,7 @@ export class CompOffService {
       CompOffCredit.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("user date").lean(),
       // Every calendar in play, kept apart below: this walks the whole
       // organisation, and one person's holiday is another's working day.
-      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date workMode").lean(),
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date workMode workSchedule").lean(),
     ]);
 
     const empByUser = new Map(employees.map((e) => [String(e.user), e]));
@@ -129,14 +129,20 @@ export class CompOffService {
      * Read in the same timezone as the day being asked about, since a holiday
      * is stored at its own local midnight too.
      */
-    const holidayFor = (mode: string | null | undefined, key: string, tz: string) =>
-      holidays.some(
-        (h) => dateKeyOf(h.date, tz) === key && (!h.workMode || h.workMode === mode)
-      );
+    // A holiday tagged to one schedule is that schedule's alone, work mode
+    // notwithstanding — see holidayScope for the same rule elsewhere.
+    const holidayFor = (mode: string | null | undefined, key: string, tz: string, scheduleId?: unknown) =>
+      holidays.some((h) => {
+        if (dateKeyOf(h.date, tz) !== key) return false;
+        if ((h as { workSchedule?: unknown }).workSchedule) {
+          return scheduleId != null && String((h as { workSchedule?: unknown }).workSchedule) === String(scheduleId);
+        }
+        return !h.workMode || h.workMode === mode;
+      });
 
     // One schedule lookup per person rather than per attendance row: sixty days
     // of attendance for one employee asked the same question sixty times.
-    const scheduleCache = new Map<string, { tz: string; workDays: number[] }>();
+    const scheduleCache = new Map<string, { tz: string; workDays: number[]; scheduleId: unknown }>();
     const scheduleFor = async (uid: string, on: Date) => {
       const cached = scheduleCache.get(uid);
       if (cached) return cached;
@@ -144,6 +150,7 @@ export class CompOffService {
       const resolved = {
         tz: (ws as { timeZone?: string } | null)?.timeZone || DEFAULT_SCHEDULE.timeZone,
         workDays: ws?.workDays?.length ? ws.workDays : DEFAULT_WORK_DAYS,
+        scheduleId: (ws as { _id?: unknown } | null)?._id ?? null,
       };
       scheduleCache.set(uid, resolved);
       return resolved;
@@ -170,11 +177,11 @@ export class CompOffService {
       const emp = empByUser.get(uid);
       if (!emp) continue;
 
-      const { tz, workDays } = await scheduleFor(uid, new Date(a.date));
+      const { tz, workDays, scheduleId } = await scheduleFor(uid, new Date(a.date));
       const dateKey = dateKeyOf(a.date, tz);
       if (creditSet.has(creditKey(uid, dateKey))) continue;
 
-      const isHoliday = holidayFor((emp as { workMode?: string }).workMode, dateKey, tz);
+      const isHoliday = holidayFor((emp as { workMode?: string }).workMode, dateKey, tz, scheduleId);
       const isWeekend = isHoliday ? false : !workDays.includes(weekdayOf(dateKey));
       if (!isHoliday && !isWeekend) continue;
 

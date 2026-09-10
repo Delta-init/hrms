@@ -52,6 +52,8 @@ interface Candidate {
   schedule: ShiftSchedule;
   /** Which holiday calendar they keep — a Kerala day off is not a Dubai one. */
   workMode: "office" | "wfh" | null;
+  /** Narrows further, to a holiday tagged for this one schedule specifically. */
+  scheduleId: unknown;
 }
 
 /** The shift a person is on, or the fallback where nobody has said. */
@@ -92,18 +94,19 @@ async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
       email: u.email,
       schedule: shiftFor(u.workSchedule ? byId.get(String(u.workSchedule)) ?? null : null),
       workMode: (e as { workMode?: "office" | "wfh" }).workMode ?? null,
+      scheduleId: u.workSchedule ?? null,
     });
   }
   return out;
 }
 
 /** True when the day is one this person was never expected to work. */
-async function excusedToday(orgId: unknown, userId: unknown, dayStart: Date, dayEnd: Date, workMode: "office" | "wfh" | null) {
+async function excusedToday(orgId: unknown, userId: unknown, dayStart: Date, dayEnd: Date, workMode: "office" | "wfh" | null, scheduleId?: unknown) {
   const [onLeave, holiday] = await Promise.all([
     LeaveRequest.exists({ user: userId, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
     // Their own calendar: a Kerala holiday must not excuse a Dubai employee
     // from a punch they were expected to make.
-    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode) }),
+    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode, scheduleId) }),
   ]);
   return !!onLeave || !!holiday;
 }
@@ -158,7 +161,7 @@ export async function runPunchReminders(now = new Date()) {
         // reminding somebody to punch a day HR has already accounted for is
         // noise that makes every other reminder easier to ignore.
         if (att?.status && att.status !== "present" && att.status !== "late") continue;
-        if (await excusedToday(org._id, p.userId, dayStart, dayEnd, p.workMode)) continue;
+        if (await excusedToday(org._id, p.userId, dayStart, dayEnd, p.workMode, p.scheduleId)) continue;
         if (!(await claim(org._id, p.userId, day, "missing_in"))) continue;
         const at = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: p.schedule.timeZone, hour12: false }).format(shift.shiftStart);
         const ok = await sendMail({

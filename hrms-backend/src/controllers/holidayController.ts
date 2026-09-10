@@ -4,7 +4,7 @@ import { HolidayService, type HolidayViewer } from "../services/holidayService.j
 import { createHolidaySchema, updateHolidaySchema } from "../validations/holidayValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { hasPermission } from "../middleware/permissions.js";
-import { workModeOfUser } from "../utils/holidayScope.js";
+import { workModeOfUser, scheduleIdOfUser } from "../utils/holidayScope.js";
 
 const service = new HolidayService();
 
@@ -19,7 +19,8 @@ const service = new HolidayService();
 async function viewerFor(req: AuthenticatedRequest): Promise<HolidayViewer> {
   const canManage = hasPermission(req.user?.role, "leave", "edit");
   const workMode = canManage ? null : await workModeOfUser(req.user!.userId);
-  return { canManage, workMode };
+  const scheduleId = canManage ? null : await scheduleIdOfUser(req.user!.userId);
+  return { canManage, workMode, scheduleId };
 }
 
 export const createHoliday = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {

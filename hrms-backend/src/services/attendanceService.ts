@@ -964,9 +964,9 @@ export class AttendanceService {
                 "sessions.checkInSource.deviceAnomaly sessions.checkOutSource.deviceAnomaly").lean(),
       LeaveRequest.find({ user: { $in: userIds }, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } })
         .select("user startDate endDate type halfDay").lean(),
-      // Carrying the work mode, because this draws everybody at once and each
-      // row has to be judged against its own calendar.
-      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name workMode").lean(),
+      // Carrying the work mode and schedule, because this draws everybody at
+      // once and each row has to be judged against its own calendar.
+      Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date name workMode workSchedule").lean(),
       rosterWorkDaysByUser(userIds.map((id) => String(id)), start, end),
       // Corrections in flight or already applied. Shown on the day they concern
       // so a disputed day is visible as disputed, rather than looking settled.
@@ -1042,11 +1042,17 @@ export class AttendanceService {
      * a Kerala holiday drawn across a Dubai row would mark a day they worked as
      * a day off, on the screen HR reads to decide who was absent.
      */
-    const holidaysByMode = holidays as Array<{ date: Date; name: string; workMode?: string | null }>;
-    const holidayNameFor = (mode: string | null | undefined, key: string): string | undefined =>
-      holidaysByMode.find(
-        (h) => new Date(h.date).toISOString().slice(0, 10) === key && (!h.workMode || h.workMode === mode)
-      )?.name;
+    const holidaysByMode = holidays as Array<{ date: Date; name: string; workMode?: string | null; workSchedule?: unknown }>;
+    // A holiday tagged to one schedule is that schedule's alone, work mode
+    // notwithstanding — Karnataka's calendar is not also every other remote
+    // worker's just because both happen to be workMode: wfh. Untagged reaches
+    // everybody the work-mode check already decided to, same as always.
+    const holidayNameFor = (mode: string | null | undefined, key: string, scheduleId?: unknown): string | undefined =>
+      holidaysByMode.find((h) => {
+        if (new Date(h.date).toISOString().slice(0, 10) !== key) return false;
+        if (h.workSchedule) return scheduleId != null && String(h.workSchedule) === String(scheduleId);
+        return !h.workMode || h.workMode === mode;
+      })?.name;
 
     const countable = new Set(["present", "late", "half_day", "absent", "on_leave", "holiday", "weekend", "wfh"]);
     const employeesOut = employees.map((e) => {
@@ -1092,7 +1098,7 @@ export class AttendanceService {
           if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
         } else if (!employedOn(window, key)) entry = null;
         else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
-        else if (holidayNameFor(empWorkMode, key)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key) };
+        else if (holidayNameFor(empWorkMode, key, scheduleId)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key, scheduleId) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
         else if (key < todayKey) entry = { status: "absent" };
         else entry = null;

@@ -131,7 +131,7 @@ export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exceptio
         LeaveRequest.exists({ user: e.user, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
         // Their own calendar, so a Kerala holiday does not quietly drop a Dubai
         // employee out of the exceptions HR is reading.
-        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode) }),
+        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode, u.workSchedule) }),
       ]);
       if (onLeave || holiday) continue;
       if (att?.status && !["present", "late", "half_day"].includes(att.status)) continue;
