@@ -85,6 +85,11 @@ const envSchema = z.object({
    * rather than lost.
    */
   COMP_OFF_AUTO_CREDIT_CRON: z.string().default("0 21 * * *"),
+  /**
+   * Evening, so the notice reads as "tomorrow" to somebody still at their
+   * desk rather than landing after most people have already left for the day.
+   */
+  HOLIDAY_REMINDER_CRON: z.string().default("0 18 * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).
