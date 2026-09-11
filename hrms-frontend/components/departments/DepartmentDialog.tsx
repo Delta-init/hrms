@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { departmentFormSchema, type DepartmentFormValues } from "@/lib/validations/departmentSchema";
 import { useCreateDepartment, useUpdateDepartment } from "@/hooks/useDepartments";
@@ -77,7 +78,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
-    defaultValues: { name: "", code: "", description: "", leader: "", members: [], status: "active" },
+    defaultValues: { name: "", code: "", description: "", leader: "", members: [], webOnlyForRemote: false, status: "active" },
   });
 
   useEffect(() => {
@@ -92,10 +93,11 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
         description: department.description ?? "",
         leader: leaderKey,
         members: memberKeys,
+        webOnlyForRemote: department.webOnlyForRemote ?? false,
         status: department.status,
       });
     } else {
-      reset({ name: "", code: "", description: "", leader: "", members: [], status: "active" });
+      reset({ name: "", code: "", description: "", leader: "", members: [], webOnlyForRemote: false, status: "active" });
     }
   }, [open, department, reset]);
 
@@ -132,6 +134,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       leader: leader?.ref ?? null,
       leaderKind: leader?.kind ?? "Employee",
       members: (data.members ?? []).map(parseKey),
+      webOnlyForRemote: data.webOnlyForRemote,
     };
     if (isEditing) update({ id: department._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
@@ -198,6 +201,18 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
                 </Select>
               )}
             />
+          </div>
+
+          <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <Label htmlFor="webOnlyForRemote">Web-only for remote members</Label>
+              <p className="text-xs text-muted-foreground">
+                Refuses a phone or tablet sign-in for this department&apos;s work-from-home members. Office-based members are unaffected.
+              </p>
+            </div>
+            <Controller control={control} name="webOnlyForRemote" render={({ field }) => (
+              <Switch id="webOnlyForRemote" checked={!!field.value} onCheckedChange={field.onChange} />
+            )} />
           </div>
 
           {/* Members (Employee or User) */}

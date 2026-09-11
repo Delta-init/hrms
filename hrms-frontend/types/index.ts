@@ -235,6 +235,8 @@ export interface Department {
   leader?: PersonRef | string | null;
   leaderKind?: PersonKind;
   members: DepartmentMember[];
+  /** Refuses a mobile sign-in for this department's remote (wfh) members. */
+  webOnlyForRemote?: boolean;
   status: "active" | "inactive";
   employeeCount?: number;
   createdAt: string;

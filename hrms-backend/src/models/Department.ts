@@ -45,6 +45,14 @@ const departmentSchema = new Schema<IDepartment>(
       type: [memberSchema],
       default: [],
     },
+    /**
+     * Refuses a mobile sign-in for this department's remote members — office
+     * members are unaffected, since being on-site was never the thing this
+     * asks about. Not a device lock like the punch-binding feature beside it:
+     * a browser's own User-Agent is all this reads, so it is a policy someone
+     * can work around with effort, not a wall.
+     */
+    webOnlyForRemote: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ["active", "inactive"],

@@ -8,6 +8,7 @@ export const departmentFormSchema = z.object({
   description: z.string().max(300).optional(),
   leader: z.string().optional(),
   members: z.array(z.string()).default([]),
+  webOnlyForRemote: z.boolean().optional(),
   status: z.enum(["active", "inactive"]),
 });
 

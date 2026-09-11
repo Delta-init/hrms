@@ -20,7 +20,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       return;
     }
 
-    const result = await authService.login(parsed.data);
+    const result = await authService.login(parsed.data, req.headers["user-agent"]);
     sendSuccess(res, "Login successful", result, 200);
   } catch (error) {
     next(error);
@@ -35,7 +35,7 @@ export const setPassword = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const result = await authService.setPassword(parsed.data);
+    const result = await authService.setPassword(parsed.data, req.headers["user-agent"]);
     sendSuccess(res, "Password set successfully", result, 200);
   } catch (error) {
     next(error);

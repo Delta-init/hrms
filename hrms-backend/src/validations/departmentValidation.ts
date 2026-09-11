@@ -10,6 +10,7 @@ export const createDepartmentSchema = z.object({
   leader: z.string().optional().nullable(),
   leaderKind: personKind.optional(),
   members: z.array(memberSchema).default([]),
+  webOnlyForRemote: z.boolean().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
@@ -20,6 +21,7 @@ export const updateDepartmentSchema = z.object({
   leader: z.string().optional().nullable(),
   leaderKind: personKind.optional(),
   members: z.array(memberSchema).optional(),
+  webOnlyForRemote: z.boolean().optional(),
   status: z.enum(["active", "inactive"]).optional(),
 });
 

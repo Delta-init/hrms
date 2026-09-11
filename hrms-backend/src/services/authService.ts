@@ -11,6 +11,7 @@ import { scoped } from "../utils/orgContext.js";
 import { missingRequiredDocs } from "../config/documentRequirements.js";
 import { publicUrl } from "./uploadService.js";
 import { departmentsHeadedBy } from "./departmentHeadService.js";
+import { isMobileUserAgent } from "../utils/userAgent.js";
 
 /**
  * A valid bcrypt hash (of a random string) compared against when no user
@@ -28,8 +29,28 @@ async function withHeadFlag(user: { _id: unknown; toJSON: () => unknown }): Prom
   return { ...(user.toJSON() as Omit<IUser, "password">), isDepartmentHead };
 }
 
+/**
+ * Refuses a mobile sign-in for a remote employee whose department has opted
+ * into it. Queried directly by organization rather than through the usual
+ * `scoped()` helper — nothing has authenticated yet at this point in login,
+ * so there is no org context for it to read.
+ */
+async function assertNotRestrictedMobile(user: { _id: unknown; organization?: unknown }, userAgent?: string): Promise<void> {
+  if (!isMobileUserAgent(userAgent)) return;
+  const employee = await Employee.findOne({ user: user._id, organization: user.organization })
+    .select("workMode department")
+    .populate("department", "webOnlyForRemote")
+    .lean<{ workMode?: "office" | "wfh"; department?: { webOnlyForRemote?: boolean } | null } | null>();
+  if (employee?.workMode === "wfh" && employee.department?.webOnlyForRemote) {
+    throw Object.assign(
+      new Error("This account can only sign in from a computer, not a phone or tablet"),
+      { statusCode: 403, code: "MOBILE_LOGIN_BLOCKED" }
+    );
+  }
+}
+
 export class AuthService {
-  async login(input: LoginInput) {
+  async login(input: LoginInput, userAgent?: string) {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
       .populate("role")
@@ -59,6 +80,8 @@ export class AuthService {
         { statusCode: 403, code: "MUST_RESET_PASSWORD" }
       );
     }
+
+    await assertNotRestrictedMobile(user, userAgent);
 
     const payload = {
       userId: user._id.toString(),
@@ -152,7 +175,7 @@ export class AuthService {
    * First-password / invite-accept flow. An invited user sets their real
    * password using the temporary one the admin issued.
    */
-  async setPassword(input: SetPasswordInput) {
+  async setPassword(input: SetPasswordInput, userAgent?: string) {
     const user = await User.findOne({ email: input.email.toLowerCase() })
       .select("+password")
       .populate("role")
@@ -178,6 +201,8 @@ export class AuthService {
     if (activatingFromInvite && org?.settings?.requireAgreements) {
       user.agreementsRequired = true;
     }
+
+    await assertNotRestrictedMobile(user, userAgent);
 
     user.password = input.newPassword;
     user.mustResetPassword = false;

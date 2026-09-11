@@ -510,6 +510,8 @@ export interface IDepartment extends Document {
   leaderKind?: PersonKind;
   /** Members — each an Employee or a User. */
   members: Types.DocumentArray<IDepartmentMember & Document>;
+  /** Refuses a mobile sign-in for this department's remote (wfh) members. */
+  webOnlyForRemote?: boolean;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
