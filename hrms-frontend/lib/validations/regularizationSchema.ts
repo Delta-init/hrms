@@ -15,15 +15,17 @@ export const regularizationFormSchema = z
     message: "Provide a corrected check-in and/or check-out time",
     path: ["requestedCheckIn"],
   })
-  // Mirrors the backend's own check — a day still in progress has nothing
-  // settled yet to correct.
+  // Mirrors the backend's own check — a day still ahead has nothing settled
+  // yet to correct at all. Today is allowed through here; whether it's
+  // actually settled (already late or half day) is checked server-side,
+  // against the day's own record.
   .refine(
     (data) => {
       if (!data.date || !data.timeZone) return true;
       const today = new Intl.DateTimeFormat("en-CA", { timeZone: data.timeZone }).format(new Date());
-      return data.date < today;
+      return data.date <= today;
     },
-    { message: "You can only raise a correction for a day that has already ended", path: ["date"] }
+    { message: "You can't raise a correction for a day that hasn't happened yet", path: ["date"] }
   );
 
 export type RegularizationFormValues = z.infer<typeof regularizationFormSchema>;

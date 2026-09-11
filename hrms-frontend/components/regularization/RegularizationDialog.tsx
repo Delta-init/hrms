@@ -31,7 +31,7 @@ interface Props {
 export function RegularizationDialog({ open, onOpenChange, lockToUserId, record }: Props) {
   const editing = !!record;
   const selfMode = !!lockToUserId;
-  const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA");
+  const today = new Date().toLocaleDateString("en-CA");
   const { mutate: create, isPending: creating } = useCreateRegularization();
   const { mutate: save, isPending: saving } = useUpdateRegularization();
   const isPending = creating || saving;
@@ -161,10 +161,13 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
 
           <div className="space-y-1.5">
             <Label htmlFor="date">Date *</Label>
-            {/* A day still in progress has nothing settled yet to correct —
-                approximate with the browser's own "yesterday"; the exact rule
-                (the selected time zone's own today) is enforced by validation. */}
-            <Input id="date" type="date" max={yesterday} {...register("date")} />
+            {/* A day still ahead has nothing settled yet — approximate with the
+                browser's own "today"; the exact cutoff (the selected time
+                zone's own today) is enforced by validation. Today itself is
+                allowed here; whether it's actually settled yet (already late
+                or half day) can only be checked server-side, against today's
+                own attendance record. */}
+            <Input id="date" type="date" max={today} {...register("date")} />
             {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
           </div>
           <div className="space-y-1.5">

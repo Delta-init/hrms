@@ -9,6 +9,11 @@ export function isPastDay(date: Date, tz: string): boolean {
   return date.toISOString().slice(0, 10) < todayInTz(tz || "Asia/Dubai");
 }
 
+/** Whether `date` falls strictly after today, in `tz`. */
+export function isFutureDay(date: Date, tz: string): boolean {
+  return date.toISOString().slice(0, 10) > todayInTz(tz || "Asia/Dubai");
+}
+
 export const createRegularizationSchema = z
   .object({
     user: z.string().min(1, "User is required"),
@@ -32,10 +37,13 @@ export const createRegularizationSchema = z
     message: "Provide a corrected check-in and/or check-out time",
     path: ["requestedCheckIn"],
   })
-  // A day still in progress has no final check-in/check-out to correct yet —
-  // raising one for today (or ahead of it) has nothing settled to fix.
-  .refine((data) => isPastDay(data.date, data.timeZone), {
-    message: "You can only raise a correction for a day that has already ended",
+  // A day still ahead has nothing settled yet to correct at all. Today is
+  // narrower than "already past" but not always too soon — a late or
+  // half-day arrival is decided the moment it happens, not at midnight — so
+  // today alone is let through here and judged against the day's own record
+  // in the service, where that record actually is.
+  .refine((data) => !isFutureDay(data.date, data.timeZone), {
+    message: "You can't raise a correction for a day that hasn't happened yet",
     path: ["date"],
   });
 

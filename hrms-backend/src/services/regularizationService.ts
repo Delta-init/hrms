@@ -3,7 +3,7 @@ import { getAttendancePenaltyPolicy } from "./attendancePenaltyService.js";
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
 import type { CreateRegularizationInput, UpdateRegularizationInput, ReviewRegularizationInput } from "../validations/regularizationValidation.js";
-import { isPastDay } from "../validations/regularizationValidation.js";
+import { isPastDay, isFutureDay } from "../validations/regularizationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -67,6 +67,39 @@ export class RegularizationService {
     );
   }
 
+  /**
+   * A day that hasn't happened has nothing to correct at all; a day still in
+   * progress has nothing settled to correct *yet*, unless today has already
+   * decided something — a late or half-day arrival is settled the instant it
+   * happens, not at midnight, so someone does not have to wait out the rest
+   * of a day they are only trying to explain. An ordinary "present so far"
+   * day, or one with nothing recorded yet, still has nothing settled.
+   *
+   * Called from both create() and update() rather than left to the create
+   * schema alone — a service method should not trust that every caller
+   * necessarily went through it first.
+   */
+  private async assertRegularizable(userId: unknown, date: Date, timeZone: string) {
+    if (isPastDay(date, timeZone)) return;
+    if (isFutureDay(date, timeZone)) {
+      throw Object.assign(
+        new Error("You can't raise a correction for a day that hasn't happened yet"),
+        { statusCode: 400 }
+      );
+    }
+    const dayStr = new Date(date).toISOString().slice(0, 10);
+    const dayStart = zonedTimeToUtc(dayStr, "00:00", timeZone);
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    const today = await Attendance.findOne(scoped({ user: userId, date: { $gte: dayStart, $lt: dayEnd } }))
+      .select("status")
+      .lean<{ status?: string } | null>();
+    if (today?.status === "late" || today?.status === "half_day") return;
+    throw Object.assign(
+      new Error("Today isn't over yet — you can only raise a same-day correction once you're already marked late or half day"),
+      { statusCode: 400 }
+    );
+  }
+
   /** What the requester should be told before they submit. */
   async monthlyAllowance(userId: string) {
     const policy = await getAttendancePenaltyPolicy();
@@ -84,6 +117,7 @@ export class RegularizationService {
   async create(input: CreateRegularizationInput) {
     const user = await User.findById(input.user);
     if (!user) throw Object.assign(new Error("User not found"), { statusCode: 404 });
+    await this.assertRegularizable(input.user, input.date, input.timeZone);
     const workflow = await beginWorkflowState("regularization");
     // The form sends a choice; a request raised without one takes the
     // organization's default rather than a value fixed in the code.
@@ -270,12 +304,9 @@ export class RegularizationService {
     if (input.reason !== undefined) record.reason = input.reason ?? undefined;
 
     // Same rule create() enforces, re-checked here so editing the date can't
-    // walk a request back onto a day that has not ended yet.
-    if (input.date !== undefined && !isPastDay(record.date, record.timeZone)) {
-      throw Object.assign(
-        new Error("You can only raise a correction for a day that has already ended"),
-        { statusCode: 400 }
-      );
+    // walk a request onto a day that hasn't happened, or hasn't settled yet.
+    if (input.date !== undefined) {
+      await this.assertRegularizable(record.user, record.date, record.timeZone);
     }
 
     await record.save();
