@@ -26,6 +26,7 @@ const STATUS: Record<AttendanceStatus, { label: string; cell: string; letter: st
   present: { label: "Present", cell: "bg-emerald-500 text-white", letter: "P" },
   late: { label: "Late", cell: "bg-amber-500 text-white", letter: "L" },
   half_day: { label: "Half day", cell: "bg-orange-400 text-white", letter: "½" },
+  early_out: { label: "Early out", cell: "bg-yellow-500 text-white", letter: "EO" },
   absent: { label: "Absent", cell: "bg-red-500 text-white", letter: "A" },
   on_leave: { label: "On leave", cell: "bg-sky-500 text-white", letter: "LV" },
   holiday: { label: "Holiday", cell: "bg-violet-500 text-white", letter: "H" },

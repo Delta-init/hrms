@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { todayInTz } from "../utils/schedule.js";
 
-const typeEnum = z.enum(["missing_checkin", "missing_checkout", "wrong_time", "absent_correction"]);
+const typeEnum = z.enum(["missing_checkin", "missing_checkout", "wrong_time", "absent_correction", "early_checkout"]);
 const statusEnum = z.enum(["pending", "approved", "rejected", "cancelled"]);
+const resultingStatusEnum = z.enum(["present", "half_day", "wfh", "early_out"]);
 
 /** Whether `date` falls strictly before today, in `tz`. */
 export function isPastDay(date: Date, tz: string): boolean {
@@ -25,7 +26,7 @@ export const createRegularizationSchema = z
      * than defaulted here — a default would fill the field in before the
      * service sees it, and the organization's own default could never apply.
      */
-    resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
+    resultingStatus: resultingStatusEnum.optional(),
     requestedCheckIn: z.coerce.date().optional().nullable(),
     requestedCheckOut: z.coerce.date().optional().nullable(),
     reason: z.string().max(500).optional(),
@@ -48,7 +49,7 @@ export const createRegularizationSchema = z
   });
 
 export const updateRegularizationSchema = z.object({
-  resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
+  resultingStatus: resultingStatusEnum.optional(),
   date: z.coerce.date().optional(),
   timeZone: z.string().min(1).optional(),
   type: typeEnum.optional(),
@@ -67,7 +68,7 @@ export const reviewRegularizationSchema = z.object({
    * approve it — they are the last person to look at the request, and without
    * this a wrong status means rejecting it and asking for a resubmission.
    */
-  resultingStatus: z.enum(["present", "half_day", "wfh"]).optional(),
+  resultingStatus: resultingStatusEnum.optional(),
 });
 
 export type CreateRegularizationInput = z.infer<typeof createRegularizationSchema>;

@@ -186,6 +186,7 @@ export type AttendanceStatus =
   | "absent"
   | "late"
   | "half_day"
+  | "early_out"
   | "on_leave"
   | "holiday"
   | "weekend"
@@ -737,13 +738,14 @@ export interface IEmployee extends Document {
 
 // ─── Attendance Regularization ──────────────────────────────────────────────
 /** Attendance statuses a regularization may set. */
-export type RegularizationOutcome = "present" | "half_day" | "wfh";
+export type RegularizationOutcome = "present" | "half_day" | "wfh" | "early_out";
 
 export type RegularizationType =
   | "missing_checkin"
   | "missing_checkout"
   | "wrong_time"
-  | "absent_correction";
+  | "absent_correction"
+  | "early_checkout";
 
 export type RegularizationStatus = "pending" | "approved" | "rejected" | "cancelled";
 

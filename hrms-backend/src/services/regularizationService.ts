@@ -42,9 +42,10 @@ const TYPE_LABELS: Record<string, string> = {
   missing_checkout: "Missing check-out",
   wrong_time: "Wrong time",
   absent_correction: "Absent correction",
+  early_checkout: "Early checkout",
 };
 const STATUS_LABELS: Record<string, string> = {
-  present: "Present", half_day: "Half day", wfh: "Work from home",
+  present: "Present", half_day: "Half day", wfh: "Work from home", early_out: "Early out",
 };
 
 export class RegularizationService {
@@ -70,10 +71,11 @@ export class RegularizationService {
   /**
    * A day that hasn't happened has nothing to correct at all; a day still in
    * progress has nothing settled to correct *yet*, unless today has already
-   * decided something — a late or half-day arrival is settled the instant it
-   * happens, not at midnight, so someone does not have to wait out the rest
-   * of a day they are only trying to explain. An ordinary "present so far"
-   * day, or one with nothing recorded yet, still has nothing settled.
+   * decided something — a late or half-day arrival, or an early checkout, is
+   * settled the instant it happens, not at midnight, so someone does not have
+   * to wait out the rest of a day they are only trying to explain. An
+   * ordinary "present so far" day, or one with nothing recorded yet, still
+   * has nothing settled.
    *
    * Called from both create() and update() rather than left to the create
    * schema alone — a service method should not trust that every caller
@@ -93,9 +95,9 @@ export class RegularizationService {
     const today = await Attendance.findOne(scoped({ user: userId, date: { $gte: dayStart, $lt: dayEnd } }))
       .select("status")
       .lean<{ status?: string } | null>();
-    if (today?.status === "late" || today?.status === "half_day") return;
+    if (today?.status === "late" || today?.status === "half_day" || today?.status === "early_out") return;
     throw Object.assign(
-      new Error("Today isn't over yet — you can only raise a same-day correction once you're already marked late or half day"),
+      new Error("Today isn't over yet — you can only raise a same-day correction once you're already marked late, half day, or early out"),
       { statusCode: 400 }
     );
   }

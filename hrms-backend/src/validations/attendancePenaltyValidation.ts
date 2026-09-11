@@ -6,7 +6,7 @@ export const upsertAttendancePenaltyPolicySchema = z.object({
   lateBlockSize: z.number().int().min(1).max(31).default(3),
   unrecordedDaysUnpaid: z.boolean().default(false),
   monthlyRegularizationLimit: z.coerce.number().int().min(0).max(31).default(3),
-  defaultRegularizationStatus: z.enum(["present", "half_day", "wfh"]).default("present"),
+  defaultRegularizationStatus: z.enum(["present", "half_day", "wfh", "early_out"]).default("present"),
 });
 
 export type UpsertAttendancePenaltyPolicyInput = z.infer<typeof upsertAttendancePenaltyPolicySchema>;

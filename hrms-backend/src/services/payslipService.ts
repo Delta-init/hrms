@@ -61,6 +61,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
+export const EARLY_OUT_PENALTY_PREFIX = "Early-Out Penalty";
 const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
 
 /** Local calendar day of an instant, as YYYY-MM-DD. */
@@ -121,7 +122,7 @@ function countWorkingDays(month: string, workDays?: number[], employment?: Emplo
  * part of that, and counting them let a taxi claim raise the price of absence.
  */
 function attendanceDeductions(
-  summary: { lopDays: number; latePenaltyDays: number },
+  summary: { lopDays: number; latePenaltyDays: number; earlyOutPenaltyDays: number },
   salary: number,
   /**
    * The most this month can lose — the payable gross, which is smaller than
@@ -141,6 +142,7 @@ function attendanceDeductions(
   const lines: Line[] = [];
   if (summary.lopDays > 0) lines.push({ label: `${LOP_PREFIX} (${summary.lopDays}d)`, amount: r2(perDay * summary.lopDays) });
   if (summary.latePenaltyDays > 0) lines.push({ label: `${PENALTY_PREFIX} (${summary.latePenaltyDays}d)`, amount: r2(perDay * summary.latePenaltyDays) });
+  if (summary.earlyOutPenaltyDays > 0) lines.push({ label: `${EARLY_OUT_PENALTY_PREFIX} (${summary.earlyOutPenaltyDays}d)`, amount: r2(perDay * summary.earlyOutPenaltyDays) });
 
   // Rounding the daily rate can still overshoot by pennies across a whole month.
   const total = lines.reduce((a, l) => a + l.amount, 0);
@@ -622,7 +624,8 @@ export class PayslipService {
     ]);
 
     const base = {
-      present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
+      present: 0, late: 0, half: 0, absent: 0, earlyOut: 0, unpaidLeaveDays: 0, lopDays: 0,
+      latePenaltyDays: 0, earlyOutPenaltyDays: 0,
       /** Approved leave falling on working days — paid, and holidays likewise. */
       paidLeaveDays: 0, holidayDays: 0,
       /** A half-day leave's other half, where nothing was worked against it either. */
@@ -681,6 +684,7 @@ export class PayslipService {
       const key = new Intl.DateTimeFormat("en-CA", { timeZone: a.timeZone || tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(a.date));
       if (a.status === "present") { base.present++; attendedKeys.add(key); }
       else if (a.status === "late") { base.late++; attendedKeys.add(key); }
+      else if (a.status === "early_out") { base.earlyOut++; attendedKeys.add(key); }
       else if (a.status === "half_day") { base.half++; halfSet.add(key); attendedKeys.add(key); }
       else if (a.status === "absent") { base.absent++; lopFull.add(key); }
     }
@@ -742,6 +746,9 @@ export class PayslipService {
     // separate half-day-equivalent deduction (kept apart from absence-driven LOP).
     const penaltyPolicy = await getAttendancePenaltyPolicy();
     base.latePenaltyDays = computeLatePenaltyDays(base.late, penaltyPolicy);
+    // Same policy, same shape, counted apart from lateness — leaving early
+    // repeatedly is its own habit, not a second way of being late.
+    base.earlyOutPenaltyDays = computeLatePenaltyDays(base.earlyOut, penaltyPolicy);
 
     // Working days come from the schedule's week pattern; without one every day
     // of the month counts, which is the honest answer when nobody has said

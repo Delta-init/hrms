@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const statusEnum = z.enum([
-  "present", "absent", "late", "half_day", "on_leave", "holiday", "weekend", "wfh",
+  "present", "absent", "late", "half_day", "early_out", "on_leave", "holiday", "weekend", "wfh",
 ]);
 
 export const attendanceFormSchema = z.object({

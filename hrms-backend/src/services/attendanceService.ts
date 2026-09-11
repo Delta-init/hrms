@@ -13,7 +13,7 @@ import { employmentWindows, employedOn } from "./employmentWindow.js";
 import type { CreateAttendanceInput, UpdateAttendanceInput } from "../validations/attendanceValidation.js";
 import type { IPunchSource, ITrustedDevice, RemoteDevicePolicy, DeviceAnomaly, PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
-import { resolveShift, statusForClockIn, durationStatus, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
+import { resolveShift, statusForClockIn, statusForClockOut, worseStatus, durationStatus, DEFAULT_SCHEDULE, type ShiftSchedule, DEFAULT_WORK_DAYS, localDayKey, todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } from "./workScheduleService.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination, searchRegex } from "../utils/query.js";
@@ -902,6 +902,14 @@ export class AttendanceService {
     if (schedule.mode === "duration") {
       const workedMinutes = att.computeWorkedMinutes();
       att.status = durationStatus(workedMinutes, schedule.requiredHours ?? 8, schedule.graceMinutes ?? 15);
+    } else if (att.checkIn) {
+      // Fixed mode already decided an arrival verdict at clock-in; this adds
+      // a departure verdict and keeps whichever is worse — arriving late and
+      // also leaving early is not generously read as just "late". Resolved
+      // against the day they checked in on, not "now": an overnight shift's
+      // checkout can fall on the next calendar day.
+      const shift = resolveShift(schedule, att.checkIn);
+      att.status = worseStatus(att.status, statusForClockOut(now, shift)) as never;
     }
 
     await att.save();

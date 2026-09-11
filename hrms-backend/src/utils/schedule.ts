@@ -81,9 +81,13 @@ export interface ResolvedShift {
   lateThreshold: Date;
   /** Beyond this (shiftStart + 2h) a late arrival is a half-day. */
   halfDayThreshold: Date;
+  /** On-time departure boundary (shiftEnd − grace) — the mirror of lateThreshold. */
+  onTimeDepartureThreshold: Date;
+  /** Before this (shiftEnd − 2h) a departure is a half-day, not merely early. */
+  earlyOutThreshold: Date;
 }
 
-const HALF_DAY_AFTER_MINUTES = 120; // 2 hours late → half day
+const HALF_DAY_AFTER_MINUTES = 120; // 2 hours late, or 2 hours short at the other end → half day
 
 export function resolveShift(schedule: ShiftSchedule, now = new Date()): ResolvedShift {
   const tz = schedule.timeZone || DEFAULT_SCHEDULE.timeZone;
@@ -95,9 +99,15 @@ export function resolveShift(schedule: ShiftSchedule, now = new Date()): Resolve
     shiftEnd = new Date(shiftEnd.getTime() + 86_400_000); // overnight shift
   }
   const windowOpen = new Date(shiftStart.getTime() - 30 * 60_000);
-  const lateThreshold = new Date(shiftStart.getTime() + (schedule.graceMinutes ?? 15) * 60_000);
+  const graceMs = (schedule.graceMinutes ?? 15) * 60_000;
+  const lateThreshold = new Date(shiftStart.getTime() + graceMs);
   const halfDayThreshold = new Date(shiftStart.getTime() + HALF_DAY_AFTER_MINUTES * 60_000);
-  return { timeZone: tz, dateStr, dateMidnightUtc, shiftStart, shiftEnd, windowOpen, lateThreshold, halfDayThreshold };
+  const onTimeDepartureThreshold = new Date(shiftEnd.getTime() - graceMs);
+  const earlyOutThreshold = new Date(shiftEnd.getTime() - HALF_DAY_AFTER_MINUTES * 60_000);
+  return {
+    timeZone: tz, dateStr, dateMidnightUtc, shiftStart, shiftEnd, windowOpen,
+    lateThreshold, halfDayThreshold, onTimeDepartureThreshold, earlyOutThreshold,
+  };
 }
 
 /** Status for a clock-in at `now` given the resolved shift. */
@@ -105,6 +115,30 @@ export function statusForClockIn(now: Date, shift: ResolvedShift): "present" | "
   if (now.getTime() <= shift.lateThreshold.getTime()) return "present";
   if (now.getTime() <= shift.halfDayThreshold.getTime()) return "late";
   return "half_day";
+}
+
+/**
+ * Status for a clock-out at `now`, given the resolved shift — the mirror of
+ * statusForClockIn, judged from the other end of the day. Fixed mode only;
+ * duration mode has its own end-of-day judgment (see durationStatus) and
+ * never reaches this.
+ */
+export function statusForClockOut(now: Date, shift: ResolvedShift): "present" | "early_out" | "half_day" {
+  if (now.getTime() >= shift.onTimeDepartureThreshold.getTime()) return "present";
+  if (now.getTime() >= shift.earlyOutThreshold.getTime()) return "early_out";
+  return "half_day";
+}
+
+const STATUS_SEVERITY: Record<string, number> = { present: 0, late: 1, early_out: 2, half_day: 3 };
+
+/**
+ * The worse of two attendance-status verdicts for the same day — arriving
+ * late and also leaving early is not generously read as just "late".
+ * Anything outside the four fixed-mode tiers (on_leave, wfh, …) is never
+ * produced by either side this combines, so it never needs to appear here.
+ */
+export function worseStatus(a: string, b: string): string {
+  return (STATUS_SEVERITY[a] ?? 0) >= (STATUS_SEVERITY[b] ?? 0) ? a : b;
 }
 
 /**

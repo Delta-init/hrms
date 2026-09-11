@@ -29,7 +29,7 @@ const attendancePenaltyPolicySchema = new Schema<IAttendancePenaltyPolicy>(
      */
     defaultRegularizationStatus: {
       type: String,
-      enum: ["present", "half_day", "wfh"],
+      enum: ["present", "half_day", "wfh", "early_out"],
       default: "present",
     },
     /**

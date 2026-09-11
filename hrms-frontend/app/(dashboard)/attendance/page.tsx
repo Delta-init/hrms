@@ -33,6 +33,7 @@ const statusStyles: Record<AttendanceStatus, string> = {
   wfh: "bg-sky-500/10 text-sky-600 border-sky-500/20",
   late: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   half_day: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  early_out: "bg-orange-500/10 text-orange-600 border-orange-500/20",
   on_leave: "bg-violet-500/10 text-violet-600 border-violet-500/20",
   holiday: "bg-primary/10 text-primary border-primary/20",
   weekend: "bg-muted text-muted-foreground border-border",

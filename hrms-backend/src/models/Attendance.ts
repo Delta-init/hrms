@@ -122,7 +122,7 @@ const attendanceSchema = new Schema<IAttendance>(
     sessions: { type: [sessionSchema], default: [] },
     status: {
       type: String,
-      enum: ["present", "absent", "late", "half_day", "on_leave", "holiday", "weekend", "wfh"],
+      enum: ["present", "absent", "late", "half_day", "early_out", "on_leave", "holiday", "weekend", "wfh"],
       default: "present",
     },
     workedMinutes: { type: Number, default: 0, min: 0 },

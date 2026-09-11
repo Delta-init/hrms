@@ -33,6 +33,7 @@ const STATUSES: Array<{ key: DayViewStatus; label: string; tone: string; dot: st
   { key: "present", label: "Present", tone: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20", dot: "bg-emerald-500" },
   { key: "late", label: "Late", tone: "bg-amber-500/10 text-amber-600 border-amber-500/20", dot: "bg-amber-500" },
   { key: "half_day", label: "Half day", tone: "bg-amber-500/10 text-amber-600 border-amber-500/20", dot: "bg-amber-400" },
+  { key: "early_out", label: "Early out", tone: "bg-yellow-500/10 text-yellow-700 border-yellow-500/20", dot: "bg-yellow-500" },
   { key: "wfh", label: "Work from home", tone: "bg-sky-500/10 text-sky-600 border-sky-500/20", dot: "bg-sky-500" },
   { key: "on_leave", label: "On leave", tone: "bg-violet-500/10 text-violet-600 border-violet-500/20", dot: "bg-violet-500" },
   { key: "absent", label: "Absent", tone: "bg-red-500/10 text-red-600 border-red-500/20", dot: "bg-red-500" },

@@ -10,7 +10,7 @@ const regularizationSchema = new Schema<IRegularization>(
     timeZone: { type: String, required: true, default: "Asia/Dubai", trim: true },
     type: {
       type: String,
-      enum: ["missing_checkin", "missing_checkout", "wrong_time", "absent_correction"],
+      enum: ["missing_checkin", "missing_checkout", "wrong_time", "absent_correction", "early_checkout"],
       required: [true, "Type is required"],
     },
     /**
@@ -24,7 +24,7 @@ const regularizationSchema = new Schema<IRegularization>(
      */
     resultingStatus: {
       type: String,
-      enum: ["present", "half_day", "wfh"],
+      enum: ["present", "half_day", "wfh", "early_out"],
       default: "present",
     },
     requestedCheckIn: { type: Date, default: null },

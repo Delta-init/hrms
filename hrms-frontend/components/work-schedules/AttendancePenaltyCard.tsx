@@ -135,7 +135,7 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
 
         <p className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
           {enabled
-            ? `The first ${graceLates || 0} late arrivals each month are free. Every ${lateBlockSize || 1} late arrivals after that deduct half a day's pay.`
+            ? `The first ${graceLates || 0} late arrivals each month are free. Every ${lateBlockSize || 1} late arrivals after that deduct half a day's pay — and the same allowance and rate apply separately to early checkouts, counted on their own.`
             : "Penalty deductions are currently disabled — enable to start applying them from next payroll run."}
         </p>
 

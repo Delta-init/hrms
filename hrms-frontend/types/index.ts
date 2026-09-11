@@ -542,13 +542,14 @@ export interface PaginatedResult<T> {
 
 // ─── Attendance ─────────────────────────────────────────────────────────────
 export type AttendanceStatus =
-  | "present" | "absent" | "late" | "half_day" | "on_leave" | "holiday" | "weekend" | "wfh";
+  | "present" | "absent" | "late" | "half_day" | "early_out" | "on_leave" | "holiday" | "weekend" | "wfh";
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   present: "Present",
   absent: "Absent",
   late: "Late",
   half_day: "Half Day",
+  early_out: "Early Out",
   on_leave: "On Leave",
   holiday: "Holiday",
   weekend: "Weekend",
@@ -781,10 +782,10 @@ export const TIME_ZONES = [
 
 // ─── Attendance Regularization ───────────────────────────────────────────────
 /** Attendance statuses a regularization can set on approval. */
-export type RegularizationOutcome = "present" | "half_day" | "wfh";
-export const REGULARIZATION_OUTCOMES: RegularizationOutcome[] = ["present", "half_day", "wfh"];
+export type RegularizationOutcome = "present" | "half_day" | "wfh" | "early_out";
+export const REGULARIZATION_OUTCOMES: RegularizationOutcome[] = ["present", "half_day", "wfh", "early_out"];
 
-export type RegularizationType = "missing_checkin" | "missing_checkout" | "wrong_time" | "absent_correction";
+export type RegularizationType = "missing_checkin" | "missing_checkout" | "wrong_time" | "absent_correction" | "early_checkout";
 export type RegularizationStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export const REGULARIZATION_TYPE_LABELS: Record<RegularizationType, string> = {
@@ -792,6 +793,7 @@ export const REGULARIZATION_TYPE_LABELS: Record<RegularizationType, string> = {
   missing_checkout: "Missing Check-out",
   wrong_time: "Wrong Time",
   absent_correction: "Absent Correction",
+  early_checkout: "Early Checkout",
 };
 
 export interface Regularization extends WorkflowState {
