@@ -1,7 +1,13 @@
 import { z } from "zod";
+import { todayInTz } from "../utils/schedule.js";
 
 const typeEnum = z.enum(["missing_checkin", "missing_checkout", "wrong_time", "absent_correction"]);
 const statusEnum = z.enum(["pending", "approved", "rejected", "cancelled"]);
+
+/** Whether `date` falls strictly before today, in `tz`. */
+export function isPastDay(date: Date, tz: string): boolean {
+  return date.toISOString().slice(0, 10) < todayInTz(tz || "Asia/Dubai");
+}
 
 export const createRegularizationSchema = z
   .object({
@@ -25,6 +31,12 @@ export const createRegularizationSchema = z
   .refine((data) => !!data.requestedCheckIn || !!data.requestedCheckOut, {
     message: "Provide a corrected check-in and/or check-out time",
     path: ["requestedCheckIn"],
+  })
+  // A day still in progress has no final check-in/check-out to correct yet —
+  // raising one for today (or ahead of it) has nothing settled to fix.
+  .refine((data) => isPastDay(data.date, data.timeZone), {
+    message: "You can only raise a correction for a day that has already ended",
+    path: ["date"],
   });
 
 export const updateRegularizationSchema = z.object({

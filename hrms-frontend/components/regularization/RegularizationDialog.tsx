@@ -31,6 +31,7 @@ interface Props {
 export function RegularizationDialog({ open, onOpenChange, lockToUserId, record }: Props) {
   const editing = !!record;
   const selfMode = !!lockToUserId;
+  const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA");
   const { mutate: create, isPending: creating } = useCreateRegularization();
   const { mutate: save, isPending: saving } = useUpdateRegularization();
   const isPending = creating || saving;
@@ -160,7 +161,10 @@ export function RegularizationDialog({ open, onOpenChange, lockToUserId, record 
 
           <div className="space-y-1.5">
             <Label htmlFor="date">Date *</Label>
-            <Input id="date" type="date" {...register("date")} />
+            {/* A day still in progress has nothing settled yet to correct —
+                approximate with the browser's own "yesterday"; the exact rule
+                (the selected time zone's own today) is enforced by validation. */}
+            <Input id="date" type="date" max={yesterday} {...register("date")} />
             {errors.date && <p className="text-xs text-destructive">{errors.date.message}</p>}
           </div>
           <div className="space-y-1.5">

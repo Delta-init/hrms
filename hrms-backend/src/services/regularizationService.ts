@@ -3,6 +3,7 @@ import { getAttendancePenaltyPolicy } from "./attendancePenaltyService.js";
 import { Attendance } from "../models/Attendance.js";
 import { User } from "../models/User.js";
 import type { CreateRegularizationInput, UpdateRegularizationInput, ReviewRegularizationInput } from "../validations/regularizationValidation.js";
+import { isPastDay } from "../validations/regularizationValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -267,6 +268,15 @@ export class RegularizationService {
     if (input.requestedCheckIn !== undefined) record.requestedCheckIn = input.requestedCheckIn;
     if (input.requestedCheckOut !== undefined) record.requestedCheckOut = input.requestedCheckOut;
     if (input.reason !== undefined) record.reason = input.reason ?? undefined;
+
+    // Same rule create() enforces, re-checked here so editing the date can't
+    // walk a request back onto a day that has not ended yet.
+    if (input.date !== undefined && !isPastDay(record.date, record.timeZone)) {
+      throw Object.assign(
+        new Error("You can only raise a correction for a day that has already ended"),
+        { statusCode: 400 }
+      );
+    }
 
     await record.save();
     return Regularization.findById(id).populate(POP);

@@ -14,6 +14,16 @@ export const regularizationFormSchema = z
   .refine((data) => !!data.requestedCheckIn || !!data.requestedCheckOut, {
     message: "Provide a corrected check-in and/or check-out time",
     path: ["requestedCheckIn"],
-  });
+  })
+  // Mirrors the backend's own check — a day still in progress has nothing
+  // settled yet to correct.
+  .refine(
+    (data) => {
+      if (!data.date || !data.timeZone) return true;
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: data.timeZone }).format(new Date());
+      return data.date < today;
+    },
+    { message: "You can only raise a correction for a day that has already ended", path: ["date"] }
+  );
 
 export type RegularizationFormValues = z.infer<typeof regularizationFormSchema>;
