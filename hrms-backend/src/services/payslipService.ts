@@ -625,6 +625,8 @@ export class PayslipService {
       present: 0, late: 0, half: 0, absent: 0, unpaidLeaveDays: 0, lopDays: 0, latePenaltyDays: 0,
       /** Approved leave falling on working days — paid, and holidays likewise. */
       paidLeaveDays: 0, holidayDays: 0,
+      /** A half-day leave's other half, where nothing was worked against it either. */
+      halfLeaveNoAttendanceDays: 0,
       salary: breakup.gross,
       earnings,
       structureDeductions,
@@ -654,7 +656,7 @@ export class PayslipService {
 
     const [att, unpaid, anyLeave, holidays] = await Promise.all([
       Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
-      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type days startDate endDate").lean(),
+      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type days startDate endDate halfDay").lean(),
       // Any approved leave counts as accounted for, paid or not — the day is
       // explained, which is what the coverage check is asking about.
       LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("startDate endDate").lean(),
@@ -671,12 +673,15 @@ export class PayslipService {
     // counts once (LOP is not double-counted).
     const lopFull = new Set<string>();
     const halfSet = new Set<string>();
+    // Real presence, in any form — a half-day leave's other half is only
+    // theirs to lose against days that are not in here.
+    const attendedKeys = new Set<string>();
     for (const a of att) {
       // Local calendar day of the record, aligned with leave's YYYY-MM-DD.
       const key = new Intl.DateTimeFormat("en-CA", { timeZone: a.timeZone || tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(a.date));
-      if (a.status === "present") base.present++;
-      else if (a.status === "late") base.late++;
-      else if (a.status === "half_day") { base.half++; halfSet.add(key); }
+      if (a.status === "present") { base.present++; attendedKeys.add(key); }
+      else if (a.status === "late") { base.late++; attendedKeys.add(key); }
+      else if (a.status === "half_day") { base.half++; halfSet.add(key); attendedKeys.add(key); }
       else if (a.status === "absent") { base.absent++; lopFull.add(key); }
     }
     // Which leave types cost pay is the policy's decision, not the type name:
@@ -686,6 +691,17 @@ export class PayslipService {
     const paidByType = new Map(policies.map((p) => [p.type, p.paid]));
     const isUnpaidLeave = (type: string) =>
       paidByType.size ? paidByType.get(type) === false : type === "unpaid";
+
+    // A half-day *unpaid* leave with nothing worked against its other half
+    // already lands on the right total the existing way: the whole day in
+    // lopFull prices at a full day, which is exactly what 0.5 (the leave
+    // itself, already unpaid) plus 0.5 (the uncovered other half) comes to —
+    // so that side is left untouched below. It is a half-day *paid* leave
+    // with no attendance that under-charges today: the whole day currently
+    // reads as covered, when only half of it is. That half is tracked apart
+    // from a full day's leave, which already is — see the paid loop below.
+    const halfLeaveNoAttendance = new Set<string>();
+    const otherHalfUncovered = (k: string, halfDay?: boolean) => !!halfDay && !attendedKeys.has(k) && !lopFull.has(k);
 
     const unpaidLeave = unpaid.filter((l) => isUnpaidLeave(l.type));
     for (const l of unpaidLeave) {
@@ -699,7 +715,10 @@ export class PayslipService {
     const paidLeaveDays = new Set<string>();
     for (const l of unpaid) {
       if (isUnpaidLeave(l.type)) continue;
-      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) paidLeaveDays.add(k);
+      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) {
+        if (otherHalfUncovered(k, l.halfDay)) halfLeaveNoAttendance.add(k);
+        else paidLeaveDays.add(k);
+      }
     }
     const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
     const workingSet = new Set(workingDayKeys(month, workDays, employment));
@@ -711,7 +730,13 @@ export class PayslipService {
 
     let halfCount = 0;
     for (const k of halfSet) if (!lopFull.has(k) && chargeable(k)) halfCount++;
-    base.lopDays = Math.round(([...lopFull].filter(chargeable).length + halfCount * 0.5) * 100) / 100;
+    // Same working-day/holiday filter as everywhere else here — a half-day
+    // leave landing on a weekend was never going to cost anything either.
+    const halfLeaveNoAttendanceChargeable = [...halfLeaveNoAttendance].filter((k) => workingSet.has(k) && !holidayDays.has(k));
+    base.halfLeaveNoAttendanceDays = halfLeaveNoAttendanceChargeable.length;
+    base.lopDays = Math.round(
+      ([...lopFull].filter(chargeable).length + halfCount * 0.5 + halfLeaveNoAttendanceChargeable.length * 0.5) * 100
+    ) / 100;
 
     // Repeated lateness beyond the org's configured grace converts into a
     // separate half-day-equivalent deduction (kept apart from absence-driven LOP).
