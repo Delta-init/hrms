@@ -146,19 +146,31 @@ export function worseStatus(a: string, b: string): string {
  *
  * There is no arrival time to judge, so nothing is decided at clock-in — this
  * runs at clock-out instead, against the day's total worked minutes. The same
- * three-way ceiling a fixed shift has (present/late/half_day tops out at
- * half_day for a bad-enough arrival) has an equivalent here: met the hours is
- * present, some real progress is half_day, and negligible progress is treated
- * the same as not having shown up — which is also how payroll already treats
- * a day with no punch at all, so this needs no new rule downstream of it.
+ * four-way ceiling a fixed shift has (present/late/early_out/half_day tops
+ * out at half_day for a bad-enough arrival or departure) has an equivalent
+ * here: met the hours is present, short by up to the same two-hour band is
+ * early_out, some real progress beyond that is half_day, and negligible
+ * progress is treated the same as not having shown up — which is also how
+ * payroll already treats a day with no punch at all, so this needs no new
+ * rule downstream of it.
+ *
+ * The early-out band only exists when it is strictly above the half-day
+ * threshold: for a shift shorter than the two-hour band itself (under 4
+ * required hours), a flat `requiredMinutes - HALF_DAY_AFTER_MINUTES` cutoff
+ * would sit at or below half of the required minutes, and a shortfall that
+ * bad is a half-day, not a mild early departure — so short shifts fall back
+ * to the original present/half_day/absent split with no early_out tier at all.
  */
 export function durationStatus(
   workedMinutes: number,
   requiredHours: number,
   graceMinutes: number
-): "present" | "half_day" | "absent" {
+): "present" | "early_out" | "half_day" | "absent" {
   const requiredMinutes = requiredHours * 60;
+  const halfDayThreshold = requiredMinutes / 2;
+  const earlyOutThreshold = requiredMinutes - HALF_DAY_AFTER_MINUTES;
   if (workedMinutes >= requiredMinutes - graceMinutes) return "present";
-  if (workedMinutes >= requiredMinutes / 2) return "half_day";
+  if (earlyOutThreshold > halfDayThreshold && workedMinutes >= earlyOutThreshold) return "early_out";
+  if (workedMinutes >= halfDayThreshold) return "half_day";
   return "absent";
 }

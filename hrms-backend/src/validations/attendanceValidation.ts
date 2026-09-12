@@ -5,6 +5,7 @@ const statusEnum = z.enum([
   "absent",
   "late",
   "half_day",
+  "early_out",
   "on_leave",
   "holiday",
   "weekend",
