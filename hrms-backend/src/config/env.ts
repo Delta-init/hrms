@@ -29,7 +29,7 @@ const envSchema = z.object({
   // than silently ship a well-known super-admin login.
   SUPER_ADMIN_EMAIL: z.string().email("SUPER_ADMIN_EMAIL is required"),
   SUPER_ADMIN_PASSWORD: z.string().min(1, "SUPER_ADMIN_PASSWORD is required"),
-  CLIENT_URL: z.string().default("http://localhost:3000"),
+  CLIENT_URL: z.string().default("http://localhost:4030"),
   /**
    * This API's own public origin, used to build the signed file links a browser
    * loads directly. Must be set in production: the default is only right when

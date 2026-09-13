@@ -46,7 +46,7 @@ if (trustProxy) {
 app.use(helmet());
 app.use(
   cors({
-    origin: [env.CLIENT_URL, "http://localhost:3000"],
+    origin: [env.CLIENT_URL, "http://localhost:4030"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     // X-Kiosk-Token is how a kiosk tablet authenticates as a device. Being a
