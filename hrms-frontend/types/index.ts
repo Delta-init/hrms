@@ -448,6 +448,8 @@ export interface Employee {
   workMode?: WorkMode;
   /** Forces kiosk-only punching for this person, regardless of workMode. */
   kioskOnly?: boolean;
+  /** Exempts this person from their department's mobile-login block. */
+  mobileLoginAllowed?: boolean;
   /** The one browser this person may punch from, when binding is on. */
   trustedDevice?: {
     label?: string;

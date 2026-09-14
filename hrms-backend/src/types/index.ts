@@ -679,6 +679,8 @@ export interface IEmployee extends Document {
   workMode: WorkMode;
   /** Forces kiosk-only punching for this person alone. See the model. */
   kioskOnly?: boolean;
+  /** Exempts this person from their department's mobile-login block. See the model. */
+  mobileLoginAllowed?: boolean;
   /** The single browser a remote employee may punch from. See the model. */
   trustedDevice?: ITrustedDevice | null;
   /** Monthly base salary (used to prefill payslips). */

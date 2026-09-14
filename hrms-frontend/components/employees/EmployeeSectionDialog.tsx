@@ -59,6 +59,7 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
       return {
         designation: e.designation ?? "", department: idOf(e.department), location: e.location ?? "",
         workMode: e.workMode ?? "office", kioskOnly: e.kioskOnly ?? false,
+        mobileLoginAllowed: e.mobileLoginAllowed ?? false,
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
         noticePeriodDays: e.noticePeriodDays ?? 60,
@@ -205,6 +206,15 @@ export function EmployeeSectionDialog({
                 </div>
                 <Controller control={control} name="kioskOnly" render={({ field }) => (
                   <Switch id="kioskOnly" checked={!!field.value} onCheckedChange={field.onChange} />
+                )} />
+              </div>
+              <div className={`${field} flex flex-row items-center justify-between gap-3 pt-1`}>
+                <div>
+                  <Label htmlFor="mobileLoginAllowed">Allow mobile sign-in</Label>
+                  <p className="text-xs text-muted-foreground">Exempts this person from their department&apos;s web-only-for-remote policy.</p>
+                </div>
+                <Controller control={control} name="mobileLoginAllowed" render={({ field }) => (
+                  <Switch id="mobileLoginAllowed" checked={!!field.value} onCheckedChange={field.onChange} />
                 )} />
               </div>
               <div className={field}><Label>Currency</Label><Input className="uppercase" {...register("currency")} /></div>

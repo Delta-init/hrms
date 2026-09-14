@@ -139,6 +139,7 @@ export const createEmployeeSchema = z.object({
   location: location.optional(),
   workMode: workMode.default("office"),
   kioskOnly: z.boolean().optional(),
+  mobileLoginAllowed: z.boolean().optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,
@@ -161,6 +162,7 @@ export const updateEmployeeSchema = z.object({
   // answer, and clearing it back to nothing would leave that undecidable.
   workMode: workMode.optional(),
   kioskOnly: z.boolean().optional(),
+  mobileLoginAllowed: z.boolean().optional(),
   salary: z.coerce.number().min(0).optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,

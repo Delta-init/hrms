@@ -237,6 +237,14 @@ const employeeSchema = new Schema<IEmployee>(
     kioskOnly: { type: Boolean, default: false },
 
     /**
+     * Exempts this one person from their department's `webOnlyForRemote`
+     * block, regardless of `workMode` — for someone HR wants to keep signing
+     * in from a phone specifically, without switching the policy off for
+     * everybody else in that department.
+     */
+    mobileLoginAllowed: { type: Boolean, default: false },
+
+    /**
      * The one browser a remote employee may punch from.
      *
      * `keyHash` is a SHA-256 of a secret the browser minted for itself and

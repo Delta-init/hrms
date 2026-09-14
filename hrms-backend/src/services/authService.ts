@@ -38,9 +38,10 @@ async function withHeadFlag(user: { _id: unknown; toJSON: () => unknown }): Prom
 async function assertNotRestrictedMobile(user: { _id: unknown; organization?: unknown }, userAgent?: string): Promise<void> {
   if (!isMobileUserAgent(userAgent)) return;
   const employee = await Employee.findOne({ user: user._id, organization: user.organization })
-    .select("workMode department")
+    .select("workMode department mobileLoginAllowed")
     .populate("department", "webOnlyForRemote")
-    .lean<{ workMode?: "office" | "wfh"; department?: { webOnlyForRemote?: boolean } | null } | null>();
+    .lean<{ workMode?: "office" | "wfh"; department?: { webOnlyForRemote?: boolean } | null; mobileLoginAllowed?: boolean } | null>();
+  if (employee?.mobileLoginAllowed) return;
   if (employee?.workMode === "wfh" && employee.department?.webOnlyForRemote) {
     throw Object.assign(
       new Error("This account can only sign in from a computer, not a phone or tablet"),
