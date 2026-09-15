@@ -36,9 +36,9 @@ export function LoanDialog({ open, onOpenChange, loan, employee: locked }: Props
   const { mutate: update, isPending: updating } = useUpdateLoan();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm<LoanFormValues>({
+  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<LoanFormValues>({
     resolver: zodResolver(loanFormSchema),
-    defaultValues: { employee: locked?._id ?? "", amount: 0, purpose: "", disbursedDate: todayStr(), installments: 1, monthlyDeduction: 0, notes: "" },
+    defaultValues: { employee: locked?._id ?? "", amount: 0, purpose: "", disbursedDate: todayStr(), installments: 1, notes: "" },
   });
 
   useEffect(() => {
@@ -47,23 +47,20 @@ export function LoanDialog({ open, onOpenChange, loan, employee: locked }: Props
       reset({
         employee: idOf(loan.employee), amount: loan.amount, purpose: loan.purpose ?? "",
         disbursedDate: toDateInput(loan.disbursedDate), installments: loan.installments,
-        monthlyDeduction: loan.monthlyDeduction, amountRepaid: loan.amountRepaid, status: loan.status, notes: loan.notes ?? "",
+        amountRepaid: loan.amountRepaid, status: loan.status, notes: loan.notes ?? "",
       });
     } else {
-      reset({ employee: locked?._id ?? "", amount: 0, purpose: "", disbursedDate: todayStr(), installments: 1, monthlyDeduction: 0, notes: "" });
+      reset({ employee: locked?._id ?? "", amount: 0, purpose: "", disbursedDate: todayStr(), installments: 1, notes: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loan, locked?._id]);
 
-  // Suggest a monthly deduction from amount / installments (create only, before edited).
+  // Always derived, in both modes — never a separately-editable value, so it
+  // can't go stale the way a form field could. The server computes the same
+  // figure the same way; this is purely a live preview of it.
   const amount = watch("amount");
   const installments = watch("installments");
-  useEffect(() => {
-    if (isEditing) return;
-    const a = Number(amount) || 0;
-    const n = Math.max(1, Number(installments) || 1);
-    setValue("monthlyDeduction", Math.round((a / n) * 100) / 100);
-  }, [amount, installments, isEditing, setValue]);
+  const monthlyDeduction = Math.round((Number(amount) || 0) / Math.max(1, Number(installments) || 1) * 100) / 100;
 
   const onSubmit = (data: LoanFormValues) => {
     const payload = { ...data, purpose: data.purpose || undefined, disbursedDate: data.disbursedDate || null, notes: data.notes || undefined };
@@ -113,10 +110,9 @@ export function LoanDialog({ open, onOpenChange, loan, employee: locked }: Props
               {errors.installments && <p className="text-xs text-destructive">{errors.installments.message}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="monthlyDeduction">Monthly deduction *</Label>
-              <Input id="monthlyDeduction" type="number" min="0" step="0.01" {...register("monthlyDeduction")} />
-              <p className="text-[11px] text-muted-foreground">Deducted from each month&apos;s salary.</p>
-              {errors.monthlyDeduction && <p className="text-xs text-destructive">{errors.monthlyDeduction.message}</p>}
+              <Label htmlFor="monthlyDeduction">Monthly deduction</Label>
+              <Input id="monthlyDeduction" value={monthlyDeduction.toFixed(2)} disabled readOnly />
+              <p className="text-[11px] text-muted-foreground">Loan amount ÷ instalments — deducted from each month&apos;s salary.</p>
             </div>
           </div>
 

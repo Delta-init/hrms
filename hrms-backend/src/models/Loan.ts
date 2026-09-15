@@ -11,7 +11,11 @@ const loanSchema = new Schema<ILoan>(
     disbursedDate: { type: Date, default: null },
     /** Number of monthly instalments over which the loan is repaid. */
     installments: { type: Number, min: 1, default: 1 },
-    /** Amount deducted from each month's salary. */
+    /**
+     * Amount deducted from each month's salary — always `amount / installments`,
+     * recomputed by the service on every create/update. Never set this from a
+     * client-submitted value; see LoanService.
+     */
     monthlyDeduction: { type: Number, min: 0, default: 0 },
     amountRepaid: { type: Number, min: 0, default: 0 },
     status: { type: String, enum: ["active", "closed", "cancelled"], default: "active" },

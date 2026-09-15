@@ -16,14 +16,24 @@ const POP = [
   { path: "user", select: "name email" },
 ];
 
+/**
+ * Equal split of the principal across its instalments, rounded to the
+ * currency's cents. This is the only place the figure is derived — nothing
+ * else may set `monthlyDeduction` directly, so it can never drift from
+ * `amount`/`installments` the way it used to when an edit changed one but not
+ * the other.
+ */
+function computeMonthlyDeduction(amount: number, installments: number): number {
+  return Math.round((amount / Math.max(1, installments)) * 100) / 100;
+}
+
 export class LoanService {
   async create(input: CreateLoanInput) {
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
     const installments = input.installments ?? 1;
-    const monthlyDeduction =
-      input.monthlyDeduction ?? Math.round((input.amount / Math.max(1, installments)) * 100) / 100;
+    const monthlyDeduction = computeMonthlyDeduction(input.amount, installments);
 
     const doc = await Loan.create({
       organization: getOrgId(),
@@ -69,6 +79,10 @@ export class LoanService {
     const record = await Loan.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Loan not found"), { statusCode: 404 });
     Object.assign(record, input);
+    // Re-derived on every edit, not just when amount/installments are the
+    // fields that changed — cheap, and it means this can never again fall out
+    // of sync with the two numbers it's supposed to represent.
+    record.monthlyDeduction = computeMonthlyDeduction(record.amount, record.installments);
     // Auto-close once fully repaid (unless explicitly cancelled).
     if (record.status !== "cancelled") {
       record.status = record.amountRepaid >= record.amount ? "closed" : "active";
@@ -124,7 +138,12 @@ export async function computeLoanDeductions(
     const elapsed = instalmentsDueBy(loan.disbursedDate, month);
     if (elapsed <= 0) continue;
     const schedule = loan.monthlyDeduction || loan.amount;
-    const dueToDate = Math.min(loan.amount, round2(schedule * elapsed));
+    // At or past the configured instalment count, the scheduled amount is the
+    // whole remaining principal — not `schedule * elapsed` — so an
+    // amount that doesn't divide evenly (e.g. 1000 over 3 months, 333.33 each)
+    // closes exactly on schedule instead of leaving a stray extra month to
+    // collect the last cent.
+    const dueToDate = elapsed >= loan.installments ? loan.amount : Math.min(loan.amount, round2(schedule * elapsed));
     const want = Math.min(round2(dueToDate - loan.amountRepaid), outstanding);
     if (want <= 0) continue;
 
