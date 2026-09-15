@@ -124,7 +124,13 @@ function Wizard({ employee: e }: { employee: Employee }) {
   };
 
   const onSubmit = (values: OnboardingValues) => {
-    complete(values, {
+    // The API stores education and emergency contacts as rows (up to 5 and 2
+    // respectively) so a fuller employee-management form can collect more than
+    // one of each later — this wizard only ever collects the one primary row,
+    // wrapped here into the array shape the backend actually expects.
+    const { emergencyContact, ...rest } = values;
+    const payload = { ...rest, education: [values.education], emergencyContacts: [emergencyContact] };
+    complete(payload, {
       onSuccess: async () => {
         toast.success("Welcome aboard! Your profile is complete.");
         await update({ appUser: { profileCompleted: true } });
