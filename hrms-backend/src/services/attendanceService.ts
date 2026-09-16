@@ -845,13 +845,38 @@ export class AttendanceService {
 
     // Close the latest still-open session (checked in, not yet out) rather than
     // only "today" — an overnight shift clocks out on the next calendar day.
-    // Bounded to the last 2 days so a forgotten open day isn't closed here.
+    // Bounded to the last 2 days purely so this lookup doesn't scan forever;
+    // the day-end check just below is what actually decides whether it's
+    // still closeable.
     const cutoff = new Date(now.getTime() - 2 * 86_400_000);
     const att = await Attendance.findOne({
       user: userId, checkIn: { $ne: null }, checkOut: null, date: { $gte: cutoff },
     }).sort({ date: -1 });
     if (!att) {
       throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
+    }
+
+    const schedule = await this.scheduleFor(userId);
+    const shift = resolveShift(schedule, att.checkIn!);
+
+    /**
+     * A day cannot be closed once its own day has already ended.
+     *
+     * Self clock-out past that point produces a worked-time figure that means
+     * nothing — 20, 30, even 50-odd hours in one record, from someone who
+     * forgot to punch out and only opened the app again a day or two later.
+     * Anchored to the shift's own day (an overnight shift's boundary sits the
+     * following morning, not physical midnight on the day it started), not to
+     * shift-end — working late is still closeable, missing the day entirely
+     * is not. Past this point it is a missing-checkout correction, not a live
+     * clock-out.
+     */
+    const dayEnd = new Date(shift.dateMidnightUtc.getTime() + 86_400_000);
+    if (now.getTime() >= dayEnd.getTime()) {
+      throw Object.assign(
+        new Error("That day has already ended. Raise a missing-checkout correction instead of clocking out now."),
+        { statusCode: 400, code: "TOO_LATE" }
+      );
     }
 
     /**
@@ -897,18 +922,15 @@ export class AttendanceService {
     // Duration-based staff have nothing decided yet at this point — clockIn
     // always left them "present" — so this is where the day is actually
     // judged, against the total now that it's closed rather than an arrival
-    // time that was never the point for them.
-    const schedule = await this.scheduleFor(userId);
+    // time that was never the point for them. `schedule`/`shift` are the same
+    // ones resolved above for the day-end check.
     if (schedule.mode === "duration") {
       const workedMinutes = att.computeWorkedMinutes();
       att.status = durationStatus(workedMinutes, schedule.requiredHours ?? 8, schedule.graceMinutes ?? 15);
     } else if (att.checkIn) {
       // Fixed mode already decided an arrival verdict at clock-in; this adds
       // a departure verdict and keeps whichever is worse — arriving late and
-      // also leaving early is not generously read as just "late". Resolved
-      // against the day they checked in on, not "now": an overnight shift's
-      // checkout can fall on the next calendar day.
-      const shift = resolveShift(schedule, att.checkIn);
+      // also leaving early is not generously read as just "late".
       att.status = worseStatus(att.status, statusForClockOut(now, shift)) as never;
     }
 
