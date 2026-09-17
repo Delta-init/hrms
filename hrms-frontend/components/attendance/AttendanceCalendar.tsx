@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, User2, Users, CalendarDays } from "lucide-react";
-import { useAttendanceCalendar } from "@/hooks/useAttendance";
+import { useAttendanceCalendar, useSetDayStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ export function AttendanceCalendar() {
       {isLoading || isFetching ? (
         <Card className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>
       ) : effectiveMode === "single" ? (
-        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={canManage ? !!employeeId : true} />
+        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={canManage ? !!employeeId : true} canManage={canManage} />
       ) : (
         <AllView data={data} month={month} />
       )}
@@ -111,10 +111,11 @@ function Legend() {
   );
 }
 
-function SingleView({ data, y, monthIndex, month, employeeSelected }: { data?: { daysInMonth: number; employees: { employee: { name: string }; days: Record<string, AttendanceCalendarDay>; summary: Record<string, number> }[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean }) {
+function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }: { data?: { daysInMonth: number; employees: { employee: { _id: string; name: string }; days: Record<string, AttendanceCalendarDay>; summary: Record<string, number> }[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean; canManage: boolean }) {
   const emp = data?.employees?.[0];
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => { setSelected(null); }, [month, emp?.employee.name]);
+  const setDayStatus = useSetDayStatus();
 
   if (!emp) {
     // The calendar is keyed off the employee's linked login (User account) —
@@ -186,6 +187,27 @@ function SingleView({ data, y, monthIndex, month, employeeSelected }: { data?: {
               <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold", STATUS[sel.status].cell)}>{STATUS[sel.status].letter}</span>
               <div><p className="text-sm font-semibold">{new Date(selected + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}</p><p className="text-[11px] text-muted-foreground">{STATUS[sel.status].label}</p></div>
             </div>
+            {canManage && emp && (
+              <div className="mb-3 space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">Set status</label>
+                <Select
+                  value=""
+                  onValueChange={(status) => setDayStatus.mutate({ employees: [emp.employee._id], date: selected!, status })}
+                  disabled={setDayStatus.isPending}
+                >
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Change status…" /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
+                      <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* Present fills real check-in/out from the shift when the day
+                    has no punch of its own (not marked, or a stored absence) —
+                    a day with a real punch already on it is never touched. */}
+                <p className="text-[10px] text-muted-foreground">Setting &quot;Present&quot; on a day with no punch fills it from the employee&apos;s shift.</p>
+              </div>
+            )}
             <div className="space-y-2.5 text-sm">
               <Row k="Check in" v={fmtTime(sel.checkIn, sel.timeZone)} />
               <Row k="Check out" v={fmtTime(sel.checkOut, sel.timeZone)} />

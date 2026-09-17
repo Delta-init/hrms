@@ -229,12 +229,20 @@ export class FacePunchService {
     const cutoff = new Date(Date.now() - OPEN_SESSION_WINDOW_MS);
     // The check-in comes back too, because how long ago it was decides whether
     // this punch may close the day.
-    return Attendance.findOne({
+    const candidate = await Attendance.findOne({
       user: userId,
       checkIn: { $ne: null },
       checkOut: null,
       date: { $gte: cutoff },
     }).select("checkIn").lean<{ checkIn?: Date | null } | null>();
+    if (!candidate?.checkIn) return null;
+    // A session whose own day has already ended is not "open" for direction
+    // purposes — clockOut would refuse it anyway (see isDayStillOpen), and
+    // routing there just to be rejected leaves whoever is standing at the
+    // kiosk stuck. Treating it as closed means the next tap starts a fresh
+    // day instead; closeStaleDays finalizes the old one the moment that happens.
+    const stillOpen = await this.attendance.isDayStillOpen(userId, candidate.checkIn);
+    return stillOpen ? candidate : null;
   }
 
   /**

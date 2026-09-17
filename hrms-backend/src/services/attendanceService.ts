@@ -245,10 +245,12 @@ export class AttendanceService {
    * because it was filed under a key nothing else looks at.
    */
   private async dayKeyFor(userId: string, date: Date): Promise<{ key: Date; timeZone: string }> {
-    const schedule = await this.scheduleFor(userId);
     // Anchored at noon UTC so the calendar date the admin picked survives the
     // shift into the target zone in either direction.
     const noon = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12));
+    // Resolved for that date specifically, not today — a roster assignment
+    // covering the target day can differ from whatever is in force now.
+    const schedule = await this.scheduleFor(userId, noon);
     const shift = resolveShift(schedule, noon);
     return { key: shift.dateMidnightUtc, timeZone: schedule.timeZone };
   }
@@ -455,18 +457,44 @@ export class AttendanceService {
       .select("user")
       .lean<Array<{ _id: unknown; user: unknown }>>();
 
+    const noon = new Date(`${date}T12:00:00.000Z`);
+
     let modified = 0, created = 0;
     for (const emp of employees) {
       const userId = String(emp.user);
       const { key, timeZone } = await this.dayKeyFor(userId, new Date(`${date}T00:00:00.000Z`));
 
       const existing = await Attendance.findOne(scoped({ user: userId, date: key }));
+
+      // Setting a day nothing was ever punched for — not marked, or a real
+      // stored absence — to "present" fills real check-in/out times from
+      // that person's own shift, rather than leaving a "present" day with no
+      // times and zero worked minutes behind it. Anything that already has a
+      // real check-in (late, half day, an already-present record) is never
+      // touched here — this only ever fills a blank, never overwrites a punch.
+      const fillFromShift = status === "present" && !existing?.checkIn;
+      let checkIn: Date | undefined;
+      let checkOut: Date | undefined;
+      if (fillFromShift) {
+        const schedule = await this.scheduleFor(userId, noon);
+        const shift = resolveShift(schedule, noon);
+        checkIn = shift.shiftStart;
+        // Duration mode's login/logout is a punch window, not the shift
+        // length — filling the whole window would worked-minutes the entire
+        // span instead of the hours actually required. Fixed mode's window
+        // *is* the shift, so its own end applies directly.
+        checkOut = schedule.mode === "duration"
+          ? new Date(Math.min(shift.shiftStart.getTime() + (schedule.requiredHours ?? 8) * 3_600_000, shift.shiftEnd.getTime()))
+          : shift.shiftEnd;
+      }
+
       if (existing) {
         existing.status = status as never;
         // Only a late or half day carries late minutes; anything else keeps
         // them at zero rather than inheriting a number from what it used to be.
         if (status !== "late" && status !== "half_day") existing.lateMinutes = 0;
         if (note !== undefined) existing.note = note;
+        if (fillFromShift) this.applySessions(existing, checkIn, checkOut);
         await existing.save();
         modified++;
         continue;
@@ -485,6 +513,7 @@ export class AttendanceService {
         lateMinutes: 0,
         note,
       });
+      if (fillFromShift) this.applySessions(record, checkIn, checkOut);
       await record.save();
       created++;
     }
@@ -506,8 +535,8 @@ export class AttendanceService {
 
   // ── Self-service clock-in / clock-out ──────────────────────────────────────
 
-  private async scheduleFor(userId: string): Promise<ShiftSchedule> {
-    const ws = await resolveWorkScheduleForUser(userId, new Date());
+  private async scheduleFor(userId: string, date: Date = new Date()): Promise<ShiftSchedule> {
+    const ws = await resolveWorkScheduleForUser(userId, date);
     if (ws && ws.timeZone) {
       return {
         timeZone: ws.timeZone, loginTime: ws.loginTime, logoutTime: ws.logoutTime, graceMinutes: ws.graceMinutes ?? 15,
@@ -840,6 +869,30 @@ export class AttendanceService {
     return Attendance.findById(att._id).populate("user", "name email designation");
   }
 
+  /**
+   * Whether a session that started at `checkIn` can still be closed by a live
+   * punch — its own shift's day hasn't ended yet.
+   *
+   * Self clock-out past that point produces a worked-time figure that means
+   * nothing — 20, 30, even 50-odd hours in one record, from someone who
+   * forgot to punch out and only punched again a day or two later. Anchored
+   * to the shift's own day (an overnight shift's boundary sits the following
+   * morning, not physical midnight on the day it started), not to shift-end —
+   * working late is still closeable, missing the day entirely is not.
+   *
+   * Shared by clockOut's own refusal and by the kiosk's in/out direction
+   * check (facePunchService.ts), so a session whose day has ended is never
+   * routed to "clock out" in the first place — the next punch starts a fresh
+   * day instead of running into a rejection nobody standing at a kiosk can
+   * act on.
+   */
+  async isDayStillOpen(userId: string, checkIn: Date, now: Date = new Date()): Promise<boolean> {
+    const schedule = await this.scheduleFor(userId, checkIn);
+    const shift = resolveShift(schedule, checkIn);
+    const dayEnd = new Date(shift.dateMidnightUtc.getTime() + 86_400_000);
+    return now.getTime() < dayEnd.getTime();
+  }
+
   async clockOut(userId: string, source?: PunchSource) {
     const now = new Date();
 
@@ -856,23 +909,7 @@ export class AttendanceService {
       throw Object.assign(new Error("You haven't clocked in, or already clocked out"), { statusCode: 400 });
     }
 
-    const schedule = await this.scheduleFor(userId);
-    const shift = resolveShift(schedule, att.checkIn!);
-
-    /**
-     * A day cannot be closed once its own day has already ended.
-     *
-     * Self clock-out past that point produces a worked-time figure that means
-     * nothing — 20, 30, even 50-odd hours in one record, from someone who
-     * forgot to punch out and only opened the app again a day or two later.
-     * Anchored to the shift's own day (an overnight shift's boundary sits the
-     * following morning, not physical midnight on the day it started), not to
-     * shift-end — working late is still closeable, missing the day entirely
-     * is not. Past this point it is a missing-checkout correction, not a live
-     * clock-out.
-     */
-    const dayEnd = new Date(shift.dateMidnightUtc.getTime() + 86_400_000);
-    if (now.getTime() >= dayEnd.getTime()) {
+    if (!(await this.isDayStillOpen(userId, att.checkIn!, now))) {
       throw Object.assign(
         new Error("That day has already ended. Raise a missing-checkout correction instead of clocking out now."),
         { statusCode: 400, code: "TOO_LATE" }
@@ -922,8 +959,8 @@ export class AttendanceService {
     // Duration-based staff have nothing decided yet at this point — clockIn
     // always left them "present" — so this is where the day is actually
     // judged, against the total now that it's closed rather than an arrival
-    // time that was never the point for them. `schedule`/`shift` are the same
-    // ones resolved above for the day-end check.
+    // time that was never the point for them.
+    const schedule = await this.scheduleFor(userId, att.checkIn!);
     if (schedule.mode === "duration") {
       const workedMinutes = att.computeWorkedMinutes();
       att.status = durationStatus(workedMinutes, schedule.requiredHours ?? 8, schedule.graceMinutes ?? 15);
@@ -931,6 +968,7 @@ export class AttendanceService {
       // Fixed mode already decided an arrival verdict at clock-in; this adds
       // a departure verdict and keeps whichever is worse — arriving late and
       // also leaving early is not generously read as just "late".
+      const shift = resolveShift(schedule, att.checkIn);
       att.status = worseStatus(att.status, statusForClockOut(now, shift)) as never;
     }
 
