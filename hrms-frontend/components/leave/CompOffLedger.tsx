@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Plus, Trash2, Loader2, CalendarPlus, Sparkles, Wallet } from "lucide-react";
 import {
-  useMyCompOffBalance, useCompOffCredits, useCompOffSuggestions, useRevokeCompOff,
+  useMyCompOffBalance, useMyCompOffCredits, useCompOffCredits, useCompOffSuggestions, useRevokeCompOff,
 } from "@/hooks/useCompOff";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const empOf = (c: CompOffCredit) => (c.employee && typeof c.employee === "object
 
 export function CompOffLedger({ canManage }: Props) {
   const { data: myBalance, isLoading: balanceLoading } = useMyCompOffBalance();
+  const { data: myCredits, isLoading: myCreditsLoading } = useMyCompOffCredits();
   const { data: credits, isLoading: creditsLoading } = useCompOffCredits(canManage);
   const { data: suggestions, isLoading: suggestionsLoading } = useCompOffSuggestions(canManage);
   const { mutate: revoke, isPending: revoking } = useRevokeCompOff();
@@ -47,6 +48,38 @@ export function CompOffLedger({ canManage }: Props) {
             <p className="mt-1 text-xs text-muted-foreground">Earned by working a weekend or holiday. Apply for leave with type &quot;Comp-Off&quot; to redeem.</p>
           </div>
         )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold">My Comp-Off History</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-3 font-medium">Date worked</th>
+                <th className="px-4 py-3 font-medium">Days</th>
+                <th className="px-4 py-3 font-medium">Reason</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {myCreditsLoading ? (
+                <tr><td colSpan={4} className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></td></tr>
+              ) : !myCredits?.length ? (
+                <tr><td colSpan={4} className="py-10 text-center text-muted-foreground">No comp-off credits yet.</td></tr>
+              ) : myCredits.map((c) => (
+                <tr key={c._id} className="border-b border-border/60 last:border-0">
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{fmtDate(c.date)}</td>
+                  <td className="px-4 py-3 tabular-nums">{c.amount}</td>
+                  <td className="px-4 py-3 max-w-[260px] truncate text-xs text-muted-foreground">{c.reason || "—"}</td>
+                  <td className="px-4 py-3"><Badge variant={c.status === "available" ? "secondary" : "outline"} className="capitalize">{c.status}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {canManage && (

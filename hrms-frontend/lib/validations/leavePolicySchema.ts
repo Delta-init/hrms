@@ -1,8 +1,14 @@
 import { z } from "zod";
 
-/** Types that already have a name; anything else has to bring its own label. */
+/**
+ * Types that already have a name; anything else has to bring its own label.
+ *
+ * Deliberately excludes "comp_off" — it's earned through the comp-off
+ * ledger, not granted by a policy, so it isn't offered as a creatable type
+ * here (see the matching note in the backend validation).
+ */
 export const BUILTIN_LEAVE_TYPES = [
-  "annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off",
+  "annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh",
 ] as const;
 
 export const leavePolicyFormSchema = z
@@ -29,6 +35,13 @@ export const leavePolicyFormSchema = z
     noticeThresholdDays: z.coerce.number().int().min(0, "Cannot be negative").max(366),
   })
   .superRefine((v, ctx) => {
+    if (v.type === "comp_off") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["type"],
+        message: "Comp-off is earned automatically, not policy-based — manage it from Leave → Comp-Off instead",
+      });
+    }
     if (!BUILTIN_LEAVE_TYPES.includes(v.type as never) && !v.label?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["label"], message: "Give this leave type a name" });
     }

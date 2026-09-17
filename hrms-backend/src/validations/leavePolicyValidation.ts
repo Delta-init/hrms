@@ -1,8 +1,15 @@
 import { z } from "zod";
 
-/** Types that already have a name; anything else has to bring its own label. */
+/**
+ * Types that already have a name; anything else has to bring its own label.
+ *
+ * Deliberately excludes "comp_off": it is earned through the comp-off ledger
+ * rather than granted by a policy, and `assertLeaveAllowed` skips policy
+ * checking for it entirely — a policy row for it would just sit there,
+ * always reading 0/0, with nothing ever consulting it.
+ */
 export const BUILTIN_LEAVE_TYPES = [
-  "annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh", "comp_off",
+  "annual", "sick", "casual", "unpaid", "maternity", "paternity", "wfh",
 ] as const;
 
 export const createLeavePolicySchema = z
@@ -39,6 +46,15 @@ export const createLeavePolicySchema = z
         code: z.ZodIssueCode.custom,
         path: ["workMode"],
         message: "Aim a policy at a work schedule or at office/remote staff, not both",
+      });
+    }
+    // Blocked outright, not just left off the built-in list — the request
+    // path never reads a comp-off policy, so one would sit unused forever.
+    if (v.type === "comp_off") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["type"],
+        message: "Comp-off is earned automatically, not policy-based — manage it from Leave → Comp-Off instead",
       });
     }
     if (!BUILTIN_LEAVE_TYPES.includes(v.type as never) && !v.label?.trim()) {

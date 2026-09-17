@@ -33,6 +33,10 @@ export const getMyCompOffBalance = async (req: AuthenticatedRequest, res: Respon
   try { sendSuccess(res, "Balance retrieved", await service.balanceFor(req.user!.userId)); } catch (error) { next(error); }
 };
 
+export const getMyCompOffCredits = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Credits retrieved", await service.myCredits(req.user!.userId)); } catch (error) { next(error); }
+};
+
 export const getCompOffBalanceFor = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Balance retrieved", await service.balanceFor(req.params.userId)); } catch (error) { next(error); }
 };

@@ -550,6 +550,10 @@ export async function leaveOptionsFor(userId: string, month?: string) {
 
   const options = [];
   for (const p of policies) {
+    // Comp-off is never policy-driven — see assertLeaveAllowed — so a policy
+    // row for it (however it got created) is never offered here. The form
+    // shows the real comp-off ledger balance for that type instead.
+    if (p.type === "comp_off") continue;
     const accrued = accruedFor(p, joiningDate, on);
     const used = await usedInPeriod(userId, p.type, p.period, on, { includePending: true });
     const carried = p.period === "year"

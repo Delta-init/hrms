@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   grantCompOff, getCompOffCredits, revokeCompOffCredit,
-  getCompOffSuggestions, getMyCompOffBalance, getCompOffBalanceFor,
+  getCompOffSuggestions, getMyCompOffBalance, getMyCompOffCredits, getCompOffBalanceFor,
 } from "../controllers/compOffController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -9,8 +9,10 @@ import { checkPermission } from "../middleware/permissions.js";
 const router = Router();
 router.use(authenticate);
 
-// Self-service — own balance only, no module permission required.
+// Self-service — own balance and own credit history, no module permission
+// required. Distinct from /credits below, which lists everyone's.
 router.get("/mine", getMyCompOffBalance);
+router.get("/mine/credits", getMyCompOffCredits);
 
 // Everything else surfaces attendance/comp-off data across the org, so it's
 // gated on leave.approve (manager/HR) rather than the broader leave.view.

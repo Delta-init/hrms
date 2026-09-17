@@ -17,6 +17,8 @@ import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
 import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeaves";
 import { useUser } from "@/hooks/useUsers";
+import { useAuth } from "@/hooks/useAuth";
+import { useMyCompOffBalance, useCompOffBalanceFor } from "@/hooks/useCompOff";
 import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
@@ -67,8 +69,22 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
     lockToUserId ?? selectedUserId ?? "",
     startDate ? startDate.slice(0, 7) : undefined
   );
-  const allowed = leaveOptions?.options ?? [];
+  // Comp-off is never policy-driven (see leaveOptionsFor), so any policy-based
+  // entry for it is dropped defensively here too — the real balance below is
+  // the only source of truth for that row.
+  const allowed = (leaveOptions?.options ?? []).filter((o) => o.type !== "comp_off");
   const nothingAvailable = !!leaveOptions && allowed.length === 0;
+
+  // The real, earned comp-off balance for whoever this request is actually
+  // for — not a policy figure, which comp-off never has. Self and
+  // create-for-another use different endpoints (the latter needs
+  // leave.approve), so only one of the two queries below is ever enabled.
+  const { user: currentUser } = useAuth();
+  const targetUserId = lockToUserId ?? selectedUserId ?? "";
+  const targetIsSelf = !!targetUserId && targetUserId === currentUser?._id;
+  const { data: myCompOff } = useMyCompOffBalance(targetIsSelf);
+  const { data: otherCompOff } = useCompOffBalanceFor(targetUserId, !!targetUserId && !targetIsSelf);
+  const compOffBalance = targetIsSelf ? myCompOff?.balance : otherCompOff?.balance;
   const { data: selectedUser } = useUser(isEditing ? "" : selectedUserId || "");
   useEffect(() => {
     if (isEditing) return;
@@ -157,8 +173,12 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                         {o.paid ? "" : " · unpaid"}
                       </SelectItem>
                     ))}
-                    {/* Earned by working extra rather than granted by a policy. */}
-                    <SelectItem value="comp_off">{LEAVE_TYPE_LABELS.comp_off}</SelectItem>
+                    {/* Earned by working extra rather than granted by a policy — its
+                        balance comes from the comp-off ledger, not leaveOptions. */}
+                    <SelectItem value="comp_off" disabled={compOffBalance !== undefined && compOffBalance <= 0}>
+                      {LEAVE_TYPE_LABELS.comp_off}
+                      {compOffBalance !== undefined ? ` · ${compOffBalance} available` : ""}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               )}

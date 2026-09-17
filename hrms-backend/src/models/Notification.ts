@@ -29,7 +29,7 @@ const notificationSchema = new Schema(
      */
     kind: {
       type: String,
-      enum: ["leave", "regularization", "approval", "announcement", "payroll", "system"],
+      enum: ["leave", "regularization", "approval", "announcement", "reminder", "payroll", "system"],
       default: "system",
     },
     /** Approved, rejected, or simply something to know about. */

@@ -18,7 +18,7 @@ import { getOrgId, scoped } from "../utils/orgContext.js";
 export interface NotifyInput {
   /** Recipients. Duplicates and blanks are dropped, so callers can be sloppy. */
   users: Array<unknown>;
-  kind?: "leave" | "regularization" | "approval" | "announcement" | "payroll" | "system";
+  kind?: "leave" | "regularization" | "approval" | "announcement" | "reminder" | "payroll" | "system";
   tone?: "positive" | "negative" | "neutral";
   title: string;
   body?: string;

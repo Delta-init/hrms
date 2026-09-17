@@ -90,6 +90,11 @@ const envSchema = z.object({
    * desk rather than landing after most people have already left for the day.
    */
   HOLIDAY_REMINDER_CRON: z.string().default("0 18 * * *"),
+  /**
+   * Frequent enough that a reminder's 30-minute and 5-minute stages land
+   * close to on time, the same reasoning as the punch reminder's own cadence.
+   */
+  REMINDER_CRON: z.string().default("*/5 * * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

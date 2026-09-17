@@ -11,10 +11,27 @@ function errMsg(e: unknown, f: string) {
   return (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? f;
 }
 
-export const useMyCompOffBalance = () =>
+export const useMyCompOffBalance = (enabled = true) =>
   useQuery({
     queryKey: MY_BALANCE_KEY,
     queryFn: async () => (await api.get<ApiResponse<{ balance: number }>>("/comp-off/mine")).data.data!,
+    enabled,
+  });
+
+/** Someone else's balance — the leave-approve-gated sibling of useMyCompOffBalance, for creating leave on another employee's behalf. */
+export const useCompOffBalanceFor = (userId: string, enabled = true) =>
+  useQuery({
+    queryKey: [...MY_BALANCE_KEY, userId],
+    queryFn: async () => (await api.get<ApiResponse<{ balance: number }>>(`/comp-off/${userId}`)).data.data!,
+    enabled: enabled && !!userId,
+  });
+
+/** The caller's own earned/redeemed history — self-service, no module permission required. */
+export const useMyCompOffCredits = (enabled = true) =>
+  useQuery({
+    queryKey: [...MY_BALANCE_KEY, "credits"],
+    queryFn: async () => (await api.get<ApiResponse<CompOffCredit[]>>("/comp-off/mine/credits")).data.data ?? [],
+    enabled,
   });
 
 export const useCompOffCredits = (enabled = true) =>

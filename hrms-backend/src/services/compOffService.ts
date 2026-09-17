@@ -81,6 +81,18 @@ export class CompOffService {
   }
 
   /**
+   * A person's own comp-off credits — earned dates, reasons, and status.
+   *
+   * `/comp-off/credits` (the full ledger) needs leave.approve, since it lists
+   * everyone's; this is the self-service slice of the same collection, by
+   * `user` rather than `employee` so it works the moment an Employee record
+   * exists even without every field populated.
+   */
+  async myCredits(userId: string) {
+    return CompOffCredit.find(scoped({ user: userId })).sort({ date: -1 });
+  }
+
+  /**
    * Attendance in the last `days` where the employee actually worked
    * (present/late/half_day with worked minutes) on a day that was a weekend
    * or declared holiday for their schedule — and has no credit yet.

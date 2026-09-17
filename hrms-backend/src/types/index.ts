@@ -40,6 +40,7 @@ export const HRMS_MODULES = [
   "confirmations",
   "letters",
   "announcements",
+  "reminders",
   "surveys",
   // Staff programmes with a limited number of places — training, workshops,
   // inductions. New: existing role documents do not carry it, so it has to be
@@ -374,6 +375,31 @@ export interface IAnnouncement extends Document {
   /** Pinned announcements sort above everything else. */
   pinned: boolean;
   createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Reminders ───────────────────────────────────────────────────────────────
+export type ReminderAudience = "everyone" | "team" | "self";
+export type ReminderStatus = "scheduled" | "sent" | "cancelled";
+/** Which of a reminder's firing stages have already gone out. */
+export type ReminderStage = "30min" | "5min" | "ontime" | "dayBefore";
+
+export interface IReminder extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  createdBy: Types.ObjectId | IUser;
+  title: string;
+  message?: string;
+  audience: ReminderAudience;
+  /** Only set for a "team" reminder — the creator's department at creation time. */
+  department?: Types.ObjectId | IDepartment | null;
+  date: Date;
+  /** "HH:MM" in `timeZone`, or null for a date-only reminder. */
+  time?: string | null;
+  timeZone: string;
+  status: ReminderStatus;
+  firedStages: ReminderStage[];
   createdAt: Date;
   updatedAt: Date;
 }
