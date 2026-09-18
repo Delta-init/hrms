@@ -199,7 +199,7 @@ export class LeaveService {
   ): Promise<number> {
     const su = new Date(Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth(), new Date(start).getUTCDate()));
     const eu = new Date(Date.UTC(new Date(end).getUTCFullYear(), new Date(end).getUTCMonth(), new Date(end).getUTCDate()));
-    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu }, ...holidayScope(workMode, scheduleId) })).select("date").lean();
+    const holidays = await Holiday.find(scoped({ date: { $gte: su, $lte: eu }, ...(await holidayScope(workMode, scheduleId)) })).select("date").lean();
     const holSet = new Set(holidays.map((h) => new Date(h.date).toISOString().slice(0, 10)));
     let count = 0;
     const cur = new Date(su);

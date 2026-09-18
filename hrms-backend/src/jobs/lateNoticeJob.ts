@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { Attendance } from "../models/Attendance.js";
 import { Organization } from "../models/Organization.js";
 import { User } from "../models/User.js";
+import { Employee } from "../models/Employee.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "../services/attendancePenaltyService.js";
@@ -66,6 +67,11 @@ export async function runLateNotices(now = new Date()) {
     for (const row of rows) {
       const user = await User.findById(row.user).select("name email").lean<{ name?: string; email?: string } | null>();
       if (!user?.email) continue;
+
+      // Exempt from attendance entirely — a late notice would nag them about
+      // a cost their payslip is never actually going to apply.
+      const employee = await Employee.findOne({ user: row.user }).select("attendanceExempt").lean<{ attendanceExempt?: boolean } | null>();
+      if (employee?.attendanceExempt) continue;
 
       const count = await lateThisMonth(org._id, row.user, now);
       const cost = computeLatePenaltyDays(count, policy);

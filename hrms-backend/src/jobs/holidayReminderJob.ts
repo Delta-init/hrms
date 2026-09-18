@@ -65,7 +65,7 @@ async function holidaysOn(
   const rows = await Holiday.find({
     organization: orgId,
     date: { $gte: dayStart, $lt: dayEnd },
-    ...holidayScope(workMode, scheduleId),
+    ...(await holidayScope(workMode, scheduleId)),
   })
     .select("name")
     .lean();

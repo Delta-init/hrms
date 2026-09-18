@@ -10,7 +10,12 @@ import {
   type KioskSession, type LivenessStep,
 } from "@/lib/kioskClient";
 import { cn } from "@/lib/utils";
-import type { KioskPunchResult } from "@/types";
+import {
+  ATTENDANCE_STATUS_LABELS,
+  type AttendanceStatus,
+  type KioskPunchDay,
+  type KioskPunchResult,
+} from "@/types";
 
 /** How long a result stays on screen before the kiosk resets for the next person. */
 const RESULT_MS = 5000;
@@ -551,6 +556,56 @@ function Prompt({ step }: { step: LivenessStep }) {
   );
 }
 
+/**
+ * How each day status reads at a glance, from a step away.
+ *
+ * Green is "nothing to do about this"; amber is "worth knowing before you walk
+ * off" — a late mark or a half day is the kind of thing somebody wants to
+ * query the same day, not at the end of the month when the payslip lands.
+ */
+const STATUS_TONE: Record<AttendanceStatus, string> = {
+  present: "bg-emerald-500/15 text-emerald-300",
+  wfh: "bg-emerald-500/15 text-emerald-300",
+  late: "bg-amber-500/15 text-amber-300",
+  half_day: "bg-amber-500/15 text-amber-300",
+  early_out: "bg-amber-500/15 text-amber-300",
+  absent: "bg-red-500/15 text-red-300",
+  on_leave: "bg-sky-500/15 text-sky-300",
+  holiday: "bg-sky-500/15 text-sky-300",
+  weekend: "bg-neutral-500/15 text-neutral-300",
+};
+
+const clockTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+
+/** Today's record, shown back to whoever just scanned: in, out, and how it stands. */
+function DayStrip({ day }: { day: KioskPunchDay }) {
+  return (
+    <div className="mt-1 flex flex-col items-center gap-3">
+      <div className="flex items-center gap-8">
+        <div className="text-center">
+          <p className="text-xs uppercase tracking-wide text-neutral-500">In</p>
+          <p className="text-2xl font-semibold tabular-nums">{clockTime(day.checkIn)}</p>
+        </div>
+        <div className="h-8 w-px bg-neutral-700" aria-hidden />
+        <div className="text-center">
+          <p className="text-xs uppercase tracking-wide text-neutral-500">Out</p>
+          <p className="text-2xl font-semibold tabular-nums">{clockTime(day.checkOut)}</p>
+        </div>
+      </div>
+      <span
+        className={cn(
+          "rounded-full px-4 py-1 text-base font-semibold",
+          STATUS_TONE[day.status] ?? "bg-neutral-500/15 text-neutral-300"
+        )}
+      >
+        {ATTENDANCE_STATUS_LABELS[day.status] ?? day.status}
+        {day.status === "late" && day.lateMinutes > 0 ? ` · ${day.lateMinutes} min` : ""}
+      </span>
+    </div>
+  );
+}
+
 function Result({ result }: { result: KioskPunchResult }) {
   if (result.status === "punched") {
     const isIn = result.direction === "in";
@@ -574,11 +629,9 @@ function Result({ result }: { result: KioskPunchResult }) {
         <p className="text-4xl font-semibold tabular-nums">
           {result.at ? new Date(result.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
         </p>
+        {result.day && <DayStrip day={result.day} />}
         {isIn && (
           <p className="text-sm text-neutral-400">Checking out is held for ten minutes.</p>
-        )}
-        {isIn && (result.lateMinutes ?? 0) > 0 && (
-          <p className="text-sm text-amber-400">{result.lateMinutes} minutes late</p>
         )}
       </div>
     );
@@ -598,6 +651,7 @@ function Result({ result }: { result: KioskPunchResult }) {
         <p className="text-lg text-neutral-300">
           {result.message ?? "That's already recorded. You're all set."}
         </p>
+        {result.day && <DayStrip day={result.day} />}
       </div>
     );
   }
@@ -611,7 +665,12 @@ function Result({ result }: { result: KioskPunchResult }) {
           <AlertTriangle className="h-10 w-10 text-amber-400" />
         )}
       </div>
+      {/* Named whenever we know who it is. A refusal is the case where saying so
+          matters most: "already clocked in today" with no name gives somebody no
+          way to tell whether the kiosk even recognised them. */}
+      {result.user?.name && <p className="text-3xl font-semibold">{result.user.name}</p>}
       <p className="max-w-md text-2xl font-medium">{result.hint ?? result.message}</p>
+      {result.day && <DayStrip day={result.day} />}
     </div>
   );
 }

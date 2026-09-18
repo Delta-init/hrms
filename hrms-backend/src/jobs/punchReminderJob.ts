@@ -70,7 +70,7 @@ function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: stri
 
 /** Everybody in one organisation who could be expected to punch today. */
 async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
-  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null } })
+  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null }, attendanceExempt: { $ne: true } })
     .select("name user workMode")
     .lean();
   if (!employees.length) return [];
@@ -102,11 +102,12 @@ async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
 
 /** True when the day is one this person was never expected to work. */
 async function excusedToday(orgId: unknown, userId: unknown, dayStart: Date, dayEnd: Date, workMode: "office" | "wfh" | null, scheduleId?: unknown) {
+  // Their own calendar: a Kerala holiday must not excuse a Dubai employee
+  // from a punch they were expected to make.
+  const scope = await holidayScope(workMode, scheduleId);
   const [onLeave, holiday] = await Promise.all([
     LeaveRequest.exists({ user: userId, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
-    // Their own calendar: a Kerala holiday must not excuse a Dubai employee
-    // from a punch they were expected to make.
-    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode, scheduleId) }),
+    Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...scope }),
   ]);
   return !!onLeave || !!holiday;
 }

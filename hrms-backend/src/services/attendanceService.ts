@@ -1023,7 +1023,7 @@ export class AttendanceService {
     const windows = await employmentWindows(employees as never);
 
 
-    const [att, monthLeaves, holidays, rosterMap, regs] = await Promise.all([
+    const [att, monthLeaves, holidays, rosterMap, regs, exclusiveScheduleIdList] = await Promise.all([
       Attendance.find({ user: { $in: userIds }, date: { $gte: scanStart, $lt: scanEnd } })
         .select("user date status workedMinutes checkIn checkOut lateMinutes note timeZone " +
                 // Only the verdict, not the whole provenance: a month of full
@@ -1040,7 +1040,12 @@ export class AttendanceService {
       // so a disputed day is visible as disputed, rather than looking settled.
       Regularization.find({ user: { $in: userIds }, status: { $in: ["pending", "approved"] }, date: { $gte: start, $lt: end } })
         .select("user date type status resultingStatus").lean(),
+      // Every schedule with a calendar of its own, org-wide and not scoped to
+      // this month — see holidayScope. A schedule found here replaces the
+      // work-mode fallback for anyone on it rather than adding to it.
+      Holiday.distinct("workSchedule", { ...orgFilter(), workSchedule: { $ne: null } }),
     ]);
+    const exclusiveScheduleIds = new Set(exclusiveScheduleIdList.map(String));
 
     type DayLeave = { type: string; label: string; paid: boolean };
     type DayReg = { _id: unknown; type: string; status: string; resultingStatus?: string };
@@ -1119,6 +1124,10 @@ export class AttendanceService {
       holidaysByMode.find((h) => {
         if (new Date(h.date).toISOString().slice(0, 10) !== key) return false;
         if (h.workSchedule) return scheduleId != null && String(h.workSchedule) === String(scheduleId);
+        // A schedule with its own tagged calendar replaces the work-mode
+        // fallback for anyone on it — Karnataka's sixteen days, not sixteen
+        // days added to Kerala's.
+        if (scheduleId != null && exclusiveScheduleIds.has(String(scheduleId))) return false;
         return !h.workMode || h.workMode === mode;
       })?.name;
 

@@ -17,16 +17,21 @@ import type { WorkMode } from "../types/index.js";
  *
  * `workMode` splits the org two ways; `scheduleId` narrows further, to exactly
  * the people on one schedule — Karnataka's calendar is not also every other
- * remote worker's just because both happen to be `workMode: wfh`. A holiday
- * tagged with a schedule is that schedule's alone, checked before work mode
- * ever comes into it; one left untagged (every holiday that predates this
- * field, and every ordinary org-wide or work-mode holiday since) reaches
- * everybody the work-mode half already decided to, exactly as before.
+ * remote worker's just because both happen to be `workMode: wfh`.
+ *
+ * A schedule with holidays tagged to it has its own complete calendar and
+ * means exactly that: for anyone on it, ONLY those tagged days count, not
+ * the untagged work-mode calendar too — Karnataka's sixteen days is the
+ * whole of it, not sixteen extra days added to Kerala's. A schedule with no
+ * tagged holidays of its own (every schedule but one, today) is unaffected
+ * and keeps falling back to the untagged, work-mode calendar exactly as
+ * before — this only ever narrows a schedule that has opted in by having a
+ * calendar at all.
  */
-export function holidayScope(
+export async function holidayScope(
   workMode: WorkMode | null | undefined,
   scheduleId?: unknown
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   // Somebody with no work mode on record — an account with no employee — is
   // reached only by the holidays that are everybody's, which is the safe answer
   // for a login that is not a person.
@@ -36,6 +41,8 @@ export function holidayScope(
     $and: [{ $or: [{ workSchedule: null }, { workSchedule: { $exists: false } }] }, { $or: workModeOr }],
   };
   if (!scheduleId) return untagged;
+  const hasOwnCalendar = await Holiday.exists({ ...orgFilter(), workSchedule: scheduleId });
+  if (hasOwnCalendar) return { workSchedule: scheduleId };
   return { $or: [untagged, { workSchedule: scheduleId }] };
 }
 
@@ -71,7 +78,7 @@ export async function holidayKeysFor(
   const rows = await Holiday.find({
     ...orgFilter(),
     date: { $gte: start, $lt: end },
-    ...holidayScope(workMode, scheduleId),
+    ...(await holidayScope(workMode, scheduleId)),
   })
     .select("date")
     .lean();

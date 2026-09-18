@@ -245,6 +245,16 @@ const employeeSchema = new Schema<IEmployee>(
     mobileLoginAllowed: { type: Boolean, default: false },
 
     /**
+     * Exempts this person from attendance entirely — no punch reminder, no
+     * late notice, no exception on the daily digest, and no loss-of-pay,
+     * late, or early-out deduction on their payslip regardless of what their
+     * attendance records actually show. For senior leadership whose presence
+     * isn't tracked the way everyone else's is; the attendance history itself
+     * is left alone, only its consequences are switched off.
+     */
+    attendanceExempt: { type: Boolean, default: false },
+
+    /**
      * The one browser a remote employee may punch from.
      *
      * `keyHash` is a SHA-256 of a secret the browser minted for itself and

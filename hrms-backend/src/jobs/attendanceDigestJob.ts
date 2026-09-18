@@ -88,7 +88,7 @@ const SAME_PLACE_M = 1_000;
  * and the only safe way to do that is to run the half that reads and stop.
  */
 export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exception[]> {
-  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null } })
+  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null }, attendanceExempt: { $ne: true } })
     .select("name employeeCode user workMode department")
     .lean();
   if (!employees.length) return [];
@@ -127,11 +127,12 @@ export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exceptio
       const dayStart = shift.dateMidnightUtc;
       const dayEnd = new Date(dayStart.getTime() + 86_400_000);
       const workMode = (e as { workMode?: "office" | "wfh" }).workMode ?? null;
+      // Their own calendar, so a Kerala holiday does not quietly drop a Dubai
+      // employee out of the exceptions HR is reading.
+      const scope = await holidayScope(workMode, u.workSchedule);
       const [onLeave, holiday] = await Promise.all([
         LeaveRequest.exists({ user: e.user, status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } }),
-        // Their own calendar, so a Kerala holiday does not quietly drop a Dubai
-        // employee out of the exceptions HR is reading.
-        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...holidayScope(workMode, u.workSchedule) }),
+        Holiday.exists({ organization: orgId, date: { $gte: dayStart, $lt: dayEnd }, ...scope }),
       ]);
       if (onLeave || holiday) continue;
       if (att?.status && !["present", "late", "half_day"].includes(att.status)) continue;

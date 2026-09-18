@@ -40,7 +40,7 @@ export class HolidayService {
     // The scoping is skipped entirely for a manager rather than widened to
     // match — an `$or` that always matches is one refactor away from becoming
     // a filter that quietly stops filtering.
-    if (!viewer.canManage) Object.assign(filter, holidayScope(viewer.workMode, viewer.scheduleId));
+    if (!viewer.canManage) Object.assign(filter, await holidayScope(viewer.workMode, viewer.scheduleId));
     if (query.search) filter.name = searchRegex(query.search);
     if (query.type) filter.type = query.type;
     if (query.dateFrom || query.dateTo) {
@@ -67,7 +67,7 @@ export class HolidayService {
    * arrived from an already-filtered list.
    */
   async getById(id: string, viewer: HolidayViewer) {
-    const filter = viewer.canManage ? scoped({ _id: id }) : scoped({ _id: id, ...holidayScope(viewer.workMode, viewer.scheduleId) });
+    const filter = viewer.canManage ? scoped({ _id: id }) : scoped({ _id: id, ...(await holidayScope(viewer.workMode, viewer.scheduleId)) });
     const record = await Holiday.findOne(filter);
     if (!record) throw Object.assign(new Error("Holiday not found"), { statusCode: 404 });
     return record;

@@ -41,6 +41,7 @@ export const HRMS_MODULES = [
   "confirmations",
   "letters",
   "announcements",
+  "reminders",
   "surveys",
   // Staff programmes with a limited number of places. Mirrors the backend list;
   // the two are separate copies and a module missing from either is a page
@@ -79,6 +80,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   confirmations: "Confirmations",
   letters: "Letters",
   announcements: "Announcements",
+  reminders: "Reminders",
   surveys: "Surveys",
   programs: "Programs",
   approvalWorkflows: "Approval Workflows",
@@ -450,6 +452,8 @@ export interface Employee {
   kioskOnly?: boolean;
   /** Exempts this person from their department's mobile-login block. */
   mobileLoginAllowed?: boolean;
+  /** Exempts this person from attendance entirely — no nagging, no payroll impact. */
+  attendanceExempt?: boolean;
   /** The one browser this person may punch from, when binding is on. */
   trustedDevice?: {
     label?: string;
@@ -1524,6 +1528,27 @@ export interface Announcement {
   updatedAt: string;
 }
 
+// ─── Reminders ───────────────────────────────────────────────────────────────
+export type ReminderAudience = "everyone" | "team" | "self";
+export const REMINDER_AUDIENCE_LABELS: Record<ReminderAudience, string> = {
+  everyone: "Everyone", team: "My team", self: "Just me",
+};
+export type ReminderStatus = "scheduled" | "sent" | "cancelled";
+export interface Reminder {
+  _id: string;
+  createdBy?: { _id: string; name: string; email?: string } | string | null;
+  title: string;
+  message?: string;
+  audience: ReminderAudience;
+  department?: { _id: string; name: string } | string | null;
+  date: string;
+  time?: string | null;
+  timeZone: string;
+  status: ReminderStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Surveys ──────────────────────────────────────────────────────────────────
 export type SurveyQuestionType = "text" | "single_choice" | "rating";
 export const SURVEY_QUESTION_TYPE_LABELS: Record<SurveyQuestionType, string> = {
@@ -2056,6 +2081,15 @@ export type PunchStatus =
   | "challenge_expired"
   | "refused";
 
+/** How the person's day stands, shown back to them at the kiosk. */
+export interface KioskPunchDay {
+  status: AttendanceStatus;
+  checkIn: string | null;
+  checkOut: string | null;
+  workedMinutes: number;
+  lateMinutes: number;
+}
+
 export interface KioskPunchResult {
   status: PunchStatus;
   direction?: "in" | "out";
@@ -2066,6 +2100,7 @@ export interface KioskPunchResult {
   reason?: string;
   hint?: string;
   message?: string;
+  day?: KioskPunchDay;
 }
 
 // ─── Documents overview ──────────────────────────────────────────────────────
@@ -2509,7 +2544,7 @@ export interface AgreementTemplateRow {
 
 // ─── Notifications ───────────────────────────────────────────────────────────
 export type NotificationKind =
-  | "leave" | "regularization" | "approval" | "announcement" | "payroll" | "system";
+  | "leave" | "regularization" | "approval" | "announcement" | "reminder" | "payroll" | "system";
 
 export interface AppNotification {
   _id: string;

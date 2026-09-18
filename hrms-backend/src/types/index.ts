@@ -707,6 +707,8 @@ export interface IEmployee extends Document {
   kioskOnly?: boolean;
   /** Exempts this person from their department's mobile-login block. See the model. */
   mobileLoginAllowed?: boolean;
+  /** Exempts this person from attendance entirely — no nagging, no payroll impact. See the model. */
+  attendanceExempt?: boolean;
   /** The single browser a remote employee may punch from. See the model. */
   trustedDevice?: ITrustedDevice | null;
   /** Monthly base salary (used to prefill payslips). */

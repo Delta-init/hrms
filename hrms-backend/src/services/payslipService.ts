@@ -668,7 +668,7 @@ export class PayslipService {
       Holiday.find({
         ...orgFilter(),
         date: { $gte: start, $lt: end },
-        ...holidayScope(await workModeOfUser(userId), await scheduleIdOfUser(userId)),
+        ...(await holidayScope(await workModeOfUser(userId), await scheduleIdOfUser(userId))),
       }).select("date").lean(),
     ]);
 
@@ -784,6 +784,17 @@ export class PayslipService {
     const chargeableUnrecorded = Math.max(0, base.unrecordedDays - base.unrecordedFutureDays);
     if (penaltyPolicy.unrecordedDaysUnpaid && chargeableUnrecorded > 0) {
       base.lopDays = Math.round((base.lopDays + chargeableUnrecorded) * 100) / 100;
+    }
+
+    // Full salary regardless of what the figures above came to — the
+    // attendance history itself is left untouched (present/late/absent
+    // counts above are real), only its cost is switched off. Applied last,
+    // after every other deduction path above, so nothing computed earlier
+    // can slip past it.
+    if (emp.attendanceExempt) {
+      base.lopDays = 0;
+      base.latePenaltyDays = 0;
+      base.earlyOutPenaltyDays = 0;
     }
 
     // Counted against the thirty days the salary buys, not against the working

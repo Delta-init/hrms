@@ -104,7 +104,7 @@ export class CompOffService {
     const start = new Date(end);
     start.setUTCDate(start.getUTCDate() - days);
 
-    const [att, employees, existingCredits, holidays] = await Promise.all([
+    const [att, employees, existingCredits, holidays, exclusiveScheduleIdList] = await Promise.all([
       Attendance.find({
         ...orgFilter(), date: { $gte: start, $lt: end },
         status: { $in: ["present", "late", "half_day"] }, workedMinutes: { $gt: 0 },
@@ -114,7 +114,12 @@ export class CompOffService {
       // Every calendar in play, kept apart below: this walks the whole
       // organisation, and one person's holiday is another's working day.
       Holiday.find({ ...orgFilter(), date: { $gte: start, $lt: end } }).select("date workMode workSchedule").lean(),
+      // Every schedule with a calendar of its own, org-wide and not scoped to
+      // this window — see holidayScope. Replaces the work-mode fallback for
+      // anyone on it rather than adding to it.
+      Holiday.distinct("workSchedule", { ...orgFilter(), workSchedule: { $ne: null } }),
     ]);
+    const exclusiveScheduleIds = new Set(exclusiveScheduleIdList.map(String));
 
     const empByUser = new Map(employees.map((e) => [String(e.user), e]));
     /*
@@ -149,6 +154,9 @@ export class CompOffService {
         if ((h as { workSchedule?: unknown }).workSchedule) {
           return scheduleId != null && String((h as { workSchedule?: unknown }).workSchedule) === String(scheduleId);
         }
+        // A schedule with its own tagged calendar replaces the work-mode
+        // fallback for anyone on it, rather than adding to it.
+        if (scheduleId != null && exclusiveScheduleIds.has(String(scheduleId))) return false;
         return !h.workMode || h.workMode === mode;
       });
 

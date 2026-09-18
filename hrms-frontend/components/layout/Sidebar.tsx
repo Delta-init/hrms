@@ -26,6 +26,7 @@ import {
   ClipboardList,
   FileText,
   Megaphone,
+  AlarmClock,
   ListChecks,
   LifeBuoy,
   FileBarChart,
@@ -113,6 +114,7 @@ export const navItems: {
   { href: "/onboarding-tasks", label: "Onboarding Tasks", icon: ClipboardList, permModule: "onboardingTasks" },
   { href: "/letters", label: "Letters", icon: FileText, permModule: "letters" },
   { href: "/announcements", label: "Announcements", icon: Megaphone, permModule: "announcements" },
+  { href: "/reminders", label: "Reminders", icon: AlarmClock, permModule: "reminders" },
   // Always reachable: everyone can see/respond to Open Surveys; the Manage tab is gated inside the page.
   { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
   // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.

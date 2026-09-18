@@ -49,6 +49,7 @@ const hrManagerPermissions: PermissionsMap = {
   confirmations: { ...fullAccess },
   letters: { ...fullAccess },
   announcements: { ...fullAccess },
+  reminders: { ...fullAccess },
   surveys: { ...fullAccess },
   approvalWorkflows: { ...fullAccess },
   helpdesk: { ...fullAccess },
@@ -72,6 +73,10 @@ const employeePermissions: PermissionsMap = {
   // All Claims tab with every colleague's private expense amounts.
   reimbursements: { view: false, create: true, edit: false, delete: false, approve: false, export: false },
   announcements: { view: true, create: false, edit: false, delete: false, approve: false, export: false },
+  // create: self/team reminders are self-service, ungated routes (scoped to
+  // the caller server-side) — approve: false means the "everyone" audience
+  // stays out of reach, the one thing this module actually gates.
+  reminders: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   // view only: /surveys/mine and submitting a response are self-service, ungated
   // routes (scoped to the caller server-side) — `view` just controls nav visibility.
   surveys: { view: true, create: false, edit: false, delete: false, approve: false, export: false },

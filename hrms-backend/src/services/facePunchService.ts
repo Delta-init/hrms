@@ -15,12 +15,31 @@ const COOLDOWN_MS = (Number(env.FACE_PUNCH_COOLDOWN_SECONDS) || 60) * 1000;
 /** How long back clockOut is willing to look for an open session. */
 const OPEN_SESSION_WINDOW_MS = 2 * 86_400_000;
 
+/**
+ * How the person's day stands, sent back with every outcome that knows who they
+ * are.
+ *
+ * The kiosk is the only screen most of the shop floor ever sees — they have no
+ * dashboard open and no reason to keep one. Showing the day back to them at the
+ * moment they punch is the one chance to catch a missing check-out or a day
+ * that went down as half a day while they can still say something about it.
+ */
+export interface PunchDay {
+  status: string;
+  checkIn: Date | null;
+  checkOut: Date | null;
+  workedMinutes: number;
+  lateMinutes: number;
+}
+
 export type PunchOutcome =
-  | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number }
-  | { status: "cooldown"; user: { id: string; name: string }; at: Date; message?: string }
+  | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number; day?: PunchDay }
+  | { status: "cooldown"; user: { id: string; name: string }; at: Date; message?: string; day?: PunchDay }
   | { status: "not_recognised"; reason: RecognizeReason; hint: string }
   | { status: "not_live"; reason: LivenessReason; hint: string }
-  | { status: "refused"; message: string };
+  // `user` is optional because a refusal can also come from before anyone was
+  // identified — a deactivated account, a record this device can't read.
+  | { status: "refused"; message: string; user?: { id: string; name: string }; day?: PunchDay };
 
 /**
  * What the kiosk should say for each way recognition can come up short. These
@@ -140,7 +159,12 @@ export class FacePunchService {
     if (previous && Date.now() - previous.getTime() < COOLDOWN_MS) {
       // A second frame moments later is the same person still standing there,
       // not a check-out. Without this, walking away too slowly undoes the punch.
-      return { status: "cooldown", user: { id: userId, name: user.name }, at: previous };
+      return {
+        status: "cooldown",
+        user: { id: userId, name: user.name },
+        at: previous,
+        day: await this.dayFor(userId),
+      };
     }
 
     const open = await this.openSession(userId);
@@ -164,6 +188,7 @@ export class FacePunchService {
           user: { id: userId, name: user.name },
           at: open.checkIn,
           message: `Checked in a moment ago. You can check out in ${mins} minute${mins === 1 ? "" : "s"}.`,
+          day: await this.dayFor(userId),
         };
       }
     }
@@ -174,10 +199,27 @@ export class FacePunchService {
       proofKey: await this.storeProof(orgKey, userId, images[result.frame_index ?? 0] ?? images[0]!),
     };
 
-    const record =
-      direction === "in"
-        ? await this.attendance.clockIn(userId, source)
-        : await this.attendance.clockOut(userId, source);
+    let record;
+    try {
+      record =
+        direction === "in"
+          ? await this.attendance.clockIn(userId, source)
+          : await this.attendance.clockOut(userId, source);
+    } catch (error) {
+      // The attendance rules refused it — already clocked in, outside the shift
+      // window, a day that has since ended. Caught here rather than left to the
+      // controller because by this point we know exactly who is standing at the
+      // camera, and a screen that says only "you have already clocked in today"
+      // to an unnamed person is the one thing they cannot check for themselves.
+      const err = error as { statusCode?: number; message?: string };
+      if (!err?.statusCode || err.statusCode >= 500) throw error;
+      return {
+        status: "refused",
+        message: err.message ?? "That didn't work.",
+        user: { id: userId, name: user.name },
+        day: await this.dayFor(userId),
+      };
+    }
 
     return {
       status: "punched",
@@ -186,7 +228,44 @@ export class FacePunchService {
       at: direction === "in" ? record!.checkIn! : record!.checkOut!,
       score: result.best.score,
       lateMinutes: record!.lateMinutes ?? 0,
+      day: this.dayOf(record),
     };
+  }
+
+  /** The day as it stands, from a record already in hand. */
+  private dayOf(record: {
+    status?: string;
+    checkIn?: Date | null;
+    checkOut?: Date | null;
+    workedMinutes?: number;
+    lateMinutes?: number;
+  } | null | undefined): PunchDay | undefined {
+    if (!record) return undefined;
+    return {
+      status: record.status ?? "present",
+      checkIn: record.checkIn ?? null,
+      checkOut: record.checkOut ?? null,
+      workedMinutes: record.workedMinutes ?? 0,
+      lateMinutes: record.lateMinutes ?? 0,
+    };
+  }
+
+  /**
+   * The same, for the paths that don't already hold the record.
+   *
+   * Goes through getToday so the day it reads is the one the punch itself would
+   * have written to — the shift's own day, not the server's calendar date, which
+   * are different things for a night shift or a Kerala schedule read from Dubai.
+   */
+  private async dayFor(userId: string): Promise<PunchDay | undefined> {
+    try {
+      const { attendance } = await this.attendance.getToday(userId);
+      return this.dayOf(attendance as Parameters<typeof this.dayOf>[0]);
+    } catch {
+      // A summary is a courtesy; failing to build one must never turn a punch
+      // that worked into an error on the screen.
+      return undefined;
+    }
   }
 
   /**

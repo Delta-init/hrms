@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, CheckCheck, CalendarDays, Clock, ShieldCheck, Megaphone, Wallet, Info } from "lucide-react";
+import { Bell, Check, CheckCheck, CalendarDays, Clock, ShieldCheck, Megaphone, AlarmClock, Wallet, Info } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -28,6 +28,7 @@ const ICON: Record<NotificationKind, typeof Bell> = {
   regularization: Clock,
   approval: ShieldCheck,
   announcement: Megaphone,
+  reminder: AlarmClock,
   payroll: Wallet,
   system: Info,
 };
