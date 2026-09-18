@@ -14,6 +14,7 @@ import { env } from "../config/env.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
 import { publicUrl } from "../config/r2.js";
 import { randomBytes } from "node:crypto";
+import { stillHere, hasLeftFilter, hasLeft } from "../utils/employeeStatus.js";
 
 interface EmployeeQuery extends PaginationQuery {
   excludeTerminated?: string;
@@ -141,16 +142,17 @@ export class EmployeeService {
     if (query.status) filter.status = query.status;
     // Pickers exclude leavers. Done here rather than by filtering the returned
     // page, which drops people from the middle of a paginated result.
-    else if (query.excludeTerminated === "true") filter.status = { $ne: "terminated" };
-    else if (query.staff === "current") filter.status = { $ne: "terminated" };
-    else if (query.staff === "leavers") filter.status = "terminated";
+    else if (query.excludeTerminated === "true") filter.status = stillHere();
+    else if (query.staff === "current") filter.status = stillHere();
+    else if (query.staff === "leavers") filter.status = hasLeftFilter();
 
     /**
      * How somebody left.
      *
-     * The employee record only knows "terminated", which lumps a resignation
-     * in with a dismissal — the distinction lives on the resignation record,
-     * so this resolves there and comes back as a set of employee ids.
+     * The status now separates a resignation from a dismissal, but only
+     * coarsely — retirement and end-of-contract both land on "terminated", and
+     * the fuller account lives on the resignation record, so this still
+     * resolves there and comes back as a set of employee ids.
      *
      * Resolved into a constraint rather than by filtering the returned page,
      * the same reason `staff` above is: a page-level filter drops people out of
@@ -161,7 +163,7 @@ export class EmployeeService {
         .select("employee").lean();
       filter._id = { $in: left.map((r) => r.employee) };
       // Asking how somebody left only makes sense about somebody who has.
-      if (!query.status && query.staff !== "all") filter.status = "terminated";
+      if (!query.status && query.staff !== "all") filter.status = hasLeftFilter();
     }
     if (query.department) filter.department = query.department;
     // "none" is the useful half of this filter: it is the only way to see who
@@ -213,7 +215,7 @@ export class EmployeeService {
      * the leavers actually on this page, so a page of current staff costs
      * nothing.
      */
-    const leaverIds = rows.filter((r) => r.status === "terminated").map((r) => r._id);
+    const leaverIds = rows.filter((r) => hasLeft(r.status)).map((r) => r._id);
     const exits = leaverIds.length
       ? await Resignation.find({ ...orgFilter(), employee: { $in: leaverIds } })
           .select("employee resignationType lastWorkingDay").sort({ lastWorkingDay: -1 }).lean()
@@ -290,7 +292,7 @@ export class EmployeeService {
     if (!manager) {
       throw Object.assign(new Error("That manager could not be found in this organization"), { statusCode: 400 });
     }
-    if (manager.status === "terminated") {
+    if (hasLeft(manager.status)) {
       throw Object.assign(new Error("Someone who has left cannot be assigned as a manager"), { statusCode: 400 });
     }
     if (String(manager._id) === String(employeeId)) {

@@ -12,6 +12,7 @@ import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { DEFAULT_SCHEDULE, localDayKey, resolveShift, type ShiftSchedule } from "../utils/schedule.js";
 import { holidayScope } from "../utils/holidayScope.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * A nudge to whoever has not clocked in, or has not clocked out.
@@ -70,7 +71,7 @@ function shiftFor(ws: { timeZone?: string; loginTime?: string; logoutTime?: stri
 
 /** Everybody in one organisation who could be expected to punch today. */
 async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
-  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null }, attendanceExempt: { $ne: true } })
+  const employees = await Employee.find({ organization: orgId, status: stillHere(), user: { $ne: null }, attendanceExempt: { $ne: true } })
     .select("name user workMode")
     .lean();
   if (!employees.length) return [];

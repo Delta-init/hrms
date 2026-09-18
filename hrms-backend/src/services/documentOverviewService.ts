@@ -9,6 +9,7 @@ import {
   detailNumber,
 } from "../config/documentRequirements.js";
 import type { EmployeeLocation } from "../types/index.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * Every document the organization is meant to hold, present or not.
@@ -120,7 +121,7 @@ function statusOf(hasFile: boolean, required: boolean, days: number | null, with
 export async function documentsOverview(query: DocumentQuery) {
   const within = Math.max(0, Number(query.within) || DEFAULT_EXPIRY_WINDOW_DAYS);
 
-  const filter: Record<string, unknown> = { ...orgFilter(), status: { $ne: "terminated" } };
+  const filter: Record<string, unknown> = { ...orgFilter(), status: stillHere() };
   if (query.employee) filter._id = query.employee;
   if (query.location) filter.location = query.location;
   if (query.department) filter.department = query.department;

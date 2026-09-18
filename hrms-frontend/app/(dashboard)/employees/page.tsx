@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { PersonAvatar } from "@/components/shared/PersonAvatar";
-import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EXIT_TYPE_LABELS, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type ExitType, type WorkMode } from "@/types";
+import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, EXIT_TYPE_LABELS, hasLeft, WORK_MODE_LABELS, type Employee, type EmployeeStatus, type EmploymentType, type ExitType, type WorkMode } from "@/types";
 
 const ALL = "__all__";
 
@@ -47,6 +47,9 @@ const statusStyles: Record<EmployeeStatus, string> = {
   on_leave: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   notice_period: "bg-orange-500/10 text-orange-600 border-orange-500/20",
   terminated: "bg-red-500/10 text-red-600 border-red-500/20",
+  // Slate, not red: leaving of your own accord is not a disciplinary outcome,
+  // and colouring the two the same undoes the point of separating them.
+  resigned: "bg-slate-500/10 text-slate-600 border-slate-500/20",
 };
 
 export default function EmployeesPage() {
@@ -182,9 +185,9 @@ export default function EmployeesPage() {
             {/* "Terminated" reads the same for somebody who resigned and
                 somebody who was dismissed. Where the exit record knows which,
                 say which. */}
-            {e.status === "terminated" && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status]}
+            {hasLeft(e.status) && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status]}
           </span>
-          {e.status === "terminated" && e.lastWorkingDay && (
+          {hasLeft(e.status) && e.lastWorkingDay && (
             <span className="text-[10px] text-muted-foreground">
               until {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(e.lastWorkingDay))}
             </span>
@@ -346,7 +349,7 @@ export default function EmployeesPage() {
           Schedule: typeof e.workSchedule === "object" && e.workSchedule ? e.workSchedule.name : "Not set",
           "Schedule hours": typeof e.workSchedule === "object" && e.workSchedule ? `${e.workSchedule.loginTime}–${e.workSchedule.logoutTime}` : "",
           "Schedule region": typeof e.workSchedule === "object" && e.workSchedule ? regionOf(e.workSchedule.timeZone) : "",
-          Status: e.status === "terminated" && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status],
+          Status: hasLeft(e.status) && e.exitType ? EXIT_TYPE_LABELS[e.exitType] : EMPLOYEE_STATUS_LABELS[e.status],
           "Last working day": e.lastWorkingDay ? new Date(e.lastWorkingDay).toISOString().slice(0, 10) : "",
           Joining: e.joiningDate ? new Date(e.joiningDate).toISOString().slice(0, 10) : "",
         })}

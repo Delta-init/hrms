@@ -548,7 +548,7 @@ export interface IDepartment extends Document {
 
 // ─── Employee ───────────────────────────────────────────────────────────────
 export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
-export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated";
+export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated" | "resigned";
 export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
 export type MaritalStatus = "married" | "unmarried";
@@ -746,6 +746,8 @@ export interface IEmployee extends Document {
   oldCompanyExperience?: string;
   confirmationDate?: Date | null;
   probationPeriodDays?: number;
+  /** Why somebody left, against whichever exit status was set. */
+  exitReason?: string;
   /** When the "probation ends tomorrow" notice went out, so it goes once. */
   probationReminderSentAt?: Date | null;
   noticePeriodDays?: number;

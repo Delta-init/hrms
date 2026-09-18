@@ -8,6 +8,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
 import { beginWorkflowState, resolveReviewOutcome, assertNotSelfReview } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
+import { stillHere, hasLeft } from "../utils/employeeStatus.js";
 
 const POP = [
   { path: "employee", select: "name employeeCode designation location joiningDate probationPeriodDays department", populate: { path: "department", select: "name code" } },
@@ -47,7 +48,7 @@ export async function confirmationsDue(withinDays = 30, orgId?: string | null): 
   const cutoff = addDays(now, withinDays);
 
   const match: Record<string, unknown> = {
-    status: { $nin: ["terminated"] },
+    status: stillHere(),
     joiningDate: { $ne: null },
     probationPeriodDays: { $gt: 0 },
     $or: [{ confirmationDate: null }, { confirmationDate: { $exists: false } }],
@@ -114,7 +115,7 @@ export class ConfirmationService {
   async initiate(input: InitiateConfirmationInput, actorId: string) {
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
-    if (employee.status === "terminated") {
+    if (hasLeft(employee.status)) {
       throw Object.assign(new Error("This employee has left the organization"), { statusCode: 400 });
     }
     if (employee.confirmationDate) {

@@ -29,7 +29,7 @@ export const REPORT_SOURCES: SourceDef[] = [
       { key: "location", label: "Location" }, { key: "joiningDate", label: "Joining Date" },
     ],
     filters: [
-      statusFilter(["active", "probation", "on_leave", "notice_period", "terminated"].map((v) => ({ value: v, label: v.replace(/_/g, " ") }))),
+      statusFilter(["active", "probation", "on_leave", "notice_period", "terminated", "resigned"].map((v) => ({ value: v, label: v.replace(/_/g, " ") }))),
       DEPARTMENT_FILTER, DATE_FROM, DATE_TO,
     ],
   },

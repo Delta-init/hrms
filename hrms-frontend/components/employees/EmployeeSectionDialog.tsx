@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DepartmentSelect, ManagerSelect } from "@/components/pickers";
 import { useUpdateEmployee, useUpdateMyProfile } from "@/hooks/useEmployees";
 import {
-  BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, MARITAL_LABELS, TITLE_LABELS, VISA_TYPES,
+  BLOOD_GROUPS, EMPLOYEE_STATUS_LABELS, GENDER_LABELS, hasLeft, MARITAL_LABELS, TITLE_LABELS, VISA_TYPES,
   WORK_MODE_LABELS,
   type Employee, type EmployeeStatus, type Gender, type MaritalStatus, type Title, type WorkMode,
 } from "@/types";
@@ -62,6 +62,7 @@ function defaultsFor(section: ProfileSection, e: Employee): FormValues {
         mobileLoginAllowed: e.mobileLoginAllowed ?? false, attendanceExempt: e.attendanceExempt ?? false,
         currency: e.currency ?? "AED", status: e.status ?? "active", joiningDate: toDateInput(e.joiningDate),
         confirmationDate: toDateInput(e.confirmationDate), probationPeriodDays: e.probationPeriodDays ?? 0,
+        exitReason: e.exitReason ?? "",
         noticePeriodDays: e.noticePeriodDays ?? 60,
         // Composite "kind:id" so a manager can be an Employee or a login User.
         reportingTo: idOf(e.reportingTo) ? `${e.reportingToKind ?? "Employee"}:${idOf(e.reportingTo)}` : "",
@@ -114,7 +115,9 @@ export function EmployeeSectionDialog({
   const isPending = selfService ? updatingMyProfile : updatingEmployee;
   // Employment/reporting-line pickers aren't shown in self-service mode, so skip fetching them.
 
-  const { register, handleSubmit, control, reset } = useForm<FormValues>({ defaultValues: defaultsFor(section, employee) });
+  const { register, handleSubmit, control, reset, watch } = useForm<FormValues>({ defaultValues: defaultsFor(section, employee) });
+  // Shown only for an exit status: asking everybody why they are "active" is noise.
+  const statusNow = watch("status") as EmployeeStatus | undefined;
 
   useEffect(() => {
     if (open) reset(defaultsFor(section, employee));
@@ -232,6 +235,17 @@ export function EmployeeSectionDialog({
                   {(Object.keys(EMPLOYEE_STATUS_LABELS) as EmployeeStatus[]).map((s) => <SelectItem key={s} value={s}>{EMPLOYEE_STATUS_LABELS[s]}</SelectItem>)}
                 </SelectCtl>
               </div>
+              {hasLeft(statusNow) && (
+                <div className={`${field} col-span-2`}>
+                  <Label htmlFor="exitReason">
+                    {statusNow === "resigned" ? "Why they resigned" : "Why they were terminated"}
+                  </Label>
+                  <Textarea id="exitReason" rows={3} placeholder="Kept on the record — worth writing down while it is fresh." {...register("exitReason")} />
+                  <p className="text-xs text-muted-foreground">
+                    For the full exit — last working day, settlement and clearance — use the Resignations page.
+                  </p>
+                </div>
+              )}
               <div className={field}><Label>Reporting to</Label>
                 <Controller control={control} name="reportingTo" render={({ field }) => (
                   <ManagerSelect

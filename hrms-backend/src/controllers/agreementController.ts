@@ -12,6 +12,7 @@ import { publicUrl } from "../config/r2.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { buildPunchContext } from "../utils/punchContext.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /** Seconds from an MP4's movie header — measured here, never taken from the client. */
 export function mp4Duration(buf: Buffer): number | null {
@@ -106,7 +107,7 @@ export const listTemplates = async (_req: AuthenticatedRequest, res: Response, n
       video: video ? { ...video, url: publicUrl(video.fileKey) } : null,
       // Anyone who cannot be served a document at all, so the gap is visible
       // here rather than discovered by a new joiner who cannot finish setup.
-      unclassified: await Employee.countDocuments(scoped({ workMode: { $nin: ["office", "wfh"] }, status: { $ne: "terminated" } })),
+      unclassified: await Employee.countDocuments(scoped({ workMode: { $nin: ["office", "wfh"] }, status: stillHere() })),
     });
   } catch (e) { next(e); }
 };

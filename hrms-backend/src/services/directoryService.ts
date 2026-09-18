@@ -1,6 +1,7 @@
 import { Organization } from "../models/Organization.js";
 import { Department } from "../models/Department.js";
 import { Employee } from "../models/Employee.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * The read-only view of who exists in HRMS, for Delta Finance to map against.
@@ -100,7 +101,7 @@ export class DirectoryService {
     // Leavers are included by default and flagged rather than hidden. A person
     // who left still has a final payslip and still needs their finance-side
     // record deactivated — dropping them from the feed would strand it.
-    if (!opts.includeInactive) filter.status = { $ne: "terminated" };
+    if (!opts.includeInactive) filter.status = stillHere();
 
     if (opts.updatedSince) {
       const since = new Date(opts.updatedSince);

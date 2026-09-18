@@ -3,6 +3,7 @@ import { Payslip } from "../models/Payslip.js";
 import { Employee } from "../models/Employee.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 import type { PayrollBatchStatus } from "../types/index.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * The month's payroll as a unit, and the lock that stops HR editing it once
@@ -150,7 +151,7 @@ export class PayrollBatchService {
 
     // Somebody on the roster who never got a payslip is more often an oversight
     // than a decision, so it is said out loud rather than left to be noticed.
-    const active = await Employee.countDocuments(scoped({ status: { $ne: "terminated" } }));
+    const active = await Employee.countDocuments(scoped({ status: stillHere() }));
     if (active > slips.length) {
       warnings.push(`${active - slips.length} active employee(s) have no payslip for this month.`);
     }

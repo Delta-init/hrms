@@ -14,6 +14,7 @@ import { hrRecipients } from "./birthdayJob.js";
 import { DEFAULT_SCHEDULE, localDayKey, resolveShift, type ShiftSchedule } from "../utils/schedule.js";
 import { holidayScope } from "../utils/holidayScope.js";
 import { chainOfCommandFor } from "../services/departmentHeadService.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * What went wrong today, to HR at the end of the day — and to each
@@ -88,7 +89,7 @@ const SAME_PLACE_M = 1_000;
  * and the only safe way to do that is to run the half that reads and stop.
  */
 export async function exceptionsFor(orgId: unknown, now: Date): Promise<Exception[]> {
-  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null }, attendanceExempt: { $ne: true } })
+  const employees = await Employee.find({ organization: orgId, status: stillHere(), user: { $ne: null }, attendanceExempt: { $ne: true } })
     .select("name employeeCode user workMode department")
     .lean();
   if (!employees.length) return [];
@@ -273,7 +274,7 @@ export async function byDepartment(orgId: unknown, rows: Exception[]) {
     }
     if (!recipients.size) continue;
     const headcount = await Employee.countDocuments({
-      organization: orgId, department: deptId, status: { $ne: "terminated" }, user: { $ne: null },
+      organization: orgId, department: deptId, status: stillHere(), user: { $ne: null },
     });
     out.push({ department: deptId, name: nameOf.get(deptId) ?? "Department", recipients: [...recipients.values()], rows: deptRows, headcount });
   }
@@ -291,7 +292,7 @@ export async function runAttendanceDigest(now = new Date()) {
     if (!rows.length) continue;
 
     const recipients = await hrRecipients(String(org._id));
-    const headcount = await Employee.countDocuments({ organization: org._id, status: { $ne: "terminated" }, user: { $ne: null } });
+    const headcount = await Employee.countDocuments({ organization: org._id, status: stillHere(), user: { $ne: null } });
 
     if (!recipients.length) {
       console.log(`📋 ${org.name}: ${rows.length} exception(s) but no HR recipients — skipped.`);

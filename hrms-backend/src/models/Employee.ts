@@ -213,7 +213,7 @@ const employeeSchema = new Schema<IEmployee>(
     joiningDate: { type: Date, default: null },
     status: {
       type: String,
-      enum: ["active", "probation", "on_leave", "notice_period", "terminated"],
+      enum: ["active", "probation", "on_leave", "notice_period", "terminated", "resigned"],
       default: "active",
     },
     location: { type: String, enum: ["india", "dubai"], default: undefined },
@@ -313,6 +313,15 @@ const employeeSchema = new Schema<IEmployee>(
     // ── Employment ──
     oldCompanyExperience: { type: String, trim: true, maxlength: 1000 },
     confirmationDate: { type: Date, default: null },
+    /**
+     * Why somebody left, recorded against whichever exit status was set.
+     *
+     * The resignation record carries a far fuller account — settlement,
+     * clearance, last working day — but a status can be changed straight from
+     * the employee form without ever opening that flow, and a record that says
+     * only "terminated" answers none of the questions asked about it later.
+     */
+    exitReason: { type: String, trim: true, maxlength: 1000 },
     probationPeriodDays: { type: Number, min: 0, default: 0 },
     /**
      * When the "probation ends tomorrow" notice went out.

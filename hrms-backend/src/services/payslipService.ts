@@ -23,6 +23,7 @@ import { policiesForUser } from "./leavePolicyResolver.js";
 import { holidayScope, workModeOfUser, scheduleIdOfUser } from "../utils/holidayScope.js";
 import { employmentWindowFor, employmentWindows, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
+import { stillHere, hasLeftFilter } from "../utils/employeeStatus.js";
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -229,8 +230,8 @@ function allocateRecoveries(
  * their window, and they would come back in every run for ever.
  */
 async function payrollRosterFilter(month: string): Promise<Record<string, unknown>> {
-  const left = await Employee.find(scoped({ status: "terminated" })).select("_id joiningDate").lean();
-  if (!left.length) return { status: { $ne: "terminated" } };
+  const left = await Employee.find(scoped({ status: hasLeftFilter() })).select("_id joiningDate").lean();
+  if (!left.length) return { status: stillHere() };
 
   const windows = await employmentWindows(left as never);
   const stillOwed = left
@@ -240,8 +241,8 @@ async function payrollRosterFilter(month: string): Promise<Record<string, unknow
     })
     .map((e) => e._id);
 
-  if (!stillOwed.length) return { status: { $ne: "terminated" } };
-  return { $or: [{ status: { $ne: "terminated" } }, { _id: { $in: stillOwed } }] };
+  if (!stillOwed.length) return { status: stillHere() };
+  return { $or: [{ status: stillHere() }, { _id: { $in: stillOwed } }] };
 }
 
 /** Credit the loans and one-time items with what the payslip actually took. */

@@ -7,6 +7,7 @@ import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { AttendanceService } from "../services/attendanceService.js";
 import { DEFAULT_SCHEDULE, resolveShift, todayInTz, type ShiftSchedule } from "../utils/schedule.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * This month's days worth a second look — a half day, one never marked at
@@ -144,7 +145,7 @@ export async function runRegularizationPrompt(now = new Date()) {
   let flagged = 0, sent = 0;
 
   for (const org of orgs) {
-    const employees = await Employee.find({ organization: org._id, status: { $ne: "terminated" }, user: { $ne: null } })
+    const employees = await Employee.find({ organization: org._id, status: stillHere(), user: { $ne: null } })
       .select("name user")
       .lean();
     if (!employees.length) continue;

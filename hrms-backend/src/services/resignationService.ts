@@ -6,6 +6,15 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
 
+/**
+ * Which exit status a record ends on.
+ *
+ * Only a resignation is a resignation. Retirement, end of contract and
+ * absconding all read as "terminated" on the employee record — the status has
+ * two exits, not five, and the precise account stays on the resignation.
+ */
+const exitStatusFor = (type?: string | null) => (type === "resignation" ? "resigned" : "terminated");
+
 interface ResignationQuery extends PaginationQuery {
   employee?: string;
   /** Range over the last working day — the date the list is usually read by. */
@@ -190,7 +199,7 @@ export class ResignationService {
     record.reviewedBy = reviewerId as never;
     record.reviewedAt = new Date();
     await record.save();
-    await Employee.findByIdAndUpdate(record.employee, { status: "terminated" });
+    await Employee.findByIdAndUpdate(record.employee, { status: exitStatusFor(record.resignationType) });
     return Resignation.findById(id).populate(POP);
   }
 
@@ -217,7 +226,7 @@ export class ResignationService {
       record.left = input.left;
       if (input.left) {
         this.markRelieved(record);
-        await Employee.findByIdAndUpdate(record.employee, { status: "terminated" });
+        await Employee.findByIdAndUpdate(record.employee, { status: exitStatusFor(record.resignationType) });
       } else {
         record.status = "accepted";
         await Employee.findByIdAndUpdate(record.employee, { status: "notice_period" });
@@ -319,12 +328,12 @@ export class ResignationService {
 
   /** Cron: relieve accepted resignations whose last working day has passed. */
   async autoRelieveDue(now = new Date()) {
-    const due = await Resignation.find({ status: "accepted", lastWorkingDay: { $lte: now } }).select("_id employee lastWorkingDay leavingDate");
+    const due = await Resignation.find({ status: "accepted", lastWorkingDay: { $lte: now } }).select("_id employee lastWorkingDay leavingDate resignationType");
     for (const r of due) {
       this.markRelieved(r);
       r.reviewedAt = new Date();
       await r.save();
-      await Employee.findByIdAndUpdate(r.employee, { status: "terminated" });
+      await Employee.findByIdAndUpdate(r.employee, { status: exitStatusFor(r.resignationType) });
     }
     return due.length;
   }

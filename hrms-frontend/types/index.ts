@@ -251,7 +251,7 @@ export type DepartmentSimple = Pick<Department, "_id" | "name" | "code">;
 
 // ─── Employee ────────────────────────────────────────────────────────────────
 export type EmploymentType = "full_time" | "part_time" | "contract" | "intern";
-export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated";
+export type EmployeeStatus = "active" | "probation" | "on_leave" | "notice_period" | "terminated" | "resigned";
 
 export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
   full_time: "Full-time",
@@ -276,7 +276,12 @@ export const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   on_leave: "On Leave",
   notice_period: "Notice Period",
   terminated: "Terminated",
+  resigned: "Resigned",
 };
+
+/** The statuses that mean somebody has left, however they left. */
+export const LEFT_STATUSES: EmployeeStatus[] = ["terminated", "resigned"];
+export const hasLeft = (status?: EmployeeStatus | null) => !!status && LEFT_STATUSES.includes(status);
 
 export type Title = "mr" | "mrs" | "ms" | "dr";
 export type Gender = "male" | "female" | "other";
@@ -485,6 +490,8 @@ export interface Employee {
   oldCompanyExperience?: string;
   confirmationDate?: string | null;
   probationPeriodDays?: number;
+  /** Why somebody left, against whichever exit status was set. */
+  exitReason?: string;
   noticePeriodDays?: number;
   reportingTo?: EmployeeRef | { _id: string; name: string; email?: string } | string | null;
   reportingToKind?: "Employee" | "User";

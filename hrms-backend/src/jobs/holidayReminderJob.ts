@@ -6,6 +6,7 @@ import { Holiday } from "../models/Holiday.js";
 import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { holidayScope } from "../utils/holidayScope.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * Told the evening before, not the morning of.
@@ -29,7 +30,7 @@ interface Candidate {
 
 /** Everybody in one organisation who has a login to write to. */
 async function candidatesFor(orgId: unknown): Promise<Candidate[]> {
-  const employees = await Employee.find({ organization: orgId, status: { $ne: "terminated" }, user: { $ne: null } })
+  const employees = await Employee.find({ organization: orgId, status: stillHere(), user: { $ne: null } })
     .select("name user workMode")
     .lean();
   if (!employees.length) return [];

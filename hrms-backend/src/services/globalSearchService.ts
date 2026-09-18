@@ -6,6 +6,7 @@ import { HelpdeskTicket } from "../models/HelpdeskTicket.js";
 import { scoped } from "../utils/orgContext.js";
 import { hasPermission } from "../middleware/permissions.js";
 import { HRMS_MODULES, type AuthenticatedRequest, type HrmsModule } from "../types/index.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * One box that searches the data, not just the menu.
@@ -66,7 +67,7 @@ const SOURCES: Source[] = [
       const canSeeContact = hasPermission(role, "employees", "view");
       const rows = await Employee.find(
         scoped({
-          status: { $ne: "terminated" },
+          status: stillHere(),
           $or: [
             { name: rx },
             { employeeCode: rx },

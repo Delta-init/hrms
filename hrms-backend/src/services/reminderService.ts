@@ -4,6 +4,7 @@ import type { CreateReminderInput } from "../validations/reminderValidation.js";
 import type { IReminder, ReminderStage } from "../types/index.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { zonedTimeToUtc } from "../utils/schedule.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 const POP = [
   { path: "createdBy", select: "name email" },
@@ -40,7 +41,7 @@ export function stageThresholds(reminder: Pick<IReminder, "date" | "time" | "tim
 export async function recipientsFor(reminder: IReminder): Promise<string[]> {
   if (reminder.audience === "self") return [String(reminder.createdBy)];
 
-  const filter: Record<string, unknown> = scoped({ status: { $ne: "terminated" }, user: { $ne: null } });
+  const filter: Record<string, unknown> = scoped({ status: stillHere(), user: { $ne: null } });
   if (reminder.audience === "team") {
     if (!reminder.department) return [];
     filter.department = reminder.department;

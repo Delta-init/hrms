@@ -9,6 +9,7 @@ import { orgFilter, getOrgId, scoped } from "../utils/orgContext.js";
 import { publicUrl } from "../config/r2.js";
 import { confirmationsDue } from "./confirmationService.js";
 import { ignoredSlots, DEFAULT_EXPIRY_WINDOW_DAYS } from "./documentOverviewService.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * The month/day keys (month*100 + day) covered by a window starting today.
@@ -46,7 +47,7 @@ export async function birthdaysOn(date = new Date(), orgId?: string | null) {
   // the two disagreed: somebody who has left showed up under "birthdays today"
   // and in the wishes strip, but never in the upcoming list — so the same
   // person appeared and vanished depending on which card you looked at.
-  const match: Record<string, unknown> = { dob: { $ne: null }, status: { $ne: "terminated" } };
+  const match: Record<string, unknown> = { dob: { $ne: null }, status: stillHere() };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([
     { $match: match },
@@ -72,7 +73,7 @@ export async function anniversariesOn(date = new Date(), orgId?: string | null) 
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();
   const year = date.getUTCFullYear();
-  const match: Record<string, unknown> = { joiningDate: { $ne: null }, status: { $ne: "terminated" } };
+  const match: Record<string, unknown> = { joiningDate: { $ne: null }, status: stillHere() };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.aggregate([
     { $match: match },
@@ -114,7 +115,7 @@ async function upcomingByMonthDay(
   const now = new Date();
   const keys = monthDayKeys(now, withinDays);
 
-  const match: Record<string, unknown> = { [field]: { $ne: null }, status: { $ne: "terminated" } };
+  const match: Record<string, unknown> = { [field]: { $ne: null }, status: stillHere() };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
 
   const rows = await Employee.aggregate([
@@ -167,7 +168,7 @@ export async function recentJoiners(withinDays = 30, orgId?: string | null) {
   const since = new Date(Date.now() - withinDays * 86_400_000);
   const match: Record<string, unknown> = {
     joiningDate: { $ne: null, $gte: since, $lte: new Date() },
-    status: { $ne: "terminated" },
+    status: stillHere(),
   };
   if (orgId) match.organization = new mongoose.Types.ObjectId(orgId);
   return Employee.find(match)
@@ -257,7 +258,7 @@ export async function expiringDocuments(withinDays = 60, orgId?: string | null):
   const expiringBy = (path: string) => ({ [path]: { $ne: null, $lte: cutoff } });
 
   const match: Record<string, unknown> = {
-    status: { $ne: "terminated" },
+    status: stillHere(),
     $or: [
       expiringBy("passport.expiryDate"),
       expiringBy("visa.expiryDate"),
@@ -395,7 +396,7 @@ export class DashboardService {
    * back to the matching employee so the whole tree is employee-to-employee.
    */
   async orgChart() {
-    const emps = await Employee.find(scoped({ status: { $ne: "terminated" } }))
+    const emps = await Employee.find(scoped({ status: stillHere() }))
       .select("name employeeCode designation department reportingTo reportingToKind user photo")
       .populate("department", "name")
       .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; department?: { name?: string } | null; reportingTo?: unknown; reportingToKind?: string; user?: unknown; photo?: string }>>();
