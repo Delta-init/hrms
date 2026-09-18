@@ -314,6 +314,14 @@ const employeeSchema = new Schema<IEmployee>(
     oldCompanyExperience: { type: String, trim: true, maxlength: 1000 },
     confirmationDate: { type: Date, default: null },
     probationPeriodDays: { type: Number, min: 0, default: 0 },
+    /**
+     * When the "probation ends tomorrow" notice went out.
+     *
+     * Written so a job that runs every morning cannot send it twice — a
+     * restart or a manual run on the same day would otherwise mail HR, the
+     * head and the person again for a day they were already told about.
+     */
+    probationReminderSentAt: { type: Date, default: null },
     noticePeriodDays: { type: Number, min: 0, default: 60 },
     // Manager can be either an Employee record or a login User (dynamic ref).
     reportingTo: { type: Schema.Types.ObjectId, refPath: "reportingToKind", default: null },

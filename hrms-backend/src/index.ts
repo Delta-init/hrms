@@ -21,6 +21,7 @@ import { startRegularizationPromptCron } from "./jobs/regularizationPromptJob.js
 import { startCompOffAutoCreditCron } from "./jobs/compOffAutoCreditJob.js";
 import { startHolidayReminderCron } from "./jobs/holidayReminderJob.js";
 import { startReminderCron } from "./jobs/reminderJob.js";
+import { startProbationCron } from "./jobs/probationJob.js";
 
 const app = express();
 
@@ -104,6 +105,7 @@ const start = async () => {
   startCompOffAutoCreditCron();
   startHolidayReminderCron();
   startReminderCron();
+  startProbationCron();
   app.listen(Number(env.PORT), () => {
     console.log(`🚀 Server running on http://localhost:${env.PORT} [${env.NODE_ENV}]`);
     console.log(`📋 API Base: http://localhost:${env.PORT}/api/v1`);

@@ -746,6 +746,8 @@ export interface IEmployee extends Document {
   oldCompanyExperience?: string;
   confirmationDate?: Date | null;
   probationPeriodDays?: number;
+  /** When the "probation ends tomorrow" notice went out, so it goes once. */
+  probationReminderSentAt?: Date | null;
   noticePeriodDays?: number;
   reportingTo?: Types.ObjectId | IEmployee | IUser | null;
   reportingToKind?: "Employee" | "User";
