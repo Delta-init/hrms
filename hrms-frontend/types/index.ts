@@ -236,6 +236,8 @@ export interface Department {
   description?: string;
   leader?: PersonRef | string | null;
   leaderKind?: PersonKind;
+  /** Further leaders of the same team, equal to `leader` in authority. */
+  coLeaders?: DepartmentMember[];
   members: DepartmentMember[];
   /** Refuses a mobile sign-in for this department's remote (wfh) members. */
   webOnlyForRemote?: boolean;
@@ -1343,7 +1345,7 @@ export interface DepartmentReportMember {
   calendar: Record<string, DepartmentCalendarDay>;
 }
 export interface DepartmentReport {
-  department: { _id: string; name: string; code?: string; leader?: PersonRef | string | null; status: string; memberCount: number };
+  department: { _id: string; name: string; code?: string; leader?: PersonRef | string | null; coLeaders?: DepartmentMember[]; status: string; memberCount: number };
   month: string;
   year: number;
   daysInMonth: number;

@@ -10,6 +10,19 @@ const memberSchema = new Schema<IDepartmentMember>(
   { _id: false }
 );
 
+/**
+ * The same shape as a member, but its own schema because `refPath` names the
+ * path literally — pointing co-leaders at "members.kind" would resolve every
+ * one of them against the wrong array and quietly populate nothing.
+ */
+const coLeaderSchema = new Schema<IDepartmentMember>(
+  {
+    kind: { type: String, enum: ["Employee", "User"], required: true },
+    ref: { type: Schema.Types.ObjectId, required: true, refPath: "coLeaders.kind" },
+  },
+  { _id: false }
+);
+
 const departmentSchema = new Schema<IDepartment>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -40,6 +53,19 @@ const departmentSchema = new Schema<IDepartment>(
       type: String,
       enum: ["Employee", "User"],
       default: "Employee",
+    },
+    /**
+     * Further leaders of the same team, equal to `leader` in authority.
+     *
+     * `leader` stays the primary rather than becoming one entry in a list
+     * because two things downstream can only accept a single answer: the org
+     * chart is a tree, and `Employee.reportingTo` holds one manager. Co-leads
+     * get every approval and the whole team roster; what they do not get is
+     * the reporting line pointed at them.
+     */
+    coLeaders: {
+      type: [coLeaderSchema],
+      default: [],
     },
     members: {
       type: [memberSchema],

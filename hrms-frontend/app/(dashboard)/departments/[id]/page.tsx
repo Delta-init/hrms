@@ -83,6 +83,10 @@ export default function DepartmentReportPage() {
   }
 
   const leader = typeof data.department.leader === "object" && data.department.leader ? data.department.leader.name : null;
+  const coLeaders = (data.department.coLeaders ?? [])
+    .map((c) => (typeof c.ref === "object" && c.ref ? c.ref.name : null))
+    .filter((n): n is string => !!n);
+  const ledBy = [leader, ...coLeaders].filter(Boolean).join(", ");
 
   return (
     <div>
@@ -90,7 +94,7 @@ export default function DepartmentReportPage() {
 
       <PageHeader
         title={data.department.name}
-        description={`${data.department.memberCount} members${leader ? ` · Led by ${leader}` : ""}${data.department.code ? ` · ${data.department.code}` : ""}`}
+        description={`${data.department.memberCount} members${ledBy ? ` · Led by ${ledBy}` : ""}${data.department.code ? ` · ${data.department.code}` : ""}`}
         icon={Building2}
         action={
           <div className="flex items-center gap-2">

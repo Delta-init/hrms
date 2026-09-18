@@ -13,6 +13,7 @@ import { departmentsHeadedBy } from "./departmentHeadService.js";
 
 const POP = [
   { path: "leader", select: "name email employeeCode" },
+  { path: "coLeaders.ref", select: "name email employeeCode" },
   { path: "members.ref", select: "name email employeeCode" },
 ];
 
@@ -50,11 +51,15 @@ export class DepartmentService {
     departmentId: unknown,
     leader: unknown,
     leaderKind: string | undefined,
-    members: { kind: string; ref: unknown }[]
+    members: { kind: string; ref: unknown }[],
+    coLeaders: { kind: string; ref: unknown }[] = []
   ) {
     const leaderEmpIds = await this.resolveToEmployeeIds([{ kind: leaderKind, ref: leader }]);
+    // Counted as assigned, or the release below would drop a co-lead out of the
+    // very team they run the moment anyone edits it.
+    const coLeaderEmpIds = await this.resolveToEmployeeIds(coLeaders ?? []);
     const memberEmpIds = await this.resolveToEmployeeIds(members ?? []);
-    const assigned = [...new Set([...leaderEmpIds, ...memberEmpIds])];
+    const assigned = [...new Set([...leaderEmpIds, ...coLeaderEmpIds, ...memberEmpIds])];
 
     await Promise.all([
       assigned.length
@@ -129,8 +134,9 @@ export class DepartmentService {
       leader: input.leader || null,
       leaderKind: input.leaderKind ?? "Employee",
       members: input.members ?? [],
+      coLeaders: input.coLeaders ?? [],
     });
-    await this.syncEmployeeDepartments(dep._id, dep.leader, dep.leaderKind, dep.members ?? []);
+    await this.syncEmployeeDepartments(dep._id, dep.leader, dep.leaderKind, dep.members ?? [], dep.coLeaders ?? []);
     return Department.findById(dep._id).populate(POP);
   }
 
@@ -200,20 +206,23 @@ export class DepartmentService {
       if (input.leader && input.leaderKind) record.leaderKind = input.leaderKind;
     }
     if (input.members !== undefined) record.members = input.members as never;
+    if (input.coLeaders !== undefined) record.coLeaders = input.coLeaders as never;
     if (input.webOnlyForRemote !== undefined) record.webOnlyForRemote = input.webOnlyForRemote;
 
     await record.save();
     // Only re-sync when the roster itself changed — a rename or status edit
     // shouldn't reshuffle anyone's department.
-    if (input.leader !== undefined || input.members !== undefined) {
-      await this.syncEmployeeDepartments(record._id, record.leader, record.leaderKind, record.members ?? []);
+    if (input.leader !== undefined || input.members !== undefined || input.coLeaders !== undefined) {
+      await this.syncEmployeeDepartments(record._id, record.leader, record.leaderKind, record.members ?? [], record.coLeaders ?? []);
     }
     return Department.findById(id).populate(POP);
   }
 
   /** Full report for a department: members with leave counts + monthly attendance calendars. */
   async report(id: string, month: string) {
-    const dept = await Department.findOne(scoped({ _id: id })).populate("leader", "name employeeCode email");
+    const dept = await Department.findOne(scoped({ _id: id }))
+      .populate("leader", "name employeeCode email")
+      .populate("coLeaders.ref", "name employeeCode email");
     if (!dept) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
 
     const start = new Date(`${month}-01T00:00:00.000Z`);
@@ -318,7 +327,7 @@ export class DepartmentService {
     });
 
     return {
-      department: { _id: dept._id, name: dept.name, code: dept.code, leader: dept.leader, status: dept.status, memberCount: employees.length },
+      department: { _id: dept._id, name: dept.name, code: dept.code, leader: dept.leader, coLeaders: dept.coLeaders, status: dept.status, memberCount: employees.length },
       month,
       year,
       daysInMonth,

@@ -78,7 +78,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
-    defaultValues: { name: "", code: "", description: "", leader: "", members: [], webOnlyForRemote: false, status: "active" },
+    defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" },
   });
 
   useEffect(() => {
@@ -87,23 +87,26 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       const leaderId = department.leader ? (typeof department.leader === "object" ? department.leader._id : department.leader) : "";
       const leaderKey = leaderId && department.leaderKind ? keyOf(department.leaderKind, leaderId) : "";
       const memberKeys = (department.members ?? []).map((m) => keyOf(m.kind, typeof m.ref === "object" ? m.ref._id : m.ref));
+      const coLeaderKeys = (department.coLeaders ?? []).map((m) => keyOf(m.kind, typeof m.ref === "object" ? m.ref._id : m.ref));
       reset({
         name: department.name,
         code: department.code ?? "",
         description: department.description ?? "",
         leader: leaderKey,
+        coLeaders: coLeaderKeys,
         members: memberKeys,
         webOnlyForRemote: department.webOnlyForRemote ?? false,
         status: department.status,
       });
     } else {
-      reset({ name: "", code: "", description: "", leader: "", members: [], webOnlyForRemote: false, status: "active" });
+      reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" });
     }
   }, [open, department, reset]);
 
   // Live form values so each picker can grey out whoever the other one has taken.
   const currentLeader = watch("leader");
   const currentMembers = watch("members") ?? [];
+  const currentCoLeaders = watch("coLeaders") ?? [];
 
   /**
    * Why a person can't be picked, if they can't.
@@ -112,10 +115,18 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
    * list, so it's clear they exist and why they're unavailable. Someone already
    * in THIS department isn't blocked — re-selecting them is how you keep them.
    */
-  const blockedFor = (p: Person, slot: "leader" | "member"): BlockedReason => {
-    if (slot === "member" && currentLeader === p.key) return { label: "Department head", tone: "leader" };
-    if (slot === "member" && currentMembers.includes(p.key)) return { label: "Added", tone: "member" };
-    if (slot === "leader" && currentMembers.includes(p.key)) return { label: "Member", tone: "member" };
+  const blockedFor = (p: Person, slot: "leader" | "coLeader" | "member"): BlockedReason => {
+    const isLeader = currentLeader === p.key;
+    const isCoLeader = currentCoLeaders.includes(p.key);
+    const isMember = currentMembers.includes(p.key);
+
+    // One person fills one role on a team. "Added" is the answer in the slot
+    // they already occupy; anywhere else they're named by the role they hold.
+    if (slot === "coLeader" && isCoLeader) return { label: "Added", tone: "leader" };
+    if (slot === "member" && isMember) return { label: "Added", tone: "member" };
+    if (slot !== "leader" && isLeader) return { label: "Department head", tone: "leader" };
+    if (slot !== "coLeader" && isCoLeader) return { label: "Co-leader", tone: "leader" };
+    if (slot !== "member" && isMember) return { label: "Member", tone: "member" };
     // Already belongs to a different department — moving them is a deliberate
     // act that should happen from their own profile, not silently from here.
     if (p.deptId && p.deptId !== department?._id) {
@@ -133,6 +144,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       status: data.status,
       leader: leader?.ref ?? null,
       leaderKind: leader?.kind ?? "Employee",
+      coLeaders: (data.coLeaders ?? []).map(parseKey),
       members: (data.members ?? []).map(parseKey),
       webOnlyForRemote: data.webOnlyForRemote,
     };
@@ -213,6 +225,49 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
             <Controller control={control} name="webOnlyForRemote" render={({ field }) => (
               <Switch id="webOnlyForRemote" checked={!!field.value} onCheckedChange={field.onChange} />
             )} />
+          </div>
+
+          {/* Co-leaders — equal authority to the head, minus the reporting line. */}
+          <div className="col-span-2 space-y-1.5">
+            <Label>Co-leaders</Label>
+            <p className="text-xs text-muted-foreground">
+              They approve for this team and see it under My Team, exactly as the head does. The reporting line still points at the head.
+            </p>
+            <Controller
+              name="coLeaders"
+              control={control}
+              render={({ field }) => {
+                const selected = field.value ?? [];
+                return (
+                  <div className="space-y-2">
+                    <PersonPicker
+                      people={people}
+                      onSelect={(k) => field.onChange([...selected, k])}
+                      blockedFor={(p) => blockedFor(p, "coLeader")}
+                      placeholder="Add co-leader…"
+                      stayOpenOnSelect
+                    />
+                    {selected.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {selected.map((k) => {
+                          const p = byKey[k];
+                          if (!p) return null;
+                          return (
+                            <span key={k} className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2 pr-1 text-xs">
+                              {p.kind === "Employee" ? <UserRound className="h-3 w-3 text-primary" /> : <UserIcon className="h-3 w-3 text-indigo-500" />}
+                              {p.label}
+                              <button type="button" onClick={() => field.onChange(selected.filter((x) => x !== k))} className="rounded-full p-0.5 hover:bg-destructive/10 hover:text-destructive">
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }}
+            />
           </div>
 
           {/* Members (Employee or User) */}

@@ -535,6 +535,8 @@ export interface IDepartment extends Document {
   /** Team leader — an Employee or a User (polymorphic). */
   leader?: Types.ObjectId | IEmployee | IUser | null;
   leaderKind?: PersonKind;
+  /** Further leaders of the same team, equal to `leader` in authority. */
+  coLeaders: Types.DocumentArray<IDepartmentMember & Document>;
   /** Members — each an Employee or a User. */
   members: Types.DocumentArray<IDepartmentMember & Document>;
   /** Refuses a mobile sign-in for this department's remote (wfh) members. */

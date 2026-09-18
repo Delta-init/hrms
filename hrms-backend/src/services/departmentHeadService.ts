@@ -30,7 +30,13 @@ export async function departmentsHeadedBy(userId: string): Promise<string[]> {
   // rather than as a login even though the field accepts either.
   const employee = await Employee.findOne(scoped({ user: userId })).select("_id").lean();
   const ids = [userId, ...(employee ? [String(employee._id)] : [])];
-  const depts = await Department.find(scoped({ leader: { $in: ids } })).select("_id").lean();
+  // Co-leads are heads in every sense that matters here: the same approvals and
+  // the same team roster. Only the reporting line distinguishes the primary.
+  const depts = await Department.find(
+    scoped({ $or: [{ leader: { $in: ids } }, { "coLeaders.ref": { $in: ids } }] })
+  )
+    .select("_id")
+    .lean();
   return depts.map((d) => String(d._id));
 }
 
@@ -75,30 +81,57 @@ export async function teamMemberUserIds(userId: string): Promise<string[]> {
  * departments have no head today, so null is the ordinary answer rather than an
  * error, and every caller treats it as "this one is HR's".
  */
-export async function headContactFor(
-  requesterUserId: string
-): Promise<{ name: string; email: string; userId: string } | null> {
-  const requester = await Employee.findOne(scoped({ user: requesterUserId })).select("department").lean();
-  if (!requester?.department) return null;
+type Contact = { name: string; email: string; userId: string };
 
-  const dept = await Department.findOne(scoped({ _id: requester.department }))
-    .select("leader leaderKind name")
-    .lean();
-  if (!dept?.leader) return null;
-
-  // The head is stored as an Employee or as a login, so the lookup follows
-  // whichever the record says — reading the wrong collection would find nothing
-  // and silently report the department as headless.
-  if (dept.leaderKind === "User") {
-    const u = await User.findOne(scoped({ _id: dept.leader })).select("name email").lean();
+/**
+ * One head reference resolved to somebody reachable.
+ *
+ * A head is stored as an Employee or as a login, so the lookup follows whichever
+ * the record says — reading the wrong collection would find nothing and
+ * silently report the department as headless.
+ */
+async function contactFromRef(kind: string | undefined, ref: unknown): Promise<Contact | null> {
+  if (!ref) return null;
+  if (kind === "User") {
+    const u = await User.findOne(scoped({ _id: ref })).select("name email").lean();
     if (!u?.email) return null;
     return { name: String(u.name ?? "there"), email: u.email, userId: String(u._id) };
   }
-  const e = await Employee.findOne(scoped({ _id: dept.leader })).select("name user").lean();
+  const e = await Employee.findOne(scoped({ _id: ref })).select("name user").lean();
   if (!e?.user) return null;
   const u = await User.findOne(scoped({ _id: e.user })).select("email").lean();
   if (!u?.email) return null;
   return { name: String(e.name ?? "there"), email: u.email, userId: String(e.user) };
+}
+
+/** Every head of this person's department: the primary, then any co-leads. */
+export async function headContactsFor(requesterUserId: string): Promise<Contact[]> {
+  const requester = await Employee.findOne(scoped({ user: requesterUserId })).select("department").lean();
+  if (!requester?.department) return [];
+
+  const dept = await Department.findOne(scoped({ _id: requester.department }))
+    .select("leader leaderKind coLeaders name")
+    .lean<{ leader?: unknown; leaderKind?: string; coLeaders?: Array<{ kind: string; ref: unknown }> } | null>();
+  if (!dept) return [];
+
+  const refs = [
+    { kind: dept.leaderKind, ref: dept.leader },
+    ...(dept.coLeaders ?? []).map((c) => ({ kind: c.kind, ref: c.ref })),
+  ];
+
+  // Deduplicated by user id: the same person recorded both as the primary and
+  // as a co-lead is one person, and would otherwise be mailed twice.
+  const seen = new Map<string, Contact>();
+  for (const r of refs) {
+    const contact = await contactFromRef(r.kind, r.ref);
+    if (contact) seen.set(contact.userId, contact);
+  }
+  return [...seen.values()];
+}
+
+/** The primary head alone, for callers that can only act on one. */
+export async function headContactFor(requesterUserId: string): Promise<Contact | null> {
+  return (await headContactsFor(requesterUserId))[0] ?? null;
 }
 
 /**
@@ -127,7 +160,7 @@ export async function chainOfCommandFor(
     seen.set(String(c.userId), c);
   };
 
-  add(await headContactFor(requesterUserId));
+  for (const head of await headContactsFor(requesterUserId)) add(head);
 
   const managerId = await reportingManagerUserId(requesterUserId);
   if (managerId) {

@@ -79,6 +79,9 @@ export default function DepartmentsPage() {
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {departments.map((d) => {
             const leader = typeof d.leader === "object" && d.leader ? d.leader.name : null;
+            const coLeaders = (d.coLeaders ?? [])
+              .map((c) => (typeof c.ref === "object" && c.ref ? c.ref.name : null))
+              .filter((n): n is string => !!n);
             const memberCount = d.members?.length ?? 0;
             return (
               <motion.div key={d._id} variants={item}>
@@ -111,6 +114,12 @@ export default function DepartmentsPage() {
                         ? <span className="font-medium text-foreground">{leader}</span>
                         : <span className="font-medium text-amber-600 dark:text-amber-400">not set</span>}
                     </div>
+                    {coLeaders.length > 0 && (
+                      <div>
+                        Co-leads:{" "}
+                        <span className="font-medium text-foreground">{coLeaders.join(", ")}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 flex gap-2 border-t border-border pt-4">
