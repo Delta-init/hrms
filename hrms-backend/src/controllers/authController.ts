@@ -27,6 +27,66 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
   }
 };
 
+/**
+ * Sign in somebody the Root portal has already identified.
+ *
+ * The browser arrives at /sso with a single-use token and posts it here. This
+ * server spends it against the portal — one call, server to server, the token
+ * never stored — and signs in whoever it vouches for.
+ *
+ * Fails closed. With no ROOT_ERP_API_URL this refuses rather than falling back
+ * to a default: a server that quietly asks itself to vouch for a token would
+ * accept anything at all.
+ */
+export const ssoLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const ssoToken = String((req.body as { ssoToken?: unknown })?.ssoToken ?? "").trim();
+    if (!ssoToken) {
+      sendError(res, "ssoToken is required", 400);
+      return;
+    }
+
+    const rootApi = String(process.env["ROOT_ERP_API_URL"] ?? "").replace(/\/+$/, "");
+    if (!rootApi) {
+      sendError(res, "SSO is not configured on this server", 503);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    let email = "";
+    try {
+      const verified = await fetch(
+        `${rootApi}/api/auth/verify-sso-token?token=${encodeURIComponent(ssoToken)}`,
+        { signal: controller.signal },
+      );
+      // One message whatever went wrong. Telling apart expired from spent from
+      // never-existed tells somebody holding a stale token which case they hit.
+      if (!verified.ok) {
+        sendError(res, "Invalid or expired sign-in link", 401);
+        return;
+      }
+      const body = (await verified.json()) as { data?: { email?: string } };
+      email = String(body.data?.email ?? "").trim();
+    } catch {
+      sendError(res, "The sign-in service could not be reached", 503);
+      return;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!email) {
+      sendError(res, "Invalid or expired sign-in link", 401);
+      return;
+    }
+
+    const result = await authService.ssoLogin(email);
+    sendSuccess(res, "SSO login successful", result, 200);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const setPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = setPasswordSchema.safeParse(req.body);

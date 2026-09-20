@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   login,
+  ssoLogin,
   setPassword,
   exchange,
   refreshToken,
@@ -28,6 +29,9 @@ const router = Router();
 
 // Public routes — rate limited, since none of them require a session.
 router.post("/login", authLimiter, login);
+// Rate limited like a login, because that is what it is — the credential is
+// just a one-time token from the portal rather than a password.
+router.post("/sso-login", authLimiter, ssoLogin);
 router.post("/set-password", authLimiter, setPassword);
 router.post("/exchange", tokenLimiter, exchange);
 router.post("/refresh-token", tokenLimiter, refreshToken);

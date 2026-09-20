@@ -99,6 +99,56 @@ export class AuthService {
     return { accessToken, refreshToken, user: userObj };
   }
 
+  /**
+   * Sign in somebody the Root portal has already identified.
+   *
+   * The portal minted a single-use token, the controller spent it, and what
+   * arrives here is an email it vouches for. Everything a password login does
+   * afterwards still applies — a deactivated account is refused, an invited one
+   * still has to set a password — because those rules are about the account,
+   * not about how somebody proved who they were.
+   *
+   * No account here means no session. This server trusts whatever the portal
+   * says, so creating one on demand would turn a spoofed portal into an instant
+   * employee record.
+   */
+  async ssoLogin(email: string) {
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .populate("role")
+      .populate("organization", "name code logo settings.currency settings.timeZone");
+
+    if (!user) {
+      throw Object.assign(
+        new Error(
+          `There is no HRMS account for ${email}. It has to be created here before the portal can sign anybody in with it.`,
+        ),
+        { statusCode: 401 },
+      );
+    }
+    if (user.status === "inactive") {
+      throw Object.assign(new Error("Your account has been deactivated"), { statusCode: 403 });
+    }
+    if (user.mustResetPassword) {
+      throw Object.assign(
+        new Error("You must set a password on this account before signing in"),
+        { statusCode: 403, code: "MUST_RESET_PASSWORD" },
+      );
+    }
+
+    const payload = {
+      userId: user._id.toString(),
+      email: user.email,
+      roleId: (user.role as { _id: { toString(): string } })._id.toString(),
+      tokenVersion: user.tokenVersion ?? 0,
+    };
+
+    return {
+      accessToken: signAccessToken(payload),
+      refreshToken: signRefreshToken(payload),
+      user: user.toJSON() as unknown as Omit<IUser, "password">,
+    };
+  }
+
   async refreshToken(token: string) {
     const decoded = verifyRefreshToken(token);
     const user = await User.findById(decoded.userId).select("status role tokenVersion");

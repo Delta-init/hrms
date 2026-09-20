@@ -166,6 +166,40 @@ export const authOptions: NextAuthOptions = {
         } as unknown as import("next-auth").User;
       },
     }),
+
+    /*
+     * Arriving from the Root portal instead of typing a password.
+     *
+     * Its own provider, like the impersonation exchange above, because the
+     * credential is a different thing: a single-use token the portal minted.
+     * Folding it into the password provider would mean one that accepts
+     * either, and the branch deciding which is the one worth attacking.
+     *
+     * What it returns is the same shape, so the session callbacks cannot tell
+     * the difference and do not need to.
+     */
+    CredentialsProvider({
+      id: "sso",
+      name: "Root portal",
+      credentials: { ssoToken: { label: "SSO token", type: "text" } },
+      async authorize(credentials) {
+        if (!credentials?.ssoToken) return null;
+        const res = await fetch(`${API_URL}/auth/sso-login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ssoToken: credentials.ssoToken }),
+        });
+        const json = (await res.json()) as ApiResponse<LoginResponse>;
+        if (!res.ok || !json.success || !json.data) {
+          throw new Error(json.message ?? "This sign-in link could not be used");
+        }
+        const { user, accessToken, refreshToken } = json.data;
+        return {
+          id: user._id, name: user.name, email: user.email,
+          appUser: user, accessToken, refreshToken, impersonatedBy: null,
+        } as unknown as import("next-auth").User;
+      },
+    }),
   ],
   callbacks: {
     async jwt({ token, user, trigger, session }) {
