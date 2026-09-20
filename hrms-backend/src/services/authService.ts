@@ -112,7 +112,7 @@ export class AuthService {
    * says, so creating one on demand would turn a spoofed portal into an instant
    * employee record.
    */
-  async ssoLogin(email: string) {
+  async ssoLogin(email: string, userAgent?: string) {
     const user = await User.findOne({ email: email.toLowerCase() })
       .populate("role")
       .populate("organization", "name code logo settings.currency settings.timeZone");
@@ -135,6 +135,14 @@ export class AuthService {
       );
     }
 
+    /*
+     * The same gate a password login applies. A restriction that says somebody
+     * may only sign in from a computer is about the account and the device, not
+     * about which door they came through — and a door that skips it is a way
+     * round it.
+     */
+    await assertNotRestrictedMobile(user, userAgent);
+
     const payload = {
       userId: user._id.toString(),
       email: user.email,
@@ -145,7 +153,9 @@ export class AuthService {
     return {
       accessToken: signAccessToken(payload),
       refreshToken: signRefreshToken(payload),
-      user: user.toJSON() as unknown as Omit<IUser, "password">,
+      // Carries the department-head flag, as a password login does: a session
+      // that lacks it is one where somebody silently stops being a head.
+      user: await withHeadFlag(user),
     };
   }
 

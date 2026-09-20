@@ -80,7 +80,9 @@ export const ssoLogin = async (req: Request, res: Response, next: NextFunction):
       return;
     }
 
-    const result = await authService.ssoLogin(email);
+    // The user agent goes through for the same reason it does on a password
+    // login: the mobile restriction is decided from it.
+    const result = await authService.ssoLogin(email, req.get("user-agent"));
     sendSuccess(res, "SSO login successful", result, 200);
   } catch (error) {
     next(error);
