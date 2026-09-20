@@ -34,12 +34,35 @@ const apiOrigin = (() => {
  * Read at build time: these headers are static, so there is nothing to read
  * per request.
  */
-const portalOrigin = (() => {
-  try {
-    return new URL(process.env.PORTAL_WEB_ORIGIN).origin;
-  } catch {
-    return "";
-  }
+const portalOrigins = (() => {
+  /*
+   * A list, comma separated, because a deployment usually needs more than one:
+   * the portal itself, and whatever a developer runs it on locally.
+   *
+   * Parsed one entry at a time on purpose. Handing the whole string to `new
+   * URL` looks like it works and does not: a comma is legal in a hostname, so
+   * "https://a.example,http://localhost:3100" parses as the single host
+   * "a.example,http" and the rest is discarded. The result was a directive
+   * naming an origin nobody has, which refuses everybody — including the two
+   * that were meant to be allowed.
+   *
+   * Each entry that will not parse is dropped rather than passed through, so a
+   * typo costs that one origin instead of the whole header.
+   */
+  return (process.env.PORTAL_WEB_ORIGIN || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      try {
+        return new URL(entry).origin;
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean)
+    // Two spellings of one origin would be a duplicate in the header.
+    .filter((origin, i, all) => all.indexOf(origin) === i);
 })();
 
 /**
@@ -73,7 +96,9 @@ const csp = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  portalOrigin ? `frame-ancestors 'self' ${portalOrigin}` : "frame-ancestors 'none'",
+  portalOrigins.length
+    ? `frame-ancestors 'self' ${portalOrigins.join(" ")}`
+    : "frame-ancestors 'none'",
   "manifest-src 'self'",
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
@@ -115,7 +140,7 @@ const nextConfig = {
            * that permits the portal would be a flat contradiction, and the
            * browsers that still read it would refuse the frame anyway.
            */
-          ...(portalOrigin ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
+          ...(portalOrigins.length ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // `(self)`, never `()`. An empty allowlist bars every origin including
