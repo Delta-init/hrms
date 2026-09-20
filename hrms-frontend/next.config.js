@@ -20,6 +20,29 @@ const apiOrigin = (() => {
 })();
 
 /**
+ * The one origin allowed to put this application in a frame.
+ *
+ * The Root portal opens each system it fronts inside an iframe, and this
+ * application refused — correctly, since it had told every browser that
+ * nobody may frame it. Naming the portal is a deliberate narrowing of that:
+ * one origin, set per deployment, rather than a blanket permission.
+ *
+ * Unset means unframeable, exactly as before. A deployment that does not know
+ * about the portal must not quietly become embeddable, and a typo in the
+ * variable has to fail closed rather than open.
+ *
+ * Read at build time: these headers are static, so there is nothing to read
+ * per request.
+ */
+const portalOrigin = (() => {
+  try {
+    return new URL(process.env.PORTAL_WEB_ORIGIN).origin;
+  } catch {
+    return "";
+  }
+})();
+
+/**
  * `unsafe-inline` on script-src is unavoidable without per-request nonces,
  * which need middleware Next can't apply to statically-rendered routes. The
  * directives below still block the things that matter most: framing, plugin
@@ -50,7 +73,7 @@ const csp = [
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "frame-ancestors 'none'",
+  portalOrigin ? `frame-ancestors 'self' ${portalOrigin}` : "frame-ancestors 'none'",
   "manifest-src 'self'",
   ...(isDev ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
@@ -83,8 +106,16 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           { key: "Content-Security-Policy", value: csp },
-          // Belt-and-braces alongside frame-ancestors, for older browsers.
-          { key: "X-Frame-Options", value: "DENY" },
+          /*
+           * Belt-and-braces alongside frame-ancestors, for older browsers —
+           * but only while nothing is allowed to frame us.
+           *
+           * The header cannot express an allowlist: ALLOW-FROM was removed
+           * from every current browser, so DENY alongside a frame-ancestors
+           * that permits the portal would be a flat contradiction, and the
+           * browsers that still read it would refuse the frame anyway.
+           */
+          ...(portalOrigin ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // `(self)`, never `()`. An empty allowlist bars every origin including
