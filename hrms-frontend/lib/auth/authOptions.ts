@@ -104,11 +104,75 @@ async function refreshAccessToken(token: import("next-auth/jwt").JWT): Promise<i
  *  - `credentials` — normal email/password sign-in.
  *  - `impersonate` — exchanges a ticket (impersonate or restore) for a session.
  */
+/**
+ * Cookies that survive being inside the Root portal's frame.
+ *
+ * The portal opens each system it fronts in an iframe, which makes this
+ * application third-party to the page around it. A SameSite=Lax cookie — which
+ * is what NextAuth sets by default — is never stored in that position, by
+ * design. So signing in from the portal appeared to fail: the handover
+ * succeeded, the session cookie was discarded by the browser, and the app,
+ * seeing no session, showed the login page again.
+ *
+ * SameSite=None lifts that, and requires Secure, so it can only apply where
+ * the site is served over HTTPS. Locally over http:// a Secure cookie is
+ * dropped instead, which would trade one silent sign-in failure for another —
+ * hence the split rather than setting it everywhere.
+ *
+ * The CSRF cookie matters as much as the session one. NextAuth checks it on
+ * the sign-in POST, and a Lax CSRF cookie inside the frame means the request
+ * is rejected before any of this is reached.
+ *
+ * What SameSite=Lax was defending against is cross-site request forgery, and
+ * lifting it is a real reduction: another site can now cause an authenticated
+ * request to be sent here. NextAuth's own CSRF token remains the defence for
+ * its endpoints, and the trade is deliberate.
+ */
+const crossSiteCookies = process.env.NODE_ENV === "production";
+
+/** `__Secure-` is only permitted on a Secure cookie, so the name follows it. */
+const cookiePrefix = crossSiteCookies ? "__Secure-" : "";
+
+const frameFriendlyCookies = crossSiteCookies
+  ? {
+      sessionToken: {
+        name: `${cookiePrefix}next-auth.session-token`,
+        options: {
+          httpOnly: true,
+          sameSite: "none" as const,
+          path: "/",
+          secure: true,
+        },
+      },
+      callbackUrl: {
+        name: `${cookiePrefix}next-auth.callback-url`,
+        options: { sameSite: "none" as const, path: "/", secure: true },
+      },
+      /*
+       * `__Host-`, as NextAuth names it by default. The prefix requires
+       * Secure, Path=/ and no Domain, all of which hold here, and it is the
+       * stronger guarantee: a cookie with that name cannot have been set by a
+       * subdomain. Keeping the default name also means existing sessions are
+       * not orphaned by this change.
+       */
+      csrfToken: {
+        name: "__Host-next-auth.csrf-token",
+        options: {
+          httpOnly: true,
+          sameSite: "none" as const,
+          path: "/",
+          secure: true,
+        },
+      },
+    }
+  : undefined;
+
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     maxAge: 7 * 24 * 60 * 60,
   },
+  cookies: frameFriendlyCookies,
   pages: {
     signIn: "/login",
   },
