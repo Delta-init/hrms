@@ -14,12 +14,17 @@ import {
   type Employee, type EmployeeStatus,
 } from "@/types";
 
-export const employeeStatusStyles: Record<string, string> = {
+// Typed against EmployeeStatus, not Record<string, string>: this map is walked
+// for every status, so a missing key is a crash rather than a missing colour —
+// and a loose key type is what let "resigned" be added without the compiler
+// noticing this file existed.
+export const employeeStatusStyles: Record<EmployeeStatus, string> = {
   active: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   probation: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   on_leave: "bg-violet-500/10 text-violet-600 border-violet-500/20",
   notice_period: "bg-orange-500/10 text-orange-600 border-orange-500/20",
   terminated: "bg-red-500/10 text-red-600 border-red-500/20",
+  resigned: "bg-slate-500/10 text-slate-600 border-slate-500/20",
 };
 
 /**
