@@ -301,8 +301,14 @@ export class FacePunchService {
    * Whether they are currently clocked in.
    *
    * Deliberately the same query clockOut uses to find the session it will
-   * close, so the direction shown at the kiosk and the punch that follows can
-   * never disagree.
+   * close — including the sort, which is load-bearing. Anyone who has ever
+   * forgotten to clock out keeps a day that stays open for good: closeStaleDays
+   * marks it half a day but never fills in a checkOut. With two open days in
+   * the window and no sort, this picked whichever Mongo happened to return
+   * first, and on yesterday's it concluded the day had ended, called this a
+   * check-in, and refused it as "already clocked in today" — while clockOut,
+   * which does sort, would have closed today's quite happily. Newest first, so
+   * the direction shown at the kiosk and the punch that follows cannot disagree.
    */
   private async openSession(userId: string): Promise<{ checkIn?: Date | null } | null> {
     const cutoff = new Date(Date.now() - OPEN_SESSION_WINDOW_MS);
@@ -313,7 +319,9 @@ export class FacePunchService {
       checkIn: { $ne: null },
       checkOut: null,
       date: { $gte: cutoff },
-    }).select("checkIn").lean<{ checkIn?: Date | null } | null>();
+    })
+      .sort({ date: -1 })
+      .select("checkIn").lean<{ checkIn?: Date | null } | null>();
     if (!candidate?.checkIn) return null;
     // A session whose own day has already ended is not "open" for direction
     // purposes — clockOut would refuse it anyway (see isDayStillOpen), and
