@@ -47,6 +47,7 @@ import performanceRoutes from "./performanceRoutes.js";
 import faceRoutes from "./faceRoutes.js";
 import kioskRoutes from "./kioskRoutes.js";
 import integrationRoutes from "./integrationRoutes.js";
+import portalRoutes from "./portalRoutes.js";
 
 const router = Router();
 
@@ -100,6 +101,9 @@ router.use("/payroll-batches", payrollBatchRoutes);
 
 // Server-to-server (Delta Finance). Signed requests, no user session.
 router.use("/integrations", integrationRoutes);
+// Server-to-server, from the Root portal. A shared secret rather than the
+// signed scheme above — see portalRoutes for why.
+router.use("/service", portalRoutes);
 
 // Health check
 router.get("/health", (_req, res) => {

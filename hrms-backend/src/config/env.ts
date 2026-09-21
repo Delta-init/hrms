@@ -16,6 +16,13 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   JWT_REFRESH_SECRET: z.string().min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("30d"),
+
+  /* The shared secret the Root portal presents when it asks this server about
+     its roles or its people. Separate from INTEGRATION_SECRET, which is the
+     signed scheme the finance link uses for payroll — different caller,
+     different risk, different credential. Unset means those endpoints are off
+     rather than open. Must match the portal's HRMS_SSO_SECRET. */
+  ROOT_ERP_SECRET: z.string().default(""),
   // Signs impersonation tickets. Optional for backward compatibility; when
   // unset it derives from JWT_SECRET, which is why that now has a real floor.
   // Empty is treated as unset so a blank line in .env doesn't fail the length
