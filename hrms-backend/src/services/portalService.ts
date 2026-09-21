@@ -297,3 +297,101 @@ export async function provisionFromPortal(input: {
     detail: `Created ${email} in ${org.name} as ${role.roleName}`,
   };
 }
+
+export interface PortalUserSummary {
+  email: string;
+  exists: boolean;
+  inOrganization: boolean;
+  name: string;
+  status: string;
+  roleKey: string | null;
+  roleName: string | null;
+}
+
+/**
+ * At most this many addresses in one question.
+ *
+ * The portal asks about a page of its user list, which is twenty-five. The cap
+ * is far above that so it never has to think about the limit, and low enough
+ * that this endpoint cannot be turned into a way to sweep the staff of every
+ * organization on this server one large request at a time.
+ */
+const MAX_EMAILS = 500;
+
+/**
+ * The same question as describeUserForPortal, asked about many people at once.
+ *
+ * The portal shows a column saying which systems each person actually has an
+ * account on, across a page of its user list. Asked one at a time that is
+ * twenty-five requests to each system for a single screen, so it is asked once
+ * instead.
+ *
+ * Still scoped to one organization, for the same reason every other question
+ * here is: this server holds several, and answering about the wrong company's
+ * staff would be worse in bulk than singly. Somebody who exists on this server
+ * but belongs to another organization comes back as not a member, exactly as
+ * the single lookup reports them.
+ *
+ * Permissions are deliberately left out. They are the heaviest part of the
+ * answer and a column showing which systems somebody is on does not use them;
+ * whoever wants them opens that one person, where /user gives the full picture.
+ *
+ * Every address asked about comes back, including the ones with no account.
+ * The portal has to tell "asked, and there is nobody" apart from "never
+ * answered" — those mean opposite things on the screen, and a response that
+ * simply omitted the misses would make them indistinguishable.
+ */
+export async function describeManyForPortal(input: {
+  emails: unknown;
+  remoteOrgId?: string;
+}): Promise<{ accounts: PortalUserSummary[] }> {
+  const org = await resolveOrg(input.remoteOrgId);
+
+  if (!Array.isArray(input.emails)) {
+    throw httpError("emails must be a list of addresses", 400);
+  }
+
+  // Normalised and de-duplicated the same way a single lookup is, so that
+  // asking about "A@x.com" and "a@x.com " is one question, answered once.
+  const wanted: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of input.emails) {
+    if (typeof raw !== "string") continue;
+    const email = raw.toLowerCase().trim();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    wanted.push(email);
+  }
+
+  if (wanted.length === 0) return { accounts: [] };
+  if (wanted.length > MAX_EMAILS) {
+    throw httpError(`At most ${MAX_EMAILS} addresses at a time, and ${wanted.length} were asked for`, 400);
+  }
+
+  // One query however many were asked for.
+  const users = await User.find({ email: { $in: wanted } }).populate("role").lean();
+  const byEmail = new Map(users.map((u) => [String(u.email).toLowerCase(), u]));
+
+  return {
+    accounts: wanted.map((email) => {
+      const user = byEmail.get(email);
+      if (!user) {
+        return {
+          email, exists: false, inOrganization: false,
+          name: "", status: "", roleKey: null, roleName: null,
+        };
+      }
+      const here = String(user.organization ?? "") === String(org._id);
+      const role = user.role as unknown as { roleName?: string } | null;
+      return {
+        email,
+        exists: true,
+        inOrganization: here,
+        name: user.name ?? "",
+        status: user.status ?? "",
+        roleKey: here ? role?.roleName ?? null : null,
+        roleName: here ? role?.roleName ?? null : null,
+      };
+    }),
+  };
+}
