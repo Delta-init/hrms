@@ -1203,6 +1203,35 @@ export interface AssetHistoryEntry {
   condition?: AssetCondition;
   notes?: string;
 }
+export type ProcurementStatus = "requested" | "ordered" | "received" | "cancelled";
+
+export const PROCUREMENT_STATUS_LABELS: Record<ProcurementStatus, string> = {
+  requested: "Requested",
+  ordered: "Ordered",
+  received: "Received",
+  cancelled: "Cancelled",
+};
+
+export interface Procurement {
+  _id: string;
+  item: string;
+  category?: string;
+  quantity: number;
+  /** Expected cost for the whole quantity — an estimate, not a quoted price. */
+  estimatedCost: number;
+  currency: string;
+  /** Free text: the real vendor master lives in the finance system. */
+  vendor?: string;
+  department?: Pick<Department, "_id" | "name" | "code"> | string | null;
+  requestedBy?: Pick<User, "_id" | "name" | "email"> | string | null;
+  neededBy?: string | null;
+  justification?: string;
+  status: ProcurementStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Asset {
   _id: string;
   name: string;

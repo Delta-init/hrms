@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,17 +15,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { useProcurements, useDeleteProcurement } from "@/hooks/useProcurements";
 import { AssetDialog } from "@/components/assets/AssetDialog";
+import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
 import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
 import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getInitials, cn } from "@/lib/utils";
 import {
-  assetCategoryLabel, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS,
-  type Asset, type AssetStatus,
+  assetCategoryLabel, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS, PROCUREMENT_STATUS_LABELS,
+  type Asset, type AssetStatus, type Procurement, type ProcurementStatus,
 } from "@/types";
 
 const ALL = "__all__";
+const procurementStatusStyles: Record<ProcurementStatus, string> = {
+  requested: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+  ordered: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  received: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  cancelled: "bg-muted text-muted-foreground border-border",
+};
 const statusStyles: Record<AssetStatus, string> = {
   available: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   assigned: "bg-sky-500/10 text-sky-600 border-sky-500/20",
@@ -80,12 +88,22 @@ export default function AssetsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [retireTarget, setRetireTarget] = useState<Asset | null>(null);
 
+  const [procDialogOpen, setProcDialogOpen] = useState(false);
+  const [selectedProc, setSelectedProc] = useState<Procurement | null>(null);
+  const [procDeleteTarget, setProcDeleteTarget] = useState<Procurement | null>(null);
+
   const [tab, setTab] = useState("mine");
   const tabs = [
     { key: "mine", label: "My Assets", icon: Boxes },
     canView && { key: "all", label: "All Assets", icon: ListChecks },
+    canView && { key: "procurement", label: "Procurement", icon: ShoppingCart },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
+
+  // Only fetched while the tab is actually open — the assets page is opened
+  // far more often for a laptop than for a purchase request.
+  const { data: procurement, isLoading: procLoading } = useProcurements({ limit: "200" }, canView && activeTab === "procurement");
+  const { mutate: removeProcurement, isPending: deletingProcurement } = useDeleteProcurement();
 
   return (
     <div>
@@ -93,7 +111,13 @@ export default function AssetsPage() {
         title="Assets"
         description="Track company equipment from purchase through issue, return and retirement."
         icon={Boxes}
-        action={activeTab === "all" && canCreate && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>}
+        action={
+          canCreate && (activeTab === "all" ? (
+            <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>
+          ) : activeTab === "procurement" ? (
+            <Button onClick={() => { setSelectedProc(null); setProcDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Procurement</Button>
+          ) : null)
+        }
       />
 
       <Tabs tabs={tabs} value={activeTab} onChange={setTab} />
@@ -261,6 +285,72 @@ export default function AssetsPage() {
         </div>
       ))}
 
+      {activeTab === "procurement" && (!canView ? (
+        <Card className="p-16 text-center text-muted-foreground">You do not have access to procurement.</Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium">Qty</th>
+                  <th className="px-4 py-3 font-medium">Est. cost</th>
+                  <th className="px-4 py-3 font-medium">Vendor</th>
+                  <th className="px-4 py-3 font-medium">Department</th>
+                  <th className="px-4 py-3 font-medium">Needed by</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {procLoading ? (
+                  <tr><td colSpan={8} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                ) : !procurement?.data.length ? (
+                  <tr><td colSpan={8} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
+                ) : (
+                  procurement.data.map((p) => {
+                    const dept = p.department && typeof p.department === "object" ? p.department.name : null;
+                    return (
+                      <tr key={p._id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{p.item}</p>
+                          {p.category && <p className="text-xs capitalize text-muted-foreground">{p.category}</p>}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums">{p.quantity}</td>
+                        <td className="px-4 py-3 tabular-nums">{p.estimatedCost ? `${p.currency} ${p.estimatedCost.toLocaleString()}` : "—"}</td>
+                        <td className="px-4 py-3">{p.vendor || "—"}</td>
+                        <td className="px-4 py-3">{dept ?? "—"}</td>
+                        <td className="px-4 py-3">{p.neededBy ? fmtDate(p.neededBy) : "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", procurementStatusStyles[p.status])}>
+                            {PROCUREMENT_STATUS_LABELS[p.status]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-1">
+                            {canCreate && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedProc(p); setProcDialogOpen(true); }}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setProcDeleteTarget(p)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ))}
+
       <AssetDialog open={dialogOpen} onOpenChange={setDialogOpen} asset={selected} />
       <IssueAssetDialog open={!!issueTarget} onOpenChange={(o) => !o && setIssueTarget(null)} asset={issueTarget} />
       <ReturnAssetDialog open={!!returnTarget} onOpenChange={(o) => !o && setReturnTarget(null)} asset={returnTarget} />
@@ -291,6 +381,13 @@ export default function AssetsPage() {
           </div>
         </ResponsiveDialogContent>
       </ResponsiveDialog>
+
+      <ProcurementDialog open={procDialogOpen} onOpenChange={setProcDialogOpen} procurement={selectedProc} />
+      <ConfirmDialog
+        open={!!procDeleteTarget} onOpenChange={(o) => !o && setProcDeleteTarget(null)}
+        title="Delete procurement" description="This request will be permanently removed." isPending={deletingProcurement}
+        onConfirm={() => procDeleteTarget && removeProcurement(procDeleteTarget._id, { onSuccess: () => setProcDeleteTarget(null) })}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}

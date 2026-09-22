@@ -1178,6 +1178,29 @@ export type AssetCategory = (typeof ASSET_CATEGORIES)[number] | (string & {});
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
 
+export type ProcurementStatus = "requested" | "ordered" | "received" | "cancelled";
+
+export interface IProcurement extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  item: string;
+  category?: string;
+  quantity: number;
+  /** Expected cost for the whole quantity — an estimate, not a quoted price. */
+  estimatedCost: number;
+  currency: string;
+  /** Free text: the real vendor master lives in the finance system. */
+  vendor?: string;
+  department?: Types.ObjectId | IDepartment | null;
+  requestedBy?: Types.ObjectId | IUser | null;
+  neededBy?: Date | null;
+  justification?: string;
+  status: ProcurementStatus;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IAssetHistoryEntry {
   action: "issued" | "returned" | "sent_to_maintenance" | "retired";
   employee?: Types.ObjectId | IEmployee | null;
