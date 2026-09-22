@@ -587,13 +587,39 @@ export class AttendanceService {
     // everybody was before anyone could choose otherwise.
     const workMode = employee ? employee.workMode ?? "office" : null;
 
+    /**
+     * An approved work-from-home day lifts the office rule, for that day alone.
+     *
+     * Without this the approval means nothing in practice: somebody cleared to
+     * work from home is still told to punch at a kiosk they are deliberately
+     * not standing next to, so the day goes unrecorded and reaches payroll as
+     * unaccounted. The permanent `workMode` is untouched — this is one day,
+     * read from the leave that granted it.
+     *
+     * Only asked when it could change the answer. Every remote employee, and
+     * every office employee in an organisation that does not enforce work
+     * mode, can already punch, and a query per punch to confirm what is
+     * already true is a query on the door of the building.
+     */
+    let wfhToday = false;
+    if (enforced && workMode === "office" && !employee?.kioskOnly) {
+      const now = new Date();
+      const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+      wfhToday = !!(await LeaveRequest.exists(
+        scoped({ user: userId, type: "wfh", status: "approved", startDate: { $lt: dayEnd }, endDate: { $gte: dayStart } })
+      ));
+    }
+
     return {
       workMode,
       enforced,
       // `kioskOnly` overrides the org policy for one person specifically —
       // set for someone who should never self-punch, without switching on
-      // `enforceWorkMode` for every other "office" employee too.
-      canSelfPunch: !employee?.kioskOnly && (!enforced || workMode !== "office"),
+      // `enforceWorkMode` for every other "office" employee too. It also beats
+      // an approved work-from-home day: somebody who must never self-punch is
+      // not made an exception by being allowed to work from home.
+      canSelfPunch: !employee?.kioskOnly && (!enforced || workMode !== "office" || wfhToday),
       // Only remote staff are held to one browser. Office staff punch at a
       // kiosk, which already knows exactly which device it is.
       devicePolicy: workMode === "wfh" ? org?.settings?.remoteDevice ?? "off" : "off",
