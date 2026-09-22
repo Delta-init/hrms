@@ -38,6 +38,7 @@ export const HRMS_MODULES = [
   // Its own module rather than riding on `assets`: approving a purchase is a
   // different authority from issuing a laptop, and finance only ever sees this.
   "procurement",
+  "meetings",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -1180,6 +1181,38 @@ export const ASSET_CATEGORIES = [
 export type AssetCategory = (typeof ASSET_CATEGORIES)[number] | (string & {});
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
+
+export type MeetingStage = "30min" | "ontime";
+
+export interface IMeetingRoom extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  name: string;
+  location?: string;
+  capacity: number;
+  active: boolean;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IMeetingBooking extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  room: Types.ObjectId | IMeetingRoom;
+  title: string;
+  agenda?: string;
+  start: Date;
+  end: Date;
+  timeZone: string;
+  organizer: Types.ObjectId | IUser;
+  participants: Array<Types.ObjectId | IUser>;
+  status: "booked" | "cancelled";
+  /** Which reminder stages have already gone out. */
+  firedStages: MeetingStage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export type ProcurementKind = "existing" | "new";
 export type ProcurementStatus =

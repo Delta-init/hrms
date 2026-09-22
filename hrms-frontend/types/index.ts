@@ -37,6 +37,7 @@ export const HRMS_MODULES = [
   "reimbursements",
   "assets",
   "procurement",
+  "meetings",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -77,6 +78,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   reimbursements: "Reimbursements",
   assets: "Assets",
   procurement: "Procurement",
+  meetings: "Meetings",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
   confirmations: "Confirmations",
@@ -1205,6 +1207,39 @@ export interface AssetHistoryEntry {
   condition?: AssetCondition;
   notes?: string;
 }
+export interface MeetingRoom {
+  _id: string;
+  name: string;
+  location?: string;
+  capacity: number;
+  active: boolean;
+  notes?: string;
+}
+
+export interface MeetingBooking {
+  _id: string;
+  room: Pick<MeetingRoom, "_id" | "name" | "location" | "capacity"> | string;
+  title: string;
+  agenda?: string;
+  /** An instant, not a wall-clock reading. */
+  start: string;
+  end: string;
+  timeZone: string;
+  organizer: Pick<User, "_id" | "name" | "email"> | string;
+  participants: Array<Pick<User, "_id" | "name" | "email"> | string>;
+  status: "booked" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Somebody who can be invited — an employee with a login. */
+export interface InvitablePerson {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  email?: string;
+}
+
 export type ProcurementKind = "existing" | "new";
 
 export const PROCUREMENT_KIND_LABELS: Record<ProcurementKind, string> = {
