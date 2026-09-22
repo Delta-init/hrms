@@ -38,6 +38,7 @@ export const HRMS_MODULES = [
   "assets",
   "procurement",
   "meetings",
+  "officeKeeping",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -79,6 +80,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   assets: "Assets",
   procurement: "Procurement",
   meetings: "Meetings",
+  officeKeeping: "Office Keeping",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
   confirmations: "Confirmations",
@@ -1207,6 +1209,37 @@ export interface AssetHistoryEntry {
   condition?: AssetCondition;
   notes?: string;
 }
+export type OfficeKeepingStatus = "requested" | "arriving" | "sorted" | "cancelled";
+
+export const OFFICE_KEEPING_STATUS_LABELS: Record<OfficeKeepingStatus, string> = {
+  requested: "Requested",
+  arriving: "On the way",
+  sorted: "Sorted",
+  cancelled: "Cancelled",
+};
+
+export interface OfficeKeepingStep {
+  status: OfficeKeepingStatus;
+  at: string;
+  by?: Pick<User, "_id" | "name"> | string | null;
+  note?: string;
+}
+
+export interface OfficeKeepingRequest {
+  _id: string;
+  issue: string;
+  location: string;
+  /** Empty when none was attached. */
+  photoUrl: string;
+  requestedBy?: Pick<User, "_id" | "name" | "email"> | string | null;
+  status: OfficeKeepingStatus;
+  handledBy?: Pick<User, "_id" | "name"> | string | null;
+  history: OfficeKeepingStep[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MeetingRoom {
   _id: string;
   name: string;

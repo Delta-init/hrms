@@ -39,6 +39,7 @@ export const HRMS_MODULES = [
   // different authority from issuing a laptop, and finance only ever sees this.
   "procurement",
   "meetings",
+  "officeKeeping",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -1181,6 +1182,31 @@ export const ASSET_CATEGORIES = [
 export type AssetCategory = (typeof ASSET_CATEGORIES)[number] | (string & {});
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
+
+export type OfficeKeepingStatus = "requested" | "arriving" | "sorted" | "cancelled";
+
+export interface IOfficeKeepingStep {
+  status: OfficeKeepingStatus;
+  at: Date;
+  by?: Types.ObjectId | IUser | null;
+  note?: string;
+}
+
+export interface IOfficeKeepingRequest extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  issue: string;
+  location: string;
+  /** Storage key; the public address is derived when read. */
+  photoKey?: string;
+  requestedBy: Types.ObjectId | IUser;
+  status: OfficeKeepingStatus;
+  handledBy?: Types.ObjectId | IUser | null;
+  history: IOfficeKeepingStep[];
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export type MeetingStage = "30min" | "ontime";
 

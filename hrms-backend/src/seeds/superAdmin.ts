@@ -47,6 +47,7 @@ const hrManagerPermissions: PermissionsMap = {
   assets: { ...fullAccess },
   procurement: { ...fullAccess },
   meetings: { ...fullAccess },
+  officeKeeping: { ...fullAccess },
   onboardingTasks: { ...fullAccess },
   confirmations: { ...fullAccess },
   letters: { ...fullAccess },
@@ -85,6 +86,9 @@ const employeePermissions: PermissionsMap = {
   // Booking a room is ordinary work, so create is open to everybody; `edit`
   // governs the rooms themselves, which is an administrator's job.
   meetings: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
+  // Raising is ungated; `approve` is what opens the panel, and a plain
+  // employee has no business moving somebody else's request along.
+  officeKeeping: { view: true, create: true, edit: false, delete: false, approve: false, export: false },
   // view only: /surveys/mine and submitting a response are self-service, ungated
   // routes (scoped to the caller server-side) — `view` just controls nav visibility.
   surveys: { view: true, create: false, edit: false, delete: false, approve: false, export: false },

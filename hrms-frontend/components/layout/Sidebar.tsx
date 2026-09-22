@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarDays,
+  Sparkles,
   LayoutDashboard,
   FileSignature,
   Users,
@@ -117,6 +118,7 @@ export const navItems: {
   { href: "/announcements", label: "Announcements", icon: Megaphone, permModule: "announcements" },
   { href: "/reminders", label: "Reminders", icon: AlarmClock, permModule: "reminders" },
   { href: "/meetings", label: "Meeting Rooms", icon: CalendarDays, permModule: "meetings" },
+  { href: "/office-keeping", label: "Office Keeping", icon: Sparkles, permModule: "officeKeeping" },
   // Always reachable: everyone can see/respond to Open Surveys; the Manage tab is gated inside the page.
   { href: "/surveys", label: "Surveys", icon: ListChecks, permModule: null },
   // Always reachable: everyone can raise/track their own tickets; the Manage tab is gated inside the page.
