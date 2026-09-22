@@ -59,14 +59,17 @@ const assigneeOf = (a: Asset) => (a.assignedTo && typeof a.assignedTo === "objec
 const fmtDate = (iso?: string | null) => (iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
 
 export default function AssetsPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canView = hasPermission("assets", "view");
   const canCreate = hasPermission("assets", "create");
   const canEdit = hasPermission("assets", "edit");
   const canDelete = hasPermission("assets", "delete");
-  const canViewProcurement = hasPermission("procurement", "view");
-  const canCreateProcurement = hasPermission("procurement", "create");
-  const canEditProcurement = hasPermission("procurement", "edit");
+  const canViewProcurement = hasPermission("procurement", "view") || !!user?.isDepartmentHead;
+  // Heading a team is its own licence to ask for something: that authority
+  // comes from the org chart, not from a role, so it is not in the permissions.
+  const headsATeam = !!user?.isDepartmentHead;
+  const canCreateProcurement = hasPermission("procurement", "create") || headsATeam;
+  const canEditProcurement = hasPermission("procurement", "edit") || headsATeam;
   const canDeleteProcurement = hasPermission("procurement", "delete");
   const canApproveProcurement = hasPermission("procurement", "approve");
 
