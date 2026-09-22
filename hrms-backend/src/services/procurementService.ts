@@ -1,29 +1,96 @@
 import { Procurement } from "../models/Procurement.js";
-import type { CreateProcurementInput, UpdateProcurementInput } from "../validations/procurementValidation.js";
+import { User } from "../models/User.js";
+import type {
+  CreateProcurementInput, UpdateProcurementInput, ReviewProcurementInput, ResubmitProcurementInput,
+} from "../validations/procurementValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
+import { sendMail } from "../utils/mailer.js";
+import { notify } from "./notificationService.js";
+import { watchersFor } from "./watchers.js";
+import { env } from "../config/env.js";
 
 const POP = [
   { path: "department", select: "name code" },
   { path: "requestedBy", select: "name email" },
+  { path: "hrReviewedBy", select: "name email" },
 ];
+
+/** The states a request passes through before anyone has bought anything. */
+const APPROVAL_STATES = ["requested", "hr_approved", "approved", "rejected"] as const;
 
 interface ProcurementQuery extends PaginationQuery {
   status?: string;
+  kind?: string;
   category?: string;
   department?: string;
 }
 
 export class ProcurementService {
+  /**
+   * Tell whoever raised it what happened to it.
+   *
+   * Best effort, and always after the record is saved: a mail server having a
+   * bad afternoon must not turn a decision that was made into one that wasn't.
+   */
+  private async tellRequester(
+    record: { _id: unknown; item: string; requestedBy?: unknown; status: string },
+    headline: string,
+    note?: string | null
+  ) {
+    try {
+      if (!record.requestedBy) return;
+      const user = await User.findById(record.requestedBy).select("name email").lean<{ name?: string; email?: string } | null>();
+      if (!user?.email) return;
+      const link = `${env.CLIENT_URL}/assets`;
+      await sendMail({
+        to: user.email,
+        organization: String(getOrgId() ?? ""),
+        subject: `${record.item}: ${headline}`,
+        text: `Hi ${user.name ?? "there"},\n\nYour procurement request for "${record.item}" ${headline}.\n` +
+          (note ? `\nNote: ${note}\n` : "") + `\n${link}\n`,
+        html:
+          `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+          `<h2 style="color:#4f46e5;margin-bottom:4px">${headline}</h2>` +
+          `<p style="color:#555">Your request for <strong>${record.item}</strong> ${headline}.</p>` +
+          (note ? `<p style="color:#555">Note: ${note}</p>` : "") +
+          `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open procurement</a></p>` +
+          `<p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS.</p></div>`,
+      });
+    } catch {
+      /* the decision stands whether or not the mail got out */
+    }
+  }
+
   async create(input: CreateProcurementInput, requestedBy: string) {
+    const kind = input.kind ?? "existing";
+    // A request starts by being asked for; a record of something already bought
+    // never enters the approval states at all.
+    const status = kind === "new"
+      ? "requested"
+      : (input.status && !APPROVAL_STATES.includes(input.status as never) ? input.status : "ordered");
+
     const record = await Procurement.create({
       ...input,
+      kind,
+      status,
       department: input.department || null,
       organization: getOrgId(),
       requestedBy,
     });
+
+    if (kind === "new") {
+      await notify({
+        users: await watchersFor("procurement", requestedBy),
+        kind: "approval",
+        title: `${input.item} requested`,
+        body: `${input.quantity ?? 1} × ${input.item}`,
+        href: "/assets",
+        actor: requestedBy,
+      });
+    }
     return Procurement.findById(record._id).populate(POP);
   }
 
@@ -32,9 +99,8 @@ export class ProcurementService {
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) filter.item = searchRegex(query.search);
-    // Comma-separated so one request can ask for everything still outstanding,
-    // which is the view somebody actually wants on opening the page.
     if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
+    if (query.kind) filter.kind = query.kind;
     if (query.category) filter.category = query.category;
     if (query.department) filter.department = query.department;
 
@@ -59,12 +125,81 @@ export class ProcurementService {
     const record = await Procurement.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
 
-    // `department` is cleared with an explicit null rather than by omission,
-    // so leaving it out of a partial edit keeps whatever is there.
+    // Once it is with HR or finance, editing it underneath them would mean they
+    // decided one thing and a different thing got bought.
+    if (record.kind === "new" && (record.status === "hr_approved" || record.status === "approved")) {
+      throw Object.assign(
+        new Error("This request has been approved and can no longer be edited"),
+        { statusCode: 409 }
+      );
+    }
+
+    const patch: Record<string, unknown> = { ...input };
+    if (input.department !== undefined) patch.department = input.department || null;
+    // The kind decides which states are legal, so it is not a field an edit
+    // may flip — a record halfway through approval cannot become history.
+    delete patch.kind;
+
+    await Procurement.updateOne({ _id: record._id }, { $set: patch });
+    return Procurement.findById(record._id).populate(POP);
+  }
+
+  /** HR's decision: approve it on to finance, or refuse it here. */
+  async review(id: string, input: ReviewProcurementInput, reviewerId: string) {
+    const record = await Procurement.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.kind !== "new") {
+      throw Object.assign(new Error("Only a new request needs approving"), { statusCode: 400 });
+    }
+    if (record.status !== "requested") {
+      throw Object.assign(new Error("This request has already been decided"), { statusCode: 400 });
+    }
+
+    const approved = input.decision === "approve";
+    await Procurement.updateOne({ _id: record._id }, {
+      $set: {
+        status: approved ? "hr_approved" : "rejected",
+        hrReviewedBy: reviewerId,
+        hrReviewedAt: new Date(),
+        hrNote: input.note ?? "",
+        rejectedBy: approved ? null : "hr",
+      },
+    });
+
+    await this.tellRequester(
+      record as never,
+      approved ? "has been approved by HR and sent to finance" : "was not approved by HR",
+      input.note
+    );
+    return Procurement.findById(record._id).populate(POP);
+  }
+
+  /**
+   * Revise a refused request and send it back round.
+   *
+   * The count is kept rather than the record being replaced, because a fourth
+   * attempt is worth knowing about and a new row would lose the history.
+   */
+  async resubmit(id: string, input: ResubmitProcurementInput) {
+    const record = await Procurement.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.status !== "rejected") {
+      throw Object.assign(new Error("Only a rejected request can be resubmitted"), { statusCode: 400 });
+    }
+
     const patch: Record<string, unknown> = { ...input };
     if (input.department !== undefined) patch.department = input.department || null;
 
-    await Procurement.updateOne({ _id: record._id }, { $set: patch });
+    await Procurement.updateOne({ _id: record._id }, {
+      $set: {
+        ...patch,
+        status: "requested",
+        rejectedBy: null,
+        hrReviewedBy: null, hrReviewedAt: null, hrNote: "",
+        financeReviewedAt: null, financeNote: "",
+      },
+      $inc: { resubmitCount: 1 },
+    });
     return Procurement.findById(record._id).populate(POP);
   }
 
@@ -73,5 +208,51 @@ export class ProcurementService {
     if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
     await Procurement.deleteOne({ _id: record._id });
     return { message: "Procurement deleted successfully" };
+  }
+
+  // ── Finance integration ────────────────────────────────────────────────────
+  // Called from signed machine requests, which carry the organization
+  // explicitly because there is no logged-in user to infer it from.
+
+  /** What is sitting with finance, waiting on the money decision. */
+  async listForFinance(organization: string) {
+    return Procurement.find({ organization, kind: "new", status: "hr_approved" })
+      .populate(POP)
+      .sort({ neededBy: 1, createdAt: 1 })
+      .lean();
+  }
+
+  /** Record what finance decided, and tell whoever asked. */
+  async recordFinanceDecision(
+    organization: string,
+    id: string,
+    input: { decision: "approve" | "reject"; note?: string | null; purchaseOrderRef?: string | null }
+  ) {
+    const record = await Procurement.findOne({ _id: id, organization });
+    if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.status !== "hr_approved") {
+      throw Object.assign(
+        new Error("Only a request HR has approved is waiting on finance"),
+        { statusCode: 409 }
+      );
+    }
+
+    const approved = input.decision === "approve";
+    await Procurement.updateOne({ _id: record._id }, {
+      $set: {
+        status: approved ? "approved" : "rejected",
+        financeReviewedAt: new Date(),
+        financeNote: input.note ?? "",
+        purchaseOrderRef: approved ? (input.purchaseOrderRef ?? "") : "",
+        rejectedBy: approved ? null : "finance",
+      },
+    });
+
+    await this.tellRequester(
+      record as never,
+      approved ? "has been approved by finance" : "was not approved by finance",
+      input.note
+    );
+    return Procurement.findById(record._id).populate(POP).lean();
   }
 }

@@ -5,6 +5,7 @@ import {
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
   approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
+  listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -38,5 +39,11 @@ router.post("/payroll/batches/:month/approve", serviceOrgScope, approveHandoverB
 router.post("/payroll/batches/:month/return", serviceOrgScope, returnHandoverBatch);
 router.post("/payroll/batches/:month/payments", serviceOrgScope, recordPayment);
 router.post("/payroll/batches/:month/payments/:paymentId/reverse", serviceOrgScope, reversePayment);
+
+// Procurement. Finance sees what HR has passed on, and decides the money
+// question; the HR side records the answer and tells whoever asked.
+router.get("/procurement/requests", serviceOrgScope, listProcurementRequests);
+router.post("/procurement/requests/:id/approve", serviceOrgScope, approveProcurementRequest);
+router.post("/procurement/requests/:id/reject", serviceOrgScope, rejectProcurementRequest);
 
 export default router;

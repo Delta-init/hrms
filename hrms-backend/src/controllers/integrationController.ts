@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { directoryService } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
+import { ProcurementService } from "../services/procurementService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
@@ -264,4 +265,39 @@ export const reversePayment = asyncRoute(async (req, res) => {
   }
   const result = await payrollPaymentService.reverse(month, paymentId, reason);
   sendSuccess(res, result.message, result);
+});
+
+// ── Procurement ──────────────────────────────────────────────────────────────
+
+const procurementService = new ProcurementService();
+
+/**
+ * What HR has approved and finance has not yet decided.
+ *
+ * Only `hr_approved` is offered. A request still with HR is not finance's to
+ * see, and one already decided is not theirs to decide twice.
+ */
+export const listProcurementRequests = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId);
+  sendSuccess(res, "Procurement requests retrieved", await procurementService.listForFinance(organizationId));
+});
+
+/** Finance signs it off, naming the purchase order it raised against it. */
+export const approveProcurementRequest = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await procurementService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "approve",
+    note: req.body?.note ?? null,
+    purchaseOrderRef: req.body?.purchaseOrderRef ?? null,
+  });
+  sendSuccess(res, "Procurement approved", record);
+});
+
+export const rejectProcurementRequest = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await procurementService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "reject",
+    note: req.body?.note ?? null,
+  });
+  sendSuccess(res, "Procurement rejected", record);
 });

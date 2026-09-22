@@ -13,13 +13,24 @@ import type { IProcurement } from "../types/index.js";
  * would then have to learn to ignore.
  *
  * The status runs to `received` rather than stopping at ordered, because the
- * gap between the two is exactly where a request gets forgotten. Approval
- * states are not here yet — they arrive with the finance handover, and the
- * field is a plain enum so they can be added without moving anything.
+ * gap between the two is exactly where a request gets forgotten.
+ *
+ * Two kinds share the record. An `existing` one is a note of something the
+ * company already bought — it is history, and asking finance to approve a
+ * purchase already made would be theatre. A `new` one is a request for a
+ * decision, and only it walks the approval states. Keeping them in one
+ * collection means one list, one search and one export; separating them by a
+ * field rather than a table means the difference is visible in every query
+ * that cares and invisible in every query that does not.
  */
 const procurementSchema = new Schema<IProcurement>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
+    /**
+     * `existing` is already bought and needs nobody's permission; `new` is a
+     * request, and the only kind the approval states apply to.
+     */
+    kind: { type: String, enum: ["existing", "new"], default: "existing", index: true },
     item: { type: String, required: [true, "Item is required"], trim: true, maxlength: 160 },
     category: { type: String, trim: true, maxlength: 40, default: "other", index: true },
     quantity: { type: Number, min: 1, default: 1 },
@@ -42,12 +53,41 @@ const procurementSchema = new Schema<IProcurement>(
     requestedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     neededBy: { type: Date, default: null },
     justification: { type: String, trim: true, maxlength: 1000 },
+    /**
+     * Where it has got to.
+     *
+     * `hr_approved` is the one finance watches for: HR has agreed it is worth
+     * buying, and the money question is now somebody else's. `approved` means
+     * finance has signed it off and a draft purchase order exists on their
+     * side. An `existing` record skips straight to `ordered` or `received`.
+     */
     status: {
       type: String,
-      enum: ["requested", "ordered", "received", "cancelled"],
+      enum: ["requested", "hr_approved", "approved", "rejected", "ordered", "received", "cancelled"],
       default: "requested",
       index: true,
     },
+
+    // ── Decisions ──
+    hrReviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    hrReviewedAt: { type: Date, default: null },
+    hrNote: { type: String, trim: true, maxlength: 500 },
+    /** Finance has no login here, so the decision is recorded, not attributed. */
+    financeReviewedAt: { type: Date, default: null },
+    financeNote: { type: String, trim: true, maxlength: 500 },
+    /** The purchase order finance raised against it, for anyone chasing later. */
+    purchaseOrderRef: { type: String, trim: true, maxlength: 60, default: "" },
+    /** Which side said no, so a rejected request explains itself. */
+    rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
+    /**
+     * How many times this has come back for another try.
+     *
+     * Kept because a request on its fourth attempt is a different conversation
+     * from one on its first, and the decision trail is otherwise overwritten
+     * each time somebody revises and resubmits.
+     */
+    resubmitCount: { type: Number, default: 0, min: 0 },
+
     notes: { type: String, trim: true, maxlength: 500 },
   },
   { timestamps: true, versionKey: false }

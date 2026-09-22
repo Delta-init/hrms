@@ -1,26 +1,29 @@
 import { Router } from "express";
 import {
   createProcurement, getProcurements, getProcurementById, updateProcurement, deleteProcurement,
+  reviewProcurement, resubmitProcurement,
 } from "../controllers/procurementController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 
 /**
- * Gated on `assets` rather than a module of its own.
+ * Its own module, not `assets`.
  *
- * Procurement lives on the assets page and is read and written by the same
- * people, so a second module would mean granting six roles a permission on the
- * day it shipped to keep the page working as it already did. It gets its own
- * module when approval arrives and `approve` starts to mean something here
- * that it does not mean for an asset.
+ * Approving a purchase is a different authority from issuing a laptop: the
+ * people who hand out equipment are not necessarily the people who may commit
+ * the company to spending, and finance sees only this. `approve` here means
+ * "send it to finance", which has no equivalent on an asset at all.
  */
 const router = Router();
 router.use(authenticate);
 
-router.get("/", checkPermission("assets", "view"), getProcurements);
-router.post("/", checkPermission("assets", "create"), createProcurement);
-router.get("/:id", checkPermission("assets", "view"), getProcurementById);
-router.put("/:id", checkPermission("assets", "edit"), updateProcurement);
-router.delete("/:id", checkPermission("assets", "delete"), deleteProcurement);
+router.get("/", checkPermission("procurement", "view"), getProcurements);
+router.post("/", checkPermission("procurement", "create"), createProcurement);
+router.get("/:id", checkPermission("procurement", "view"), getProcurementById);
+router.put("/:id", checkPermission("procurement", "edit"), updateProcurement);
+// HR's decision, and the way back for a request that was refused.
+router.patch("/:id/review", checkPermission("procurement", "approve"), reviewProcurement);
+router.patch("/:id/resubmit", checkPermission("procurement", "edit"), resubmitProcurement);
+router.delete("/:id", checkPermission("procurement", "delete"), deleteProcurement);
 
 export default router;

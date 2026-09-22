@@ -36,6 +36,7 @@ export const HRMS_MODULES = [
   "salaryIncrements",
   "reimbursements",
   "assets",
+  "procurement",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -75,6 +76,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   salaryIncrements: "Salary Increments",
   reimbursements: "Reimbursements",
   assets: "Assets",
+  procurement: "Procurement",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
   confirmations: "Confirmations",
@@ -1203,10 +1205,21 @@ export interface AssetHistoryEntry {
   condition?: AssetCondition;
   notes?: string;
 }
-export type ProcurementStatus = "requested" | "ordered" | "received" | "cancelled";
+export type ProcurementKind = "existing" | "new";
+
+export const PROCUREMENT_KIND_LABELS: Record<ProcurementKind, string> = {
+  existing: "Already bought",
+  new: "New request",
+};
+
+export type ProcurementStatus =
+  | "requested" | "hr_approved" | "approved" | "rejected" | "ordered" | "received" | "cancelled";
 
 export const PROCUREMENT_STATUS_LABELS: Record<ProcurementStatus, string> = {
-  requested: "Requested",
+  requested: "Awaiting HR",
+  hr_approved: "With finance",
+  approved: "Approved",
+  rejected: "Rejected",
   ordered: "Ordered",
   received: "Received",
   cancelled: "Cancelled",
@@ -1214,6 +1227,8 @@ export const PROCUREMENT_STATUS_LABELS: Record<ProcurementStatus, string> = {
 
 export interface Procurement {
   _id: string;
+  /** `existing` is already bought; `new` is a request awaiting approval. */
+  kind: ProcurementKind;
   item: string;
   category?: string;
   quantity: number;
@@ -1227,6 +1242,14 @@ export interface Procurement {
   neededBy?: string | null;
   justification?: string;
   status: ProcurementStatus;
+  hrReviewedBy?: Pick<User, "_id" | "name"> | string | null;
+  hrReviewedAt?: string | null;
+  hrNote?: string;
+  financeReviewedAt?: string | null;
+  financeNote?: string;
+  purchaseOrderRef?: string;
+  rejectedBy?: "hr" | "finance" | null;
+  resubmitCount: number;
   notes?: string;
   createdAt: string;
   updatedAt: string;

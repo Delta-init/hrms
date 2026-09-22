@@ -2,7 +2,9 @@ import type { NextFunction, Response } from "express";
 import { ProcurementService } from "../services/procurementService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
-import { createProcurementSchema, updateProcurementSchema } from "../validations/procurementValidation.js";
+import {
+  createProcurementSchema, updateProcurementSchema, reviewProcurementSchema, resubmitProcurementSchema,
+} from "../validations/procurementValidation.js";
 
 const service = new ProcurementService();
 
@@ -43,6 +45,33 @@ export const updateProcurement = async (req: AuthenticatedRequest, res: Response
       return;
     }
     sendSuccess(res, "Procurement updated", await service.update(String(req.params.id), parsed.data));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reviewProcurement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = reviewProcurementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors);
+      return;
+    }
+    const record = await service.review(String(req.params.id), parsed.data, req.user!.userId);
+    sendSuccess(res, parsed.data.decision === "approve" ? "Sent to finance" : "Request rejected", record);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resubmitProcurement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = resubmitProcurementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors);
+      return;
+    }
+    sendSuccess(res, "Request resubmitted", await service.resubmit(String(req.params.id), parsed.data));
   } catch (error) {
     next(error);
   }

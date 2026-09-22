@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { useProcurements, useDeleteProcurement } from "@/hooks/useProcurements";
+import { useProcurements, useDeleteProcurement, useReviewProcurement } from "@/hooks/useProcurements";
 import { AssetDialog } from "@/components/assets/AssetDialog";
 import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
 import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
@@ -23,13 +23,16 @@ import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getInitials, cn } from "@/lib/utils";
 import {
-  assetCategoryLabel, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS, PROCUREMENT_STATUS_LABELS,
+  assetCategoryLabel, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS, PROCUREMENT_STATUS_LABELS, PROCUREMENT_KIND_LABELS,
   type Asset, type AssetStatus, type Procurement, type ProcurementStatus,
 } from "@/types";
 
 const ALL = "__all__";
 const procurementStatusStyles: Record<ProcurementStatus, string> = {
   requested: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+  hr_approved: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+  approved: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  rejected: "bg-red-500/10 text-red-600 border-red-500/20",
   ordered: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   received: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   cancelled: "bg-muted text-muted-foreground border-border",
@@ -61,6 +64,11 @@ export default function AssetsPage() {
   const canCreate = hasPermission("assets", "create");
   const canEdit = hasPermission("assets", "edit");
   const canDelete = hasPermission("assets", "delete");
+  const canViewProcurement = hasPermission("procurement", "view");
+  const canCreateProcurement = hasPermission("procurement", "create");
+  const canEditProcurement = hasPermission("procurement", "edit");
+  const canDeleteProcurement = hasPermission("procurement", "delete");
+  const canApproveProcurement = hasPermission("procurement", "approve");
 
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
@@ -96,14 +104,15 @@ export default function AssetsPage() {
   const tabs = [
     { key: "mine", label: "My Assets", icon: Boxes },
     canView && { key: "all", label: "All Assets", icon: ListChecks },
-    canView && { key: "procurement", label: "Procurement", icon: ShoppingCart },
+    canViewProcurement && { key: "procurement", label: "Procurement", icon: ShoppingCart },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
 
   // Only fetched while the tab is actually open — the assets page is opened
   // far more often for a laptop than for a purchase request.
-  const { data: procurement, isLoading: procLoading } = useProcurements({ limit: "200" }, canView && activeTab === "procurement");
+  const { data: procurement, isLoading: procLoading } = useProcurements({ limit: "200" }, canViewProcurement && activeTab === "procurement");
   const { mutate: removeProcurement, isPending: deletingProcurement } = useDeleteProcurement();
+  const { mutate: review, isPending: reviewing } = useReviewProcurement();
 
   return (
     <div>
@@ -115,7 +124,7 @@ export default function AssetsPage() {
           canCreate && (activeTab === "all" ? (
             <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>
           ) : activeTab === "procurement" ? (
-            <Button onClick={() => { setSelectedProc(null); setProcDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Procurement</Button>
+            canCreateProcurement ? <Button onClick={() => { setSelectedProc(null); setProcDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Procurement</Button> : null
           ) : null)
         }
       />
@@ -285,7 +294,7 @@ export default function AssetsPage() {
         </div>
       ))}
 
-      {activeTab === "procurement" && (!canView ? (
+      {activeTab === "procurement" && (!canViewProcurement ? (
         <Card className="p-16 text-center text-muted-foreground">You do not have access to procurement.</Card>
       ) : (
         <Card className="overflow-hidden">
@@ -294,6 +303,7 @@ export default function AssetsPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium">Kind</th>
                   <th className="px-4 py-3 font-medium">Qty</th>
                   <th className="px-4 py-3 font-medium">Est. cost</th>
                   <th className="px-4 py-3 font-medium">Vendor</th>
@@ -305,9 +315,9 @@ export default function AssetsPage() {
               </thead>
               <tbody>
                 {procLoading ? (
-                  <tr><td colSpan={8} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                  <tr><td colSpan={9} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                 ) : !procurement?.data.length ? (
-                  <tr><td colSpan={8} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
+                  <tr><td colSpan={9} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
                 ) : (
                   procurement.data.map((p) => {
                     const dept = p.department && typeof p.department === "object" ? p.department.name : null;
@@ -316,6 +326,10 @@ export default function AssetsPage() {
                         <td className="px-4 py-3">
                           <p className="font-medium">{p.item}</p>
                           {p.category && <p className="text-xs capitalize text-muted-foreground">{p.category}</p>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-muted-foreground">{PROCUREMENT_KIND_LABELS[p.kind]}</span>
+                          {p.resubmitCount > 0 && <span className="ml-1 text-xs text-amber-600">· resubmitted ×{p.resubmitCount}</span>}
                         </td>
                         <td className="px-4 py-3 tabular-nums">{p.quantity}</td>
                         <td className="px-4 py-3 tabular-nums">{p.estimatedCost ? `${p.currency} ${p.estimatedCost.toLocaleString()}` : "—"}</td>
@@ -329,12 +343,30 @@ export default function AssetsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            {canCreate && (
+                            {/* HR's decision, only while it is actually theirs to make. */}
+                            {canApproveProcurement && p.kind === "new" && p.status === "requested" && (
+                              <>
+                                <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" disabled={reviewing}
+                                  onClick={() => review({ id: p._id, decision: "approve" })}>
+                                  <CheckCircle2 className="h-3.5 w-3.5" />To finance
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" disabled={reviewing}
+                                  onClick={() => review({ id: p._id, decision: "reject" })}>
+                                  <X className="h-3.5 w-3.5" />Reject
+                                </Button>
+                              </>
+                            )}
+                            {canEditProcurement && p.status === "rejected" && (
+                              <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => { setSelectedProc(p); setProcDialogOpen(true); }}>
+                                <Undo2 className="h-3.5 w-3.5" />Revise
+                              </Button>
+                            )}
+                            {canEditProcurement && p.status !== "rejected" && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedProc(p); setProcDialogOpen(true); }}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                            {canDelete && (
+                            {canDeleteProcurement && (
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setProcDeleteTarget(p)}>
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>

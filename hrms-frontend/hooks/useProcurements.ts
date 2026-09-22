@@ -39,6 +39,28 @@ export const useUpdateProcurement = () => {
   });
 };
 
+/** HR's decision: send it on to finance, or refuse it. */
+export const useReviewProcurement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, decision, note }: { id: string; decision: "approve" | "reject"; note?: string }) =>
+      (await api.patch<ApiResponse<Procurement>>(`/procurement/${id}/review`, { decision, note })).data.data!,
+    onSuccess: (_d, v) => { invalidate(qc); toast.success(v.decision === "approve" ? "Sent to finance" : "Request rejected"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to record the decision")),
+  });
+};
+
+/** Revise a refused request and send it round again. */
+export const useResubmitProcurement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.patch<ApiResponse<Procurement>>(`/procurement/${id}/resubmit`, data)).data.data!,
+    onSuccess: () => { invalidate(qc); toast.success("Resubmitted"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to resubmit")),
+  });
+};
+
 export const useDeleteProcurement = () => {
   const qc = useQueryClient();
   return useMutation({

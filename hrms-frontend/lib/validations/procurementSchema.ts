@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const procurementFormSchema = z.object({
+  kind: z.enum(["existing", "new"]),
   item: z.string().min(1, "Item is required").max(160),
   category: z.string().max(40).optional(),
   quantity: z.coerce.number().int().min(1, "At least one"),
@@ -9,7 +10,7 @@ export const procurementFormSchema = z.object({
   department: z.string().optional(),
   neededBy: z.string().optional(),
   justification: z.string().max(1000).optional(),
-  status: z.enum(["requested", "ordered", "received", "cancelled"]),
+  status: z.enum(["requested", "hr_approved", "approved", "rejected", "ordered", "received", "cancelled"]),
   notes: z.string().max(500).optional(),
 });
 

@@ -15,7 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { procurementFormSchema, type ProcurementFormValues } from "@/lib/validations/procurementSchema";
 import { useCreateProcurement, useUpdateProcurement } from "@/hooks/useProcurements";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
-import { PROCUREMENT_STATUS_LABELS, type Procurement, type ProcurementStatus } from "@/types";
+import {
+  PROCUREMENT_KIND_LABELS, PROCUREMENT_STATUS_LABELS,
+  type Procurement, type ProcurementKind, type ProcurementStatus,
+} from "@/types";
 
 interface Props {
   open: boolean;
@@ -25,7 +28,7 @@ interface Props {
 
 const NONE = "__none__";
 const EMPTY: ProcurementFormValues = {
-  item: "", category: "", quantity: 1, estimatedCost: undefined, vendor: "",
+  kind: "existing", item: "", category: "", quantity: 1, estimatedCost: undefined, vendor: "",
   department: "", neededBy: "", justification: "", status: "requested", notes: "",
 };
 
@@ -39,7 +42,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
   const { data: departments = [] } = useDepartmentsSimple({ enabled: open });
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<ProcurementFormValues>({
+  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<ProcurementFormValues>({
     resolver: zodResolver(procurementFormSchema),
     defaultValues: EMPTY,
   });
@@ -49,6 +52,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
     reset(
       procurement
         ? {
+            kind: procurement.kind,
             item: procurement.item,
             category: procurement.category ?? "",
             quantity: procurement.quantity ?? 1,
@@ -63,6 +67,11 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
         : EMPTY
     );
   }, [open, procurement, reset]);
+
+  const kind = watch("kind");
+  // A new request is decided by HR and finance, so its status is theirs to set,
+  // not something typed into this form.
+  const statusEditable = kind === "existing";
 
   const onSubmit = (data: ProcurementFormValues) => {
     const payload = {
@@ -85,6 +94,29 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-2 gap-4 px-4 sm:px-0">
+          <div className={`${field} col-span-2`}>
+            <Label>Kind *</Label>
+            <Controller
+              control={control}
+              name="kind"
+              render={({ field: f }) => (
+                <Select value={f.value} onValueChange={f.onChange} disabled={isEditing}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(PROCUREMENT_KIND_LABELS) as ProcurementKind[]).map((k) => (
+                      <SelectItem key={k} value={k}>{PROCUREMENT_KIND_LABELS[k]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              {kind === "new"
+                ? "Goes to HR, then to finance. You will be emailed either way."
+                : "A record of something already bought — nobody needs to approve it."}
+            </p>
+          </div>
+
           <div className={`${field} col-span-2`}>
             <Label htmlFor="item">Item *</Label>
             <Input id="item" placeholder="e.g. Dell 24&quot; monitor" {...register("item")} />
@@ -131,6 +163,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
             <Input id="neededBy" type="date" {...register("neededBy")} />
           </div>
 
+          {statusEditable && (
           <div className={field}>
             <Label>Status</Label>
             <Controller
@@ -140,7 +173,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
                 <Select value={f.value} onValueChange={f.onChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(PROCUREMENT_STATUS_LABELS) as ProcurementStatus[]).map((s) => (
+                    {(["ordered", "received", "cancelled"] as ProcurementStatus[]).map((s) => (
                       <SelectItem key={s} value={s}>{PROCUREMENT_STATUS_LABELS[s]}</SelectItem>
                     ))}
                   </SelectContent>
@@ -148,6 +181,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
               )}
             />
           </div>
+          )}
 
           <div className={`${field} col-span-2`}>
             <Label htmlFor="justification">Why it is needed</Label>

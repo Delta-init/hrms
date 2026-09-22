@@ -35,6 +35,9 @@ export const HRMS_MODULES = [
   "salaryIncrements",
   "reimbursements",
   "assets",
+  // Its own module rather than riding on `assets`: approving a purchase is a
+  // different authority from issuing a laptop, and finance only ever sees this.
+  "procurement",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -1178,11 +1181,15 @@ export type AssetCategory = (typeof ASSET_CATEGORIES)[number] | (string & {});
 export type AssetCondition = "new" | "good" | "fair" | "poor" | "damaged";
 export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
 
-export type ProcurementStatus = "requested" | "ordered" | "received" | "cancelled";
+export type ProcurementKind = "existing" | "new";
+export type ProcurementStatus =
+  | "requested" | "hr_approved" | "approved" | "rejected" | "ordered" | "received" | "cancelled";
 
 export interface IProcurement extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
+  /** `existing` is already bought; `new` is a request awaiting approval. */
+  kind: ProcurementKind;
   item: string;
   category?: string;
   quantity: number;
@@ -1196,6 +1203,14 @@ export interface IProcurement extends Document {
   neededBy?: Date | null;
   justification?: string;
   status: ProcurementStatus;
+  hrReviewedBy?: Types.ObjectId | IUser | null;
+  hrReviewedAt?: Date | null;
+  hrNote?: string;
+  financeReviewedAt?: Date | null;
+  financeNote?: string;
+  purchaseOrderRef?: string;
+  rejectedBy?: "hr" | "finance" | null;
+  resubmitCount: number;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
