@@ -80,7 +80,12 @@ export function EmployeeMultiSelect({ value, onChange, placeholder = "All employ
 }) {
   const { search, setSearch, debounced } = usePickerState();
   const { data, isFetching } = useEmployees({ limit: PAGE, ...(activeOnly ? { excludeTerminated: "true" } : {}), ...(debounced ? { search: debounced } : {}) });
-  const options = (data?.data ?? []).map((e) => ({ value: e._id, label: e.name, sub: e.employeeCode }));
+  // Leave requests are keyed by the linked login User ID, not the Employee ID.
+  // Employees without a login cannot own a leave request, so they are not filter options.
+  const options = (data?.data ?? []).flatMap((e) => {
+    const userId = typeof e.user === "object" && e.user ? e.user._id : typeof e.user === "string" ? e.user : "";
+    return userId ? [{ value: userId, label: e.name, sub: e.employeeCode }] : [];
+  });
   const names = options.filter((o) => value.includes(o.value)).map((o) => o.label);
   const label = value.length === 0 ? placeholder : value.length === 1 ? (names[0] ?? "1 employee selected") : `${value.length} employees selected`;
   return (
