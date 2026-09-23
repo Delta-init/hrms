@@ -6,6 +6,7 @@ import { KioskLock } from "@/components/layout/KioskLock";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { OfflineNotice } from "@/components/pwa/OfflineNotice";
+import { RootPortalHistoryBridge } from "@/components/RootPortalHistoryBridge";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         enableSystem
         disableTransitionOnChange
       >
+    <RootPortalHistoryBridge />
     <OnboardingGate />
     <KioskLock />
     <div className="flex h-screen w-full overflow-hidden bg-muted/30">
