@@ -321,7 +321,11 @@ export class LeaveService {
     const { page, limit, skip } = parsePagination(query, 50, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
-    if (query.user) filter.user = query.user;
+    if (query.user) {
+      const userIds = query.user.split(",").map((id) => id.trim()).filter(Boolean);
+      if (userIds.length === 1) filter.user = userIds[0];
+      else if (userIds.length > 1) filter.user = { $in: userIds };
+    }
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;
     // Date-range overlap: leave overlaps [from,to] if endDate >= from AND startDate <= to.

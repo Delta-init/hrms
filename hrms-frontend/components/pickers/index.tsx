@@ -1,6 +1,11 @@
 "use client";
 import { useState } from "react";
 import { AsyncSelect, type AsyncSelectOption } from "@/components/ui/async-select";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Check, ChevronsUpDown, Loader2, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useEmployees } from "@/hooks/useEmployees";
 import { useUsers } from "@/hooks/useUsers";
@@ -66,6 +71,31 @@ export function EmployeeSelect({
       searchPlaceholder="Search by name or code…"
       emptyText="No employees found."
     />
+  );
+}
+
+/** Searchable employee filter that keeps the popover open while choosing several people. */
+export function EmployeeMultiSelect({ value, onChange, placeholder = "All employees", className, activeOnly = true }: {
+  value: string[]; onChange: (value: string[]) => void; placeholder?: string; className?: string; activeOnly?: boolean;
+}) {
+  const { search, setSearch, debounced } = usePickerState();
+  const { data, isFetching } = useEmployees({ limit: PAGE, ...(activeOnly ? { excludeTerminated: "true" } : {}), ...(debounced ? { search: debounced } : {}) });
+  const options = (data?.data ?? []).map((e) => ({ value: e._id, label: e.name, sub: e.employeeCode }));
+  const names = options.filter((o) => value.includes(o.value)).map((o) => o.label);
+  const label = value.length === 0 ? placeholder : value.length === 1 ? (names[0] ?? "1 employee selected") : `${value.length} employees selected`;
+  return (
+    <Popover>
+      <PopoverTrigger asChild><Button type="button" variant="outline" className={cn("justify-between font-normal", className)}><span className="truncate">{label}</span><ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" /></Button></PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command shouldFilter={false}>
+          <div className="flex items-center border-b border-border px-3"><Search className="mr-2 h-4 w-4 opacity-50"/><CommandInput value={search} onValueChange={setSearch} placeholder="Search employees…"/>{isFetching && <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin"/>}</div>
+          <CommandList className="max-h-64"><CommandEmpty>No employees found.</CommandEmpty><CommandGroup>
+            {options.map((o) => { const checked = value.includes(o.value); return <CommandItem key={o.value} value={o.value} onSelect={() => onChange(checked ? value.filter((id) => id !== o.value) : [...value, o.value])} className="gap-2"><span className={cn("flex h-4 w-4 items-center justify-center rounded border", checked ? "border-primary bg-primary text-primary-foreground" : "border-input")}>{checked && <Check className="h-3 w-3"/>}</span><span className="min-w-0 flex-1 truncate">{o.label}<span className="ml-1 text-xs text-muted-foreground">{o.sub}</span></span></CommandItem>; })}
+          </CommandGroup></CommandList>
+          {value.length > 0 && <div className="border-t border-border p-2"><Button type="button" size="sm" variant="ghost" className="h-7 w-full" onClick={() => onChange([])}>Clear selection ({value.length})</Button></div>}
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 

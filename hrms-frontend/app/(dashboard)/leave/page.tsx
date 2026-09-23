@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UserSelect } from "@/components/pickers";
+import { EmployeeMultiSelect } from "@/components/pickers";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -111,11 +111,14 @@ export default function LeavePage() {
   const isSuperAdmin = !!user?.role?.isSystemRole && user?.role?.roleName === "Super Admin";
 
   const [tab, setTab] = useState("requests");
+  const [employeeIds, setEmployeeIds] = useState<string[]>([]);
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
 
-  const { data: reqData, isLoading: reqLoading, isFetching } = useLeaves(canApprove ? query.params : undefined);
+  const employeeFilter = employeeIds.length ? employeeIds.join(",") : undefined;
+  const leaveParams = { ...query.params, ...(employeeFilter ? { user: employeeFilter } : {}) };
+  const { data: reqData, isLoading: reqLoading, isFetching } = useLeaves(canApprove ? leaveParams : undefined);
   const { data: allData } = useLeaves(canApprove ? { limit: "500" } : undefined);
-  const { data: pendingData } = useLeaves(canApprove ? { status: "pending", limit: "200" } : undefined);
+  const { data: pendingData } = useLeaves(canApprove ? { status: "pending", limit: "200", ...(employeeFilter ? { user: employeeFilter } : {}) } : undefined);
   const { data: mineData, isLoading: mineLoading } = useMyLeaves({ limit: "200" });
   const { data: holidayData } = useHolidays({ limit: "200" });
 
@@ -127,7 +130,7 @@ export default function LeavePage() {
   const pending = pendingData?.data ?? [];
   const mine = mineData?.data ?? [];
   const holidays = holidayData?.data ?? [];
-  const calendarLeaves = allData?.data ?? mine;
+  const calendarLeaves = (allData?.data ?? mine).filter((leave) => !employeeIds.length || employeeIds.includes(typeof leave.user === "object" && leave.user ? leave.user._id : String(leave.user)));
 
   const [leaveDialog, setLeaveDialog] = useState(false);
   const [applyDialog, setApplyDialog] = useState(false);
@@ -192,7 +195,7 @@ export default function LeavePage() {
   const filters = (
     <>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Employee</Label>
-        <UserSelect value={query.filters.user} onChange={(v) => query.setFilter("user", v)} placeholder="All employees" allowClear className="h-9 w-[160px]" />
+        <EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[180px]" />
       </div>
       <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Status</Label>
         <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}><SelectTrigger className="h-9 w-[130px]"><SelectValue placeholder="All" /></SelectTrigger><SelectContent><SelectItem value={ALL}>All status</SelectItem>{(["pending", "approved", "rejected", "cancelled"] as LeaveStatus[]).map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent></Select>
@@ -239,17 +242,18 @@ export default function LeavePage() {
         />
       )}
 
-      {activeTab === "calendar" && <Card className="p-5"><LeaveCalendar leaves={calendarLeaves} holidays={holidays} /></Card>}
+      {activeTab === "calendar" && <div className="space-y-3"><div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div><Card className="p-5"><LeaveCalendar leaves={calendarLeaves} holidays={holidays} /></Card></div>}
 
-      {activeTab === "approvals" && <SimpleLeaveTable leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} />}
+      {activeTab === "approvals" && <div className="space-y-3"><div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div><SimpleLeaveTable leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} /></div>}
 
       {activeTab === "apply" && (
         <div className="space-y-4">
           <Card className="flex items-center justify-between p-5">
-            <div><h3 className="text-base font-semibold">Apply for leave</h3><p className="text-sm text-muted-foreground">Submit a leave request for yourself. It goes to your manager for approval.</p></div>
+            <div><h3 className="text-base font-semibold">Apply for leave</h3><p className="text-sm text-muted-foreground">{canApprove ? "Submit a leave request for an employee." : "Submit a leave request for yourself. It goes to your manager for approval."}</p></div>
             <Button onClick={() => setApplyDialog(true)}><Plus className="h-4 w-4" />Apply</Button>
           </Card>
-          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">My Requests</h4><SimpleLeaveTable leaves={mine} loading={mineLoading} emptyText="You haven't applied for any leave yet." onWithdraw={setWithdrawTarget} withdrawing={withdrawing} /></div>
+          {canApprove && <div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div>}
+          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">{canApprove ? "Leave Requests" : "My Requests"}</h4><SimpleLeaveTable leaves={canApprove ? reqData?.data ?? [] : mine} loading={canApprove ? reqLoading || isFetching : mineLoading} emptyText={canApprove ? "No leave requests match the selected employees." : "You haven't applied for any leave yet."} onWithdraw={!canApprove ? setWithdrawTarget : undefined} withdrawing={withdrawing} /></div>
         </div>
       )}
 
@@ -310,7 +314,7 @@ export default function LeavePage() {
       )}
 
       <LeaveDialog open={leaveDialog} onOpenChange={setLeaveDialog} leave={selected} />
-      <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={user?._id} />
+      <LeaveDialog open={applyDialog} onOpenChange={setApplyDialog} lockToUserId={canApprove ? undefined : user?._id} />
       <HolidayDialog
         open={holidayDialog}
         onOpenChange={(v) => { setHolidayDialog(v); if (!v) setEditingHoliday(null); }}
