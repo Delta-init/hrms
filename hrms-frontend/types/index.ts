@@ -39,6 +39,7 @@ export const HRMS_MODULES = [
   "procurement",
   "meetings",
   "officeKeeping",
+  "deductionRemovals",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -81,6 +82,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   procurement: "Procurement",
   meetings: "Meetings",
   officeKeeping: "Office Keeping",
+  deductionRemovals: "Deduction Removals",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
   confirmations: "Confirmations",
@@ -1122,6 +1124,41 @@ export interface OneTimeAdjustment {
   month: string;
   notes?: string;
   applied: boolean;
+  /** Forgiven through an approved removal request rather than collected. */
+  waived?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Deduction removal request ───────────────────────────────────────────────
+export type DeductionSourceType = "loan" | "adjustment";
+export type DeductionRemovalStatus = "pending" | "approved" | "rejected";
+export const DEDUCTION_REMOVAL_STATUS_LABELS: Record<DeductionRemovalStatus, string> = {
+  pending: "Pending", approved: "Approved", rejected: "Rejected",
+};
+
+/** Something an employee could ask to have removed from an upcoming month's pay. */
+export interface EligibleDeduction {
+  sourceType: DeductionSourceType;
+  sourceId: string;
+  label: string;
+  amount: number;
+  alreadyRequested: boolean;
+}
+
+export interface DeductionRemovalRequest {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string } | string | null;
+  month: string;
+  sourceType: DeductionSourceType;
+  sourceId: string;
+  sourceLabel: string;
+  amount: number;
+  reason: string;
+  status: DeductionRemovalStatus;
+  reviewedBy?: { _id: string; name: string; email?: string } | string | null;
+  reviewNote?: string;
+  reviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2372,6 +2409,10 @@ export interface JobRequisition {
   currency?: string;
   justification?: string;
   targetStartDate?: string | null;
+  /** Typed in directly. Independent of the attachment — a role can carry both. */
+  jdText?: string;
+  jdFileName?: string;
+  jdUrl?: string;
   raisedBy?: { _id: string; name: string; email?: string } | string | null;
   status: RequisitionStatus;
   workflowStep?: number | null;
@@ -2480,7 +2521,15 @@ export const RECOMMENDATION_LABELS: Record<Recommendation, string> = {
 
 export interface Interview {
   _id: string;
-  application: string | Application;
+  /** On the list/detail response this carries the candidate and the role's
+   *  title, not a full Application — a narrower shape than the type name. */
+  application: string | Application | {
+    _id: string;
+    candidate?: { _id: string; name: string; email?: string; phone?: string } | string;
+    requisition?: { _id: string; title: string } | string;
+    stage?: ApplicationStage;
+    status?: ApplicationStatus;
+  };
   round: number;
   title?: string;
   mode: InterviewMode;

@@ -40,6 +40,10 @@ export const HRMS_MODULES = [
   "procurement",
   "meetings",
   "officeKeeping",
+  // Approving whether a loan instalment or a one-time deduction is skipped
+  // for a month. Its own module rather than riding on `payroll`: deciding pay
+  // never runs is a narrower authority than the module that runs it.
+  "deductionRemovals",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -1480,6 +1484,45 @@ export interface IOneTimeAdjustment extends Document {
   source?: "hr" | "finance";
   /** The accounts-side id, so a retried request updates rather than duplicates. */
   externalId?: string | null;
+  /**
+   * Forgiven through an approved removal request, rather than collected.
+   * Distinct from `applied` — that tracks money actually taken, and staying
+   * false here keeps that history honest about what was never paid.
+   */
+  waived?: boolean;
+  waivedAt?: Date | null;
+  waivedRequest?: Types.ObjectId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Deduction removal request ───────────────────────────────────────────────
+export type DeductionSourceType = "loan" | "adjustment";
+export type DeductionRemovalStatus = "pending" | "approved" | "rejected";
+/**
+ * An employee asking that a specific deduction not be taken for a given month.
+ *
+ * The source is snapshotted (label, amount) at the moment of asking, so the
+ * request still reads sensibly if the loan or adjustment it points at is
+ * edited — or, for a loan, simply grows a bigger balance — afterwards.
+ */
+export interface IDeductionRemovalRequest extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user: Types.ObjectId | IUser;
+  /** The cycle this applies to — a loan has no month of its own; an
+   *  adjustment's own month is copied here so both sources look the same. */
+  month: string;
+  sourceType: DeductionSourceType;
+  sourceId: Types.ObjectId;
+  sourceLabel: string;
+  amount: number;
+  reason: string;
+  status: DeductionRemovalStatus;
+  reviewedBy?: Types.ObjectId | IUser | null;
+  reviewNote?: string;
+  reviewedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1773,6 +1816,10 @@ export interface IJobRequisition extends Document {
   budgetApprovalRequired: boolean;
   justification?: string;
   targetStartDate?: Date | null;
+  /** Typed in directly. Independent of `jdKey` — a role can carry both. */
+  jdText?: string;
+  jdKey?: string;
+  jdFileName?: string;
   raisedBy: Types.ObjectId | IUser;
   status: RequisitionStatus;
   workflowStep?: number | null;
