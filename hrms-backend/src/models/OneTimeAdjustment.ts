@@ -41,6 +41,15 @@ const oneTimeAdjustmentSchema = new Schema<IOneTimeAdjustment>(
      * thing making that safe.
      */
     externalId: { type: String, trim: true, default: null },
+    /**
+     * Forgiven through an approved removal request, rather than collected.
+     * Distinct from `applied`, which tracks money actually taken — a waived
+     * deduction is excluded from every future payroll run without ever
+     * pretending it was paid.
+     */
+    waived: { type: Boolean, default: false },
+    waivedAt: { type: Date, default: null },
+    waivedRequest: { type: Schema.Types.ObjectId, ref: "DeductionRemovalRequest", default: null },
   },
   { timestamps: true, versionKey: false }
 );

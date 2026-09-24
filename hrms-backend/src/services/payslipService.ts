@@ -289,7 +289,7 @@ export class PayslipService {
 
     // Auto-derived lines are recomputed here rather than trusted from the form,
     // so a stale prefill can never double-count.
-    const { lines: loanLines, repayments } = await computeLoanDeductions(input.employee, input.month);
+    const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(input.employee, input.month);
     const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
     // One-time payments (earnings) and deductions still owed for this month.
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
@@ -311,7 +311,11 @@ export class PayslipService {
     const manual = [...userDeductions.filter((d) => !isAttendanceLine(d.label)), ...attLines];
 
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
-    const deductions = [...manual, ...alloc.lines];
+    // Zero-amount, informational — nothing collected against these; an
+    // approved removal request forgave a one-time item outright, or a loan's
+    // instalment is skipped for the month it names. Kept off `allocateRecoveries`
+    // entirely so they never displace a real, still-owed line.
+    const deductions = [...manual, ...alloc.lines, ...loanWaived, ...oneTime.waived];
 
     const { start } = monthBounds(input.month);
     const doc = new Payslip({
@@ -409,12 +413,12 @@ export class PayslipService {
       const att = await this.summary(employeeId, month);
       const manual = [...typed, ...attendanceDeductions(att, att.salary, att.proratedGross)];
 
-      const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
+      const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(employeeId, month);
       const oneTime = await computeOneTimeAdjustments(employeeId, month);
       const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
 
       record.earnings = earnings as never;
-      record.deductions = [...manual, ...alloc.lines] as never;
+      record.deductions = [...manual, ...alloc.lines, ...loanWaived, ...oneTime.waived] as never;
       record.workingDays = att.workingDays;
       record.paidDays = att.paidDays;
       record.lopDays = att.lopDays;
@@ -476,7 +480,7 @@ export class PayslipService {
     const oneTime = await computeOneTimeAdjustments(employeeId, month);
     const reimb = await computeReimbursements(employeeId, month);
     const ot = await computeOvertime(employeeId, month);
-    const { lines: loanLines, repayments } = await computeLoanDeductions(employeeId, month);
+    const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(employeeId, month);
 
     const structureEarnings = att.earnings ?? [{ label: "Basic", amount: att.salary || 0 }];
     const derived = [...structureEarnings, ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
@@ -490,7 +494,7 @@ export class PayslipService {
     const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
 
     record.earnings = earnings as never;
-    record.deductions = [...manual, ...alloc.lines] as never;
+    record.deductions = [...manual, ...alloc.lines, ...loanWaived, ...oneTime.waived] as never;
     record.workingDays = att.workingDays;
     record.paidDays = att.paidDays;
     record.lopDays = att.lopDays;
@@ -590,8 +594,12 @@ export class PayslipService {
     const workDays = schedule?.workDays;
     const { start, end } = monthBoundsTz(month, tz);
 
-    // Active-loan instalments that will be deducted from this payslip.
-    const { lines: loanDeductions } = await computeLoanDeductions(employeeId, month);
+    // Active-loan instalments that will be deducted from this payslip, plus
+    // any zero-amount "waived" line for one an approved request skips —
+    // merged in here so every reader downstream (this preview, the payroll
+    // list, the salary register) shows it without asking each one to know.
+    const { lines: loanLinesRaw, waived: loanWaivedRaw } = await computeLoanDeductions(employeeId, month);
+    const loanDeductions = [...loanLinesRaw, ...loanWaivedRaw];
     // Salary breakup in force: a structure assignment if one exists, else a
     // single Basic = the salary from any effective-dated increment (resolved
     // internally by resolveSalaryBreakup, which also lets a later increment
@@ -644,7 +652,7 @@ export class PayslipService {
       // Read-only: the payslip re-derives all of these, so sending them back
       // with the form would count them twice.
       autoEarnings: [...oneTime.earnings, ...reimb.earnings, ...ot.earnings],
-      autoDeductions: [...loanDeductions, ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount }))],
+      autoDeductions: [...loanDeductions, ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })), ...oneTime.waived],
       workingDays: 0,
       paidDays: 0,
       /** Days of salary this month is worth for them — 30, or their share of it. */
@@ -814,6 +822,7 @@ export class PayslipService {
       ...attendanceDeductions(base, base.salary, base.proratedGross),
       ...loanDeductions,
       ...oneTime.deductions.map((d) => ({ label: d.label, amount: d.amount })),
+      ...oneTime.waived,
     ];
     return base;
   }
@@ -973,7 +982,7 @@ export class PayslipService {
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
       deductions.push(...attendanceDeductions(s, s.salary || 0, s.proratedGross));
       for (const l of s.loanDeductions ?? []) deductions.push(l);
-      deductions.push(...oneTime.deductions);
+      deductions.push(...oneTime.deductions, ...oneTime.waived);
 
       const gross = round(earnings.reduce((a, e) => a + e.amount, 0));
       const totalDeductions = round(deductions.reduce((a, d) => a + d.amount, 0));

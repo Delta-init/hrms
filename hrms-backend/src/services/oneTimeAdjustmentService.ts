@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
 import { Employee } from "../models/Employee.js";
+import { DeductionRemovalRequest } from "../models/DeductionRemovalRequest.js";
 import type { CreateOneTimeInput, UpdateOneTimeInput } from "../validations/oneTimeAdjustmentValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -116,18 +117,20 @@ export interface AdjustmentRecovery {
 export async function computeOneTimeAdjustments(
   employeeId: string,
   month: string
-): Promise<{ earnings: Line[]; deductions: Array<Line & { adjustmentId: string }>; ids: string[] }> {
+): Promise<{ earnings: Line[]; deductions: Array<Line & { adjustmentId: string }>; ids: string[]; waived: Line[] }> {
   // A payment belongs to the month it was entered for. A bonus for August is
   // an August bonus; if August's payslip never ran, it stays waiting for
   // August rather than quietly appearing in September's pay.
   //
   // A deduction is money owed, so it does carry: what one month's pay could
   // not absorb is collected by the next. That is why the two are matched
-  // differently rather than by one rule.
+  // differently rather than by one rule. `waived` is excluded outright — an
+  // approved removal forgives it, not merely defers it.
   const items = await OneTimeAdjustment.find(
     scoped({
       employee: employeeId,
       applied: false,
+      waived: { $ne: true },
       $or: [
         { kind: "payment", month },
         { kind: "deduction", month: { $lte: month } },
@@ -148,7 +151,17 @@ export async function computeOneTimeAdjustments(
       deductions.push({ label: a.label, amount: remaining, adjustmentId: String(a._id) });
     }
   }
-  return { earnings, deductions, ids };
+
+  // Requests approved *for this month* — the item itself is already excluded
+  // from `items` above by its own `waived` flag, so the zero-amount line the
+  // payslip shows is built from the request's own snapshot rather than
+  // re-reading a record that, by design, this query can no longer see.
+  const removals = await DeductionRemovalRequest.find(
+    scoped({ employee: employeeId, month, sourceType: "adjustment", status: "approved" })
+  ).select("sourceLabel").lean();
+  const waived: Line[] = removals.map((r) => ({ label: `${r.sourceLabel} — waived (approved request)`, amount: 0 }));
+
+  return { earnings, deductions, ids, waived };
 }
 
 /** Mark one-time payments as fully applied to a payslip so they aren't reused. */

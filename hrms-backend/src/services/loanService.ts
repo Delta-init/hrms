@@ -1,5 +1,6 @@
 import { Loan } from "../models/Loan.js";
 import { Employee } from "../models/Employee.js";
+import { DeductionRemovalRequest } from "../models/DeductionRemovalRequest.js";
 import type { CreateLoanInput, UpdateLoanInput } from "../validations/loanValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -127,10 +128,21 @@ function instalmentsDueBy(disbursedDate: Date | undefined | null, month: string)
 export async function computeLoanDeductions(
   employeeId: string,
   month: string
-): Promise<{ lines: LoanDeductionLine[]; repayments: Repayment[] }> {
+): Promise<{ lines: LoanDeductionLine[]; repayments: Repayment[]; waived: LoanDeductionLine[] }> {
   const loans = await Loan.find(scoped({ employee: employeeId, status: "active" }));
   const lines: LoanDeductionLine[] = [];
   const repayments: Repayment[] = [];
+  const waived: LoanDeductionLine[] = [];
+
+  // Approved-for-this-month removals, if any — a handful of rows at most, so
+  // one query up front beats one per loan.
+  const removals = loans.length
+    ? await DeductionRemovalRequest.find(
+        scoped({ employee: employeeId, month, sourceType: "loan", sourceId: { $in: loans.map((l) => l._id) }, status: "approved" })
+      ).select("sourceId").lean()
+    : [];
+  const waivedLoanIds = new Set(removals.map((r) => String(r.sourceId)));
+
   for (const loan of loans) {
     const outstanding = round2(loan.amount - loan.amountRepaid);
     if (outstanding <= 0) continue;
@@ -147,13 +159,22 @@ export async function computeLoanDeductions(
     const want = Math.min(round2(dueToDate - loan.amountRepaid), outstanding);
     if (want <= 0) continue;
 
-    lines.push({
-      label: `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`,
-      amount: want,
-    });
+    const label = `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`;
+
+    // Waived: nothing is collected, and no repayment is recorded — the shortfall
+    // is caught up automatically the next month there is room, exactly as a
+    // month whose pay could not cover the full instalment already is. A zero-
+    // amount line still appears, so the payslip explains the absence rather
+    // than leaving a collected instalment quietly missing.
+    if (waivedLoanIds.has(String(loan._id))) {
+      waived.push({ label: `${label} — waived (approved request)`, amount: 0 });
+      continue;
+    }
+
+    lines.push({ label, amount: want });
     repayments.push({ loanId: String(loan._id), amount: want });
   }
-  return { lines, repayments };
+  return { lines, repayments, waived };
 }
 
 /** Apply the recorded repayments to the loans; close any that are fully repaid. */

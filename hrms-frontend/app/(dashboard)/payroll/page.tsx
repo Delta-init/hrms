@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark, Timer } from "lucide-react";
+import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark, Timer, ShieldOff } from "lucide-react";
 import { usePayslips, useMyPayslips, useDeletePayslip } from "@/hooks/usePayslips";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -13,6 +13,7 @@ import { OneTimeAdjustments } from "@/components/payroll/OneTimeAdjustments";
 import { SalaryStructures } from "@/components/payroll/SalaryStructures";
 import { SalaryRegister } from "@/components/payroll/SalaryRegister";
 import { Overtime } from "@/components/payroll/Overtime";
+import { DeductionRemovals } from "@/components/payroll/DeductionRemovals";
 import { printPayslip } from "@/components/payroll/printPayslip";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,9 @@ export default function PayrollPage() {
     canView && { key: "register", label: "Register", icon: Landmark },
     canView && { key: "payslips", label: "Payslips", icon: ListChecks },
     { key: "mine", label: "My Payslips", icon: Send },
+    // Self-service — raising a request needs no permission, the same as
+    // applying for leave does not. `approve` inside it gates the panel half.
+    { key: "deductions", label: "Deductions", icon: ShieldOff },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? "mine");
 
@@ -145,6 +149,8 @@ export default function PayrollPage() {
       {activeTab === "structures" && canView && <SalaryStructures />}
 
       {activeTab === "register" && canView && <SalaryRegister />}
+
+      {activeTab === "deductions" && <DeductionRemovals />}
 
       {activeTab === "payslips" && (
         <DataTable
