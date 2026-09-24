@@ -182,3 +182,45 @@
   .hrms-donut { stroke-dashoffset: var(--dash-offset); }
   .hrms-line { stroke-dashoffset: 0; }
 }
+
+/* ── Printing the org chart ───────────────────────────────────────────────────
+   Print rather than a canvas library: the connectors between cards are
+   ::before/::after borders, which html2canvas renders unreliably, while the
+   browser's own Save as PDF draws them exactly as the screen does.
+
+   These live here rather than in the page's styled-jsx because `@page` is an
+   at-rule that styled-jsx does not reliably pass through untouched. */
+@media print {
+  /* A reporting tree is wider than it is tall. */
+  @page { size: landscape; margin: 12mm; }
+
+  /* Everything is hidden and the chart alone brought back, rather than hiding
+     the shell piece by piece — the sidebar, header and any open dialog then
+     stay out of it whatever the layout grows into later. */
+  body * { visibility: hidden; }
+  .org-print, .org-print * { visibility: visible; }
+  .org-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    overflow: visible !important;
+  }
+  .org-print-title { display: block !important; }
+
+  /* On screen the chart is zoomed and scrolled; on paper it wants to be whole
+     and upright, so the transform is dropped entirely. */
+  .org-print-scale {
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  /* Keep a card and the connector above it on the same sheet where possible. */
+  .org-tree li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

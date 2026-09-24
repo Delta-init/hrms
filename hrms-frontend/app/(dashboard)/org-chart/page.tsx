@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Network, ZoomIn, ZoomOut } from "lucide-react";
+import { FileDown, Loader2, Network, ZoomIn, ZoomOut } from "lucide-react";
 import { useOrgChart } from "@/hooks/useDashboard";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -34,29 +34,39 @@ export default function OrgChartPage() {
           : "Reporting lines across the team, built from each employee's manager."}
         icon={Network}
         action={roots.length > 0 && (
-          <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-            <Button
-              variant="ghost" size="icon" className="h-8 w-8"
-              onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
-              disabled={zoom <= MIN_ZOOM}
-              aria-label="Zoom out"
-            >
-              <ZoomOut className="h-4 w-4" />
+          <div className="flex items-center gap-2">
+            {/* Print rather than a canvas library: the connectors between cards
+                are ::before/::after borders, which html2canvas renders
+                unreliably — and the browser's own Save as PDF draws them
+                exactly as the screen does, at whatever paper size is chosen. */}
+            <Button variant="outline" size="sm" className="h-10 gap-1.5" onClick={() => window.print()}>
+              <FileDown className="h-4 w-4" />Export PDF
             </Button>
-            <button
-              type="button" onClick={() => setZoom(1)} title="Reset zoom"
-              className="min-w-[3rem] px-1 text-center text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
-            <Button
-              variant="ghost" size="icon" className="h-8 w-8"
-              onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
-              disabled={zoom >= MAX_ZOOM}
-              aria-label="Zoom in"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </Button>
+
+            <div className="flex items-center gap-1 rounded-lg border border-border p-1">
+              <Button
+                variant="ghost" size="icon" className="h-8 w-8"
+                onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+                disabled={zoom <= MIN_ZOOM}
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <button
+                type="button" onClick={() => setZoom(1)} title="Reset zoom"
+                className="min-w-[3rem] px-1 text-center text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <Button
+                variant="ghost" size="icon" className="h-8 w-8"
+                onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+                disabled={zoom >= MAX_ZOOM}
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         )}
       />
@@ -68,8 +78,11 @@ export default function OrgChartPage() {
       ) : roots.length === 0 ? (
         <Card className="p-16 text-center text-muted-foreground"><Network className="mx-auto mb-2 h-7 w-7" />No employees to chart yet.</Card>
       ) : (
-        <Card className="overflow-x-auto p-6">
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }} className="w-fit min-w-full transition-transform duration-150">
+        <Card className="org-print overflow-x-auto p-6">
+          <p className="org-print-title mb-4 hidden text-center text-lg font-semibold">
+            Organization Chart
+          </p>
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }} className="org-print-scale w-fit min-w-full transition-transform duration-150">
             <OrgChartBoard roots={roots} canEdit={canEdit} canCreate={canCreate} canOpenProfile={canOpenProfile} />
           </div>
         </Card>
@@ -95,6 +108,7 @@ export default function OrgChartPage() {
         }
         .org-tree > ul { padding-top: 0; }
         .org-tree > ul > li:only-child { padding-top: 0; }
+
       `}</style>
     </div>
   );
