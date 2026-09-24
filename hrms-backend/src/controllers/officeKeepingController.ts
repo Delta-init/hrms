@@ -21,13 +21,15 @@ export const createRequest = async (req: AuthenticatedRequest, res: Response, ne
 
 export const getMyRequests = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Requests retrieved", await service.listMine(req.user!.userId, req.query as never));
+    const { records, pagination } = await service.listMine(req.user!.userId, req.query as never);
+    sendSuccess(res, "Requests retrieved", records, 200, pagination);
   } catch (error) { next(error); }
 };
 
 export const getRequests = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Requests retrieved", await service.list(req.query as never));
+    const { records, pagination } = await service.list(req.query as never);
+    sendSuccess(res, "Requests retrieved", records, 200, pagination);
   } catch (error) { next(error); }
 };
 

@@ -10,7 +10,8 @@ const service = new ProcurementService();
 
 export const getProcurements = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Procurement retrieved", await service.list(req.query as never));
+    const { records, pagination } = await service.list(req.query as never);
+    sendSuccess(res, "Procurement retrieved", records, 200, pagination);
   } catch (error) {
     next(error);
   }
