@@ -1,7 +1,7 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Loader2 } from "lucide-react";
+import { FileText, Loader2, Upload, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useCreateCandidate } from "@/hooks/useCandidates";
+import { useCreateCandidate, useUploadResume } from "@/hooks/useCandidates";
 
 interface Props {
   open: boolean;
@@ -35,9 +35,15 @@ const num = (v: string) => (v === "" ? undefined : Number(v));
 
 export function CandidateDialog({ open, onOpenChange, onSaved }: Props) {
   const { mutate: create, isPending } = useCreateCandidate();
+  const { mutateAsync: uploadCv, isPending: uploading } = useUploadResume();
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({ defaultValues: EMPTY });
 
-  useEffect(() => { if (open) reset(EMPTY); }, [open, reset]);
+  // The CV rides along with the form but is sent separately: the upload needs
+  // an id to attach to, which does not exist until the candidate is saved.
+  const [cv, setCv] = useState<File | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (open) { reset(EMPTY); setCv(null); } }, [open, reset]);
 
   const onSubmit = (d: FormValues) => {
     create(
@@ -48,7 +54,15 @@ export function CandidateDialog({ open, onOpenChange, onSaved }: Props) {
         expectedSalary: num(d.expectedSalary),
         links: [],
       } as never,
-      { onSuccess: ({ record }) => { onSaved?.(record._id); onOpenChange(false); } }
+      {
+        onSuccess: async ({ record }) => {
+          // A CV that will not upload must not cost us the candidate — they are
+          // saved either way, and the hook has already said what went wrong.
+          if (cv) await uploadCv({ id: record._id, file: cv }).catch(() => {});
+          onSaved?.(record._id);
+          onOpenChange(false);
+        },
+      }
     );
   };
 
@@ -126,10 +140,44 @@ export function CandidateDialog({ open, onOpenChange, onSaved }: Props) {
             <Textarea id="notes" rows={3} {...register("notes")} />
           </div>
 
+          <div className="space-y-1.5">
+            <Label>CV</Label>
+            <input
+              ref={fileInput}
+              type="file"
+              className="hidden"
+              accept=".pdf,image/*"
+              onChange={(e) => { setCv(e.target.files?.[0] ?? null); e.target.value = ""; }}
+            />
+            {cv ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{cv.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{Math.ceil(cv.size / 1024)} KB</span>
+                <button
+                  type="button"
+                  onClick={() => setCv(null)}
+                  aria-label="Remove the CV"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Button type="button" variant="outline" className="w-full justify-start font-normal text-muted-foreground"
+                onClick={() => fileInput.current?.click()}>
+                <Upload className="h-4 w-4" />Attach a CV
+              </Button>
+            )}
+            {/* The same 10 MB ceiling every document goes through. */}
+            <p className="text-[11px] text-muted-foreground">PDF or an image, up to 10 MB. Optional — it can be added later.</p>
+          </div>
+
           <ResponsiveDialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save candidate
+            <Button type="submit" disabled={isPending || uploading}>
+              {(isPending || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {uploading ? "Attaching CV…" : "Save candidate"}
             </Button>
           </ResponsiveDialogFooter>
         </form>
