@@ -188,10 +188,17 @@ export class InterviewService {
     return Interview.findById(doc._id).populate(POP);
   }
 
-  async list(query: PaginationQuery & { application?: string; from?: string; to?: string; panellist?: string }) {
+  async list(query: PaginationQuery & { application?: string; requisition?: string; from?: string; to?: string; panellist?: string }) {
     const { page, limit, skip } = parsePagination(query, 50, 200);
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.application) filter.application = query.application;
+    // An interview points at an application, not a requisition directly — the
+    // Meetings tab asks for a role, so it is resolved through the applications
+    // raised against it first.
+    if (query.requisition) {
+      const applications = await Application.find(scoped({ requisition: query.requisition })).select("_id").lean();
+      filter.application = { $in: applications.map((a) => a._id) };
+    }
     if (query.status) filter.status = query.status;
     if (query.panellist) filter.panel = query.panellist;
     if (query.from || query.to) {

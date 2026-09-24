@@ -56,3 +56,19 @@ export const useDeleteRequisition = () => {
     onError: (e) => toast.error(errMsg(e, "Could not delete the requisition")),
   });
 };
+
+/** Attach a JD to a requisition already on file. */
+export const useUploadJd = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return (await api.post<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}/jd`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })).data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("JD attached"); },
+    onError: (e) => toast.error(errMsg(e, "Could not upload the JD")),
+  });
+};

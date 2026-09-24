@@ -34,6 +34,13 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
     justification: { type: String, trim: true, maxlength: 2000 },
     targetStartDate: { type: Date, default: null },
 
+    // The job description, provided either way — typed straight in, or
+    // attached as a file. Neither excludes the other: a role can carry a
+    // written summary and a formatted brief at once.
+    jdText: { type: String, trim: true, maxlength: 20000 },
+    jdKey: { type: String, trim: true },
+    jdFileName: { type: String, trim: true, maxlength: 200 },
+
     raisedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: {
       type: String,

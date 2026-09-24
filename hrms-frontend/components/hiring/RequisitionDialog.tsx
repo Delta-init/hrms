@@ -1,7 +1,7 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, Upload, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
-import { useCreateRequisition } from "@/hooks/useHiring";
+import { useCreateRequisition, useUploadJd } from "@/hooks/useHiring";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useEmployee } from "@/hooks/useEmployees";
 import {
@@ -39,12 +39,13 @@ interface FormValues {
   currency: string;
   justification: string;
   targetStartDate: string;
+  jdText: string;
 }
 
 const EMPTY: FormValues = {
   type: "replacement", replacing: "", title: "", department: "", designation: "",
   location: "", employmentType: "full_time", headcount: 1,
-  salaryMin: "", salaryMax: "", currency: "AED", justification: "", targetStartDate: "",
+  salaryMin: "", salaryMax: "", currency: "AED", justification: "", targetStartDate: "", jdText: "",
 };
 
 /**
@@ -57,12 +58,19 @@ const EMPTY: FormValues = {
  */
 export function RequisitionDialog({ open, onOpenChange }: Props) {
   const { mutate: create, isPending } = useCreateRequisition();
+  const { mutateAsync: uploadJd, isPending: uploading } = useUploadJd();
   const { data: departmentData } = useDepartments();
   const departments = departmentData?.data ?? [];
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<FormValues>({
     defaultValues: EMPTY,
   });
+
+  // The JD file rides along with the form but is sent separately: the upload
+  // needs an id to attach to, which does not exist until the requisition is
+  // saved. A typed JD has no such problem and travels with the rest of the form.
+  const [jdFile, setJdFile] = useState<File | null>(null);
+  const jdInput = useRef<HTMLInputElement>(null);
 
   const type = watch("type");
   const replacing = watch("replacing");
@@ -79,7 +87,7 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
   const needsFinance =
     type === "new_headcount" || !proposed || !outgoingSalary || proposed > outgoingSalary;
 
-  useEffect(() => { if (open) reset(EMPTY); }, [open, reset]);
+  useEffect(() => { if (open) { reset(EMPTY); setJdFile(null); } }, [open, reset]);
 
   const onSubmit = (data: FormValues) => {
     create(
@@ -92,8 +100,16 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
         salaryMax: data.salaryMax ? Number(data.salaryMax) : undefined,
         headcount: Number(data.headcount) || 1,
         targetStartDate: data.targetStartDate || null,
+        jdText: data.jdText || undefined,
       } as never,
-      { onSuccess: () => onOpenChange(false) }
+      {
+        onSuccess: async (record) => {
+          // A JD that will not upload must not cost us the requisition — it is
+          // saved either way, and the hook has already said what went wrong.
+          if (jdFile) await uploadJd({ id: record._id, file: jdFile }).catch(() => {});
+          onOpenChange(false);
+        },
+      }
     );
   };
 
@@ -217,6 +233,42 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
             <Textarea id="justification" rows={3} placeholder="Why is this role needed?" {...register("justification")} />
           </div>
 
+          {/* Either way, or both — a written brief and an attached file are not
+              alternatives to each other. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="jdText">Job description</Label>
+            <Textarea id="jdText" rows={3} placeholder="Paste or type the description…" {...register("jdText")} />
+
+            <input
+              ref={jdInput}
+              type="file"
+              className="hidden"
+              accept=".pdf,image/*"
+              onChange={(e) => { setJdFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
+            />
+            {jdFile ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{jdFile.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{Math.ceil(jdFile.size / 1024)} KB</span>
+                <button
+                  type="button"
+                  onClick={() => setJdFile(null)}
+                  aria-label="Remove the JD file"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <Button type="button" variant="outline" size="sm" className="font-normal text-muted-foreground"
+                onClick={() => jdInput.current?.click()}>
+                <Upload className="h-3.5 w-3.5" />Attach a JD file
+              </Button>
+            )}
+            <p className="text-[11px] text-muted-foreground">PDF or an image, up to 10 MB. Optional — either or both.</p>
+          </div>
+
           {/* Said before submitting, not discovered afterwards. */}
           <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${needsFinance ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -238,8 +290,9 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
 
           <ResponsiveDialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Raise requisition
+            <Button type="submit" disabled={isPending || uploading}>
+              {(isPending || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {uploading ? "Attaching JD…" : "Raise requisition"}
             </Button>
           </ResponsiveDialogFooter>
         </form>

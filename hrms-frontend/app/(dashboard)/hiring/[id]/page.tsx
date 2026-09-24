@@ -4,16 +4,20 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft, Plus, FileText, Loader2, XCircle, ChevronRight, Users, AlertTriangle,
-  CalendarPlus, CalendarCheck, Video, MapPin, UserPlus,
+  CalendarPlus, CalendarCheck, Video, MapPin, UserPlus, Phone, Link2, ExternalLink,
+  Pencil, Check, X, KanbanSquare,
 } from "lucide-react";
 import { useRequisitions } from "@/hooks/useHiring";
 import { usePipeline, useCandidates, useApplyCandidate, useMoveApplication } from "@/hooks/useCandidates";
+import { useInterviews, useUpdateInterview } from "@/hooks/useInterviews";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { Tabs } from "@/components/shared/Tabs";
 import { CandidateDialog } from "@/components/hiring/CandidateDialog";
 import { ScheduleInterviewDialog } from "@/components/hiring/ScheduleInterviewDialog";
 import { HireDialog } from "@/components/hiring/HireDialog";
 import { PipelineBoard } from "@/components/hiring/PipelineBoard";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,12 +30,22 @@ import {
 import { getInitials, cn } from "@/lib/utils";
 import {
   APPLICATION_STAGES, STAGE_LABELS, REQUISITION_STATUS_LABELS, REQUISITION_TYPE_LABELS,
-  INTERVIEW_STATUS_LABELS,
-  type Application, type Candidate,
+  INTERVIEW_STATUS_LABELS, INTERVIEW_MODE_LABELS,
+  type Application, type Candidate, type Interview, type InterviewMode, type InterviewStatus,
 } from "@/types";
 
 const nameOf = (v: unknown) => (v && typeof v === "object" ? (v as { name?: string }).name ?? "—" : "—");
 const asCandidate = (v: Application["candidate"]): Candidate | null => (v && typeof v === "object" ? v : null);
+
+const MODE_ICON: Record<InterviewMode, React.ElementType> = { video: Video, in_person: MapPin, phone: Phone };
+const STATUS_TONE: Record<InterviewStatus, string> = {
+  scheduled: "border-sky-500/20 bg-sky-500/10 text-sky-600",
+  completed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
+  no_show: "border-amber-500/20 bg-amber-500/10 text-amber-600",
+  cancelled: "border-border bg-muted text-muted-foreground",
+};
+const fmtWhen = (iso: string) =>
+  new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 /**
  * One requisition and the people in its pipeline.
@@ -56,6 +70,7 @@ export default function RequisitionDetailPage() {
   const { data: pipeline, isLoading } = usePipeline(requisitionId);
   const { mutate: move, isPending: moving } = useMoveApplication();
 
+  const [tab, setTab] = useState<"pipeline" | "meetings">("pipeline");
   const [addOpen, setAddOpen] = useState(false);
   const [scheduling, setScheduling] = useState<Application | null>(null);
   const [hiring, setHiring] = useState<Application | null>(null);
@@ -130,13 +145,34 @@ export default function RequisitionDetailPage() {
               </div>
             </div>
           )}
+          {(requisition.jdUrl || requisition.jdText) && (
+            <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Job description</p>
+              {requisition.jdUrl && (
+                <a href={requisition.jdUrl} target="_blank" rel="noopener noreferrer"
+                  className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-primary hover:bg-muted">
+                  <FileText className="h-3.5 w-3.5" />{requisition.jdFileName || "Attached JD"}
+                </a>
+              )}
+              {requisition.jdText && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{requisition.jdText}</p>}
+            </div>
+          )}
         </div>
       )}
 
-      {isLoading ? (
-        <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <>
+      <Tabs
+        tabs={[
+          { key: "pipeline", label: "Pipeline", icon: KanbanSquare },
+          { key: "meetings", label: "Meetings", icon: CalendarCheck },
+        ]}
+        value={tab}
+        onChange={(k) => setTab(k as "pipeline" | "meetings")}
+      />
+
+      {tab === "pipeline" ? (
+        isLoading ? (
+          <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : (
           <PipelineBoard
             columns={pipeline?.columns ?? []}
             closed={pipeline?.closed ?? []}
@@ -149,7 +185,9 @@ export default function RequisitionDetailPage() {
             onSchedule={setScheduling}
             onHire={setHiring}
           />
-        </>
+        )
+      ) : (
+        <MeetingsTab requisitionId={requisitionId} canEdit={canEdit} />
       )}
 
       <AddToPipeline open={addOpen} onOpenChange={setAddOpen} requisitionId={requisitionId} />
@@ -249,5 +287,108 @@ function AddToPipeline({ open, onOpenChange, requisitionId }: { open: boolean; o
 
       <CandidateDialog open={newOpen} onOpenChange={setNewOpen} onSaved={(candidateId) => { setNewOpen(false); add(candidateId); }} />
     </>
+  );
+}
+
+/**
+ * Every interview booked against this role, across all its candidates.
+ *
+ * A recording is a link, not a file: `recordingLink` is the pointer to
+ * wherever the meeting tool put it, and the ordinary interview-update
+ * endpoint already accepts it — nothing new to save it, only somewhere to
+ * see and edit it. Anyone holding `hiring.edit` can set one; Super Admin
+ * always can, since it bypasses permissions entirely.
+ */
+function MeetingsTab({ requisitionId, canEdit }: { requisitionId: string; canEdit: boolean }) {
+  const { data, isLoading } = useInterviews({ requisition: requisitionId, limit: "100" });
+  const interviews = data?.data ?? [];
+  const [editing, setEditing] = useState<string | null>(null);
+  const [link, setLink] = useState("");
+  const { mutate: update, isPending: saving } = useUpdateInterview();
+
+  const startEdit = (iv: Interview) => { setEditing(iv._id); setLink(iv.recordingLink ?? ""); };
+  const save = (id: string) =>
+    update({ id, recordingLink: link.trim() }, { onSuccess: () => setEditing(null) });
+
+  if (isLoading) return <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (!interviews.length) {
+    return <Card className="p-16 text-center text-muted-foreground">No interviews scheduled for this role yet.</Card>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {interviews.map((iv) => {
+        const app = typeof iv.application === "object" ? iv.application : null;
+        const candidate = app?.candidate && typeof app.candidate === "object" ? app.candidate : null;
+        const ModeIcon = MODE_ICON[iv.mode];
+        const isEditing = editing === iv._id;
+
+        return (
+          <Card key={iv._id} className="p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE[iv.status])}>
+                    {INTERVIEW_STATUS_LABELS[iv.status]}
+                  </span>
+                  <span className="text-sm font-medium">{candidate?.name ?? "—"}</span>
+                  <span className="text-xs text-muted-foreground">Round {iv.round}</span>
+                </div>
+                <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <ModeIcon className="h-3.5 w-3.5" />{INTERVIEW_MODE_LABELS[iv.mode]} · {fmtWhen(iv.scheduledAt)}
+                </p>
+                {iv.meetingLink && (
+                  <a href={iv.meetingLink} target="_blank" rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                    <ExternalLink className="h-3 w-3" />Join link
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* The recording — set once the meeting has happened, edited freely after. */}
+            <div className="mt-3 border-t border-border pt-3">
+              {isEditing ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    autoFocus
+                    className="h-8 max-w-sm"
+                    placeholder="https://…"
+                    value={link}
+                    onChange={(e) => setLink(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && save(iv._id)}
+                  />
+                  <Button size="sm" className="h-8" disabled={saving} onClick={() => save(iv._id)}>
+                    <Check className="h-3.5 w-3.5" />Save
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" disabled={saving} onClick={() => setEditing(null)}>
+                    <X className="h-3.5 w-3.5" />Cancel
+                  </Button>
+                </div>
+              ) : iv.recordingLink ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <a href={iv.recordingLink} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+                    <Link2 className="h-3.5 w-3.5" />Recording
+                  </a>
+                  {canEdit && (
+                    <button type="button" onClick={() => startEdit(iv)}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                      <Pencil className="h-3 w-3" />Change
+                    </button>
+                  )}
+                </div>
+              ) : canEdit ? (
+                <Button size="sm" variant="outline" onClick={() => startEdit(iv)}>
+                  <Link2 className="h-3.5 w-3.5" />Add recording
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">No recording yet.</span>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
   );
 }

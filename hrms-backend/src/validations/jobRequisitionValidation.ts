@@ -17,6 +17,7 @@ const base = z.object({
   justification: z.string().trim().max(2000).optional(),
   targetStartDate: z.coerce.date().nullish(),
   status: z.enum(["draft", "pending"]).optional(),
+  jdText: z.string().trim().max(20000).optional(),
 });
 
 export const createRequisitionSchema = base.superRefine((v, ctx) => {

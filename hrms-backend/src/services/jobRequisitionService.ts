@@ -6,6 +6,7 @@ import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination } from "../utils/query.js";
+import { publicUrl, deleteObject } from "./uploadService.js";
 import { beginWorkflowState, resolveReviewOutcome, type ReviewerRole } from "./approvalWorkflowService.js";
 import { notifyReviewed } from "./reviewNotifier.js";
 
@@ -61,6 +62,17 @@ interface RequisitionQuery extends PaginationQuery {
   raisedBy?: string;
 }
 
+/**
+ * A stored requisition with its JD as a link rather than a key.
+ *
+ * The link is signed and short-lived, so it is minted per response rather
+ * than stored — same reasoning as a candidate's CV.
+ */
+function shape<T extends { jdKey?: string | null }>(doc: T | null) {
+  if (!doc) return doc;
+  return { ...doc, jdUrl: doc.jdKey ? publicUrl(doc.jdKey) : "" };
+}
+
 export class JobRequisitionService {
   async create(input: CreateRequisitionInput, raisedBy: string) {
     // Frozen at creation. Salaries move, and a trail that cannot be re-derived
@@ -85,7 +97,8 @@ export class JobRequisitionService {
       status: input.status ?? "pending",
       ...workflow,
     });
-    return JobRequisition.findById(doc._id).populate(POP);
+    const created = await JobRequisition.findById(doc._id).populate(POP);
+    return shape(created!.toObject());
   }
 
   async list(query: RequisitionQuery) {
@@ -106,13 +119,13 @@ export class JobRequisitionService {
       JobRequisition.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       JobRequisition.countDocuments(filter),
     ]);
-    return { records, pagination: buildPagination(total, page, limit) };
+    return { records: records.map((r) => shape(r)), pagination: buildPagination(total, page, limit) };
   }
 
   async getById(id: string) {
     const record = await JobRequisition.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
-    return record;
+    return shape(record.toObject());
   }
 
   /**
@@ -140,7 +153,25 @@ export class JobRequisitionService {
 
     Object.assign(record, input);
     await record.save();
-    return JobRequisition.findById(id).populate(POP);
+    const updated = await JobRequisition.findById(id).populate(POP);
+    return shape(updated!.toObject());
+  }
+
+  /**
+   * Attach a JD file, or replace the one already there.
+   *
+   * A prior attachment is deleted from storage rather than left orphaned — the
+   * same rule a candidate's CV follows.
+   */
+  async setJd(id: string, key: string, fileName: string) {
+    const record = await JobRequisition.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    if (record.jdKey) await deleteObject(record.jdKey);
+    record.jdKey = key;
+    record.jdFileName = fileName;
+    await record.save();
+    const updated = await JobRequisition.findById(id).populate(POP);
+    return shape(updated!.toObject());
   }
 
   /** Approve or reject at the current step. */
@@ -185,12 +216,14 @@ export class JobRequisitionService {
       });
     }
 
-    return JobRequisition.findById(id).populate(POP);
+    const reviewed = await JobRequisition.findById(id).populate(POP);
+    return shape(reviewed!.toObject());
   }
 
   async remove(id: string) {
     const record = await JobRequisition.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    if (record.jdKey) await deleteObject(record.jdKey);
     return { message: "Requisition deleted successfully" };
   }
 

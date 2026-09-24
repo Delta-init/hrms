@@ -5,6 +5,9 @@ import {
   createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema,
 } from "../validations/jobRequisitionValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { putObject, attachmentKey } from "../services/uploadService.js";
+import { extFromMime } from "../middleware/upload.js";
+import { getOrgId } from "../utils/orgContext.js";
 
 const service = new JobRequisitionService();
 
@@ -49,6 +52,17 @@ export const reviewRequisition = async (req: AuthenticatedRequest, res: Response
 export const deleteRequisition = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Requisition deleted", await service.remove(req.params.id)); }
   catch (error) { next(error); }
+};
+
+/** Attach a JD. Same 10 MB document path as a candidate's CV. */
+export const uploadJd = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) { sendError(res, "No file uploaded", 400); return; }
+    const ext = extFromMime(req.file.mimetype);
+    const key = attachmentKey(getOrgId(), req.params.id, "jds", ext, Date.now());
+    await putObject(key, req.file.buffer, req.file.mimetype);
+    sendSuccess(res, "JD attached", await service.setJd(req.params.id, key, req.file.originalname));
+  } catch (error) { next(error); }
 };
 
 /** Whether a hiring chain is configured — the page warns when it is not. */

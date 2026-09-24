@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createRequisition, getRequisitions, getRequisitionById,
-  updateRequisition, reviewRequisition, deleteRequisition, getHiringWorkflowState,
+  updateRequisition, reviewRequisition, deleteRequisition, getHiringWorkflowState, uploadJd,
 } from "../controllers/jobRequisitionController.js";
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
@@ -31,6 +31,7 @@ router.put("/requisitions/:id", checkPermission("hiring", "edit"), updateRequisi
 // role holding the current step.
 router.patch("/requisitions/:id/review", checkPermission("hiring", "approve"), reviewRequisition);
 router.delete("/requisitions/:id", checkPermission("hiring", "delete"), deleteRequisition);
+router.post("/requisitions/:id/jd", checkPermission("hiring", "edit"), uploadSingle, uploadJd);
 
 // ── Candidates ───────────────────────────────────────────────────────────────
 router.get("/candidates", checkPermission("hiring", "view"), getCandidates);
