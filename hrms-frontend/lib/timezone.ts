@@ -16,6 +16,35 @@ export function toDateInput(iso?: string | null, tz?: string): string {
 }
 
 /**
+ * ISO → HH:mm in `tz`, for a check-in/check-out field paired with its own
+ * separate date field — the date is already on screen once, so the time
+ * input has no business repeating it.
+ */
+export function toTimeInput(iso?: string | null, tz?: string): string {
+  const local = toLocalInput(iso, tz);
+  return local ? local.slice(11) : "";
+}
+
+/**
+ * Attaches a bare "HH:mm" time to a "YYYY-MM-DD" date, rolling onto the next
+ * calendar day when it reads at or before a reference time — the same rule
+ * an overnight shift is resolved by on the server (see resolveShift). A
+ * check-out of 03:00 against a check-in of 18:00 is the next morning, not
+ * three in the afternoon turned backwards.
+ */
+export function combineDateAndTime(date: string, time: string, rollsAfter?: string): string {
+  const day = rollsAfter !== undefined && time <= rollsAfter ? addDaysToDateInput(date, 1) : date;
+  return `${day}T${time}`;
+}
+
+function addDaysToDateInput(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  // Constructed and read back in UTC on purpose — a local Date here would
+  // shift the calendar day itself under a browser west of Greenwich.
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
  * "YYYY-MM-DDTHH:mm" (a <input type="datetime-local"> value, timezone-less) → ISO UTC,
  * interpreting the wall-clock value in `timeZone` rather than the browser's local zone.
  * `new Date(localString).toISOString()` would silently use the browser's zone instead of

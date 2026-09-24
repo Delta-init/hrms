@@ -16,7 +16,7 @@ import { attendanceFormSchema, type AttendanceFormValues } from "@/lib/validatio
 import { useCreateAttendance, useUpdateAttendance } from "@/hooks/useAttendance";
 import { useUser } from "@/hooks/useUsers";
 import { ATTENDANCE_STATUS_LABELS, TIME_ZONES, type Attendance, type AttendanceStatus } from "@/types";
-import { toLocalInput, toDateInput, zonedInputToUtcIso } from "@/lib/timezone";
+import { toTimeInput, toDateInput, zonedInputToUtcIso, combineDateAndTime } from "@/lib/timezone";
 
 interface Props {
   open: boolean;
@@ -52,8 +52,11 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
         user: attendance.user && typeof attendance.user === "object" ? attendance.user._id : attendance.user,
         date: toDateInput(attendance.date, attendance.timeZone),
         timeZone: attendance.timeZone,
-        checkIn: toLocalInput(attendance.checkIn, attendance.timeZone),
-        checkOut: toLocalInput(attendance.checkOut, attendance.timeZone),
+        // Time only — a check-out on the day after (an overnight shift) is
+        // re-derived from it on save rather than shown, which is what the
+        // date field above is already for.
+        checkIn: toTimeInput(attendance.checkIn, attendance.timeZone),
+        checkOut: toTimeInput(attendance.checkOut, attendance.timeZone),
         status: attendance.status,
         lateMinutes: attendance.lateMinutes,
         note: attendance.note ?? "",
@@ -64,13 +67,20 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
   }, [open, attendance, reset]);
 
   const onSubmit = (data: AttendanceFormValues) => {
+    const tz = data.timeZone || "Asia/Dubai";
+    // A check-out that reads at or before check-in belongs to the next
+    // calendar day — the same rule the server resolves an overnight shift
+    // by — so a 03:00 logout against an 18:00 login lands the next morning
+    // instead of nine hours in the past.
+    const checkIn = data.checkIn ? combineDateAndTime(data.date, data.checkIn) : "";
+    const checkOut = data.checkOut ? combineDateAndTime(data.date, data.checkOut, data.checkIn || undefined) : "";
     const payload: Record<string, unknown> = {
       date: data.date,
       timeZone: data.timeZone,
       status: data.status,
       lateMinutes: data.lateMinutes ?? 0,
-      checkIn: zonedInputToUtcIso(data.checkIn, data.timeZone || "Asia/Dubai"),
-      checkOut: zonedInputToUtcIso(data.checkOut, data.timeZone || "Asia/Dubai"),
+      checkIn: zonedInputToUtcIso(checkIn, tz),
+      checkOut: zonedInputToUtcIso(checkOut, tz),
       note: data.note || undefined,
     };
     if (isEditing) {
@@ -128,14 +138,15 @@ export function AttendanceDialog({ open, onOpenChange, attendance }: Props) {
             />
           </div>
 
-          {/* Check-in / Check-out */}
+          {/* Check-in / Check-out — time only; the date above already says which day. */}
           <div className="space-y-1.5">
             <Label htmlFor="checkIn">Login (Check-in)</Label>
-            <Input id="checkIn" type="datetime-local" {...register("checkIn")} />
+            <Input id="checkIn" type="time" {...register("checkIn")} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="checkOut">Logout (Check-out)</Label>
-            <Input id="checkOut" type="datetime-local" {...register("checkOut")} />
+            <Input id="checkOut" type="time" {...register("checkOut")} />
+            <p className="text-[11px] text-muted-foreground">Earlier than login means the next day.</p>
           </div>
 
           {/* Status + Late */}
