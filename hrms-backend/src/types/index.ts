@@ -526,6 +526,23 @@ export interface IAppraisal extends Document {
   updatedAt: Date;
 }
 
+// ─── Monthly performance report ──────────────────────────────────────────────
+/** One employee's report for one month — typed in, attached, or both. */
+export interface IMonthlyPerformanceReport extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user: Types.ObjectId | IUser;
+  month: string;
+  reportText?: string;
+  reportKey?: string;
+  reportFileName?: string;
+  /** Who actually filed it — the employee themselves, or their department head. */
+  submittedBy: Types.ObjectId | IUser;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Department ─────────────────────────────────────────────────────────────
 /** A person reference that may point to either an Employee or a User. */
 export type PersonKind = "Employee" | "User";

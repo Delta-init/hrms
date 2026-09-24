@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Target, Plus, Loader2, ClipboardList, Play, Square, RefreshCw } from "lucide-react";
+import { Target, Plus, Loader2, ClipboardList, Play, Square, RefreshCw, FileText } from "lucide-react";
 import {
   useMyAppraisals, useCycles, useAppraisals, useSetCycleStatus, useSyncCycle, useDeleteCycle,
 } from "@/hooks/usePerformance";
@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { CycleDialog } from "@/components/performance/CycleDialog";
 import { MyAppraisalDialog } from "@/components/performance/MyAppraisalDialog";
 import { ReviewAppraisalDialog } from "@/components/performance/ReviewAppraisalDialog";
+import { MonthlyReports } from "@/components/performance/MonthlyReports";
 import { cn } from "@/lib/utils";
 import {
   APPRAISAL_STATUS_LABELS, PERFORMANCE_CYCLE_STATUS_LABELS,
@@ -58,6 +59,9 @@ export default function PerformancePage() {
   const [tab, setTab] = useState("mine");
   const tabs = [
     { key: "mine", label: "My Appraisal", icon: Target },
+    // Self-service, the same as My Appraisal — filing your own needs no
+    // permission, and the panel underneath narrows itself.
+    { key: "reports", label: "Monthly Reports", icon: FileText },
     canEdit && { key: "manage", label: "Manage", icon: ClipboardList },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
@@ -99,6 +103,8 @@ export default function PerformancePage() {
           </div>
         )
       )}
+
+      {activeTab === "reports" && <MonthlyReports />}
 
       {activeTab === "manage" && (!canEdit ? (
         <Card className="p-16 text-center text-muted-foreground">You don&apos;t have access to performance management.</Card>

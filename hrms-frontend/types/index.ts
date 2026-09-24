@@ -1896,6 +1896,27 @@ export interface Appraisal {
   updatedAt: string;
 }
 
+// ─── Monthly performance report ──────────────────────────────────────────────
+export interface MonthlyPerformanceReport {
+  _id: string;
+  employee?: { _id: string; name: string; employeeCode?: string; designation?: string; department?: unknown } | string | null;
+  month: string;
+  reportText?: string;
+  reportFileName?: string;
+  reportUrl?: string;
+  submittedBy?: { _id: string; name: string; email?: string } | string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Somebody the caller may file a report for — themselves, or their team. */
+export interface PerformanceReportEligible {
+  _id: string;
+  name: string;
+  employeeCode?: string;
+  isSelf: boolean;
+}
+
 // ─── Card ─────────────────────────────────────────────────────────────────────
 export type CardStatus = "active" | "expired";
 export const CARD_STATUS_LABELS: Record<CardStatus, string> = { active: "Active", expired: "Expired" };
