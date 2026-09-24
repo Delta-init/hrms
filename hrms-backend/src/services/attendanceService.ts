@@ -295,6 +295,66 @@ export class AttendanceService {
     return Attendance.findById(attendance._id).populate("user", "name email designation");
   }
 
+  /**
+   * Times used when an administrator assigns a status instead of recording
+   * the employee's original punches. Use the schedule for that calendar day;
+   * a clock-out is only synthesized after the scheduled shift has finished.
+   */
+  private async timesForStatus(userId: string, day: Date, timeZone: string, status: string) {
+    const localDate = localDayKey(day, timeZone || DEFAULT_SCHEDULE.timeZone);
+    const scheduleDate = new Date(`${localDate}T12:00:00.000Z`);
+    const schedule = await this.scheduleFor(userId, scheduleDate);
+    const shift = resolveShift(
+      schedule,
+      zonedTimeToUtc(localDate, "12:00", schedule.timeZone || timeZone)
+    );
+    const ended = Date.now() >= shift.shiftEnd.getTime();
+    const withTimeZone = (times: { checkIn: Date | null; checkOut: Date | null; lateMinutes: number }) => ({
+      ...times,
+      timeZone: schedule.timeZone || timeZone,
+    });
+    const fullDayEnd = schedule.mode === "duration"
+      ? new Date(Math.min(
+          shift.shiftStart.getTime() + (schedule.requiredHours ?? 8) * 3_600_000,
+          shift.shiftEnd.getTime()
+        ))
+      : shift.shiftEnd;
+
+    switch (status) {
+      case "present":
+      case "wfh":
+        return withTimeZone({ checkIn: shift.shiftStart, checkOut: ended ? fullDayEnd : null, lateMinutes: 0 });
+      case "late": {
+        const checkIn = new Date(shift.lateThreshold.getTime() + 60_000);
+        return withTimeZone({
+          checkIn,
+          checkOut: ended ? fullDayEnd : null,
+          lateMinutes: Math.max(1, Math.round((checkIn.getTime() - shift.shiftStart.getTime()) / 60_000)),
+        });
+      }
+      case "half_day": {
+        const halfDayEnd = new Date(shift.shiftStart.getTime() + (fullDayEnd.getTime() - shift.shiftStart.getTime()) / 2);
+        return withTimeZone({ checkIn: shift.shiftStart, checkOut: ended ? halfDayEnd : null, lateMinutes: 0 });
+      }
+      case "early_out": {
+        const checkOut = new Date(shift.onTimeDepartureThreshold.getTime() - 60_000);
+        return withTimeZone({ checkIn: shift.shiftStart, checkOut: ended ? checkOut : null, lateMinutes: 0 });
+      }
+      default:
+        // Leave, absence, holidays and non-working days have no punch times.
+        return withTimeZone({ checkIn: null, checkOut: null, lateMinutes: 0 });
+    }
+  }
+
+  private async applyStatusTimes(record: InstanceType<typeof Attendance>, userId: string, status: string) {
+    const timeZone = record.timeZone || DEFAULT_SCHEDULE.timeZone;
+    const times = await this.timesForStatus(userId, record.date, timeZone, status);
+    record.status = status as never;
+    record.lateMinutes = times.lateMinutes;
+    record.timeZone = times.timeZone;
+    this.applySessions(record, times.checkIn, times.checkOut);
+  }
+
   /** The organization's timezone — what "a day" means for this tenant. */
   private async orgTimeZone(): Promise<string> {
     const org = await Organization.findById(getOrgId()).select("settings.timeZone").lean<{ settings?: { timeZone?: string } } | null>();
@@ -381,7 +441,7 @@ export class AttendanceService {
     if (input.date !== undefined) {
       // Through the same rule as create, so editing a record's date cannot
       // file it where its owner will not find it.
-      const { key } = await this.dayKeyFor(String(record.user), input.date);
+      const { key, timeZone } = await this.dayKeyFor(String(record.user), input.date);
       const clash = await Attendance.findOne(scoped({ user: record.user, date: key, _id: { $ne: record._id } }));
       if (clash) {
         throw Object.assign(
@@ -390,10 +450,9 @@ export class AttendanceService {
         );
       }
       record.date = key;
+      record.timeZone = timeZone;
     }
     if (input.timeZone !== undefined) record.timeZone = input.timeZone;
-    if (input.status !== undefined) record.status = input.status;
-    if (input.lateMinutes !== undefined) record.lateMinutes = input.lateMinutes;
     if (input.note !== undefined) record.note = input.note ?? undefined;
 
     // Rebuild sessions when either check time is supplied in the update.
@@ -401,6 +460,13 @@ export class AttendanceService {
       const checkIn = input.checkIn !== undefined ? input.checkIn : record.checkIn;
       const checkOut = input.checkOut !== undefined ? input.checkOut : record.checkOut;
       this.applySessions(record, checkIn, checkOut);
+    }
+    // A status assignment is the final say on the schedule-derived times,
+    // even when the edit form submitted the previous punch values as well.
+    if (input.status !== undefined) {
+      await this.applyStatusTimes(record, String(record.user), input.status);
+    } else if (input.lateMinutes !== undefined) {
+      record.lateMinutes = input.lateMinutes;
     }
 
     await record.save();
@@ -423,12 +489,12 @@ export class AttendanceService {
   async setStatusMany(ids: string[], status: string) {
     const valid = ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
     if (!valid.length) return { matched: 0, modified: 0 };
-    const update: Record<string, unknown> = { status };
-    // Only a late or half day carries late minutes; anything else keeps them
-    // at zero rather than inheriting a number from the status it used to be.
-    if (status !== "late" && status !== "half_day") update.lateMinutes = 0;
-    const res = await Attendance.updateMany(scoped({ _id: { $in: valid } }), { $set: update });
-    return { matched: res.matchedCount, modified: res.modifiedCount };
+    const records = await Attendance.find(scoped({ _id: { $in: valid } }));
+    for (const record of records) {
+      await this.applyStatusTimes(record, String(record.user), status);
+      await record.save();
+    }
+    return { matched: records.length, modified: records.length };
   }
 
   /**
@@ -457,8 +523,6 @@ export class AttendanceService {
       .select("user")
       .lean<Array<{ _id: unknown; user: unknown }>>();
 
-    const noon = new Date(`${date}T12:00:00.000Z`);
-
     let modified = 0, created = 0;
     for (const emp of employees) {
       const userId = String(emp.user);
@@ -466,35 +530,9 @@ export class AttendanceService {
 
       const existing = await Attendance.findOne(scoped({ user: userId, date: key }));
 
-      // Setting a day nothing was ever punched for — not marked, or a real
-      // stored absence — to "present" fills real check-in/out times from
-      // that person's own shift, rather than leaving a "present" day with no
-      // times and zero worked minutes behind it. Anything that already has a
-      // real check-in (late, half day, an already-present record) is never
-      // touched here — this only ever fills a blank, never overwrites a punch.
-      const fillFromShift = status === "present" && !existing?.checkIn;
-      let checkIn: Date | undefined;
-      let checkOut: Date | undefined;
-      if (fillFromShift) {
-        const schedule = await this.scheduleFor(userId, noon);
-        const shift = resolveShift(schedule, noon);
-        checkIn = shift.shiftStart;
-        // Duration mode's login/logout is a punch window, not the shift
-        // length — filling the whole window would worked-minutes the entire
-        // span instead of the hours actually required. Fixed mode's window
-        // *is* the shift, so its own end applies directly.
-        checkOut = schedule.mode === "duration"
-          ? new Date(Math.min(shift.shiftStart.getTime() + (schedule.requiredHours ?? 8) * 3_600_000, shift.shiftEnd.getTime()))
-          : shift.shiftEnd;
-      }
-
       if (existing) {
-        existing.status = status as never;
-        // Only a late or half day carries late minutes; anything else keeps
-        // them at zero rather than inheriting a number from what it used to be.
-        if (status !== "late" && status !== "half_day") existing.lateMinutes = 0;
+        await this.applyStatusTimes(existing, userId, status);
         if (note !== undefined) existing.note = note;
-        if (fillFromShift) this.applySessions(existing, checkIn, checkOut);
         await existing.save();
         modified++;
         continue;
@@ -513,7 +551,7 @@ export class AttendanceService {
         lateMinutes: 0,
         note,
       });
-      if (fillFromShift) this.applySessions(record, checkIn, checkOut);
+      await this.applyStatusTimes(record, userId, status);
       await record.save();
       created++;
     }
