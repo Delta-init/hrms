@@ -124,11 +124,11 @@ export default function AssetsPage() {
         description="Track company equipment from purchase through issue, return and retirement."
         icon={Boxes}
         action={
-          canCreate && (activeTab === "all" ? (
-            <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button>
-          ) : activeTab === "procurement" ? (
-            canCreateProcurement ? <Button onClick={() => { setSelectedProc(null); setProcDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Procurement</Button> : null
-          ) : null)
+          activeTab === "all" ? (
+            canCreate ? <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Asset</Button> : null
+          ) : activeTab === "procurement" && canCreateProcurement ? (
+            <Button onClick={() => { setSelectedProc(null); setProcDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />New Procurement</Button>
+          ) : null
         }
       />
 
@@ -302,10 +302,11 @@ export default function AssetsPage() {
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium">Why needed</th>
                   <th className="px-4 py-3 font-medium">Kind</th>
                   <th className="px-4 py-3 font-medium">Qty</th>
                   <th className="px-4 py-3 font-medium">Est. cost</th>
@@ -318,9 +319,9 @@ export default function AssetsPage() {
               </thead>
               <tbody>
                 {procLoading ? (
-                  <tr><td colSpan={9} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                  <tr><td colSpan={10} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                 ) : !procurement?.data.length ? (
-                  <tr><td colSpan={9} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
+                  <tr><td colSpan={10} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
                 ) : (
                   procurement.data.map((p) => {
                     const dept = p.department && typeof p.department === "object" ? p.department.name : null;
@@ -329,6 +330,9 @@ export default function AssetsPage() {
                         <td className="px-4 py-3">
                           <p className="font-medium">{p.item}</p>
                           {p.category && <p className="text-xs capitalize text-muted-foreground">{p.category}</p>}
+                        </td>
+                        <td className="max-w-xs px-4 py-3 text-muted-foreground">
+                          {p.justification ? <span className="line-clamp-2" title={p.justification}>{p.justification}</span> : "—"}
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs text-muted-foreground">{PROCUREMENT_KIND_LABELS[p.kind]}</span>

@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Procurement } from "@/types";
+import type { ApiResponse, PaginationMeta, Procurement } from "@/types";
 
 const KEY = ["procurement"] as const;
 function errMsg(e: unknown, f: string) {
@@ -14,8 +14,12 @@ export const useProcurements = (params?: Record<string, string>, enabled = true)
   useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
-      const res = await api.get<ApiResponse<Procurement[]>>("/procurement", { params });
-      return { data: res.data.data ?? [], pagination: res.data.pagination };
+      const res = await api.get<ApiResponse<{ records: Procurement[]; pagination: PaginationMeta }>>("/procurement", { params });
+      const result = res.data.data;
+      return {
+        data: result?.records ?? [],
+        pagination: result?.pagination ?? res.data.pagination,
+      };
     },
     enabled,
   });
