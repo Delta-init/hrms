@@ -64,6 +64,70 @@ export class ProcurementService {
     }
   }
 
+  /**
+   * Tell the people who decide these what was decided.
+   *
+   * The requester hears from `tellRequester`; this is the other side of the
+   * desk — whoever holds `procurement.approve`, which is the same question
+   * office keeping asks when a request comes in. Read from the permission
+   * rather than a role name, so renaming a role or adding a second approver
+   * cannot silently empty the list.
+   *
+   * Whoever made the decision is dropped from it. An email telling somebody
+   * what they have just clicked is noise, and noise is how a mailbox rule gets
+   * written that hides the ones that matter.
+   */
+  private async tellApprovers(
+    record: { item: string; requestedBy?: unknown },
+    headline: string,
+    note?: string | null,
+    decidedBy?: string
+  ) {
+    try {
+      const skip = new Set([String(decidedBy ?? ""), String(record.requestedBy ?? "")]);
+      const ids = (await watchersFor("procurement")).filter((id) => !skip.has(id));
+      if (!ids.length) return;
+
+      try {
+        await notify({
+          users: ids,
+          kind: "approval",
+          title: `${record.item}: ${headline}`,
+          body: note ?? "",
+          href: "/assets",
+          actor: decidedBy,
+        });
+      } catch {
+        /* the mail below is the part that carries */
+      }
+
+      const people = await User.find({ _id: { $in: ids }, status: { $ne: "inactive" } })
+        .select("name email")
+        .lean<Array<{ name?: string; email?: string }>>();
+      const link = `${env.CLIENT_URL}/assets`;
+
+      for (const person of people) {
+        if (!person.email) continue;
+        await sendMail({
+          to: person.email,
+          organization: String(getOrgId() ?? ""),
+          subject: `${record.item}: ${headline}`,
+          text: `Hi ${person.name ?? "there"},\n\nThe request for "${record.item}" ${headline}.\n` +
+            (note ? `\nNote: ${note}\n` : "") + `\n${link}\n`,
+          html:
+            `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+            `<h2 style="color:#4f46e5;margin-bottom:4px">${headline}</h2>` +
+            `<p style="color:#555">The request for <strong>${record.item}</strong> ${headline}.</p>` +
+            (note ? `<p style="color:#555">Note: ${note}</p>` : "") +
+            `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open procurement</a></p>` +
+            `<p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS.</p></div>`,
+        });
+      }
+    } catch {
+      /* a decision that was made must not depend on the post going out */
+    }
+  }
+
   async create(input: CreateProcurementInput, requestedBy: string) {
     const kind = input.kind ?? "existing";
     // A request starts by being asked for; a record of something already bought
@@ -166,11 +230,9 @@ export class ProcurementService {
       },
     });
 
-    await this.tellRequester(
-      record as never,
-      approved ? "has been approved by HR and sent to finance" : "was not approved by HR",
-      input.note
-    );
+    const hrHeadline = approved ? "has been approved by HR and sent to finance" : "was not approved by HR";
+    await this.tellRequester(record as never, hrHeadline, input.note);
+    await this.tellApprovers(record as never, hrHeadline, input.note, reviewerId);
     return Procurement.findById(record._id).populate(POP);
   }
 
@@ -248,11 +310,11 @@ export class ProcurementService {
       },
     });
 
-    await this.tellRequester(
-      record as never,
-      approved ? "has been approved by finance" : "was not approved by finance",
-      input.note
-    );
+    const financeHeadline = approved ? "has been approved by finance" : "was not approved by finance";
+    await this.tellRequester(record as never, financeHeadline, input.note);
+    // The decision was made in the finance system, so there is no HRMS user to
+    // leave out — everybody who approves these hears about it.
+    await this.tellApprovers(record as never, financeHeadline, input.note);
     return Procurement.findById(record._id).populate(POP).lean();
   }
 }
