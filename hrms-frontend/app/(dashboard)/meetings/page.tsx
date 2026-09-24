@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus, Pencil, Trash2, Ban } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { MeetingWeekGrid } from "@/components/meetings/MeetingWeekGrid";
 import { MeetingDialog } from "@/components/meetings/MeetingDialog";
+import { RoomsDialog } from "@/components/meetings/RoomsDialog";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useMeetingRooms, useMeetingBookings, useCancelBooking, useDeleteBooking,
@@ -29,11 +30,14 @@ export default function MeetingsPage() {
   const { hasPermission, user } = useAuth();
   const canView = hasPermission("meetings", "view");
   const canBook = hasPermission("meetings", "create");
+  // The rooms themselves are an administrator's job, not a booker's.
+  const canManageRooms = hasPermission("meetings", "edit");
 
   const [mode, setMode] = useState<"day" | "week">("week");
   const [anchor, setAnchor] = useState(() => new Date());
   const [room, setRoom] = useState(ALL);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const [editing, setEditing] = useState<MeetingBooking | null>(null);
   const [pickedStart, setPickedStart] = useState<Date | null>(null);
   const [detail, setDetail] = useState<MeetingBooking | null>(null);
@@ -78,10 +82,19 @@ export default function MeetingsPage() {
         title="Meeting Rooms"
         description="Who has which room, and when. Click an empty slot to book it."
         icon={CalendarDays}
-        action={canBook && rooms.length > 0 && (
-          <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setDialogOpen(true); }}>
-            <Plus className="h-4 w-4" />Book a room
-          </Button>
+        action={(canManageRooms || (canBook && rooms.length > 0)) && (
+          <div className="flex items-center gap-2">
+            {canManageRooms && (
+              <Button variant="outline" className="shadow-sm" onClick={() => setRoomsOpen(true)}>
+                <DoorOpen className="h-4 w-4" />Rooms
+              </Button>
+            )}
+            {canBook && rooms.length > 0 && (
+              <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setDialogOpen(true); }}>
+                <Plus className="h-4 w-4" />Book a room
+              </Button>
+            )}
+          </div>
         )}
       />
 
@@ -120,9 +133,18 @@ export default function MeetingsPage() {
 
       <Card className="p-2">
         {rooms.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            No rooms yet. An administrator adds them before anything can be booked.
-          </p>
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              {canManageRooms
+                ? "No rooms yet. Add one and the calendar fills in around it."
+                : "No rooms yet. An administrator adds them before anything can be booked."}
+            </p>
+            {canManageRooms && (
+              <Button className="mt-4" onClick={() => setRoomsOpen(true)}>
+                <Plus className="h-4 w-4" />Add a room
+              </Button>
+            )}
+          </div>
         ) : isLoading ? (
           <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : (
@@ -136,6 +158,7 @@ export default function MeetingsPage() {
       </Card>
 
       <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} />
+      <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
 
       {/* Detail — who booked it, who is coming, and what may be done about it. */}
       <ResponsiveDialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>

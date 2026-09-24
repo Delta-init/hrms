@@ -76,3 +76,29 @@ export const useCreateRoom = () => {
     onError: (e) => toast.error(errMsg(e, "Could not add the room")),
   });
 };
+
+export const useUpdateRoom = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.put<ApiResponse<MeetingRoom>>(`/meetings/rooms/${id}`, data)).data.data!,
+    onSuccess: () => { invalidate(qc); toast.success("Room updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not update the room")),
+  });
+};
+
+/**
+ * Take a room out of use.
+ *
+ * Retired, never deleted — bookings already made still point at it, and a
+ * meeting whose room has vanished is worse than one in a room nobody books any
+ * more. `useUpdateRoom` with `active: true` puts it back.
+ */
+export const useRetireRoom = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => { await api.patch(`/meetings/rooms/${id}/retire`); },
+    onSuccess: () => { invalidate(qc); toast.success("Room retired"); },
+    onError: (e) => toast.error(errMsg(e, "Could not retire the room")),
+  });
+};
