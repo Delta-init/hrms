@@ -7,6 +7,8 @@ import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { searchRegex, parsePagination } from "../utils/query.js";
+import { publicUrl, deleteObject } from "./uploadService.js";
+import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { sendMail } from "../utils/mailer.js";
 import { notify } from "./notificationService.js";
 import { watchersFor } from "./watchers.js";
@@ -26,6 +28,17 @@ interface ProcurementQuery extends PaginationQuery {
   kind?: string;
   category?: string;
   department?: string;
+}
+
+/**
+ * A stored request with its report as a link rather than a key.
+ *
+ * The link is signed and short-lived, so it is minted per response rather
+ * than stored — same reasoning as a candidate's CV or a requisition's JD.
+ */
+function shape<T extends { reportKey?: string | null }>(doc: T | null) {
+  if (!doc) return doc;
+  return { ...doc, reportUrl: doc.reportKey ? publicUrl(doc.reportKey) : "" };
 }
 
 export class ProcurementService {
@@ -155,10 +168,18 @@ export class ProcurementService {
         actor: requestedBy,
       });
     }
-    return Procurement.findById(record._id).populate(POP);
+    const created = await Procurement.findById(record._id).populate(POP);
+    return shape(created!.toObject());
   }
 
-  async list(query: ProcurementQuery) {
+  /**
+   * `restrictToUserId`, when given, means the caller reached this without
+   * holding `procurement.view` — a department head, let through by the route
+   * on that standing alone. Their view is narrowed to the departments they
+   * actually head, ignoring any `department` filter they might send: heading
+   * a team is not itself the permission to browse every other one.
+   */
+  async list(query: ProcurementQuery, restrictToUserId?: string) {
     const { page, limit, skip } = parsePagination(query, 20, 200);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
@@ -166,7 +187,14 @@ export class ProcurementService {
     if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
     if (query.kind) filter.kind = query.kind;
     if (query.category) filter.category = query.category;
-    if (query.department) filter.department = query.department;
+
+    if (restrictToUserId) {
+      const heads = await departmentsHeadedBy(restrictToUserId);
+      if (!heads.length) return { records: [], pagination: buildPagination(0, page, limit) };
+      filter.department = { $in: heads };
+    } else if (query.department) {
+      filter.department = query.department;
+    }
 
     const sortable = new Set(["item", "quantity", "estimatedCost", "neededBy", "status", "createdAt"]);
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "createdAt";
@@ -176,13 +204,39 @@ export class ProcurementService {
       Procurement.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       Procurement.countDocuments(filter),
     ]);
-    return { records, pagination: buildPagination(total, page, limit) };
+    return { records: records.map((r) => shape(r)), pagination: buildPagination(total, page, limit) };
   }
 
-  async getById(id: string) {
+  /** Same narrowing as `list` — a department head asking for one by id gets
+   *  it only when it is theirs to see, not anybody's for the guessing. */
+  async getById(id: string, restrictToUserId?: string) {
     const record = await Procurement.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
-    return record;
+    if (restrictToUserId) {
+      // `department` arrives populated (POP), not a bare id — comparing the
+      // raw value against `heads` would refuse every request, including the
+      // caller's own.
+      const deptId = record.department && typeof record.department === "object"
+        ? String((record.department as { _id: unknown })._id)
+        : String(record.department ?? "");
+      const heads = await departmentsHeadedBy(restrictToUserId);
+      if (!deptId || !heads.includes(deptId)) {
+        throw Object.assign(new Error("That request is not from your department"), { statusCode: 403 });
+      }
+    }
+    return shape(record.toObject());
+  }
+
+  /** Attach a report file, or replace the one already there. */
+  async setReport(id: string, key: string, fileName: string) {
+    const record = await Procurement.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.reportKey) await deleteObject(record.reportKey);
+    record.reportKey = key;
+    record.reportFileName = fileName;
+    await record.save();
+    const updated = await Procurement.findById(id).populate(POP);
+    return shape(updated!.toObject());
   }
 
   async update(id: string, input: UpdateProcurementInput) {
@@ -205,7 +259,8 @@ export class ProcurementService {
     delete patch.kind;
 
     await Procurement.updateOne({ _id: record._id }, { $set: patch });
-    return Procurement.findById(record._id).populate(POP);
+    const updated = await Procurement.findById(record._id).populate(POP);
+    return shape(updated!.toObject());
   }
 
   /** HR's decision: approve it on to finance, or refuse it here. */
@@ -233,7 +288,8 @@ export class ProcurementService {
     const hrHeadline = approved ? "has been approved by HR and sent to finance" : "was not approved by HR";
     await this.tellRequester(record as never, hrHeadline, input.note);
     await this.tellApprovers(record as never, hrHeadline, input.note, reviewerId);
-    return Procurement.findById(record._id).populate(POP);
+    const reviewed = await Procurement.findById(record._id).populate(POP);
+    return shape(reviewed!.toObject());
   }
 
   /**
@@ -262,12 +318,14 @@ export class ProcurementService {
       },
       $inc: { resubmitCount: 1 },
     });
-    return Procurement.findById(record._id).populate(POP);
+    const resubmitted = await Procurement.findById(record._id).populate(POP);
+    return shape(resubmitted!.toObject());
   }
 
   async remove(id: string) {
     const record = await Procurement.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.reportKey) await deleteObject(record.reportKey);
     await Procurement.deleteOne({ _id: record._id });
     return { message: "Procurement deleted successfully" };
   }
@@ -278,10 +336,11 @@ export class ProcurementService {
 
   /** What is sitting with finance, waiting on the money decision. */
   async listForFinance(organization: string) {
-    return Procurement.find({ organization, kind: "new", status: "hr_approved" })
+    const records = await Procurement.find({ organization, kind: "new", status: "hr_approved" })
       .populate(POP)
       .sort({ neededBy: 1, createdAt: 1 })
       .lean();
+    return records.map((r) => shape(r));
   }
 
   /** Record what finance decided, and tell whoever asked. */
@@ -315,6 +374,6 @@ export class ProcurementService {
     // The decision was made in the finance system, so there is no HRMS user to
     // leave out — everybody who approves these hears about it.
     await this.tellApprovers(record as never, financeHeadline, input.note);
-    return Procurement.findById(record._id).populate(POP).lean();
+    return shape(await Procurement.findById(record._id).populate(POP).lean());
   }
 }

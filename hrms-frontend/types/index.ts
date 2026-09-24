@@ -1356,6 +1356,9 @@ export interface Procurement {
   rejectedBy?: "hr" | "finance" | null;
   resubmitCount: number;
   notes?: string;
+  /** A quote, spec sheet or photo backing the request up. */
+  reportFileName?: string;
+  reportUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

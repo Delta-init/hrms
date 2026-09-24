@@ -89,6 +89,12 @@ const procurementSchema = new Schema<IProcurement>(
     resubmitCount: { type: Number, default: 0, min: 0 },
 
     notes: { type: String, trim: true, maxlength: 500 },
+
+    // A quote, a spec sheet, a photo of the broken thing — whatever backs the
+    // request up. Attached by the requester or their department head, same as
+    // editing the request itself.
+    reportKey: { type: String, trim: true, default: "" },
+    reportFileName: { type: String, trim: true, maxlength: 200, default: "" },
   },
   { timestamps: true, versionKey: false }
 );

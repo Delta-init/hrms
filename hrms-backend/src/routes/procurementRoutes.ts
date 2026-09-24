@@ -1,10 +1,11 @@
 import { Router } from "express";
 import {
   createProcurement, getProcurements, getProcurementById, updateProcurement, deleteProcurement,
-  reviewProcurement, resubmitProcurement,
+  reviewProcurement, resubmitProcurement, uploadReport,
 } from "../controllers/procurementController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/permissions.js";
+import { uploadSingle } from "../middleware/upload.js";
 
 /**
  * Its own module, not `assets`.
@@ -22,10 +23,14 @@ import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/
 const router = Router();
 router.use(authenticate);
 
-router.get("/", checkPermission("procurement", "view"), getProcurements);
+// Viewing follows raising: a head could already ask for something and then
+// had no way to see it again. The controller narrows what they get back to
+// their own department rather than the route deciding all-or-nothing.
+router.get("/", checkPermissionOrDepartmentHead("procurement", "view"), getProcurements);
 router.post("/", checkPermissionOrDepartmentHead("procurement", "create"), createProcurement);
-router.get("/:id", checkPermission("procurement", "view"), getProcurementById);
+router.get("/:id", checkPermissionOrDepartmentHead("procurement", "view"), getProcurementById);
 router.put("/:id", checkPermissionOrDepartmentHead("procurement", "edit"), updateProcurement);
+router.post("/:id/report", checkPermissionOrDepartmentHead("procurement", "edit"), uploadSingle, uploadReport);
 // HR's decision, and the way back for a request that was refused.
 router.patch("/:id/review", checkPermission("procurement", "approve"), reviewProcurement);
 router.patch("/:id/resubmit", checkPermissionOrDepartmentHead("procurement", "edit"), resubmitProcurement);

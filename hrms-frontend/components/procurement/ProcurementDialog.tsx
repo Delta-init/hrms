@@ -1,8 +1,8 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { FileText, Loader2, Upload, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { procurementFormSchema, type ProcurementFormValues } from "@/lib/validations/procurementSchema";
-import { useCreateProcurement, useUpdateProcurement } from "@/hooks/useProcurements";
+import { useCreateProcurement, useUpdateProcurement, useUploadProcurementReport } from "@/hooks/useProcurements";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import {
   PROCUREMENT_KIND_LABELS, PROCUREMENT_STATUS_LABELS,
@@ -39,16 +39,24 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
   const isEditing = !!procurement;
   const { mutate: create, isPending: creating } = useCreateProcurement();
   const { mutate: update, isPending: updating } = useUpdateProcurement();
+  const { mutateAsync: uploadReport, isPending: uploading } = useUploadProcurementReport();
   const { data: departments = [] } = useDepartmentsSimple({ enabled: open });
-  const isPending = creating || updating;
+  const isPending = creating || updating || uploading;
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<ProcurementFormValues>({
     resolver: zodResolver(procurementFormSchema),
     defaultValues: EMPTY,
   });
 
+  // A quote, spec sheet or photo backing the request up. Held here and sent
+  // once the record itself has an id — on create that means after saving; on
+  // an edit the id already exists, so it goes up straight away.
+  const [reportFile, setReportFile] = useState<File | null>(null);
+  const reportInput = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!open) return;
+    setReportFile(null);
     reset(
       procurement
         ? {
@@ -80,8 +88,26 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
       neededBy: data.neededBy || null,
       vendor: data.vendor || "",
     };
-    if (isEditing) update({ id: procurement._id, data: payload }, { onSuccess: () => onOpenChange(false) });
-    else create(payload, { onSuccess: () => onOpenChange(false) });
+    if (isEditing) {
+      update(
+        { id: procurement._id, data: payload },
+        {
+          onSuccess: async () => {
+            // A report that will not upload must not cost us the edit — it is
+            // saved either way, and the hook has already said what went wrong.
+            if (reportFile) await uploadReport({ id: procurement._id, file: reportFile }).catch(() => {});
+            onOpenChange(false);
+          },
+        }
+      );
+    } else {
+      create(payload, {
+        onSuccess: async (record) => {
+          if (reportFile) await uploadReport({ id: record._id, file: reportFile }).catch(() => {});
+          onOpenChange(false);
+        },
+      });
+    }
   };
 
   const field = "space-y-1.5";
@@ -192,11 +218,49 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
             <Textarea id="notes" rows={2} placeholder="Optional" {...register("notes")} />
           </div>
 
+          {/* A quote, spec sheet or photo — the requester or their department
+              head may attach one, same as editing the request itself. */}
+          <div className={`${field} col-span-2`}>
+            <Label>Supporting document</Label>
+            <input
+              ref={reportInput}
+              type="file"
+              className="hidden"
+              accept=".pdf,image/*"
+              onChange={(e) => { setReportFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
+            />
+            {reportFile ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{reportFile.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{Math.ceil(reportFile.size / 1024)} KB</span>
+                <button type="button" onClick={() => setReportFile(null)} aria-label="Remove the file"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : procurement?.reportUrl ? (
+              <div className="flex items-center gap-2">
+                <a href={procurement.reportUrl} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-primary hover:bg-muted">
+                  <FileText className="h-3.5 w-3.5" />{procurement.reportFileName || "Attached document"}
+                </a>
+                <Button type="button" variant="outline" size="sm" onClick={() => reportInput.current?.click()}>Replace</Button>
+              </div>
+            ) : (
+              <Button type="button" variant="outline" className="w-full justify-start font-normal text-muted-foreground"
+                onClick={() => reportInput.current?.click()}>
+                <Upload className="h-4 w-4" />Attach a document
+              </Button>
+            )}
+            <p className="text-[11px] text-muted-foreground">PDF or an image, up to 10 MB. Optional.</p>
+          </div>
+
           <ResponsiveDialogFooter className="col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditing ? "Save Changes" : "Add Procurement"}
+              {uploading ? "Attaching document…" : isEditing ? "Save Changes" : "Add Procurement"}
             </Button>
           </ResponsiveDialogFooter>
         </form>

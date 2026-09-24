@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, PaginationMeta, Procurement } from "@/types";
+import type { ApiResponse, Procurement } from "@/types";
 
 const KEY = ["procurement"] as const;
 function errMsg(e: unknown, f: string) {
@@ -14,12 +14,8 @@ export const useProcurements = (params?: Record<string, string>, enabled = true)
   useQuery({
     queryKey: [...KEY, params],
     queryFn: async () => {
-      const res = await api.get<ApiResponse<{ records: Procurement[]; pagination: PaginationMeta }>>("/procurement", { params });
-      const result = res.data.data;
-      return {
-        data: result?.records ?? [],
-        pagination: result?.pagination ?? res.data.pagination,
-      };
+      const res = await api.get<ApiResponse<Procurement[]>>("/procurement", { params });
+      return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
     enabled,
   });
@@ -71,5 +67,21 @@ export const useDeleteProcurement = () => {
     mutationFn: async (id: string) => { await api.delete(`/procurement/${id}`); },
     onSuccess: () => { invalidate(qc); toast.success("Procurement removed"); },
     onError: (e) => toast.error(errMsg(e, "Failed to remove procurement")),
+  });
+};
+
+/** A quote, spec sheet or photo — attached by the requester or their department head. */
+export const useUploadProcurementReport = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return (await api.post<ApiResponse<Procurement>>(`/procurement/${id}/report`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })).data.data!;
+    },
+    onSuccess: () => { invalidate(qc); toast.success("Report attached"); },
+    onError: (e) => toast.error(errMsg(e, "Could not upload the report")),
   });
 };

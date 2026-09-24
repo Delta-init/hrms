@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -328,7 +328,15 @@ export default function AssetsPage() {
                     return (
                       <tr key={p._id} className="border-b border-border last:border-0 hover:bg-muted/30">
                         <td className="px-4 py-3">
-                          <p className="font-medium">{p.item}</p>
+                          <p className="flex items-center gap-1.5 font-medium">
+                            {p.item}
+                            {p.reportUrl && (
+                              <a href={p.reportUrl} target="_blank" rel="noopener noreferrer" title={p.reportFileName || "Attached document"}
+                                className="text-muted-foreground hover:text-primary">
+                                <Paperclip className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </p>
                           {p.category && <p className="text-xs capitalize text-muted-foreground">{p.category}</p>}
                         </td>
                         <td className="max-w-xs px-4 py-3 text-muted-foreground">

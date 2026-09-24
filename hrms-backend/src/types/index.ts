@@ -1275,6 +1275,9 @@ export interface IProcurement extends Document {
   rejectedBy?: "hr" | "finance" | null;
   resubmitCount: number;
   notes?: string;
+  /** A quote, spec sheet or photo backing the request up. */
+  reportKey?: string;
+  reportFileName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
