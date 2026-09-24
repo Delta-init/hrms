@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { PhotoViewer } from "@/components/shared/PhotoViewer";
 import { RaiseRequestDialog } from "@/components/office-keeping/RaiseRequestDialog";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -45,12 +46,7 @@ function RequestCard({ r, children }: { r: OfficeKeepingRequest; children?: Reac
             {r.handledBy ? ` · handled by ${nameOf(r.handledBy)}` : ""}
           </p>
         </div>
-        {r.photoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <a href={r.photoUrl} target="_blank" rel="noreferrer" className="shrink-0">
-            <img src={r.photoUrl} alt="" className="h-16 w-16 rounded-md border border-border object-cover" />
-          </a>
-        )}
+        {r.photoUrl && <PhotoViewer src={r.photoUrl} caption={r.location} alt={r.issue} />}
       </div>
 
       {/* The trail: when somebody set off, and when it was done. */}
