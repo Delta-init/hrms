@@ -1,5 +1,6 @@
 import { Notification } from "../models/Notification.js";
 import { getOrgId, scoped } from "../utils/orgContext.js";
+import { sendPushToUsers } from "./pushService.js";
 
 /**
  * Writing and reading in-app notifications.
@@ -53,6 +54,20 @@ export async function notify(input: NotifyInput): Promise<number> {
       createdAt: new Date(),
     }));
     await Notification.insertMany(rows, { ordered: false });
+
+    // Fired, not awaited: a push service having a slow afternoon must not
+    // hold up whatever just happened to earn this notification in the first
+    // place. Reaches somebody with the app fully closed, which the row just
+    // written — a page has to be open and polling to see it — cannot.
+    //
+    // No `tag` here on purpose. The browser replaces any shown notification
+    // sharing a tag with the newest one carrying it — right for two updates
+    // about the one thing, wrong for two different leave requests a minute
+    // apart sharing nothing but `kind`, which would silently bury the first.
+    // A caller wanting that dedup can add its own tag once it has a stable
+    // id to key it on; the shared path stays safe without one.
+    sendPushToUsers(recipients, { title: input.title, body: input.body ?? "", url: input.href }).catch(() => null);
+
     return rows.length;
   } catch (err) {
     console.error("🔔 notification write failed:", err instanceof Error ? err.message : err);

@@ -52,6 +52,14 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_SECURE: z.string().optional(), // "true" | "false"
   MAIL_FROM: z.string().optional(),   // e.g. "HRMS <no-reply@company.com>"
+
+  // Web Push (optional) — when unset, sendPushToUser is a logged no-op, the
+  // same way sendMail behaves with no SMTP. Generated once via
+  // `npx web-push generate-vapid-keys`; rotating them invalidates every
+  // subscription already stored.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default("mailto:admin@deltainstitutions.com"),
   // Cron expression for the daily birthday check (server local time).
   BIRTHDAY_CRON: z.string().default("0 8 * * *"),
   // Daily "what is still waiting for a decision" digest to Super Admins.

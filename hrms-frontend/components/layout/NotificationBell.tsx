@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, CheckCheck, CalendarDays, Clock, ShieldCheck, Megaphone, AlarmClock, Wallet, Info } from "lucide-react";
+import { Bell, Check, CheckCheck, CalendarDays, Clock, ShieldCheck, Megaphone, AlarmClock, Wallet, Info, BellRing, BellOff, Loader2 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useNotifications, useUnreadCount, useMarkRead, useMarkAllRead } from "@/hooks/useNotifications";
+import { usePushNotification } from "@/hooks/usePushNotification";
 import { waitingFor } from "@/components/approvals/shared";
 import type { AppNotification, NotificationKind } from "@/types";
 
@@ -48,6 +49,7 @@ export function NotificationBell() {
   const { data: rows = [], isLoading } = useNotifications(open);
   const markRead = useMarkRead();
   const markAll = useMarkAllRead();
+  const push = usePushNotification();
 
   const openOne = (n: AppNotification) => {
     if (!n.readAt) markRead.mutate(n._id);
@@ -86,6 +88,38 @@ export function NotificationBell() {
             </button>
           )}
         </div>
+
+        {/* Reaches somebody with the app fully closed — a phone screen off,
+            a laptop shut. Never asked for on load; only ever behind this. */}
+        {push.permission !== "unsupported" && (
+          <div className="border-b border-border px-3 py-2">
+            {push.permission === "denied" ? (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <BellOff className="h-3.5 w-3.5" />Notifications are blocked — change it in your browser&rsquo;s site settings.
+              </p>
+            ) : push.isSubscribed ? (
+              <button
+                type="button"
+                onClick={() => push.unsubscribe()}
+                disabled={push.isLoading}
+                className="flex w-full items-center gap-1.5 text-xs text-emerald-600 hover:text-foreground disabled:opacity-50"
+              >
+                {push.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BellRing className="h-3.5 w-3.5" />}
+                Notifications enabled on this device — turn off
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => push.requestPermission()}
+                disabled={push.isLoading}
+                className="flex w-full items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                {push.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BellRing className="h-3.5 w-3.5" />}
+                Get notified on this device, even when it&rsquo;s closed
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="max-h-[min(26rem,60vh)] overflow-y-auto">
           {isLoading ? (

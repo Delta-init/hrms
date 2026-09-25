@@ -543,6 +543,19 @@ export interface IMonthlyPerformanceReport extends Document {
   updatedAt: Date;
 }
 
+// ─── Web Push ─────────────────────────────────────────────────────────────────
+/** A browser's address for Web Push — see PushSubscription.ts for why there
+ *  are many of these per person, and why `endpoint` is unique. */
+export interface IPushSubscription extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  user: Types.ObjectId | IUser;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─── Department ─────────────────────────────────────────────────────────────
 /** A person reference that may point to either an Employee or a User. */
 export type PersonKind = "Employee" | "User";

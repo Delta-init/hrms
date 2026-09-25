@@ -6,6 +6,7 @@ import { KioskLock } from "@/components/layout/KioskLock";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { OfflineNotice } from "@/components/pwa/OfflineNotice";
+import { PushNavigationListener } from "@/components/pwa/PushNavigationListener";
 import { RootPortalHistoryBridge } from "@/components/RootPortalHistoryBridge";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <RootPortalHistoryBridge />
     <OnboardingGate />
     <KioskLock />
+    <PushNavigationListener />
     <div className="flex h-screen w-full overflow-hidden bg-muted/30">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col p-2 md:p-3">

@@ -18,6 +18,9 @@ public/sw.js
 public/sw.js.map
 public/workbox-*.js
 public/workbox-*.js.map
+# next-pwa's compiled copy of worker/index.js — same story, different name
+public/worker-*.js
+public/worker-*.js.map
 
 # auth assets (supply your own)
 
