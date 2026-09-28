@@ -9,6 +9,7 @@ import { putObject, publicUrl } from "./uploadService.js";
 import { sendMail } from "../utils/mailer.js";
 import { notify } from "./notificationService.js";
 import { watchersFor } from "./watchers.js";
+import { sendWhatsAppToUsers } from "./whatsappService.js";
 import { env } from "../config/env.js";
 
 const POP = [
@@ -112,6 +113,15 @@ export class OfficeKeepingService {
             (photoKey ? "<br><br>A photo is attached to the request." : "")
         );
       }
+
+      // WhatsApp to the same people — the office boy acting on this is
+      // likelier to see his phone than his mailbox. Not awaited: a slow
+      // provider must not hold up the request somebody just raised. Whoever
+      // raised it is left out; they know already.
+      sendWhatsAppToUsers(
+        people.map((p) => p.id).filter((id) => id !== String(requestedBy)),
+        `New office keeping request from ${who} at ${input.location}: ${input.issue}`
+      ).catch(() => null);
     }
 
     return this.shape((await OfficeKeepingRequest.findById(record._id).populate(POP).lean())!);

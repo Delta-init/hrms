@@ -12,6 +12,7 @@ import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { sendMail } from "../utils/mailer.js";
 import { notify } from "./notificationService.js";
 import { watchersFor } from "./watchers.js";
+import { sendWhatsAppToUsers } from "./whatsappService.js";
 import { env } from "../config/env.js";
 
 const POP = [
@@ -94,11 +95,13 @@ export class ProcurementService {
     record: { item: string; requestedBy?: unknown },
     headline: string,
     note?: string | null,
-    decidedBy?: string
+    decidedBy?: string,
+    /** Tell these instead of procurement's approvers — see `facilitiesOnly`. */
+    recipients?: string[]
   ) {
     try {
       const skip = new Set([String(decidedBy ?? ""), String(record.requestedBy ?? "")]);
-      const ids = (await watchersFor("procurement")).filter((id) => !skip.has(id));
+      const ids = (recipients ?? (await watchersFor("procurement"))).filter((id) => !skip.has(id));
       if (!ids.length) return;
 
       try {
@@ -141,6 +144,28 @@ export class ProcurementService {
     }
   }
 
+  /**
+   * Everybody who should hear that something is being bought: whoever
+   * approves procurement, and whoever runs office keeping.
+   *
+   * The second group is here for the office assistant. He goes and buys the
+   * thing once it's approved, so he needs to know about it — but approving
+   * spend is not his to do, so he holds office keeping's `approve`, not
+   * procurement's. Both halves are read from permissions, never from names.
+   */
+  private async facilitiesPeople(exclude?: unknown): Promise<string[]> {
+    const [proc, office] = await Promise.all([watchersFor("procurement"), watchersFor("officeKeeping")]);
+    return [...new Set([...proc, ...office])].filter((id) => id !== String(exclude ?? ""));
+  }
+
+  /** Office keeping's people who don't also approve procurement — told separately
+   *  because procurement's approvers already hear through `tellApprovers`. */
+  private async facilitiesOnly(): Promise<string[]> {
+    const [proc, office] = await Promise.all([watchersFor("procurement"), watchersFor("officeKeeping")]);
+    const approvers = new Set(proc);
+    return office.filter((id) => !approvers.has(id));
+  }
+
   async create(input: CreateProcurementInput, requestedBy: string) {
     const kind = input.kind ?? "existing";
     // A request starts by being asked for; a record of something already bought
@@ -159,14 +184,26 @@ export class ProcurementService {
     });
 
     if (kind === "new") {
+      // The approvers (and the requester's department head) as before, plus
+      // office keeping's people — in-app, and push through notify().
+      const [approvers, facilities] = await Promise.all([
+        watchersFor("procurement", requestedBy),
+        this.facilitiesOnly(),
+      ]);
       await notify({
-        users: await watchersFor("procurement", requestedBy),
+        users: [...approvers, ...facilities],
         kind: "approval",
         title: `${input.item} requested`,
         body: `${input.quantity ?? 1} × ${input.item}`,
         href: "/assets",
         actor: requestedBy,
       });
+
+      const raiser = await User.findById(requestedBy).select("name").lean<{ name?: string } | null>();
+      sendWhatsAppToUsers(
+        await this.facilitiesPeople(requestedBy),
+        `New procurement request: ${input.quantity ?? 1} × ${input.item}, raised by ${raiser?.name ?? "somebody"}.`
+      ).catch(() => null);
     }
     const created = await Procurement.findById(record._id).populate(POP);
     return shape(created!.toObject());
@@ -374,6 +411,19 @@ export class ProcurementService {
     // The decision was made in the finance system, so there is no HRMS user to
     // leave out — everybody who approves these hears about it.
     await this.tellApprovers(record as never, financeHeadline, input.note);
+
+    // Approved is the moment somebody actually goes and buys it — so office
+    // keeping's people hear too (mail, in-app, push), and everyone gets it on
+    // WhatsApp. A refusal is only procurement's business, and stops above.
+    if (approved) {
+      await this.tellApprovers(record as never, financeHeadline, input.note, undefined, await this.facilitiesOnly());
+      const po = input.purchaseOrderRef ? ` (PO ${input.purchaseOrderRef})` : "";
+      sendWhatsAppToUsers(
+        await this.facilitiesPeople(record.requestedBy),
+        `Procurement approved by finance: ${record.quantity ?? 1} × ${record.item}${po}. Ready to purchase.`
+      ).catch(() => null);
+    }
+
     return shape(await Procurement.findById(record._id).populate(POP).lean());
   }
 }

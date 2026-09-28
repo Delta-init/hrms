@@ -60,6 +60,18 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default("mailto:admin@deltainstitutions.com"),
+
+  // WhatsApp (optional) — Creatyvot's Meta Cloud API proxy. When unset,
+  // sending is a logged no-op, same as mail and push. The key is a `wc_…`
+  // Creatyvot key, not a Meta access token.
+  WHATSAPP_API_BASE_URL: z.string().optional(),
+  WHATSAPP_API_KEY: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_WABA_ID: z.string().optional(),
+  // One general Utility template carries every notification: its single
+  // {{1}} holds the text. Must match the name approved in Creatyvot exactly.
+  WHATSAPP_TEMPLATE_NAME: z.string().default("hrms_notification"),
+  WHATSAPP_TEMPLATE_LANG: z.string().default("en_US"),
   // Cron expression for the daily birthday check (server local time).
   BIRTHDAY_CRON: z.string().default("0 8 * * *"),
   // Daily "what is still waiting for a decision" digest to Super Admins.
