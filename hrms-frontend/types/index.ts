@@ -1081,10 +1081,40 @@ export interface PayrollRunRow {
   payslipId: string | null;
   /** null → no payslip generated for this month yet. */
   status: PayslipStatus | null;
+  /** When the payslip's figures came from an imported salary sheet. */
+  importedAt?: string | null;
 }
 export interface PayrollRun {
   month: string;
   rows: PayrollRunRow[];
+}
+
+/** One salary-sheet figure set: the sheet's, or the system's for comparison. */
+export interface SheetFigures {
+  gross: number; lopDays: number; loan: number; advance: number; lop: number; other: number; net: number;
+}
+export interface SalarySheetImportRow {
+  line: number;
+  code: string;
+  name: string;
+  employee: { _id: string; name: string } | null;
+  action: "create" | "replace" | "skip";
+  errors: string[];
+  warnings: string[];
+  sheet: SheetFigures & { paidDays: number; totalDeductions: number };
+  system: (SheetFigures & { status: PayslipStatus | null; imported: boolean }) | null;
+}
+export interface SalarySheetImportResult {
+  month: string;
+  fileName: string;
+  /** Why the month can't be imported into, when it has gone to accounts. */
+  locked: string | null;
+  rows: SalarySheetImportRow[];
+  skipped: Array<{ line: number; name: string; reason: string }>;
+  /** On this month's payroll but not in the sheet — left alone. */
+  missing: Array<{ name: string; code: string }>;
+  counts: { create: number; replace: number; errors: number; warnings: number };
+  applied: null | { created: number; replaced: number; failed: Array<{ code: string; name: string; error: string }> };
 }
 
 export interface SalaryRegisterRow {

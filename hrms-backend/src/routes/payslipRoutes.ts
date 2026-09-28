@@ -2,10 +2,11 @@ import { Router } from "express";
 import {
   createPayslip, getPayslips, getMyPayslips, getPayslipSummary,
   getPayrollRun, getSalaryRegister, runPayroll, getPayslipById, updatePayslip, deletePayslip,
-  bulkUpdatePayslipStatus, bulkDeletePayslips,
+  bulkUpdatePayslipStatus, bulkDeletePayslips, importSalarySheet,
 } from "../controllers/payslipController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
+import { uploadSpreadsheetSingle } from "../middleware/upload.js";
 
 const router = Router();
 router.use(authenticate);
@@ -18,6 +19,8 @@ router.get("/summary", checkPermission("payroll", "view"), getPayslipSummary);
 router.get("/run", checkPermission("payroll", "view"), getPayrollRun);
 router.get("/register", checkPermission("payroll", "view"), getSalaryRegister);
 router.post("/run", checkPermission("payroll", "create"), runPayroll);
+// Creates and replaces payslips, so both rights are needed — even for the check.
+router.post("/import-sheet", checkPermission("payroll", "create"), checkPermission("payroll", "edit"), uploadSpreadsheetSingle, importSalarySheet);
 router.get("/", checkPermission("payroll", "view"), getPayslips);
 router.post("/", checkPermission("payroll", "create"), createPayslip);
 // Ahead of "/:id" so these paths are not swallowed as an identifier.

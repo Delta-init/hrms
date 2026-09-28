@@ -4,7 +4,8 @@ import { Attendance } from "../models/Attendance.js";
 import { Holiday } from "../models/Holiday.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/payslipValidation.js";
-import type { PaginationQuery, IEmployee } from "../types/index.js";
+import type { PaginationQuery, IEmployee, IPayslipImport } from "../types/index.js";
+import { Loan } from "../models/Loan.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { assertMonthEditable } from "./payrollBatchService.js";
@@ -276,6 +277,102 @@ async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind
   }
 }
 
+export const SHEET_ADVANCE_LABEL = "Salary advance";
+export const SHEET_OTHER_LABEL = "Other deduction";
+const SHEET_LOAN_UNRECORDED = `${LOAN_DEDUCTION_PREFIX} (not on record)`;
+
+/**
+ * A payslip's lines from an imported salary-sheet row, rather than from
+ * attendance and the loan schedule.
+ *
+ * The sheet's figures are final — loss of pay, loan, advance and other
+ * deductions are taken exactly as written. What stays live is the money the
+ * sheet has no column for: reimbursements, overtime and one-time payments are
+ * listed on top of the sheet's basic, so one added later (by finance, say)
+ * still reaches the payslip instead of disappearing into a fixed GROSS.
+ *
+ * Loan and advance amounts are credited to what the person actually owes,
+ * oldest first, so balances move with what was deducted. Anything beyond what
+ * is on record is still deducted — the sheet said so — as a plain line with
+ * nothing to credit, and reported. A one-time deduction raised after the
+ * import is taken on top of the sheet's advance, for the same reason as the
+ * payments above.
+ *
+ * Reads only. The caller saves the payslip and then consumes `alloc` and the
+ * ids, in the same order create() does.
+ */
+export async function buildImportedPayslip(employeeId: string, month: string, snap: IPayslipImport) {
+  const warnings: string[] = [];
+  const [oneTime, reimb, ot] = await Promise.all([
+    computeOneTimeAdjustments(employeeId, month),
+    computeReimbursements(employeeId, month),
+    computeOvertime(employeeId, month),
+  ]);
+
+  const earnings: Line[] = [];
+  if (snap.basic > 0) earnings.push({ label: "Basic", amount: r2(snap.basic) });
+  earnings.push(...oneTime.earnings, ...reimb.earnings, ...ot.earnings);
+
+  const fixed: Line[] = [];
+  if (snap.lop > 0) fixed.push({ label: `${LOP_PREFIX} (${snap.lopDays}d)`, amount: r2(snap.lop) });
+
+  const loans = await Loan.find(scoped({ employee: employeeId, status: "active" })).sort({ disbursedDate: 1, createdAt: 1 });
+  let loanLeft = r2(snap.loan);
+  const loanLines: Line[] = [];
+  const repayments: Array<{ loanId: string; amount: number }> = [];
+  for (const loan of loans) {
+    if (loanLeft <= 0) break;
+    const take = r2(Math.min(r2(loan.amount - loan.amountRepaid), loanLeft));
+    if (take <= 0) continue;
+    loanLines.push({ label: `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`, amount: take });
+    repayments.push({ loanId: String(loan._id), amount: take });
+    loanLeft = r2(loanLeft - take);
+  }
+  if (loanLeft > 0) {
+    fixed.push({ label: SHEET_LOAN_UNRECORDED, amount: loanLeft });
+    warnings.push(`Loan ${loanLeft} more than is owed on record — deducted as a plain line`);
+  }
+
+  const raisedSince = new Set(
+    (await OneTimeAdjustment.find({ _id: { $in: oneTime.deductions.map((d) => d.adjustmentId) }, createdAt: { $gt: snap.at } })
+      .select("_id").lean()).map((a) => String(a._id))
+  );
+  let advanceLeft = r2(snap.advance + oneTime.deductions.filter((d) => raisedSince.has(d.adjustmentId)).reduce((a, d) => a + d.amount, 0));
+  const adjustments: Array<Line & { adjustmentId: string }> = [];
+  for (const d of oneTime.deductions) {
+    if (advanceLeft <= 0) break;
+    const take = r2(Math.min(d.amount, advanceLeft));
+    adjustments.push({ ...d, amount: take });
+    advanceLeft = r2(advanceLeft - take);
+  }
+  if (advanceLeft > 0) {
+    fixed.push({ label: SHEET_ADVANCE_LABEL, amount: advanceLeft });
+    if (snap.advance > 0 && oneTime.deductions.length) warnings.push(`Advance ${advanceLeft} more than is owed on record — deducted as a plain line`);
+  }
+  if (snap.other > 0) fixed.push({ label: SHEET_OTHER_LABEL, amount: r2(snap.other) });
+
+  const alloc = allocateRecoveries(earnings, fixed, adjustments, loanLines, repayments);
+  if (alloc.deferred > 0) warnings.push(`${alloc.deferred} of loan/advance did not fit in this month's pay and was carried forward`);
+
+  return {
+    earnings,
+    deductions: [...fixed, ...alloc.lines, ...oneTime.waived],
+    alloc,
+    ids: { oneTime: oneTime.ids, reimb: reimb.ids, ot: ot.ids },
+    warnings,
+  };
+}
+
+/** Save-side of buildImportedPayslip: credit loans/advances and mark paid what the slip paid. */
+export async function consumeImported(built: Awaited<ReturnType<typeof buildImportedPayslip>>, payslipId: string) {
+  await applyRecoveries(built.alloc, payslipId);
+  if (built.ids.oneTime.length) await markOneTimeApplied(built.ids.oneTime, payslipId);
+  if (built.ids.reimb.length) await markReimbursementsPaid(built.ids.reimb, payslipId);
+  if (built.ids.ot.length) await markOvertimeApplied(built.ids.ot, payslipId);
+}
+
+export { undoRecoveries };
+
 export class PayslipService {
   async create(input: CreatePayslipInput, issuerId: string) {
     // Refused once the month is with accounts: a new payslip appearing after
@@ -394,6 +491,15 @@ export class PayslipService {
     if (input.month !== undefined && input.month !== record.month) {
       await assertMonthEditable(input.month, "a payslip");
     }
+    // Editing amounts re-derives loss of pay from attendance and loans from
+    // their schedule, which would quietly replace the sheet's figures with
+    // different ones. Status and notes can still change.
+    if (record.imported && (input.earnings !== undefined || input.deductions !== undefined || input.month !== undefined)) {
+      throw Object.assign(
+        new Error("This payslip was imported from a salary sheet — correct the sheet and import it again, or move it back to not generated to have it calculated"),
+        { statusCode: 400 }
+      );
+    }
 
     if (input.month !== undefined) { record.month = input.month; record.monthDate = monthBounds(input.month).start; }
     if (input.currency !== undefined) record.currency = input.currency;
@@ -475,6 +581,26 @@ export class PayslipService {
     // Hand back everything this slip had collected or consumed, so the sources
     // below report what is genuinely outstanding rather than what is left over.
     await undoRecoveries(record);
+
+    // An imported payslip is rebuilt from its sheet row, not from attendance:
+    // the sheet's figures stay, and whatever changed around them (a finance
+    // adjustment, most often) is added on top.
+    if (record.imported) {
+      const built = await buildImportedPayslip(employeeId, month, record.imported as IPayslipImport);
+      record.earnings = built.earnings as never;
+      record.deductions = built.deductions as never;
+      record.recoveries = built.alloc.recoveries as never;
+      record.deferred = built.alloc.deferred;
+      await record.save();
+      await consumeImported(built, String(record._id));
+      return {
+        payslipId: String(record._id),
+        employeeId,
+        before,
+        after: { gross: record.grossPay, deductions: record.totalDeductions, net: record.netPay },
+        deferred: record.deferred ?? 0,
+      };
+    }
 
     const att = await this.summary(employeeId, month);
     const oneTime = await computeOneTimeAdjustments(employeeId, month);
@@ -903,8 +1029,13 @@ export class PayslipService {
       // computation: the adjustments it consumed are closed, so recomputing
       // reports zero for work the payslip plainly did.
       const slipOneTimePayments = slip ? (paidOneTime.get(String(slip._id)) ?? 0) : oneTimePayments;
+      // An imported sheet's advance beyond anything on record is a plain line
+      // with no recovery behind it; it is still the advance column.
       const slipOneTimeDeductions = slip
-        ? round((slip.recoveries ?? []).filter((r) => r.kind === "adjustment").reduce((a, r) => a + r.amount, 0))
+        ? round(
+            (slip.recoveries ?? []).filter((r) => r.kind === "adjustment").reduce((a, r) => a + r.amount, 0) +
+            sum(slip.deductions, (l) => l === SHEET_ADVANCE_LABEL)
+          )
         : oneTimeDeductions;
 
       const row = slip
@@ -954,6 +1085,7 @@ export class PayslipService {
         ...row,
         payslipId: slip ? String(slip._id) : null,
         status: slip?.status ?? null, // null → not generated yet
+        importedAt: slip?.imported?.at ?? null,
       });
     }
     return { month, rows };

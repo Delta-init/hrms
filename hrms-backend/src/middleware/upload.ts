@@ -59,6 +59,36 @@ export function extFromMime(mime: string): string {
   }
 }
 
+/**
+ * A salary sheet. Checked by extension as well as type: browsers and Excel
+ * versions disagree about the mime type of a workbook, and some send a
+ * generic octet-stream for it.
+ */
+const SPREADSHEET_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/octet-stream",
+]);
+const spreadsheetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (SPREADSHEET_TYPES.has(file.mimetype) && /\.xlsx?$/i.test(file.originalname)) return cb(null, true);
+    cb(new Error("Upload an Excel file (.xlsx or .xls)."));
+  },
+}).single("file");
+
+export const uploadSpreadsheetSingle = (req: Request, res: Response, next: NextFunction) => {
+  spreadsheetUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "The sheet is too large (max 5MB)." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};
+
 /** Induction video: a different beast from a document, so a different limit. */
 export const MAX_VIDEO_SIZE = 250 * 1024 * 1024;
 

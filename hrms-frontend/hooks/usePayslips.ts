@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Payslip, PayslipStatus, PayslipSummary, PayrollRun, SalaryRegister } from "@/types";
+import type { ApiResponse, Payslip, PayslipStatus, PayslipSummary, PayrollRun, SalaryRegister, SalarySheetImportResult } from "@/types";
 
 const KEY = ["payslips"] as const;
 function errMsg(e: unknown, f: string) {
@@ -117,6 +117,33 @@ export const useBulkPayslipStatus = () => {
       (await api.patch<ApiResponse<{ modified: number }>>("/payslips/bulk/status", { ids, status })).data,
     onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message); },
     onError: (e) => toast.error(errMsg(e, "Failed to update payslips")),
+  });
+};
+
+/**
+ * Check a salary sheet against a month (apply: false — nothing is written), or
+ * import it (apply: true). The file goes up both times; the server trusts
+ * nothing from the check.
+ */
+export const useImportSalarySheet = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ month, file, apply }: { month: string; file: File; apply: boolean }) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("month", month);
+      form.append("apply", String(apply));
+      return (await api.post<ApiResponse<SalarySheetImportResult>>("/payslips/import-sheet", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })).data.data!;
+    },
+    onSuccess: (r) => {
+      if (!r.applied) return;
+      qc.invalidateQueries({ queryKey: KEY });
+      const done = r.applied.created + r.applied.replaced;
+      toast.success(`Imported ${done} payslip${done === 1 ? "" : "s"}${r.applied.failed.length ? ` · ${r.applied.failed.length} failed` : ""}`);
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not read the salary sheet")),
   });
 };
 

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet } from "lucide-react";
+import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload } from "lucide-react";
+import { ImportSalarySheetDialog } from "@/components/payroll/ImportSalarySheetDialog";
 import { toast } from "@/lib/toast";
 import { downloadSalarySheet } from "@/lib/salarySheet";
 import { usePayrollRun, useGeneratePayroll, usePayslip, useBulkPayslipStatus, useBulkDeletePayslips } from "@/hooks/usePayslips";
@@ -52,6 +53,7 @@ export function PayrollRun() {
   const { mutate: bulkDelete, isPending: reverting } = useBulkDeletePayslips();
 
   const [checklistOpen, setChecklistOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [revertOpen, setRevertOpen] = useState(false);
   const [createRow, setCreateRow] = useState<PayrollRunRow | null>(null);
@@ -130,6 +132,11 @@ export function PayrollRun() {
             {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
             Download salary sheet
           </Button>
+          {canGenerate && canEdit && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4" />Import salary sheet
+            </Button>
+          )}
           {canGenerate && (
             <Button onClick={() => setChecklistOpen(true)} disabled={pending === 0} className="shadow-sm">
               <Play className="h-4 w-4" />Process Payroll ({pending})
@@ -240,6 +247,8 @@ export function PayrollRun() {
         onConfirm={() => bulkDelete(selectedIds, { onSuccess: () => { clearSelection(); setRevertOpen(false); } })}
       />
 
+      <ImportSalarySheetDialog open={importOpen} onOpenChange={setImportOpen} month={month} />
+
       <PayrollChecklistDialog
         open={checklistOpen}
         onOpenChange={setChecklistOpen}
@@ -311,7 +320,10 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
       <td className="px-4 py-3 text-right font-semibold tabular-nums text-primary">{money(r.netPay, r.currency)}</td>
       <td className="px-4 py-3">
         {r.status ? (
-          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>{PAYSLIP_STATUS_LABELS[r.status]}</span>
+          <>
+            <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>{PAYSLIP_STATUS_LABELS[r.status]}</span>
+            {r.importedAt && <p className="mt-0.5 text-[11px] text-muted-foreground" title="Figures come from an imported salary sheet">from sheet</p>}
+          </>
         ) : (
           <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">Not generated</span>
         )}

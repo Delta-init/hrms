@@ -955,8 +955,29 @@ export interface IPayslip extends Document {
   recoveries?: Array<{ kind: "loan" | "adjustment"; ref: Types.ObjectId; amount: number }>;
   /** Scheduled recovery this month couldn't afford. */
   deferred?: number;
+  /** Set when the figures came from an imported salary sheet; null otherwise. */
+  imported?: IPayslipImport | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * The salary-sheet row a payslip was imported from. Kept so the payslip can be
+ * rebuilt from the sheet — not from attendance — when something it depends on
+ * changes later, such as finance adding an adjustment to the month.
+ */
+export interface IPayslipImport {
+  at: Date;
+  by?: Types.ObjectId | null;
+  fileName?: string;
+  /** GROSS less the reimbursements, overtime and one-time payments it included. */
+  basic: number;
+  lopDays: number;
+  paidDays: number;
+  lop: number;
+  loan: number;
+  advance: number;
+  other: number;
 }
 
 // ─── Work Schedule (shift + region + leave calendar) ────────────────────────

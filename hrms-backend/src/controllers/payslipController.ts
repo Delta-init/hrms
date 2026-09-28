@@ -1,10 +1,26 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { PayslipService } from "../services/payslipService.js";
+import { SalarySheetImportService } from "../services/salarySheetImportService.js";
 import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema } from "../validations/payslipValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new PayslipService();
+const sheetImport = new SalarySheetImportService();
+
+/**
+ * Check (apply=false) or import (apply=true) a salary sheet for a month. The
+ * file is sent both times; nothing from the check is kept between the two.
+ */
+export const importSalarySheet = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) { sendError(res, "Choose the salary sheet to import", 400); return; }
+    const month = String(req.body?.month ?? "");
+    const apply = String(req.body?.apply ?? "") === "true";
+    const result = await sheetImport.run(month, req.file, apply, req.user!.userId);
+    sendSuccess(res, apply ? "Salary sheet imported" : "Salary sheet checked", result);
+  } catch (error) { next(error); }
+};
 
 export const createPayslip = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {

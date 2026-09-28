@@ -26,6 +26,22 @@ const recoverySchema = new Schema(
   { _id: false }
 );
 
+const importSchema = new Schema(
+  {
+    at: { type: Date, required: true },
+    by: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    fileName: { type: String, trim: true, maxlength: 200, default: "" },
+    basic: { type: Number, default: 0, min: 0 },
+    lopDays: { type: Number, default: 0, min: 0 },
+    paidDays: { type: Number, default: 0, min: 0 },
+    lop: { type: Number, default: 0, min: 0 },
+    loan: { type: Number, default: 0, min: 0 },
+    advance: { type: Number, default: 0, min: 0 },
+    other: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false }
+);
+
 const payslipSchema = new Schema<IPayslip>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -50,6 +66,8 @@ const payslipSchema = new Schema<IPayslip>(
     recoveries: { type: [recoverySchema], default: [] },
     /** Scheduled recovery this month's pay couldn't cover; taken next month. */
     deferred: { type: Number, default: 0, min: 0 },
+    /** The salary-sheet row this payslip was imported from — see IPayslipImport. */
+    imported: { type: importSchema, default: null },
   },
   { timestamps: true, versionKey: false }
 );
