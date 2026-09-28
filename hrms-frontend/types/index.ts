@@ -1048,8 +1048,10 @@ export interface PayComponentLine {
   amount: number;
 }
 export interface PayrollRunRow {
-  employee: { _id: string; name: string; employeeCode?: string };
+  employee: { _id: string; name: string; employeeCode?: string; joiningDate?: string | null };
   currency: string;
+  /** Full monthly salary, before a joiner's or leaver's part-month cut. */
+  monthlySalary?: number;
   /** Gross of all earnings (Basic + allowances). */
   salary: number;
   /** Earning lines from the salary structure (Basic first), else a single Basic. */

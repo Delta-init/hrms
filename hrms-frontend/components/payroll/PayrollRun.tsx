@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check } from "lucide-react";
+import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet } from "lucide-react";
+import { toast } from "@/lib/toast";
+import { downloadSalarySheet } from "@/lib/salarySheet";
 import { usePayrollRun, useGeneratePayroll, usePayslip, useBulkPayslipStatus, useBulkDeletePayslips } from "@/hooks/usePayslips";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -73,6 +75,20 @@ export function PayrollRun() {
   const totalNet = rows.reduce((a, r) => a + r.netPay, 0);
   const currency = rows[0]?.currency ?? "AED";
 
+  const [downloading, setDownloading] = useState(false);
+  // Any row still ungenerated makes it a preview — its figures can move until
+  // payroll is processed, and the sheet says so in its first line.
+  const downloadSheet = async () => {
+    setDownloading(true);
+    try {
+      await downloadSalarySheet(month, rows, pending > 0);
+    } catch {
+      toast.error("The salary sheet could not be created — try again");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const preset = createRow
     ? {
         employeeId: createRow.employee._id,
@@ -109,11 +125,17 @@ export function PayrollRun() {
             <p className="font-semibold tabular-nums text-primary">{money(totalNet, currency)}</p>
           </div>
         </div>
-        {canGenerate && (
-          <Button onClick={() => setChecklistOpen(true)} disabled={pending === 0} className="shadow-sm">
-            <Play className="h-4 w-4" />Process Payroll ({pending})
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={downloadSheet} disabled={!rows.length || isFetching || downloading}>
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            Download salary sheet
           </Button>
-        )}
+          {canGenerate && (
+            <Button onClick={() => setChecklistOpen(true)} disabled={pending === 0} className="shadow-sm">
+              <Play className="h-4 w-4" />Process Payroll ({pending})
+            </Button>
+          )}
+        </div>
       </Card>
 
       {selectedIds.length > 0 && (

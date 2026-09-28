@@ -835,7 +835,7 @@ export class PayslipService {
    */
   async runPreview(month: string) {
     const employees = await Employee.find(scoped(await payrollRosterFilter(month)))
-      .select("name employeeCode salary currency user")
+      .select("name employeeCode salary currency user joiningDate")
       .sort({ name: 1 });
     // The whole payslip, not just its status: once one exists it is the record
     // of what was paid, and the row has to show that rather than a fresh guess.
@@ -936,8 +936,11 @@ export class PayslipService {
           };
 
       rows.push({
-        employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode },
+        employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, joiningDate: emp.joiningDate ?? null },
         currency: s.currency,
+        // The full monthly figure, before any cut for a part month — the
+        // salary sheet's BASIC column. `salary` below is what this month owes.
+        monthlySalary: s.salary || 0,
         structureName: s.structureName ?? null,
         structureDeductions: s.structureDeductions ?? [],
         lopDays: slip ? (slip.lopDays ?? s.lopDays) : s.lopDays,
