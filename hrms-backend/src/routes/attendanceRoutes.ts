@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createAttendance,
   bulkSetAttendanceStatus,
-  setDayStatus,
+  setDayStatus, setDaysStatus,
   getAttendance,
   getAttendanceById,
   updateAttendance,
@@ -43,6 +43,7 @@ router.patch("/bulk-status", checkPermission("attendance", "edit"), bulkSetAtten
 // Also above "/:id". Addressed by employee and day rather than by record id,
 // so it can mark a day nobody clocked into — which has no record to name.
 router.patch("/day-status", checkPermission("attendance", "edit"), setDayStatus);
+router.patch("/days-status", checkPermission("attendance", "edit"), setDaysStatus);
 router.get("/:id", checkPermission("attendance", "edit"), getAttendanceById);
 router.put("/:id", checkPermission("attendance", "edit"), updateAttendance);
 router.delete("/:id", checkPermission("attendance", "delete"), deleteAttendance);

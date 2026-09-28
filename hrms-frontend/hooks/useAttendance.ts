@@ -128,6 +128,26 @@ export const useSetDayStatus = () => {
   });
 };
 
+/**
+ * One status for any mix of people and days — cells picked on the calendar.
+ * Each cell is handled exactly as a single day is, records created where
+ * missing.
+ */
+export const useSetDaysStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { cells: Array<{ employee: string; date: string }>; status: string; note?: string }) => {
+      const res = await api.patch<ApiResponse<{ matched: number; modified: number; created: number; skipped: number }>>(
+        "/attendance/days-status",
+        input
+      );
+      return res.data;
+    },
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not set that status")),
+  });
+};
+
 export const useDeleteAttendance = () => {
   const qc = useQueryClient();
   return useMutation({

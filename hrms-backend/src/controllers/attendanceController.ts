@@ -1,7 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { AttendanceService } from "../services/attendanceService.js";
-import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema, setDayStatusSchema } from "../validations/attendanceValidation.js";
+import { createAttendanceSchema, updateAttendanceSchema, punchContextSchema, setDayStatusSchema, setDaysStatusSchema } from "../validations/attendanceValidation.js";
 import { buildPunchContext } from "../utils/punchContext.js";
 import { reverseGeocode } from "../utils/reverseGeocode.js";
 import { sendSuccess, sendError } from "../utils/response.js";
@@ -337,6 +337,23 @@ export const clockOut = async (req: AuthenticatedRequest, res: Response, next: N
   try {
     const record = await service.clockOut(req.user!.userId, await webSource(req));
     sendSuccess(res, "Clocked out", record);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Several people, several days, one status — the calendar's multi-select. */
+export const setDaysStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = setDaysStatusSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const { cells, status, note } = parsed.data;
+    const result = await service.setDaysStatusMany(cells, status, note);
+    const parts = [
+      result.created ? `${result.created} record${result.created === 1 ? "" : "s"} created` : "",
+      result.modified ? `${result.modified} updated` : "",
+    ].filter(Boolean);
+    sendSuccess(res, parts.length ? parts.join(", ") : "Nothing to change", result);
   } catch (error) {
     next(error);
   }

@@ -565,6 +565,27 @@ export class AttendanceService {
     };
   }
 
+  /**
+   * The same, for any mix of people and days — the calendar's multi-select.
+   *
+   * Grouped by day and handed to setDayStatusMany, so every cell goes through
+   * exactly the path a single day does: same record key, same shift times,
+   * same creation of a missing record.
+   */
+  async setDaysStatusMany(cells: Array<{ employee: string; date: string }>, status: string, note?: string) {
+    const byDate = new Map<string, Set<string>>();
+    for (const c of cells) {
+      if (!byDate.has(c.date)) byDate.set(c.date, new Set());
+      byDate.get(c.date)!.add(c.employee);
+    }
+    const total = { matched: 0, modified: 0, created: 0, skipped: 0 };
+    for (const [date, employees] of [...byDate].sort(([a], [b]) => a.localeCompare(b))) {
+      const r = await this.setDayStatusMany([...employees], date, status, note);
+      total.matched += r.matched; total.modified += r.modified; total.created += r.created; total.skipped += r.skipped;
+    }
+    return total;
+  }
+
   async remove(id: string) {
     const record = await Attendance.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Attendance record not found"), { statusCode: 404 });

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, User2, Users, CalendarDays } from "lucide-react";
-import { useAttendanceCalendar, useSetDayStatus } from "@/hooks/useAttendance";
+import { ChevronLeft, ChevronRight, Loader2, User2, Users, CalendarDays, MousePointerClick, X } from "lucide-react";
+import { useAttendanceCalendar, useSetDayStatus, useSetDaysStatus } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmployeeSelect } from "@/components/pickers";
 import { useEmployees } from "@/hooks/useEmployees";
 import { cn } from "@/lib/utils";
+import { ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle } from "@/components/ui/responsive-dialog";
 import { WEEKDAYS, REGULARIZATION_TYPE_LABELS, ATTENDANCE_STATUS_LABELS, type AttendanceCalendarDay, type AttendanceStatus } from "@/types";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -33,6 +34,36 @@ const STATUS: Record<AttendanceStatus, { label: string; cell: string; letter: st
   weekend: { label: "Weekend", cell: "bg-muted text-muted-foreground", letter: "O" },
   wfh: { label: "WFH", cell: "bg-teal-500 text-white", letter: "W" },
 };
+
+/** A picked cell: whose day, and which. */
+type CellKey = string; // `${employeeId}|${YYYY-MM-DD}`
+const cellKey = (employee: string, date: string): CellKey => `${employee}|${date}`;
+
+/**
+ * Multi-select for the calendar. A click toggles one day; a shift-click fills
+ * every selectable day between it and the last one clicked in the same row, so
+ * a fortnight is two clicks rather than fourteen.
+ */
+function useCellSelection() {
+  const [selected, setSelected] = useState<Set<CellKey>>(new Set());
+  const [anchor, setAnchor] = useState<{ employee: string; date: string } | null>(null);
+  const clear = () => { setSelected(new Set()); setAnchor(null); };
+  const toggle = (employee: string, date: string, shift: boolean, rowDates: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (shift && anchor && anchor.employee === employee) {
+        const [a, b] = [anchor.date, date].sort();
+        for (const d of rowDates) if (d >= a && d <= b) next.add(cellKey(employee, d));
+      } else {
+        const k = cellKey(employee, date);
+        if (next.has(k)) next.delete(k); else next.add(k);
+      }
+      return next;
+    });
+    setAnchor({ employee, date });
+  };
+  return { selected, toggle, clear };
+}
 
 export function AttendanceCalendar() {
   const { hasPermission } = useAuth();
@@ -59,6 +90,15 @@ export function AttendanceCalendar() {
   const [y, mm] = month.split("-").map(Number);
   const effectiveMode = canManage ? mode : "single";
 
+  // Picking several days to set at once. Managers only — the same people the
+  // single-day "Set status" is offered to. Anything else on screen changing
+  // (month, view, employee) empties the selection rather than carry cells
+  // the user can no longer see.
+  const [selecting, setSelecting] = useState(false);
+  const selection = useCellSelection();
+  useEffect(() => { selection.clear(); }, [month, mode, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleSelecting = () => { setSelecting((v) => !v); selection.clear(); };
+
   return (
     <div className="space-y-4">
       <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -82,16 +122,22 @@ export function AttendanceCalendar() {
                 className="h-9 w-[200px]"
               />
             )}
+            <Button variant={selecting ? "default" : "outline"} size="sm" className="h-9" onClick={toggleSelecting}>
+              <MousePointerClick className="h-4 w-4" />{selecting ? "Done selecting" : "Select days"}
+            </Button>
           </div>
         )}
       </Card>
 
+      {canManage && selecting && <SelectionBar selected={selection.selected} onClear={selection.clear} />}
+
       {isLoading || isFetching ? (
         <Card className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>
       ) : effectiveMode === "single" ? (
-        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={canManage ? !!employeeId : true} canManage={canManage} />
+        <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected={canManage ? !!employeeId : true} canManage={canManage}
+          selecting={canManage && selecting} selection={selection} />
       ) : (
-        <AllView data={data} month={month} />
+        <AllView data={data} month={month} canManage={canManage} selecting={canManage && selecting} selection={selection} />
       )}
 
       <Legend />
@@ -111,11 +157,16 @@ function Legend() {
   );
 }
 
-function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }: { data?: { daysInMonth: number; employees: { employee: { _id: string; name: string }; days: Record<string, AttendanceCalendarDay>; summary: Record<string, number> }[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean; canManage: boolean }) {
+type CalendarEmployee = { employee: { _id: string; name: string }; days: Record<string, AttendanceCalendarDay>; summary?: Record<string, number> };
+type Selection = ReturnType<typeof useCellSelection>;
+
+/** Selected cells look selected on any colour: an outline, not a fill. */
+const selectedRing = "ring-2 ring-primary ring-offset-1 ring-offset-background";
+
+function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, selecting, selection }: { data?: { daysInMonth: number; employees: CalendarEmployee[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean; canManage: boolean; selecting: boolean; selection: Selection }) {
   const emp = data?.employees?.[0];
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => { setSelected(null); }, [month, emp?.employee.name]);
-  const setDayStatus = useSetDayStatus();
 
   if (!emp) {
     // The calendar is keyed off the employee's linked login (User account) —
@@ -133,8 +184,9 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }:
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= (data?.daysInMonth ?? 30); d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
+  const rowDates = Object.keys(days).sort();
 
-  const s = emp.summary;
+  const s = emp.summary ?? {};
   const sel = selected ? days[selected] : null;
 
   return (
@@ -154,9 +206,15 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }:
               const key = `${month}-${String(d).padStart(2, "0")}`;
               const day = days[key];
               const st = day ? STATUS[day.status] : undefined;
+              const picked = selecting && selection.selected.has(cellKey(emp.employee._id, key));
               return (
-                <button key={i} onClick={() => day && setSelected(key)} disabled={!day}
-                  className={cn("relative flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", selected === key && "ring-2 ring-primary")}>
+                <button key={i} disabled={!day}
+                  onClick={(e) => {
+                    if (!day) return;
+                    if (selecting) selection.toggle(emp.employee._id, key, e.shiftKey, rowDates);
+                    else setSelected(key);
+                  }}
+                  className={cn("relative flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", !selecting && selected === key && "ring-2 ring-primary", picked && selectedRing)}>
                   <span>{d}</span>
                   {st && <span className="text-[9px] font-bold opacity-90">{st.letter}</span>}
                   {/* A correction on this day: amber while it waits, white once
@@ -181,54 +239,13 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }:
       </div>
 
       <Card className="h-fit p-5">
-        {sel ? (
-          <>
-            <div className="mb-3 flex items-center gap-2">
-              <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold", STATUS[sel.status].cell)}>{STATUS[sel.status].letter}</span>
-              <div><p className="text-sm font-semibold">{new Date(selected + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}</p><p className="text-[11px] text-muted-foreground">{STATUS[sel.status].label}</p></div>
-            </div>
-            {canManage && emp && (
-              <div className="mb-3 space-y-1">
-                <label className="text-[11px] font-medium text-muted-foreground">Set status</label>
-                <Select
-                  value=""
-                  onValueChange={(status) => setDayStatus.mutate({ employees: [emp.employee._id], date: selected!, status })}
-                  disabled={setDayStatus.isPending}
-                >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Change status…" /></SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
-                      <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* Present fills real check-in/out from the shift when the day
-                    has no punch of its own (not marked, or a stored absence) —
-                    a day with a real punch already on it is never touched. */}
-                <p className="text-[10px] text-muted-foreground">Setting &quot;Present&quot; on a day with no punch fills it from the employee&apos;s shift.</p>
-              </div>
-            )}
-            <div className="space-y-2.5 text-sm">
-              <Row k="Check in" v={fmtTime(sel.checkIn, sel.timeZone)} />
-              <Row k="Check out" v={fmtTime(sel.checkOut, sel.timeZone)} />
-              <Row k="Worked hours" v={fmtWorked(sel.workedMinutes)} />
-              <Row k="Late by" v={sel.lateMinutes ? `${sel.lateMinutes} min` : "—"} />
-              {sel.note && <Row k="Note" v={sel.note} />}
-              {sel.leave && (
-                <Row k="Leave" v={`${sel.leave.label}${sel.leave.paid ? "" : " · unpaid"}`} />
-              )}
-              {sel.regularization && (
-                <Row
-                  k="Correction"
-                  v={`${REGULARIZATION_TYPE_LABELS[sel.regularization.type]} · ${sel.regularization.status}${
-                    sel.regularization.resultingStatus
-                      ? ` → ${ATTENDANCE_STATUS_LABELS[sel.regularization.resultingStatus]}`
-                      : ""
-                  }`}
-                />
-              )}
-            </div>
-          </>
+        {selecting ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            <MousePointerClick className="mx-auto mb-2 h-7 w-7" />
+            Click days to pick them. Shift-click picks every day in between.
+          </div>
+        ) : sel && selected ? (
+          <DayDetails day={sel} date={selected} employeeId={emp.employee._id} canManage={canManage} />
         ) : (
           <div className="py-10 text-center text-sm text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />Select a day to see details.</div>
         )}
@@ -237,10 +254,113 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage }:
   );
 }
 
-function AllView({ data, month }: { data?: { daysInMonth: number; employees: { employee: { _id: string; name: string }; days: Record<string, AttendanceCalendarDay> }[] }; month: string }) {
+/**
+ * One day, read and changed. The calendar's side panel, and the grid's pop-up
+ * when a cell is clicked — the same panel, so the two can never offer
+ * different things for the same day.
+ */
+function DayDetails({ day, date, employeeId, employeeName, canManage }: { day: AttendanceCalendarDay; date: string; employeeId: string; employeeName?: string; canManage: boolean }) {
+  const setDayStatus = useSetDayStatus();
+  return (
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <span className={cn("inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-bold", STATUS[day.status].cell)}>{STATUS[day.status].letter}</span>
+        <div>
+          <p className="text-sm font-semibold">
+            {employeeName ? `${employeeName} · ` : ""}
+            {new Date(date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" })}
+          </p>
+          <p className="text-[11px] text-muted-foreground">{STATUS[day.status].label}</p>
+        </div>
+      </div>
+      {canManage && (
+        <div className="mb-3 space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">Set status</label>
+          <Select
+            value=""
+            onValueChange={(status) => setDayStatus.mutate({ employees: [employeeId], date, status })}
+            disabled={setDayStatus.isPending}
+          >
+            <SelectTrigger className="h-9"><SelectValue placeholder="Change status…" /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
+                <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Present fills real check-in/out from the shift when the day
+              has no punch of its own (not marked, or a stored absence) —
+              a day with a real punch already on it is never touched. */}
+          <p className="text-[10px] text-muted-foreground">Setting &quot;Present&quot; on a day with no punch fills it from the employee&apos;s shift.</p>
+        </div>
+      )}
+      <div className="space-y-2.5 text-sm">
+        <Row k="Check in" v={fmtTime(day.checkIn, day.timeZone)} />
+        <Row k="Check out" v={fmtTime(day.checkOut, day.timeZone)} />
+        <Row k="Worked hours" v={fmtWorked(day.workedMinutes)} />
+        <Row k="Late by" v={day.lateMinutes ? `${day.lateMinutes} min` : "—"} />
+        {day.note && <Row k="Note" v={day.note} />}
+        {day.leave && (
+          <Row k="Leave" v={`${day.leave.label}${day.leave.paid ? "" : " · unpaid"}`} />
+        )}
+        {day.regularization && (
+          <Row
+            k="Correction"
+            v={`${REGULARIZATION_TYPE_LABELS[day.regularization.type]} · ${day.regularization.status}${
+              day.regularization.resultingStatus
+                ? ` → ${ATTENDANCE_STATUS_LABELS[day.regularization.resultingStatus]}`
+                : ""
+            }`}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+/** How many days are picked, and one status for all of them. */
+function SelectionBar({ selected, onClear }: { selected: Set<CellKey>; onClear: () => void }) {
+  const setDaysStatus = useSetDaysStatus();
+  const count = selected.size;
+  const people = new Set(Array.from(selected, (k) => k.split("|")[0])).size;
+  const apply = (status: string) => {
+    const cells = Array.from(selected, (k) => { const [employee, date] = k.split("|"); return { employee, date }; });
+    setDaysStatus.mutate({ cells, status }, { onSuccess: onClear });
+  };
+  return (
+    <Card className="sticky top-2 z-20 flex flex-wrap items-center gap-2 border-primary/30 bg-primary/5 p-3">
+      <span className="text-sm font-medium">
+        {count ? `${count} day${count === 1 ? "" : "s"} selected${people > 1 ? ` · ${people} people` : ""}` : "Click days to select them — shift-click for a range"}
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        <Select value="" onValueChange={apply} disabled={!count || setDaysStatus.isPending}>
+          <SelectTrigger className="h-8 w-[170px]">
+            {setDaysStatus.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SelectValue placeholder="Set status…" />}
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(ATTENDANCE_STATUS_LABELS) as AttendanceStatus[]).map((st) => (
+              <SelectItem key={st} value={st}>{ATTENDANCE_STATUS_LABELS[st]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" onClick={onClear} disabled={!count}>
+          <X className="h-3.5 w-3.5" />Clear
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function AllView({ data, month, canManage, selecting, selection }: { data?: { daysInMonth: number; employees: CalendarEmployee[] }; month: string; canManage: boolean; selecting: boolean; selection: Selection }) {
   const employees = data?.employees ?? [];
   const dayNums = useMemo(() => Array.from({ length: data?.daysInMonth ?? 30 }, (_, i) => i + 1), [data?.daysInMonth]);
+  const [open, setOpen] = useState<{ employee: string; date: string } | null>(null);
   if (employees.length === 0) return <Card className="py-16 text-center text-sm text-muted-foreground">No employees.</Card>;
+
+  // Read from the live data each render, so the pop-up shows the new status
+  // the moment a change comes back rather than what was clicked.
+  const openRow = open ? employees.find((e) => e.employee._id === open.employee) : undefined;
+  const openDay = open && openRow ? openRow.days[open.date] : undefined;
 
   return (
     <Card className="overflow-hidden p-4">
@@ -253,20 +373,58 @@ function AllView({ data, month }: { data?: { daysInMonth: number; employees: { e
             </tr>
           </thead>
           <tbody>
-            {employees.map((e) => (
-              <tr key={e.employee._id}>
-                <td className="sticky left-0 z-10 whitespace-nowrap bg-card pr-2 text-xs font-medium">{e.employee.name}</td>
-                {dayNums.map((d) => {
-                  const key = `${month}-${String(d).padStart(2, "0")}`;
-                  const day = e.days[key];
-                  const st = day ? STATUS[day.status] : undefined;
-                  return <td key={d}><div title={day ? `${d}: ${st?.label}` : `${d}`} className={cn("flex h-5 w-5 items-center justify-center rounded text-[8px] font-bold", st ? st.cell : "bg-muted/50")}>{st?.letter}</div></td>;
-                })}
-              </tr>
-            ))}
+            {employees.map((e) => {
+              const rowDates = Object.keys(e.days).sort();
+              return (
+                <tr key={e.employee._id}>
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-card pr-2 text-xs font-medium">{e.employee.name}</td>
+                  {dayNums.map((d) => {
+                    const key = `${month}-${String(d).padStart(2, "0")}`;
+                    const day = e.days[key];
+                    const st = day ? STATUS[day.status] : undefined;
+                    const picked = selecting && selection.selected.has(cellKey(e.employee._id, key));
+                    return (
+                      <td key={d}>
+                        <button
+                          type="button"
+                          disabled={!day}
+                          title={day ? `${d}: ${st?.label}` : `${d}`}
+                          onClick={(ev) => {
+                            if (!day) return;
+                            if (selecting) selection.toggle(e.employee._id, key, ev.shiftKey, rowDates);
+                            else setOpen({ employee: e.employee._id, date: key });
+                          }}
+                          className={cn(
+                            "flex h-5 w-5 items-center justify-center rounded text-[8px] font-bold",
+                            st ? st.cell : "bg-muted/50",
+                            day && "cursor-pointer hover:ring-2 hover:ring-primary/40",
+                            picked && selectedRing
+                          )}
+                        >
+                          {st?.letter}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      <ResponsiveDialog open={!!openDay} onOpenChange={(o) => { if (!o) setOpen(null); }}>
+        <ResponsiveDialogContent desktopClassName="max-w-sm">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Attendance</ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          <div className="px-4 pb-4 sm:px-0 sm:pb-0">
+            {openDay && open && openRow && (
+              <DayDetails day={openDay} date={open.date} employeeId={open.employee} employeeName={openRow.employee.name} canManage={canManage} />
+            )}
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </Card>
   );
 }

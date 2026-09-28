@@ -81,3 +81,16 @@ export const setDayStatusSchema = z.object({
 });
 
 export type SetDayStatusInput = z.infer<typeof setDayStatusSchema>;
+
+/** Many days for many people at once — cells picked on the calendar. */
+export const setDaysStatusSchema = z.object({
+  cells: z
+    .array(z.object({
+      employee: z.string().trim().min(1),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+    }))
+    .min(1, "Select at least one day")
+    .max(1000, "Select at most 1000 days at a time"),
+  status: statusEnum,
+  note: z.string().trim().max(300).optional(),
+});
