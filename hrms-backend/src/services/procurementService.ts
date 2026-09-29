@@ -417,10 +417,10 @@ export class ProcurementService {
     // WhatsApp. A refusal is only procurement's business, and stops above.
     if (approved) {
       await this.tellApprovers(record as never, financeHeadline, input.note, undefined, await this.facilitiesOnly());
-      const po = input.purchaseOrderRef ? ` (PO ${input.purchaseOrderRef})` : "";
+      const ref = input.purchaseOrderRef ? ` (${input.purchaseOrderRef})` : "";
       sendWhatsAppToUsers(
         await this.facilitiesPeople(record.requestedBy),
-        `Procurement approved by finance: ${record.quantity ?? 1} × ${record.item}${po}. Ready to purchase.`
+        `Procurement approved by finance: ${record.quantity ?? 1} × ${record.item}${ref}. Ready to purchase.`
       ).catch(() => null);
     }
 
