@@ -406,24 +406,40 @@ export class ProcurementService {
       },
     });
 
+    // Finance is waiting on this answer, and the post can take a while — a mail
+    // to each approver in turn, through the organization's SMTP. Waiting for it
+    // ran finance past its timeout: it reported a failure for a decision that
+    // had been recorded here. So the decision is answered now and announced
+    // straight after; it is saved either way, and the post never decided it.
+    this.announceFinanceDecision(record as never, approved, input).catch((err) =>
+      console.error(`procurement: could not announce finance's decision on ${record._id}:`, err instanceof Error ? err.message : err)
+    );
+
+    return shape(await Procurement.findById(record._id).populate(POP).lean());
+  }
+
+  /** Who hears what finance decided — everything `recordFinanceDecision` no longer waits for. */
+  private async announceFinanceDecision(
+    record: { _id: unknown; item: string; quantity?: number; requestedBy?: unknown; status: string },
+    approved: boolean,
+    input: { note?: string | null; purchaseOrderRef?: string | null }
+  ) {
     const financeHeadline = approved ? "has been approved by finance" : "was not approved by finance";
-    await this.tellRequester(record as never, financeHeadline, input.note);
+    await this.tellRequester(record, financeHeadline, input.note);
     // The decision was made in the finance system, so there is no HRMS user to
     // leave out — everybody who approves these hears about it.
-    await this.tellApprovers(record as never, financeHeadline, input.note);
+    await this.tellApprovers(record, financeHeadline, input.note);
 
     // Approved is the moment somebody actually goes and buys it — so office
     // keeping's people hear too (mail, in-app, push), and everyone gets it on
     // WhatsApp. A refusal is only procurement's business, and stops above.
     if (approved) {
-      await this.tellApprovers(record as never, financeHeadline, input.note, undefined, await this.facilitiesOnly());
+      await this.tellApprovers(record, financeHeadline, input.note, undefined, await this.facilitiesOnly());
       const ref = input.purchaseOrderRef ? ` (${input.purchaseOrderRef})` : "";
-      sendWhatsAppToUsers(
+      await sendWhatsAppToUsers(
         await this.facilitiesPeople(record.requestedBy),
         `Procurement approved by finance: ${record.quantity ?? 1} × ${record.item}${ref}. Ready to purchase.`
-      ).catch(() => null);
+      );
     }
-
-    return shape(await Procurement.findById(record._id).populate(POP).lean());
   }
 }
