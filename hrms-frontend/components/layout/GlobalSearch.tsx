@@ -65,15 +65,20 @@ export function GlobalSearch() {
    */
   const pages = useMemo(
     () =>
-      navItems.filter(({ permModule, permAction, superAdminOnly, approvalsOnly, href }) => {
+      navItems.filter(({ permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment, headLandsOnOwnDepartment, href }) => {
         if (isKioskOnly) return href === "/kiosk";
         if (superAdminOnly) return isSuperAdmin;
         // Approvals is decided by the server; the sidebar knows, this does not,
         // so it is offered and the page itself explains if there is nothing.
         if (approvalsOnly) return true;
-        return permModule === null ? true : hasPermission(permModule, permAction ?? "view");
+        if (permModule !== null && hasPermission(permModule, permAction ?? "view")) return true;
+        // A head reaches pages that scope themselves to them. One that has to
+        // be rewritten to their own department's address is left to the
+        // sidebar, which knows which department that is.
+        if (orHeadsADepartment && !headLandsOnOwnDepartment) return !!user?.isDepartmentHead;
+        return permModule === null;
       }),
-    [hasPermission, isKioskOnly, isSuperAdmin]
+    [hasPermission, isKioskOnly, isSuperAdmin, user?.isDepartmentHead]
   );
 
   const grouped = useMemo<Array<[string, SearchHit[]]>>(() => {

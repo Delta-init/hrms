@@ -39,10 +39,22 @@ interface Props {
   onRestore: (id: string) => void;
   onSchedule: (app: Application) => void;
   onHire: (app: Application) => void;
+  /**
+   * Whether a name opens the full candidate page. Off for a department head,
+   * whose pipeline is trimmed and who cannot open that page anyway.
+   */
+  linkCandidates?: boolean;
+}
+
+/** A candidate's name: a link to their page, or plain text where that page is not theirs to open. */
+function CandidateName({ id, name, link, className }: { id?: string; name?: string; link: boolean; className: string }) {
+  return link
+    ? <Link href={`/hiring/candidates/${id}`} className={cn(className, "hover:underline")}>{name ?? "—"}</Link>
+    : <span className={className}>{name ?? "—"}</span>;
 }
 
 export function PipelineBoard({
-  columns, closed, canEdit, busy, onMove, onReject, onWaitlist, onRestore, onSchedule, onHire,
+  columns, closed, canEdit, busy, onMove, onReject, onWaitlist, onRestore, onSchedule, onHire, linkCandidates = true,
 }: Props) {
   const [dragging, setDragging] = useState<Application | null>(null);
   const [over, setOver] = useState<ApplicationStage | null>(null);
@@ -88,6 +100,7 @@ export function PipelineBoard({
                     key={app._id}
                     app={app}
                     canEdit={canEdit}
+                    linkCandidates={linkCandidates}
                     busy={busy}
                     dragging={dragging?._id === app._id}
                     onDragStart={() => setDragging(app)}
@@ -119,6 +132,7 @@ export function PipelineBoard({
             tone="text-sky-600"
             apps={closed.filter((a) => a.status === "waitlisted")}
             canEdit={canEdit}
+            linkCandidates={linkCandidates}
             busy={busy}
             onRestore={onRestore}
             empty="Nobody parked."
@@ -128,6 +142,7 @@ export function PipelineBoard({
             tone="text-muted-foreground"
             apps={closed.filter((a) => a.status !== "waitlisted")}
             canEdit={canEdit}
+            linkCandidates={linkCandidates}
             busy={busy}
             onRestore={onRestore}
             empty="Nobody turned down."
@@ -139,9 +154,9 @@ export function PipelineBoard({
 }
 
 function Card({
-  app, canEdit, busy, dragging, onDragStart, onDragEnd, onMove, onReject, onWaitlist, onSchedule, onHire,
+  app, canEdit, busy, dragging, onDragStart, onDragEnd, onMove, onReject, onWaitlist, onSchedule, onHire, linkCandidates,
 }: {
-  app: Application; canEdit: boolean; busy: boolean; dragging: boolean;
+  app: Application; canEdit: boolean; linkCandidates: boolean; busy: boolean; dragging: boolean;
   onDragStart: () => void; onDragEnd: () => void;
   onMove: (id: string, stage: ApplicationStage) => void;
   onReject: (a: Application) => void;
@@ -171,9 +186,7 @@ function Card({
           {getInitials(c?.name ?? "?")}
         </div>
         <div className="min-w-0 flex-1">
-          <Link href={`/hiring/candidates/${c?._id}`} className="block truncate text-sm font-medium hover:underline">
-            {c?.name ?? "—"}
-          </Link>
+          <CandidateName id={c?._id} name={c?.name} link={linkCandidates} className="block truncate text-sm font-medium" />
           <div className="truncate text-[11px] text-muted-foreground">{c?.currentCompany || c?.email}</div>
         </div>
       </div>
@@ -247,9 +260,9 @@ function Card({
 }
 
 function ClosedLane({
-  title, tone, apps, canEdit, busy, onRestore, empty,
+  title, tone, apps, canEdit, busy, onRestore, empty, linkCandidates,
 }: {
-  title: string; tone: string; apps: Application[]; canEdit: boolean; busy: boolean;
+  title: string; tone: string; apps: Application[]; canEdit: boolean; busy: boolean; linkCandidates: boolean;
   onRestore: (id: string) => void; empty: string;
 }) {
   return (
@@ -265,7 +278,7 @@ function ClosedLane({
             const c = asCandidate(app.candidate);
             return (
               <div key={app._id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <Link href={`/hiring/candidates/${c?._id}`} className="font-medium hover:underline">{c?.name ?? "—"}</Link>
+                <CandidateName id={c?._id} name={c?.name} link={linkCandidates} className="font-medium" />
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">
                     {STAGE_LABELS[app.stage]}{app.rejectionReason ? ` — ${app.rejectionReason}` : ""}

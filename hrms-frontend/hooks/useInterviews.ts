@@ -10,13 +10,14 @@ function errMsg(error: unknown, fallback: string) {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 }
 
-export const useInterviews = (params?: Record<string, string>) =>
+export const useInterviews = (params?: Record<string, string>, enabled = true) =>
   useQuery({
     queryKey: [...KEY, "interviews", params],
     queryFn: async () => {
       const res = await api.get<ApiResponse<Interview[]>>("/hiring/interviews", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+    enabled,
   });
 
 export const useInterview = (id?: string) =>

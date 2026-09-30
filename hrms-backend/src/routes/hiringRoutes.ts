@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createRequisition, getRequisitions, getRequisitionById,
-  updateRequisition, reviewRequisition, deleteRequisition, getHiringWorkflowState, uploadJd,
+  updateRequisition, reviewRequisition, deleteRequisition, getHiringWorkflowState, uploadJd, getReplaceable,
 } from "../controllers/jobRequisitionController.js";
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
@@ -15,7 +15,7 @@ import {
 import { getHirePrefill, hireApplicant, unlinkHire } from "../controllers/hireController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadSingle } from "../middleware/upload.js";
-import { checkPermission } from "../middleware/permissions.js";
+import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/permissions.js";
 
 const router = Router();
 
@@ -23,15 +23,22 @@ router.use(authenticate);
 
 router.get("/workflow", checkPermission("hiring", "view"), getHiringWorkflowState);
 
-router.get("/requisitions", checkPermission("hiring", "view"), getRequisitions);
-router.post("/requisitions", checkPermission("hiring", "create"), createRequisition);
-router.get("/requisitions/:id", checkPermission("hiring", "view"), getRequisitionById);
-router.put("/requisitions/:id", checkPermission("hiring", "edit"), updateRequisition);
+// Department heads, without the hiring permission, may see and raise
+// requisitions for the departments they run. The route only admits them; the
+// controller hands the service their id and the service scopes every read and
+// checks every write against their departments. Deciding and deleting stay
+// with the permission.
+router.get("/requisitions", checkPermissionOrDepartmentHead("hiring", "view"), getRequisitions);
+router.post("/requisitions", checkPermissionOrDepartmentHead("hiring", "create"), createRequisition);
+// Before "/requisitions/:id".
+router.get("/requisitions/replaceable", checkPermissionOrDepartmentHead("hiring", "create"), getReplaceable);
+router.get("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "view"), getRequisitionById);
+router.put("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "edit"), updateRequisition);
 // Approving is its own permission, and the workflow narrows it further to the
 // role holding the current step.
 router.patch("/requisitions/:id/review", checkPermission("hiring", "approve"), reviewRequisition);
 router.delete("/requisitions/:id", checkPermission("hiring", "delete"), deleteRequisition);
-router.post("/requisitions/:id/jd", checkPermission("hiring", "edit"), uploadSingle, uploadJd);
+router.post("/requisitions/:id/jd", checkPermissionOrDepartmentHead("hiring", "edit"), uploadSingle, uploadJd);
 
 // ── Candidates ───────────────────────────────────────────────────────────────
 router.get("/candidates", checkPermission("hiring", "view"), getCandidates);
@@ -50,7 +57,8 @@ router.patch("/applications/:id/offer", checkPermission("hiring", "view"), decid
 router.post("/applications", checkPermission("hiring", "create"), applyCandidate);
 router.patch("/applications/:id", checkPermission("hiring", "edit"), moveApplication);
 router.delete("/applications/:id", checkPermission("hiring", "delete"), deleteApplication);
-router.get("/requisitions/:id/pipeline", checkPermission("hiring", "view"), getPipeline);
+// Heads read their own requisitions' pipeline, trimmed — see getPipeline.
+router.get("/requisitions/:id/pipeline", checkPermissionOrDepartmentHead("hiring", "view"), getPipeline);
 
 // ── Interviews ───────────────────────────────────────────────────────────────
 router.get("/interviews/conflicts", checkPermission("hiring", "view"), getConflicts);

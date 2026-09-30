@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
-import { useCreateRequisition, useUploadJd } from "@/hooks/useHiring";
-import { useDepartments } from "@/hooks/useDepartments";
+import { useCreateRequisition, useUploadJd, useReplaceable } from "@/hooks/useHiring";
+import { useDepartments, useMyDepartments } from "@/hooks/useDepartments";
 import { useEmployee } from "@/hooks/useEmployees";
 import {
   EMPLOYMENT_TYPE_LABELS, LOCATION_LABELS, REQUISITION_TYPE_LABELS,
@@ -23,6 +23,13 @@ import {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Raised by a department head without the hiring permission: only their own
+   * departments, only their own people to replace, and no salary on show.
+   * The server enforces the same; this only keeps the form from offering what
+   * it would refuse.
+   */
+  headMode?: boolean;
 }
 
 interface FormValues {
@@ -56,11 +63,13 @@ const EMPTY: FormValues = {
  * Finance, and a replacement does only when it costs more than the person
  * leaving. Discovering that after submitting would make the rule feel arbitrary.
  */
-export function RequisitionDialog({ open, onOpenChange }: Props) {
+export function RequisitionDialog({ open, onOpenChange, headMode = false }: Props) {
   const { mutate: create, isPending } = useCreateRequisition();
   const { mutateAsync: uploadJd, isPending: uploading } = useUploadJd();
-  const { data: departmentData } = useDepartments();
-  const departments = departmentData?.data ?? [];
+  const { data: departmentData } = useDepartments(undefined, { enabled: !headMode });
+  const { data: myDepartments = [] } = useMyDepartments();
+  const departments = headMode ? myDepartments : departmentData?.data ?? [];
+  const { data: team = [] } = useReplaceable(headMode && open);
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<FormValues>({
     defaultValues: EMPTY,
@@ -78,7 +87,8 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
 
   // The outgoing salary is the number the budget rule compares against, so it
   // is fetched to show the comparison rather than describe it.
-  const { data: outgoing } = useEmployee(type === "replacement" ? replacing : undefined);
+  // Not for a head: an employee's record (and salary) is behind employees.view.
+  const { data: outgoing } = useEmployee(type === "replacement" && !headMode ? replacing : undefined);
   const outgoingSalary = outgoing?.salary ?? null;
   const proposed = Number(salaryMax) || null;
 
@@ -87,7 +97,12 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
   const needsFinance =
     type === "new_headcount" || !proposed || !outgoingSalary || proposed > outgoingSalary;
 
-  useEffect(() => { if (open) { reset(EMPTY); setJdFile(null); } }, [open, reset]);
+  // A head of one department has nothing to choose; it is filled in for them.
+  useEffect(() => {
+    if (!open) return;
+    reset({ ...EMPTY, department: headMode && myDepartments.length === 1 ? myDepartments[0]._id : "" });
+    setJdFile(null);
+  }, [open, reset, headMode, myDepartments]);
 
   const onSubmit = (data: FormValues) => {
     create(
@@ -140,7 +155,20 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
               <div className="space-y-1.5">
                 <Label>Replacing *</Label>
                 <Controller name="replacing" control={control} rules={{ required: type === "replacement" }} render={({ field }) => (
-                  <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Who is leaving?" allowClear />
+                  headMode ? (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger><SelectValue placeholder={team.length ? "Who is leaving?" : "Nobody in your department"} /></SelectTrigger>
+                      <SelectContent>
+                        {team.map((e) => (
+                          <SelectItem key={e._id} value={e._id}>
+                            {e.name}{e.employeeCode ? ` · ${e.employeeCode}` : ""}{e.designation ? ` — ${e.designation}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Who is leaving?" allowClear />
+                  )
                 )} />
                 {errors.replacing && <p className="text-xs text-destructive">Say who is being replaced</p>}
                 {outgoingSalary != null && (
@@ -164,8 +192,8 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label>Department</Label>
-              <Controller name="department" control={control} render={({ field }) => (
+              <Label>Department{headMode ? " *" : ""}</Label>
+              <Controller name="department" control={control} rules={{ required: headMode }} render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
@@ -173,6 +201,7 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
                   </SelectContent>
                 </Select>
               )} />
+              {errors.department && <p className="text-xs text-destructive">Choose your department</p>}
             </div>
             <div className="space-y-1.5">
               <Label>Location</Label>
@@ -273,7 +302,9 @@ export function RequisitionDialog({ open, onOpenChange }: Props) {
           <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${needsFinance ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              {needsFinance ? (
+              {headMode && type === "replacement" ? (
+                <>It goes to <strong>Accounts</strong> first if the budget is above what the person leaving is paid, then to <strong>HR</strong>.</>
+              ) : needsFinance ? (
                 <>
                   This goes to <strong>Accounts first</strong>, then HR.{" "}
                   {type === "new_headcount"

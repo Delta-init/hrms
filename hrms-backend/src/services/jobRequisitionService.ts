@@ -9,6 +9,10 @@ import { parsePagination } from "../utils/query.js";
 import { publicUrl, deleteObject } from "./uploadService.js";
 import { beginWorkflowState, resolveReviewOutcome, type ReviewerRole } from "./approvalWorkflowService.js";
 import { notifyReviewed } from "./reviewNotifier.js";
+import { departmentsHeadedBy } from "./departmentHeadService.js";
+import { watchersFor } from "./watchers.js";
+import { notify } from "./notificationService.js";
+import { stillHere } from "../utils/employeeStatus.js";
 
 /**
  * Requests to fill a role, and the approvals they clear before recruiting
@@ -68,13 +72,58 @@ interface RequisitionQuery extends PaginationQuery {
  * The link is signed and short-lived, so it is minted per response rather
  * than stored — same reasoning as a candidate's CV.
  */
-function shape<T extends { jdKey?: string | null }>(doc: T | null) {
+function shape<T extends { jdKey?: string | null }>(doc: T | null, forHead = false) {
   if (!doc) return doc;
-  return { ...doc, jdUrl: doc.jdKey ? publicUrl(doc.jdKey) : "" };
+  const out: Record<string, unknown> = { ...doc, jdUrl: doc.jdKey ? publicUrl(doc.jdKey) : "" };
+  // A head raising a backfill sees who is being replaced, not what they were
+  // paid — that salary is HR's, and the requisition would otherwise carry it.
+  if (forHead) {
+    delete out.replacingSalary;
+    const r = out.replacing as Record<string, unknown> | null | undefined;
+    if (r && typeof r === "object") { const { salary: _s, ...rest } = r; out.replacing = rest; }
+  }
+  return out as T & { jdUrl: string };
 }
 
+const forbidden = (message: string) => Object.assign(new Error(message), { statusCode: 403 });
+const deptOf = (doc: { department?: unknown }) => {
+  const d = doc.department as { _id?: unknown } | string | null | undefined;
+  return d ? String(typeof d === "object" && d._id ? d._id : d) : "";
+};
+
 export class JobRequisitionService {
-  async create(input: CreateRequisitionInput, raisedBy: string) {
+  /**
+   * A department head raising one, rather than someone who holds hiring:
+   * only for a department they run, and a backfill only for someone in it.
+   * Checked here as well as in the form, since the form is the client's.
+   */
+  private async assertHeadMayRaise(headUserId: string, department: unknown, replacing: unknown) {
+    const heads = await departmentsHeadedBy(headUserId);
+    if (!department || !heads.includes(String(department))) {
+      throw Object.assign(new Error("Choose a department you head"), { statusCode: 400 });
+    }
+    if (replacing) {
+      const emp = await Employee.findOne(scoped({ _id: replacing })).select("department").lean<{ department?: unknown } | null>();
+      if (!emp || !heads.includes(String(emp.department ?? ""))) {
+        throw Object.assign(new Error("You can only raise a replacement for someone in your department"), { statusCode: 400 });
+      }
+    }
+    return heads;
+  }
+
+  /** The people a head could be replacing: everyone still here in the departments they run. */
+  async replaceableFor(headUserId: string) {
+    const heads = await departmentsHeadedBy(headUserId);
+    if (!heads.length) return [];
+    return Employee.find(scoped({ department: { $in: heads }, status: stillHere() }))
+      .select("name employeeCode designation department")
+      .populate("department", "name")
+      .sort({ name: 1 })
+      .lean();
+  }
+
+  async create(input: CreateRequisitionInput, raisedBy: string, headOnly = false) {
+    if (headOnly) await this.assertHeadMayRaise(raisedBy, input.department, input.type === "replacement" ? input.replacing : null);
     // Frozen at creation. Salaries move, and a trail that cannot be re-derived
     // months later is not a trail.
     let replacingSalary: number | null = null;
@@ -98,16 +147,42 @@ export class JobRequisitionService {
       ...workflow,
     });
     const created = await JobRequisition.findById(doc._id).populate(POP);
-    return shape(created!.toObject());
+
+    // Nobody was told a requisition existed until someone opened the page.
+    // Whoever can decide hiring is, the same set the approvals inbox draws on.
+    if (doc.status === "pending") {
+      const raiser = (created as unknown as { raisedBy?: { name?: string } })?.raisedBy?.name ?? "Someone";
+      const dept = (created as unknown as { department?: { name?: string } })?.department?.name;
+      watchersFor("hiring", raisedBy)
+        .then((users) => notify({
+          users,
+          kind: "approval",
+          title: `New requisition: ${input.title}`,
+          body: `${raiser}${dept ? ` (${dept})` : ""} — ${TYPE_LABELS[input.type] ?? input.type}, ${input.headcount ?? 1} position${(input.headcount ?? 1) === 1 ? "" : "s"}`,
+          href: `/hiring/${doc._id}`,
+          actor: raisedBy,
+        }))
+        .catch(() => null);
+    }
+    return shape(created!.toObject(), headOnly);
   }
 
-  async list(query: RequisitionQuery) {
+  /**
+   * `restrictToUserId` is set for a department head without the hiring
+   * permission: their own departments' requisitions and nothing else,
+   * whatever department the query asks for.
+   */
+  async list(query: RequisitionQuery, restrictToUserId?: string) {
     const { page, limit, skip } = parsePagination(query, 20, 100);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;
-    if (query.department) filter.department = query.department;
+    if (restrictToUserId) {
+      const heads = await departmentsHeadedBy(restrictToUserId);
+      if (!heads.length) return { records: [], pagination: buildPagination(0, page, limit) };
+      filter.department = { $in: heads };
+    } else if (query.department) filter.department = query.department;
     if (query.raisedBy) filter.raisedBy = query.raisedBy;
     if (query.search) filter.title = { $regex: String(query.search).trim(), $options: "i" };
 
@@ -119,13 +194,32 @@ export class JobRequisitionService {
       JobRequisition.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       JobRequisition.countDocuments(filter),
     ]);
-    return { records: records.map((r) => shape(r)), pagination: buildPagination(total, page, limit) };
+    return { records: records.map((r) => shape(r, !!restrictToUserId)), pagination: buildPagination(total, page, limit) };
   }
 
-  async getById(id: string) {
+  async getById(id: string, restrictToUserId?: string) {
     const record = await JobRequisition.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
-    return shape(record.toObject());
+    if (restrictToUserId) {
+      const heads = await departmentsHeadedBy(restrictToUserId);
+      if (!heads.includes(deptOf(record))) throw forbidden("That requisition is not for a department you head");
+    }
+    return shape(record.toObject(), !!restrictToUserId);
+  }
+
+  /**
+   * A head may change a requisition only if they raised it and it is still
+   * one of their departments' — the rest of the checks (still pending, nobody
+   * approved a step yet) apply to everybody in update().
+   */
+  async assertHeadMayEdit(id: string, headUserId: string) {
+    const record = await JobRequisition.findOne(scoped({ _id: id })).select("raisedBy department").lean<{ raisedBy?: unknown; department?: unknown } | null>();
+    if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    const heads = await departmentsHeadedBy(headUserId);
+    if (String(record.raisedBy) !== String(headUserId) || !heads.includes(deptOf(record))) {
+      throw forbidden("Only the requisitions you raised for your own department can be changed");
+    }
+    return heads;
   }
 
   /**
@@ -135,7 +229,17 @@ export class JobRequisitionService {
    * agreed to are part of the record, and changing them underneath would make
    * the trail a record of a decision nobody actually took.
    */
-  async update(id: string, input: UpdateRequisitionInput) {
+  async update(id: string, input: UpdateRequisitionInput, headOnly?: string) {
+    if (headOnly) {
+      await this.assertHeadMayEdit(id, headOnly);
+      const current = await JobRequisition.findOne(scoped({ _id: id })).select("department type replacing").lean<Record<string, unknown> | null>();
+      const type = (input as { type?: string }).type ?? current?.type;
+      await this.assertHeadMayRaise(
+        headOnly,
+        input.department !== undefined ? input.department : current?.department,
+        type === "replacement" ? ((input as { replacing?: unknown }).replacing ?? current?.replacing) : null
+      );
+    }
     const record = await JobRequisition.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
     if (record.status !== "pending" && record.status !== "draft") {
@@ -154,7 +258,7 @@ export class JobRequisitionService {
     Object.assign(record, input);
     await record.save();
     const updated = await JobRequisition.findById(id).populate(POP);
-    return shape(updated!.toObject());
+    return shape(updated!.toObject(), !!headOnly);
   }
 
   /**
@@ -163,7 +267,7 @@ export class JobRequisitionService {
    * A prior attachment is deleted from storage rather than left orphaned — the
    * same rule a candidate's CV follows.
    */
-  async setJd(id: string, key: string, fileName: string) {
+  async setJd(id: string, key: string, fileName: string, forHead = false) {
     const record = await JobRequisition.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
     if (record.jdKey) await deleteObject(record.jdKey);
@@ -171,7 +275,7 @@ export class JobRequisitionService {
     record.jdFileName = fileName;
     await record.save();
     const updated = await JobRequisition.findById(id).populate(POP);
-    return shape(updated!.toObject());
+    return shape(updated!.toObject(), forHead);
   }
 
   /** Approve or reject at the current step. */

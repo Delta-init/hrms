@@ -72,6 +72,12 @@ export const navItems: {
   approvalsOnly?: boolean;
   /** Also drawn for someone who heads a department, even without the permission. */
   orHeadsADepartment?: boolean;
+  /**
+   * For such a head, link to their own department's page instead of `href` —
+   * the Departments list is company-wide and would refuse them. Pages that
+   * scope themselves to the head (Hiring) keep their own address.
+   */
+  headLandsOnOwnDepartment?: boolean;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
   // Not gated on a permission or on Super Admin: who may see this is decided by
@@ -79,7 +85,7 @@ export const navItems: {
   // department. `canAccess` on the summary carries the answer back.
   { href: "/approvals", label: "Approvals", icon: ShieldCheck, permModule: null, approvalsOnly: true },
   { href: "/employees", label: "Employees", icon: UserRound, permModule: "employees" },
-  { href: "/departments", label: "Departments", icon: Building2, permModule: "departments", orHeadsADepartment: true },
+  { href: "/departments", label: "Departments", icon: Building2, permModule: "departments", orHeadsADepartment: true, headLandsOnOwnDepartment: true },
   // Everybody, because everybody is in it. The chart is names, titles,
   // departments and reporting lines — nothing an employee could not read off a
   // door — and hiding who reports to whom from the people doing the reporting
@@ -104,7 +110,9 @@ export const navItems: {
    */
   { href: "/kiosks", label: "Check-in Kiosks", icon: MonitorSmartphone, permModule: "attendance", permAction: "edit" },
   { href: "/kiosk", label: "Kiosk", icon: MonitorSmartphone, permModule: "kiosk" },
-  { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring" },
+  // Heads see their own departments' requisitions and raise new ones; the
+  // page and the server scope everything else away.
+  { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring", orHeadsADepartment: true },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/agreements", label: "Signed Agreements", icon: FileSignature, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
@@ -165,7 +173,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         const hasBasePermission = permModule !== null && hasPermission(permModule, permAction ?? "view");
         // A third of the menu is deliberately ungated — everyone can raise a
@@ -189,7 +197,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
         // choice, so they land on the first and the rest stay reachable only
         // to whoever holds the real permission.
         const resolvedHref =
-          orHeadsADepartment && !hasBasePermission && myDepartments.length > 0
+          headLandsOnOwnDepartment && !hasBasePermission && myDepartments.length > 0
             ? `${href}/${myDepartments[0]._id}`
             : href;
 

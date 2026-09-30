@@ -77,10 +77,11 @@ export const useDeleteCandidate = () => {
 };
 
 /** Offers waiting on management, surfaced as their own list. */
-export const usePendingOffers = () =>
+export const usePendingOffers = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "pending-offers"],
     queryFn: async () => (await api.get<ApiResponse<Application[]>>("/hiring/offers/pending")).data.data ?? [],
+    enabled,
   });
 
 export const useDecideOffer = () => {

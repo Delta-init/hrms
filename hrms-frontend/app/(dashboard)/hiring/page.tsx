@@ -39,17 +39,21 @@ const fmtDate = (iso?: string | null) =>
 const nameOf = (v: unknown) => (v && typeof v === "object" ? (v as { name?: string }).name ?? "—" : "—");
 
 export default function HiringPage() {
-  const { hasPermission } = useAuth();
-  const canCreate = hasPermission("hiring", "create");
+  const { hasPermission, user } = useAuth();
+  // A department head without the hiring permission: their own departments'
+  // requisitions, raising new ones for them, and nothing company-wide — the
+  // server scopes the list and refuses the rest.
+  const headOnly = !hasPermission("hiring", "view") && !!user?.isDepartmentHead;
+  const canCreate = hasPermission("hiring", "create") || headOnly;
   const canApprove = hasPermission("hiring", "approve");
   const canDelete = hasPermission("hiring", "delete");
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useRequisitions(query.params);
-  const { data: workflow } = useHiringWorkflow();
+  const { data: workflow } = useHiringWorkflow(!headOnly);
   const { mutate: review, isPending: reviewing } = useReviewRequisition();
   const { mutate: remove, isPending: deleting } = useDeleteRequisition();
-  const { data: pendingOffers = [] } = usePendingOffers();
+  const { data: pendingOffers = [] } = usePendingOffers(!headOnly);
   const { mutate: decideOffer, isPending: deciding } = useDecideOffer();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -147,11 +151,15 @@ export default function HiringPage() {
     <div className="space-y-6">
       <PageHeader
         title="Hiring"
-        description="Requests to fill a role, and the approvals they clear before recruiting starts."
+        description={
+          headOnly
+            ? "Your department's requests to fill a role, and where each one is in its approvals."
+            : "Requests to fill a role, and the approvals they clear before recruiting starts."
+        }
         icon={Briefcase}
         action={
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline"><Link href="/hiring/candidates"><Users className="h-4 w-4" />Candidates</Link></Button>
+            {!headOnly && <Button asChild variant="outline"><Link href="/hiring/candidates"><Users className="h-4 w-4" />Candidates</Link></Button>}
             {canCreate && <Button onClick={() => setDialogOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Raise requisition</Button>}
           </div>
         }
@@ -283,7 +291,7 @@ export default function HiringPage() {
         exportName="hiring-requisitions"
       />
 
-      <RequisitionDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <RequisitionDialog open={dialogOpen} onOpenChange={setDialogOpen} headMode={headOnly} />
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}

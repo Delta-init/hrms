@@ -58,9 +58,12 @@ const fmtWhen = (iso: string) =>
 export default function RequisitionDetailPage() {
   const { id } = useParams();
   const requisitionId = String(id);
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canEdit = hasPermission("hiring", "edit");
   const canCreate = hasPermission("hiring", "create");
+  // A department head reading their own requisition: the pipeline, trimmed
+  // by the server, and nothing they can change.
+  const headOnly = !hasPermission("hiring", "view") && !!user?.isDepartmentHead;
 
   // The list endpoint is already cached by the hiring page, so this usually
   // resolves without a second round trip.
@@ -177,6 +180,7 @@ export default function RequisitionDetailPage() {
             columns={pipeline?.columns ?? []}
             closed={pipeline?.closed ?? []}
             canEdit={canEdit}
+            linkCandidates={!headOnly}
             busy={moving}
             onMove={(id, stage) => move({ id, stage })}
             onReject={(app) => { setClosing({ app, kind: "rejected" }); setReason(""); }}
@@ -187,7 +191,16 @@ export default function RequisitionDetailPage() {
           />
         )
       ) : (
-        <MeetingsTab requisitionId={requisitionId} canEdit={canEdit} />
+        <MeetingsTab
+          requisitionId={requisitionId}
+          canEdit={canEdit}
+          // The interviews endpoint is the hiring team's; a head reads the
+          // ones already in the pipeline they were given.
+          fromPipeline={headOnly
+            ? [...(pipeline?.columns ?? []).flatMap((c) => c.applications), ...(pipeline?.closed ?? [])].flatMap((a) =>
+                (a.interviews ?? []).map((iv) => ({ ...iv, application: { ...a, interviews: undefined } }) as unknown as Interview))
+            : undefined}
+        />
       )}
 
       <AddToPipeline open={addOpen} onOpenChange={setAddOpen} requisitionId={requisitionId} />
@@ -299,9 +312,12 @@ function AddToPipeline({ open, onOpenChange, requisitionId }: { open: boolean; o
  * see and edit it. Anyone holding `hiring.edit` can set one; Super Admin
  * always can, since it bypasses permissions entirely.
  */
-function MeetingsTab({ requisitionId, canEdit }: { requisitionId: string; canEdit: boolean }) {
-  const { data, isLoading } = useInterviews({ requisition: requisitionId, limit: "100" });
-  const interviews = data?.data ?? [];
+function MeetingsTab({ requisitionId, canEdit, fromPipeline }: { requisitionId: string; canEdit: boolean; fromPipeline?: Interview[] }) {
+  const { data, isLoading: loadingOwn } = useInterviews({ requisition: requisitionId, limit: "100" }, !fromPipeline);
+  const interviews = fromPipeline
+    ? [...fromPipeline].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+    : data?.data ?? [];
+  const isLoading = !fromPipeline && loadingOwn;
   const [editing, setEditing] = useState<string | null>(null);
   const [link, setLink] = useState("");
   const { mutate: update, isPending: saving } = useUpdateInterview();

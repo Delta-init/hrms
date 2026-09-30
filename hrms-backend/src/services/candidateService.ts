@@ -174,11 +174,27 @@ export class CandidateService {
    * them" is the question a board is scanned for, and a card that cannot answer
    * it sends you to another page to find out.
    */
-  async pipeline(requisitionId: string) {
+  /**
+   * `forHead` trims it for a department head looking at their own role:
+   * who is in the running, where, their CV and interviews — not what they
+   * asked for or were offered, and not how to reach them. The recruiter's
+   * business, and not the head's to act on from a read-only view.
+   */
+  async pipeline(requisitionId: string, forHead = false) {
     const applications = await Application.find(scoped({ requisition: requisitionId }))
       .populate(APPLICATION_POP)
       .sort({ updatedAt: -1 })
       .lean();
+    for (const a of applications as Array<Record<string, unknown>>) {
+      // The card links the CV; a key is no use to a browser.
+      const c = a.candidate as (Record<string, unknown> & { resumeKey?: string | null }) | null;
+      if (c) {
+        const out: Record<string, unknown> = { ...c, resumeUrl: c.resumeKey ? publicUrl(c.resumeKey) : "" };
+        if (forHead) { delete out.email; delete out.phone; delete out.expectedSalary; delete out.currency; delete out.resumeKey; }
+        a.candidate = out;
+      }
+      if (forHead) delete a.offeredSalary;
+    }
 
     const interviews = await Interview.find(scoped({ application: { $in: applications.map((a) => a._id) } }))
       .select("application round mode scheduledAt durationMinutes status meetingLink location recordingLink panel")

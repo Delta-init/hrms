@@ -20,10 +20,21 @@ export const useRequisitions = (params?: Record<string, string>) =>
   });
 
 /** Whether a chain is configured. Without one the Finance gate does not exist. */
-export const useHiringWorkflow = () =>
+export const useHiringWorkflow = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "workflow"],
     queryFn: async () => (await api.get<ApiResponse<HiringWorkflowState>>("/hiring/workflow")).data.data!,
+    enabled,
+  });
+
+/** A replacement's candidates for a department head: the people in the departments they run. */
+export const useReplaceable = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "replaceable"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<Array<{ _id: string; name: string; employeeCode?: string; designation?: string; department?: { _id: string; name: string } | null }>>>("/hiring/requisitions/replaceable")).data.data ?? [],
+    enabled,
+    staleTime: 5 * 60 * 1000,
   });
 
 export const useCreateRequisition = () => {

@@ -5,11 +5,14 @@ import {
   createCandidateSchema, updateCandidateSchema, applySchema, moveStageSchema, decideOfferSchema,
 } from "../validations/candidateValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { hasPermission } from "../middleware/permissions.js";
+import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
 import { extFromMime } from "../middleware/upload.js";
 import { getOrgId } from "../utils/orgContext.js";
 
 const service = new CandidateService();
+const requisitions = new JobRequisitionService();
 
 export const createCandidate = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -68,8 +71,17 @@ export const applyCandidate = async (req: AuthenticatedRequest, res: Response, n
   } catch (error) { next(error); }
 };
 
+/**
+ * A department head without the hiring permission may read the pipeline of
+ * their own department's requisitions only — the requisition lookup refuses
+ * any other — and gets it trimmed (see CandidateService.pipeline).
+ */
 export const getPipeline = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Pipeline", await service.pipeline(req.params.id)); }
+  try {
+    const head = hasPermission(req.user?.role, "hiring", "view") ? undefined : req.user!.userId;
+    if (head) await requisitions.getById(req.params.id, head);
+    sendSuccess(res, "Pipeline", await service.pipeline(req.params.id, !!head));
+  }
   catch (error) { next(error); }
 };
 
