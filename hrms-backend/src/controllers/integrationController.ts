@@ -60,6 +60,26 @@ export const listEmployees = asyncRoute(async (req, res) => {
   });
 });
 
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const EMAIL = /^\S+@\S+\.\S+$/;
+
+/**
+ * GET /integrations/directory/work-hours?emails=a@x,b@y&from=YYYY-MM-DD&to=YYYY-MM-DD[&organizationId=]
+ * Each person's work schedule and approved leave in the window — the commission portal's Mentor Calendar shows its
+ * mentors' working hours from here. At most 200 people and 62 days a call.
+ */
+export const listWorkHours = asyncRoute(async (req, res) => {
+  const emails = [...new Set(String(req.query.emails ?? "").split(",").map((e) => e.trim().toLowerCase()).filter((e) => EMAIL.test(e)))];
+  const from = String(req.query.from ?? "").trim();
+  const to = String(req.query.to ?? "").trim();
+  if (!emails.length) { sendError(res, "emails is required", 400); return; }
+  if (emails.length > 200) { sendError(res, "At most 200 emails at a time", 400); return; }
+  if (!DAY.test(from) || !DAY.test(to) || to < from) { sendError(res, "from and to are dates (YYYY-MM-DD), to not before from", 400); return; }
+  if (Date.parse(to) - Date.parse(from) > 62 * 86_400_000) { sendError(res, "At most 62 days at a time", 400); return; }
+  const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
+  sendSuccess(res, "Work hours retrieved", await directoryService.workHours({ emails, from, to, organizationId }));
+});
+
 /** Lets the finance server prove its credentials are right before a real sync. */
 export const ping = asyncRoute(async (_req, res) => {
   sendSuccess(res, "Integration reachable", { service: "hrms", time: new Date().toISOString() });

@@ -2,6 +2,9 @@ import { Organization } from "../models/Organization.js";
 import { Department } from "../models/Department.js";
 import { Employee } from "../models/Employee.js";
 import { stillHere } from "../utils/employeeStatus.js";
+import { WorkSchedule } from "../models/WorkSchedule.js";
+import { LeaveRequest } from "../models/LeaveRequest.js";
+import { scheduleOf, leavesIn, type WorkHoursRow } from "../utils/workHours.js";
 
 /**
  * The read-only view of who exists in HRMS, for Delta Finance to map against.
@@ -141,6 +144,43 @@ export class DirectoryService {
       page,
       limit,
     };
+  }
+
+  /**
+   * Working hours for the people with these emails: their schedule's shift and days (the default, said so, when
+   * none is assigned) and their approved leave touching [from, to] (YYYY-MM-DD). For the commission portal's
+   * Mentor Calendar, which knows its mentors by email only — so within `organizationId` when given, else by email
+   * wherever they are. Leavers are left out: nobody books time with them.
+   */
+  async workHours(opts: { emails: string[]; from: string; to: string; organizationId?: string }): Promise<WorkHoursRow[]> {
+    const filter: Record<string, unknown> = { email: { $in: opts.emails }, status: stillHere() };
+    if (opts.organizationId) filter.organization = opts.organizationId;
+    const employees = await Employee.find(filter).select("email name workSchedule user").lean();
+    if (!employees.length) return [];
+
+    const scheduleIds = [...new Set(employees.map((e) => (e.workSchedule ? String(e.workSchedule) : "")).filter(Boolean))];
+    const schedules = new Map(
+      (await WorkSchedule.find({ _id: { $in: scheduleIds } }).lean()).map((w) => [String(w._id), w]),
+    );
+    // A day either side: leave is stored as instants, and the days it covers are read in its own time zone below.
+    const userIds = employees.map((e) => e.user).filter(Boolean);
+    const leaves = userIds.length
+      ? await LeaveRequest.find({
+        user: { $in: userIds },
+        status: "approved",
+        startDate: { $lte: new Date(new Date(`${opts.to}T00:00:00Z`).getTime() + 2 * 86_400_000) },
+        endDate: { $gte: new Date(new Date(`${opts.from}T00:00:00Z`).getTime() - 2 * 86_400_000) },
+      }).select("user type startDate endDate halfDay timeZone").lean()
+      : [];
+    const leavesOf = new Map<string, typeof leaves>();
+    for (const l of leaves) leavesOf.set(String(l.user), [...(leavesOf.get(String(l.user)) ?? []), l]);
+
+    return employees.map((e) => ({
+      email: e.email ?? "",
+      name: e.name,
+      schedule: scheduleOf(e.workSchedule ? schedules.get(String(e.workSchedule)) : null),
+      leaves: e.user ? leavesIn(leavesOf.get(String(e.user)) ?? [], opts.from, opts.to) : [],
+    }));
   }
 }
 
