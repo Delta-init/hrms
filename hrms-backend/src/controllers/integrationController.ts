@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { directoryService } from "../services/directoryService.js";
+import { directoryService, attendanceNow } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
@@ -78,6 +78,19 @@ export const listWorkHours = asyncRoute(async (req, res) => {
   if (Date.parse(to) - Date.parse(from) > 62 * 86_400_000) { sendError(res, "At most 62 days at a time", 400); return; }
   const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
   sendSuccess(res, "Work hours retrieved", await directoryService.workHours({ emails, from, to, organizationId }));
+});
+
+/**
+ * GET /integrations/directory/attendance-now?emails=a@x,b@y[&organizationId=]
+ * Who is clocked in now, on leave today, or neither — the Sales CRM splits its
+ * new leads during the shift among the people clocked in. At most 200 a call.
+ */
+export const listAttendanceNow = asyncRoute(async (req, res) => {
+  const emails = [...new Set(String(req.query.emails ?? "").split(",").map((e) => e.trim().toLowerCase()).filter((e) => EMAIL.test(e)))];
+  if (!emails.length) { sendError(res, "emails is required", 400); return; }
+  if (emails.length > 200) { sendError(res, "At most 200 emails at a time", 400); return; }
+  const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
+  sendSuccess(res, "Attendance retrieved", await attendanceNow({ emails, organizationId }));
 });
 
 /** Lets the finance server prove its credentials are right before a real sync. */

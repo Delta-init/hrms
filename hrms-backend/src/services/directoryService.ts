@@ -4,6 +4,7 @@ import { Employee } from "../models/Employee.js";
 import { stillHere } from "../utils/employeeStatus.js";
 import { WorkSchedule } from "../models/WorkSchedule.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
+import { Attendance } from "../models/Attendance.js";
 import { scheduleOf, leavesIn, type WorkHoursRow } from "../utils/workHours.js";
 
 /**
@@ -185,3 +186,58 @@ export class DirectoryService {
 }
 
 export const directoryService = new DirectoryService();
+
+/** Where somebody is right now, for a sales CRM's live lead split. */
+export interface AttendanceNowRow {
+  email: string;
+  name: string;
+  /** in: clocked in, not out yet. leave: on approved leave today and not clocked in. out: anything else. */
+  state: "in" | "out" | "leave";
+  /** When they clocked in, while in. */
+  since: string | null;
+  /** Today's approved leave, when there is one. */
+  leave: { type: string; halfDay: boolean } | null;
+}
+
+/** A clock-in left open longer than this is a forgotten clock-out, not somebody at work. */
+const OPEN_FOR_AT_MOST_MS = 18 * 3_600_000;
+
+/**
+ * Who is at work now, by email (the user, 2026-10-10): the Sales CRM gives new
+ * leads during its shift only to people clocked in here. Clocked in is the
+ * HRMS's own open session — a check-in with no check-out yet — begun in the
+ * last 18 hours. Leave is approved leave covering today (where the person's
+ * schedule keeps its days); working from home is not leave. Somebody clocked
+ * in on a half day of leave is at work.
+ */
+export async function attendanceNow(opts: { emails: string[]; organizationId?: string }): Promise<AttendanceNowRow[]> {
+  const filter: Record<string, unknown> = { email: { $in: opts.emails }, status: stillHere() };
+  if (opts.organizationId) filter.organization = opts.organizationId;
+  const employees = await Employee.find(filter).select("email name user").lean();
+  if (!employees.length) return [];
+  const userIds = employees.map((e) => e.user).filter(Boolean);
+  const now = Date.now();
+  const open = userIds.length
+    ? await Attendance.find({ user: { $in: userIds }, checkIn: { $ne: null, $gte: new Date(now - OPEN_FOR_AT_MOST_MS) }, checkOut: null })
+      .select("user checkIn").sort({ checkIn: -1 }).lean()
+    : [];
+  const inSince = new Map<string, Date>();
+  for (const a of open) if (!inSince.has(String(a.user))) inSince.set(String(a.user), a.checkIn as Date);
+
+  // Today, in Dubai — the sales floor's day; the leave's own days are read in its time zone by workHours.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));
+  const hours = await directoryService.workHours({ emails: opts.emails, from: today, to: today, organizationId: opts.organizationId });
+  const leaveOf = new Map(hours.map((h) => [h.email.toLowerCase(), h.leaves.find((l) => l.type.toLowerCase() !== "wfh") ?? null]));
+
+  return employees.map((e) => {
+    const since = e.user ? inSince.get(String(e.user)) ?? null : null;
+    const leave = leaveOf.get(String(e.email ?? "").toLowerCase()) ?? null;
+    return {
+      email: e.email ?? "",
+      name: e.name,
+      state: since ? "in" : leave ? "leave" : "out",
+      since: since ? since.toISOString() : null,
+      leave: leave ? { type: leave.type, halfDay: leave.halfDay } : null,
+    };
+  });
+}

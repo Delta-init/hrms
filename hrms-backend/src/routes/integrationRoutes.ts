@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { serviceAuth } from "../middleware/serviceAuth.js";
 import {
-  listOrganizations, listDepartments, listEmployees, listWorkHours, ping,
+  listOrganizations, listDepartments, listEmployees, listWorkHours, listAttendanceNow, ping,
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
   approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
@@ -21,6 +21,8 @@ router.get("/directory/departments", listDepartments);
 router.get("/directory/employees", listEmployees);
 // Working hours and leave, for the commission portal's Mentor Calendar.
 router.get("/directory/work-hours", listWorkHours);
+// Who is clocked in now, or on leave today — the Sales CRM's live lead split.
+router.get("/directory/attendance-now", listAttendanceNow);
 
 // Payroll. Behind serviceOrgScope as well as the signature: these touch
 // org-scoped services, and without a tenant installed `scoped()` would read
