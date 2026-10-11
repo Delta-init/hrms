@@ -9,6 +9,7 @@ import {
   setUserRoleFromPortal,
   provisionFromPortal,
 } from "../services/portalService.js";
+import { pendingOverview } from "../services/pendingOverviewService.js";
 
 const router = Router();
 
@@ -110,6 +111,17 @@ router.post(
     sendSuccess(res, "Accounts", await describeManyForPortal({
       emails, remoteOrgId: remoteOrgId ?? orgOf(req),
     }));
+  }),
+);
+
+/**
+ * What the sidebar's badges are counting, company-wide, and whom each request
+ * is waiting on — for the portal's Pending page. Reads only.
+ */
+router.get(
+  "/pending",
+  wrap(async (_req, res) => {
+    sendSuccess(res, "Pending", await pendingOverview());
   }),
 );
 
