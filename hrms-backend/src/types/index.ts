@@ -44,6 +44,10 @@ export const HRMS_MODULES = [
   // for a month. Its own module rather than riding on `payroll`: deciding pay
   // never runs is a narrower authority than the module that runs it.
   "deductionRemovals",
+  // Deciding an employee's request to be paid part of their salary early. HR
+  // holds `approve`; asking is self-service and needs nothing. Finance's half
+  // of the decision is made in the finance system, over the integration API.
+  "advances",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -1512,6 +1516,9 @@ export interface ILoan extends Document {
   amountRepaid: number;
   status: LoanStatus;
   notes?: string;
+  /** "advance" when it recovers an approved salary advance. */
+  kind?: "loan" | "advance";
+  advance?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1560,6 +1567,43 @@ export type DeductionRemovalStatus = "pending" | "approved" | "rejected";
  * request still reads sensibly if the loan or adjustment it points at is
  * edited — or, for a loan, simply grows a bigger balance — afterwards.
  */
+/**
+ * pending      — raised, waiting on HR
+ * hr_approved  — HR agreed and set the recovery; waiting on finance
+ * approved     — finance paid it out; the recovery loan exists
+ * rejected     — refused, by HR or by finance (`rejectedBy` says which)
+ */
+export type SalaryAdvanceStatus = "pending" | "hr_approved" | "approved" | "rejected";
+
+export interface ISalaryAdvance extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  employee: Types.ObjectId | IEmployee;
+  user: Types.ObjectId | IUser;
+  amount: number;
+  currency: string;
+  reason: string;
+  neededBy?: Date | null;
+  /** The monthly salary the amount was checked against, when it was asked. */
+  monthlySalary: number;
+  status: SalaryAdvanceStatus;
+  /** Set by HR on approval: how many payslips recover it, starting when. */
+  months?: number | null;
+  startMonth?: string | null;
+  hrReviewedBy?: Types.ObjectId | IUser | null;
+  hrReviewedAt?: Date | null;
+  hrNote?: string;
+  financeReviewedAt?: Date | null;
+  financeNote?: string;
+  /** Finance's own reference for the payout — the expense number there. */
+  financeRef?: string;
+  rejectedBy?: "hr" | "finance" | null;
+  /** The loan that recovers it, once finance has paid it out. */
+  loan?: Types.ObjectId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IDeductionRemovalRequest extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;

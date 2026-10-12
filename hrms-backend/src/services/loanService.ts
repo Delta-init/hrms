@@ -159,7 +159,9 @@ export async function computeLoanDeductions(
     const want = Math.min(round2(dueToDate - loan.amountRepaid), outstanding);
     if (want <= 0) continue;
 
-    const label = `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`;
+    const label = loan.kind === "advance"
+      ? SALARY_ADVANCE_LABEL
+      : `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`;
 
     // Waived: nothing is collected, and no repayment is recorded — the shortfall
     // is caught up automatically the next month there is room, exactly as a
@@ -208,3 +210,14 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Label prefix used for auto-generated loan deduction lines. */
 export const LOAN_DEDUCTION_PREFIX = "Loan repayment";
+
+/**
+ * The line a salary advance's recovery prints as. Also the plain line an
+ * imported salary sheet's SALARY ADVANCE column falls back to, so every
+ * reader can sum the column by this one prefix.
+ */
+export const SALARY_ADVANCE_LABEL = "Salary advance";
+
+/** Lines the payslip derives from loans and advances itself, never typed in. */
+export const isRecoveryLine = (label: string) =>
+  label.startsWith(LOAN_DEDUCTION_PREFIX) || label.startsWith(SALARY_ADVANCE_LABEL);

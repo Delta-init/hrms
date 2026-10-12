@@ -20,6 +20,15 @@ const loanSchema = new Schema<ILoan>(
     amountRepaid: { type: Number, min: 0, default: 0 },
     status: { type: String, enum: ["active", "closed", "cancelled"], default: "active" },
     notes: { type: String, trim: true, maxlength: 500 },
+    /**
+     * "advance" when this recovers an approved salary advance rather than a
+     * loan HR raised. Same schedule and same recovery; it only changes what
+     * the payslip line is called ("Salary advance") and which column of the
+     * salary sheet it lands in.
+     */
+    kind: { type: String, enum: ["loan", "advance"], default: "loan" },
+    /** The salary advance request it came from, when `kind` is "advance". */
+    advance: { type: Schema.Types.ObjectId, ref: "SalaryAdvance", default: null },
   },
   { timestamps: true, versionKey: false }
 );

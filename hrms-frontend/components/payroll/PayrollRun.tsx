@@ -307,7 +307,13 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
         {r.latePenaltyAmount > 0 && <div title="Late-arrival penalty">-{money(r.latePenaltyAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.latePenaltyDays}d late)</span></div>}
         {r.lopAmount === 0 && r.latePenaltyAmount === 0 && <span className="text-muted-foreground">—</span>}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-red-500">{r.loanTotal > 0 ? `-${money(r.loanTotal, r.currency)}` : <span className="text-muted-foreground">—</span>}</td>
+      <td className="px-4 py-3 text-right tabular-nums text-red-500">
+        {r.loanTotal > 0 && <div>-{money(r.loanTotal, r.currency)}</div>}
+        {(r.advanceTotal ?? 0) > 0 && (
+          <div title="Salary advance being recovered">-{money(r.advanceTotal ?? 0, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">adv</span></div>
+        )}
+        {r.loanTotal === 0 && !(r.advanceTotal ?? 0) && <span className="text-muted-foreground">—</span>}
+      </td>
       <td className="px-4 py-3 text-right tabular-nums">
         {r.oneTimePayments > 0 && <span className="text-emerald-600">+{money(r.oneTimePayments, r.currency)}</span>}
         {r.oneTimePayments > 0 && r.oneTimeDeductions > 0 && <span className="text-muted-foreground"> / </span>}

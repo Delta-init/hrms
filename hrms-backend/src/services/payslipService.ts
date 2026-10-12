@@ -11,6 +11,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { assertMonthEditable } from "./payrollBatchService.js";
 import {
   computeLoanDeductions, recordLoanRepayments, reverseLoanRepayments, LOAN_DEDUCTION_PREFIX,
+  SALARY_ADVANCE_LABEL, isRecoveryLine,
 } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries, releaseOneTimePayments } from "./oneTimeAdjustmentService.js";
 import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
@@ -277,7 +278,7 @@ async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind
   }
 }
 
-export const SHEET_ADVANCE_LABEL = "Salary advance";
+export const SHEET_ADVANCE_LABEL = SALARY_ADVANCE_LABEL;
 export const SHEET_OTHER_LABEL = "Other deduction";
 const SHEET_LOAN_UNRECORDED = `${LOAN_DEDUCTION_PREFIX} (not on record)`;
 
@@ -316,18 +317,27 @@ export async function buildImportedPayslip(employeeId: string, month: string, sn
   const fixed: Line[] = [];
   if (snap.lop > 0) fixed.push({ label: `${LOP_PREFIX} (${snap.lopDays}d)`, amount: r2(snap.lop) });
 
+  // LOAN pays down loans; SALARY ADVANCE pays down advances first (they are
+  // loans too, of kind "advance") and then one-time deductions.
   const loans = await Loan.find(scoped({ employee: employeeId, status: "active" })).sort({ disbursedDate: 1, createdAt: 1 });
-  let loanLeft = r2(snap.loan);
   const loanLines: Line[] = [];
   const repayments: Array<{ loanId: string; amount: number }> = [];
-  for (const loan of loans) {
-    if (loanLeft <= 0) break;
-    const take = r2(Math.min(r2(loan.amount - loan.amountRepaid), loanLeft));
-    if (take <= 0) continue;
-    loanLines.push({ label: `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`, amount: take });
-    repayments.push({ loanId: String(loan._id), amount: take });
-    loanLeft = r2(loanLeft - take);
-  }
+  const creditLoans = (kind: "loan" | "advance", want: number) => {
+    let left = r2(want);
+    for (const loan of loans.filter((l) => (l.kind ?? "loan") === kind)) {
+      if (left <= 0) break;
+      const take = r2(Math.min(r2(loan.amount - loan.amountRepaid), left));
+      if (take <= 0) continue;
+      loanLines.push({
+        label: kind === "advance" ? SALARY_ADVANCE_LABEL : `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`,
+        amount: take,
+      });
+      repayments.push({ loanId: String(loan._id), amount: take });
+      left = r2(left - take);
+    }
+    return left;
+  };
+  const loanLeft = creditLoans("loan", snap.loan);
   if (loanLeft > 0) {
     fixed.push({ label: SHEET_LOAN_UNRECORDED, amount: loanLeft });
     warnings.push(`Loan ${loanLeft} more than is owed on record — deducted as a plain line`);
@@ -337,7 +347,7 @@ export async function buildImportedPayslip(employeeId: string, month: string, sn
     (await OneTimeAdjustment.find({ _id: { $in: oneTime.deductions.map((d) => d.adjustmentId) }, createdAt: { $gt: snap.at } })
       .select("_id").lean()).map((a) => String(a._id))
   );
-  let advanceLeft = r2(snap.advance + oneTime.deductions.filter((d) => raisedSince.has(d.adjustmentId)).reduce((a, d) => a + d.amount, 0));
+  let advanceLeft = creditLoans("advance", r2(snap.advance + oneTime.deductions.filter((d) => raisedSince.has(d.adjustmentId)).reduce((a, d) => a + d.amount, 0)));
   const adjustments: Array<Line & { adjustmentId: string }> = [];
   for (const d of oneTime.deductions) {
     if (advanceLeft <= 0) break;
@@ -347,7 +357,9 @@ export async function buildImportedPayslip(employeeId: string, month: string, sn
   }
   if (advanceLeft > 0) {
     fixed.push({ label: SHEET_ADVANCE_LABEL, amount: advanceLeft });
-    if (snap.advance > 0 && oneTime.deductions.length) warnings.push(`Advance ${advanceLeft} more than is owed on record — deducted as a plain line`);
+    if (snap.advance > 0 && (oneTime.deductions.length || loans.some((l) => l.kind === "advance"))) {
+      warnings.push(`Advance ${advanceLeft} more than is owed on record — deducted as a plain line`);
+    }
   }
   if (snap.other > 0) fixed.push({ label: SHEET_OTHER_LABEL, amount: r2(snap.other) });
 
@@ -387,7 +399,7 @@ export class PayslipService {
     // Auto-derived lines are recomputed here rather than trusted from the form,
     // so a stale prefill can never double-count.
     const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(input.employee, input.month);
-    const userDeductions = (input.deductions ?? []).filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX));
+    const userDeductions = (input.deductions ?? []).filter((d) => !isRecoveryLine(d.label));
     // One-time payments (earnings) and deductions still owed for this month.
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
     // Approved expense reimbursements paid out this month (earnings).
@@ -514,7 +526,7 @@ export class PayslipService {
       const employeeId = String(record.employee);
       const earnings = (input.earnings ?? record.earnings) as unknown as Line[];
       const typed = ((input.deductions ?? record.deductions) as unknown as Line[])
-        .filter((d) => !d.label.startsWith(LOAN_DEDUCTION_PREFIX) && !isAttendanceLine(d.label));
+        .filter((d) => !isRecoveryLine(d.label) && !isAttendanceLine(d.label));
 
       const att = await this.summary(employeeId, month);
       const manual = [...typed, ...attendanceDeductions(att, att.salary, att.proratedGross)];
@@ -1005,7 +1017,10 @@ export class PayslipService {
       // from a rounded total.
       const lopPerDay = dailyRate(base);
       const latePenaltyAmount = round(attLines.find((l) => l.label.startsWith(PENALTY_PREFIX))?.amount ?? 0);
-      const loanTotal = round((s.loanDeductions ?? []).reduce((a, l) => a + l.amount, 0));
+      // A salary advance is recovered as a loan but reported as its own column.
+      const isAdvance = (l: { label: string }) => l.label.startsWith(SALARY_ADVANCE_LABEL);
+      const loanTotal = round((s.loanDeductions ?? []).filter((l) => !isAdvance(l)).reduce((a, l) => a + l.amount, 0));
+      const advanceTotal = round((s.loanDeductions ?? []).filter(isAdvance).reduce((a, l) => a + l.amount, 0));
       const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
       const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
       const oneTimePayments = round(oneTime.earnings.reduce((a, l) => a + l.amount, 0));
@@ -1014,7 +1029,7 @@ export class PayslipService {
       const reimbursements = round(reimb.earnings.reduce((a, l) => a + l.amount, 0));
       const ot = await computeOvertime(String(emp._id), month);
       const overtime = round(ot.earnings.reduce((a, l) => a + l.amount, 0));
-      const totalDeductions = round(lopAmount + latePenaltyAmount + loanTotal + structureDeductions + oneTimeDeductions);
+      const totalDeductions = round(lopAmount + latePenaltyAmount + loanTotal + advanceTotal + structureDeductions + oneTimeDeductions);
       const slip = existMap.get(String(emp._id));
 
       // A generated payslip is the truth. Recomputing the row from today's data
@@ -1029,13 +1044,8 @@ export class PayslipService {
       // computation: the adjustments it consumed are closed, so recomputing
       // reports zero for work the payslip plainly did.
       const slipOneTimePayments = slip ? (paidOneTime.get(String(slip._id)) ?? 0) : oneTimePayments;
-      // An imported sheet's advance beyond anything on record is a plain line
-      // with no recovery behind it; it is still the advance column.
       const slipOneTimeDeductions = slip
-        ? round(
-            (slip.recoveries ?? []).filter((r) => r.kind === "adjustment").reduce((a, r) => a + r.amount, 0) +
-            sum(slip.deductions, (l) => l === SHEET_ADVANCE_LABEL)
-          )
+        ? round((slip.recoveries ?? []).filter((r) => r.kind === "adjustment").reduce((a, r) => a + r.amount, 0))
         : oneTimeDeductions;
 
       const row = slip
@@ -1049,6 +1059,9 @@ export class PayslipService {
             lopAmount: sum(slip.deductions, (l) => l.startsWith(LOP_PREFIX)),
             latePenaltyAmount: sum(slip.deductions, (l) => l.startsWith(PENALTY_PREFIX)),
             loanTotal: sum(slip.deductions, (l) => l.startsWith(LOAN_DEDUCTION_PREFIX)),
+            // Advance recoveries, and an imported sheet's advance beyond
+            // anything on record — both are printed "Salary advance".
+            advanceTotal: sum(slip.deductions, (l) => l.startsWith(SALARY_ADVANCE_LABEL)),
             reimbursements: sum(slip.earnings, (l) => l.startsWith("Reimbursement")),
             overtime: sum(slip.earnings, (l) => l.startsWith("Overtime")),
             totalDeductions: round(slip.totalDeductions),
@@ -1060,6 +1073,7 @@ export class PayslipService {
             lopAmount,
             latePenaltyAmount,
             loanTotal,
+            advanceTotal,
             reimbursements,
             overtime,
             totalDeductions,

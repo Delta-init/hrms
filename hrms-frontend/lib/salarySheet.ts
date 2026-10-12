@@ -38,9 +38,9 @@ const monthTitle = (month: string) => {
 function columns(r: PayrollRunRow) {
   const gross = r2(r.salary + r.oneTimePayments + r.reimbursements + r.overtime);
   const loan = r2(r.loanTotal);
-  // No separate advance record exists: an advance is entered as a one-time
-  // deduction, so that is what this column carries.
-  const advance = r2(r.oneTimeDeductions);
+  // Approved salary advances being recovered, plus one-time deductions — the
+  // way an advance was entered before advances had a request of their own.
+  const advance = r2(r.oneTimeDeductions + (r.advanceTotal ?? 0));
   const lop = r2(r.lopAmount);
   // Whatever else the payslip takes — late and early-out penalties, recurring
   // structure deductions — so the row still adds up to the real net pay.

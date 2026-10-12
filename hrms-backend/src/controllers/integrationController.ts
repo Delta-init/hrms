@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { directoryService, attendanceNow } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
+import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
@@ -333,4 +334,35 @@ export const rejectProcurementRequest = asyncRoute(async (req, res) => {
     note: req.body?.note ?? null,
   });
   sendSuccess(res, "Procurement rejected", record);
+});
+
+// ── Salary advances ──────────────────────────────────────────────────────────
+
+const salaryAdvanceService = new SalaryAdvanceService();
+
+/** Advances HR has approved, waiting on finance to pay them out. */
+export const listSalaryAdvances = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId);
+  sendSuccess(res, "Salary advances retrieved", await salaryAdvanceService.listForFinance(organizationId));
+});
+
+/** Finance paid it out: HRMS creates the recovery on HR's terms. */
+export const approveSalaryAdvance = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await salaryAdvanceService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "approve",
+    note: req.body?.note ?? null,
+    reference: req.body?.reference ?? null,
+    paidOn: req.body?.paidOn ?? null,
+  });
+  sendSuccess(res, "Salary advance approved", record);
+});
+
+export const rejectSalaryAdvance = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await salaryAdvanceService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "reject",
+    note: req.body?.note ?? null,
+  });
+  sendSuccess(res, "Salary advance rejected", record);
 });

@@ -209,9 +209,10 @@ export class SalarySheetImportService {
       let system: ImportRow["system"] = null;
       if (sys) {
         const sysGross = r2(sys.salary + sys.oneTimePayments + sys.reimbursements + sys.overtime);
-        const sysOther = r2(sys.totalDeductions - sys.loanTotal - sys.oneTimeDeductions - sys.lopAmount);
+        const sysAdvance = r2(sys.oneTimeDeductions + (sys.advanceTotal ?? 0));
+        const sysOther = r2(sys.totalDeductions - sys.loanTotal - sysAdvance - sys.lopAmount);
         system = {
-          gross: sysGross, lopDays: sys.lopDays, loan: r2(sys.loanTotal), advance: r2(sys.oneTimeDeductions),
+          gross: sysGross, lopDays: sys.lopDays, loan: r2(sys.loanTotal), advance: sysAdvance,
           lop: r2(sys.lopAmount), other: sysOther, net: r2(sys.netPay), status: sys.status, imported: !!sys.importedAt,
         };
       } else if (slip) {
@@ -241,14 +242,19 @@ export class SalarySheetImportService {
         const empId = String(emp!._id);
         const recovered = (kind: string) => r2((slip?.recoveries ?? []).filter((x) => x.kind === kind).reduce((a, x) => a + x.amount, 0));
         if (loan > 0) {
-          const loans = await Loan.find(scoped({ employee: empId, status: "active" })).select("amount amountRepaid").lean();
+          const loans = await Loan.find(scoped({ employee: empId, status: "active", kind: { $ne: "advance" } })).select("amount amountRepaid").lean();
           const owed = r2(loans.reduce((a, l) => a + (l.amount - l.amountRepaid), 0) + recovered("loan"));
           if (loan > owed) warnings.push(owed > 0 ? `LOAN ${loan} is more than the ${owed} owed — the rest is deducted as a plain line` : "LOAN given but no loan on record — deducted as a plain line");
         }
         if (advance > 0) {
           const due = await OneTimeAdjustment.find(scoped({ employee: empId, kind: "deduction", applied: false, waived: { $ne: true }, month: { $lte: month } }))
             .select("amount appliedAmount").lean();
-          const owed = r2(due.reduce((a, d) => a + (d.amount - (d.appliedAmount ?? 0)), 0) + recovered("adjustment"));
+          const advanceLoans = await Loan.find(scoped({ employee: empId, status: "active", kind: "advance" })).select("amount amountRepaid").lean();
+          const owed = r2(
+            due.reduce((a, d) => a + (d.amount - (d.appliedAmount ?? 0)), 0) +
+            advanceLoans.reduce((a, l) => a + (l.amount - l.amountRepaid), 0) +
+            recovered("adjustment")
+          );
           if (advance > owed) warnings.push(owed > 0 ? `SALARY ADVANCE ${advance} is more than the ${owed} on record — the rest is a plain line` : "No advance on record — deducted as a plain line");
         }
       }

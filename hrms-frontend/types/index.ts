@@ -40,6 +40,7 @@ export const HRMS_MODULES = [
   "meetings",
   "officeKeeping",
   "deductionRemovals",
+  "advances",
   "onboardingTasks",
   "hiring",
   "confirmations",
@@ -83,6 +84,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   meetings: "Meetings",
   officeKeeping: "Office Keeping",
   deductionRemovals: "Deduction Removals",
+  advances: "Salary Advances",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
   confirmations: "Confirmations",
@@ -1069,6 +1071,8 @@ export interface PayrollRunRow {
   latePenaltyDays: number;
   latePenaltyAmount: number;
   loanTotal: number;
+  /** Salary-advance recoveries this month — their own column on the salary sheet. */
+  advanceTotal?: number;
   oneTimePayments: number;
   oneTimeDeductions: number;
   /** Approved expense reimbursements paid out this month (earnings). */
@@ -2621,6 +2625,46 @@ export interface PanelConflict {
   name: string;
   clashesWith: string;
   at: string;
+}
+
+// ─── Salary advances ──────────────────────────────────────────────────────────
+export type SalaryAdvanceStatus = "pending" | "hr_approved" | "approved" | "rejected";
+export const SALARY_ADVANCE_STATUS_LABELS: Record<SalaryAdvanceStatus, string> = {
+  pending: "Waiting on HR",
+  hr_approved: "Waiting on finance",
+  approved: "Approved",
+  rejected: "Refused",
+};
+export interface SalaryAdvance {
+  _id: string;
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } | string;
+  user: { _id: string; name: string; email?: string } | string;
+  amount: number;
+  currency: string;
+  reason: string;
+  neededBy?: string | null;
+  monthlySalary: number;
+  status: SalaryAdvanceStatus;
+  months?: number | null;
+  startMonth?: string | null;
+  hrReviewedBy?: { _id: string; name: string } | string | null;
+  hrReviewedAt?: string | null;
+  hrNote?: string;
+  financeReviewedAt?: string | null;
+  financeNote?: string;
+  financeRef?: string;
+  rejectedBy?: "hr" | "finance" | null;
+  createdAt: string;
+}
+export interface SalaryAdvanceEligibility {
+  canRequest: boolean;
+  /** Why not, when they can't. */
+  reason: string;
+  monthlySalary: number;
+  maxAmount: number;
+  currency: string;
+  /** Still owed on an earlier advance. */
+  owing: number;
 }
 
 // ─── Approvals console ────────────────────────────────────────────────────────

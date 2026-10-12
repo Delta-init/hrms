@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark, Timer, ShieldOff } from "lucide-react";
+import { Wallet, Plus, MoreHorizontal, Pencil, Trash2, Printer, ListChecks, Send, Loader2, FileText, CalendarRange, Coins, Layers, Landmark, Timer, ShieldOff, HandCoins } from "lucide-react";
 import { usePayslips, useMyPayslips, useDeletePayslip } from "@/hooks/usePayslips";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -14,6 +14,7 @@ import { SalaryStructures } from "@/components/payroll/SalaryStructures";
 import { SalaryRegister } from "@/components/payroll/SalaryRegister";
 import { Overtime } from "@/components/payroll/Overtime";
 import { DeductionRemovals } from "@/components/payroll/DeductionRemovals";
+import { SalaryAdvances } from "@/components/payroll/SalaryAdvances";
 import { printPayslip } from "@/components/payroll/printPayslip";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,8 @@ export default function PayrollPage() {
     // Self-service — raising a request needs no permission, the same as
     // applying for leave does not. `approve` inside it gates the panel half.
     { key: "deductions", label: "Deductions", icon: ShieldOff },
+    // Self-service too: asking for an advance; HR's panel sits inside it.
+    { key: "advances", label: "Advances", icon: HandCoins },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : (tabs[0]?.key ?? "mine");
 
@@ -151,6 +154,7 @@ export default function PayrollPage() {
       {activeTab === "register" && canView && <SalaryRegister />}
 
       {activeTab === "deductions" && <DeductionRemovals />}
+      {activeTab === "advances" && <SalaryAdvances />}
 
       {activeTab === "payslips" && (
         <DataTable

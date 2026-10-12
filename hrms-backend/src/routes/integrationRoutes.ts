@@ -6,6 +6,7 @@ import {
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
   approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
+  listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -49,5 +50,9 @@ router.post("/payroll/batches/:month/payments/:paymentId/reverse", serviceOrgSco
 router.get("/procurement/requests", serviceOrgScope, listProcurementRequests);
 router.post("/procurement/requests/:id/approve", serviceOrgScope, approveProcurementRequest);
 router.post("/procurement/requests/:id/reject", serviceOrgScope, rejectProcurementRequest);
+// Salary advances HR has approved; finance pays them out or refuses them.
+router.get("/advances/requests", serviceOrgScope, listSalaryAdvances);
+router.post("/advances/requests/:id/approve", serviceOrgScope, approveSalaryAdvance);
+router.post("/advances/requests/:id/reject", serviceOrgScope, rejectSalaryAdvance);
 
 export default router;
