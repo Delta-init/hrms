@@ -2,7 +2,7 @@ import type { NextFunction, Response } from "express";
 import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
-import { createSalaryAdvanceSchema, reviewSalaryAdvanceSchema } from "../validations/salaryAdvanceValidation.js";
+import { createSalaryAdvanceSchema, reviewSalaryAdvanceSchema, createAdvanceForEmployeeSchema } from "../validations/salaryAdvanceValidation.js";
 
 const service = new SalaryAdvanceService();
 
@@ -45,4 +45,19 @@ export const reviewAdvance = async (req: AuthenticatedRequest, res: Response, ne
 export const withdrawAdvance = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Request withdrawn", await service.cancelMine(String(req.params.id), req.user!.userId)); }
   catch (error) { next(error); }
+};
+
+/** HR's view of what a chosen employee may be advanced. */
+export const getEmployeeEligibility = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Advance eligibility", await service.eligibilityFor(String(req.params.employeeId))); }
+  catch (error) { next(error); }
+};
+
+/** HR raising one for an employee, already approved by HR — it starts with finance. */
+export const createAdvanceForEmployee = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = createAdvanceForEmployeeSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Advance raised — sent to finance", await service.createForEmployee(parsed.data, req.user!.userId), 201);
+  } catch (error) { next(error); }
 };

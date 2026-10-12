@@ -2654,6 +2654,10 @@ export interface SalaryAdvance {
   financeNote?: string;
   financeRef?: string;
   rejectedBy?: "hr" | "finance" | null;
+  /** HR, when HR raised it on the employee's behalf. */
+  raisedBy?: { _id: string; name: string } | string | null;
+  /** HR went over one month's salary, with a note saying why. */
+  overLimit?: boolean;
   createdAt: string;
 }
 export interface SalaryAdvanceEligibility {
@@ -2665,6 +2669,8 @@ export interface SalaryAdvanceEligibility {
   currency: string;
   /** Still owed on an earlier advance. */
   owing: number;
+  /** An advance already in progress. */
+  open?: boolean;
 }
 
 // ─── Approvals console ────────────────────────────────────────────────────────

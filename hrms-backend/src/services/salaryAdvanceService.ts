@@ -2,7 +2,7 @@ import { SalaryAdvance } from "../models/SalaryAdvance.js";
 import { Loan } from "../models/Loan.js";
 import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
-import type { CreateSalaryAdvanceInput, ReviewSalaryAdvanceInput } from "../validations/salaryAdvanceValidation.js";
+import type { CreateSalaryAdvanceInput, ReviewSalaryAdvanceInput, CreateAdvanceForEmployeeInput } from "../validations/salaryAdvanceValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -37,6 +37,7 @@ const POP = [
   { path: "employee", select: "name employeeCode designation department" },
   { path: "user", select: "name email" },
   { path: "hrReviewedBy", select: "name email" },
+  { path: "raisedBy", select: "name" },
 ];
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -94,9 +95,15 @@ export class SalaryAdvanceService {
    * advance, or with one already in someone's hands, has to finish that first.
    */
   async eligibility(userId: string) {
-    const emp = await Employee.findOne(scoped({ user: userId })).select("_id salary currency").lean<{ _id: unknown; salary?: number; currency?: string } | null>();
+    const emp = await Employee.findOne(scoped({ user: userId })).select("_id").lean<{ _id: unknown } | null>();
     if (!emp) return { canRequest: false, reason: "No employee record is linked to your login", monthlySalary: 0, maxAmount: 0, currency: "AED", owing: 0 };
-    const employeeId = String(emp._id);
+    return this.eligibilityFor(String(emp._id));
+  }
+
+  /** The same answer for any employee — HR's form asks it about the person chosen. */
+  async eligibilityFor(employeeId: string) {
+    const emp = await Employee.findOne(scoped({ _id: employeeId })).select("_id salary currency").lean<{ _id: unknown; salary?: number; currency?: string } | null>();
+    if (!emp) return { canRequest: false, reason: "Employee not found", monthlySalary: 0, maxAmount: 0, currency: "AED", owing: 0 };
     const currency = emp.currency ?? "AED";
 
     const breakup = await resolveSalaryBreakup(employeeId, currentMonth(), emp.salary ?? 0);
@@ -113,7 +120,80 @@ export class SalaryAdvanceService {
     else if (open) reason = "You already have an advance request in progress";
     else if (owing > 0) reason = `You are still repaying an earlier advance (${money(owing, currency)} left)`;
 
-    return { canRequest: !reason, reason, monthlySalary, maxAmount: monthlySalary, currency, owing };
+    return { canRequest: !reason, reason, monthlySalary, maxAmount: monthlySalary, currency, owing, open: !!open };
+  }
+
+  /**
+   * HR raising one for an employee — someone without the app to hand, or a
+   * request agreed in person. HR's approval comes with it, recovery and all,
+   * so it starts with finance; nothing is owed until finance approves.
+   *
+   * The same rules as an employee's own request, except that HR may go over
+   * one month's salary — and then must say why, and the request says it went
+   * over, so finance sees that before approving.
+   */
+  async createForEmployee(input: CreateAdvanceForEmployeeInput, hrUserId: string) {
+    const emp = await Employee.findOne(scoped({ _id: input.employee })).select("_id name user").lean<{ _id: unknown; name?: string; user?: unknown } | null>();
+    if (!emp) throw new AdvanceError("Employee not found", 404);
+    if (!emp.user) throw new AdvanceError(`${emp.name ?? "This employee"} has no login, so they can't be told about it or see it — add their login first`, 400);
+    if (String(emp.user) === String(hrUserId)) throw new AdvanceError("You can't raise an advance for yourself — ask someone else in HR", 403);
+
+    const elig = await this.eligibilityFor(String(emp._id));
+    if (elig.open) throw new AdvanceError(`${emp.name} already has an advance in progress`, 409);
+    if (elig.owing > 0) throw new AdvanceError(`${emp.name} is still repaying an earlier advance (${money(elig.owing, elig.currency)} left)`, 409);
+
+    const overLimit = input.amount > elig.maxAmount;
+    if (overLimit && !input.note?.trim()) {
+      throw new AdvanceError(
+        elig.maxAmount > 0
+          ? `That is more than one month's salary (${money(elig.maxAmount, elig.currency)}) — add a note saying why`
+          : `${emp.name} has no salary on record, so any amount is over the limit — add a note saying why`,
+        400
+      );
+    }
+
+    if (input.startMonth < currentMonth()) throw new AdvanceError("Recovery can't start in a month that has already passed", 400);
+    if (!(await isMonthEditable(input.startMonth))) {
+      throw new AdvanceError(`${input.startMonth} has already gone to accounts — start the recovery in a later month`, 409);
+    }
+
+    const note = (input.note ?? "").trim();
+    let record;
+    try {
+      record = await SalaryAdvance.create({
+        organization: getOrgId(),
+        employee: emp._id,
+        user: emp.user,
+        amount: r2(input.amount),
+        currency: elig.currency,
+        reason: input.reason,
+        neededBy: input.neededBy ? new Date(`${input.neededBy}T00:00:00.000Z`) : null,
+        monthlySalary: elig.monthlySalary,
+        status: "hr_approved",
+        months: input.months,
+        startMonth: input.startMonth,
+        hrReviewedBy: hrUserId,
+        hrReviewedAt: new Date(),
+        // Finance reads HR's note, not these flags — so going over says so there.
+        hrNote: (overLimit ? `Over one month's salary — ${note}` : note).slice(0, 500),
+        raisedBy: hrUserId,
+        overLimit,
+      });
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) throw new AdvanceError(`${emp.name} already has an advance in progress`, 409);
+      throw err;
+    }
+
+    const per = money(r2(record.amount / input.months), record.currency);
+    await tellRequester(
+      record,
+      "HR has raised a salary advance for you",
+      `${money(record.amount, record.currency)}, recovered over ${input.months} month${input.months === 1 ? "" : "s"} (${per} a month) from ${input.startMonth}. ` +
+        `It is now with finance; nothing is taken from your pay until they approve it.${note ? `<br><br>${note}` : ""}`,
+      "neutral"
+    );
+
+    return SalaryAdvance.findById(record._id).populate(POP);
   }
 
   async create(input: CreateSalaryAdvanceInput, userId: string) {

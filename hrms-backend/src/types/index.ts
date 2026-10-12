@@ -1600,6 +1600,9 @@ export interface ISalaryAdvance extends Document {
   rejectedBy?: "hr" | "finance" | null;
   /** The loan that recovers it, once finance has paid it out. */
   loan?: Types.ObjectId | null;
+  /** HR, when HR raised it on the employee's behalf. */
+  raisedBy?: Types.ObjectId | IUser | null;
+  overLimit?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

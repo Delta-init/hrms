@@ -34,6 +34,13 @@ const salaryAdvanceSchema = new Schema<ISalaryAdvance>(
     financeRef: { type: String, trim: true, maxlength: 120, default: "" },
     rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
     loan: { type: Schema.Types.ObjectId, ref: "Loan", default: null },
+    /**
+     * HR, when HR raised it for the employee — already approved by HR, so it
+     * starts with finance. Null when the employee asked for it themselves.
+     */
+    raisedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    /** HR went above one month's salary, with a note saying why. */
+    overLimit: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );

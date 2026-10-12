@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Ban, Check, HandCoins, ListChecks, Loader2, Plus, Receipt, ShieldCheck, Undo2 } from "lucide-react";
+import { AlertTriangle, Ban, Check, HandCoins, ListChecks, Loader2, Plus, Receipt, ShieldCheck, Undo2, UserPlus } from "lucide-react";
 import {
   useAdvanceEligibility, useMyAdvances, useAdvanceQueue,
   useRequestAdvance, useReviewAdvance, useWithdrawAdvance,
+  useEmployeeAdvanceEligibility, useRaiseAdvanceForEmployee,
 } from "@/hooks/useSalaryAdvances";
+import { EmployeeSelect } from "@/components/pickers";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +40,21 @@ const STATUS_TONE: Record<SalaryAdvanceStatus, string> = {
 
 function StatusPill({ r }: { r: SalaryAdvance }) {
   const label = r.status === "rejected" && r.rejectedBy ? `Refused by ${r.rejectedBy === "hr" ? "HR" : "finance"}` : SALARY_ADVANCE_STATUS_LABELS[r.status];
-  return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE[r.status])}>{label}</span>;
+  return (
+    <>
+      <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE[r.status])}>{label}</span>
+      {r.raisedBy && (
+        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground" title={`Raised by ${nameOf(r.raisedBy) || "HR"}`}>
+          Raised by HR
+        </span>
+      )}
+      {r.overLimit && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="h-3 w-3" />Over one month&rsquo;s salary
+        </span>
+      )}
+    </>
+  );
 }
 
 /** How it will be taken back, once HR has said. */
@@ -202,9 +218,14 @@ function Queue() {
   useEffect(() => { if (refusing) setNote(""); }, [refusing]);
   const m = Math.max(1, Math.min(12, Number(months) || 1));
 
+  const [raising, setRaising] = useState(false);
+
   return (
     <div className="space-y-3">
       <Card className="flex flex-wrap items-center gap-2 p-3">
+        <Button size="sm" className="order-last ml-auto" onClick={() => setRaising(true)}>
+          <UserPlus className="h-4 w-4" />New advance for an employee
+        </Button>
         {FILTERS.map((f) => (
           <button key={f.key} onClick={() => setStatus(f.key)}
             className={cn("rounded-full px-3 py-1 text-xs font-medium transition", status === f.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted")}>
@@ -295,6 +316,8 @@ function Queue() {
         </ResponsiveDialogContent>
       </ResponsiveDialog>
 
+      <RaiseForEmployeeDialog open={raising} onOpenChange={setRaising} />
+
       <ResponsiveDialog open={!!refusing} onOpenChange={(o) => !o && setRefusing(null)}>
         <ResponsiveDialogContent desktopClassName="max-w-md">
           <ResponsiveDialogHeader><ResponsiveDialogTitle>Refuse this advance</ResponsiveDialogTitle></ResponsiveDialogHeader>
@@ -315,5 +338,112 @@ function Queue() {
         </ResponsiveDialogContent>
       </ResponsiveDialog>
     </div>
+  );
+}
+
+/**
+ * HR raising an advance for an employee. HR's approval comes with it — the
+ * recovery is set here — so it goes straight to finance. Over one month's
+ * salary is allowed, but only with a note, and it is marked as such.
+ */
+function RaiseForEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [employee, setEmployee] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [neededBy, setNeededBy] = useState("");
+  const [months, setMonths] = useState("1");
+  const [startMonth, setStartMonth] = useState(nextMonth());
+  const [note, setNote] = useState("");
+  const { data: elig, isFetching: checking } = useEmployeeAdvanceEligibility(employee || undefined);
+  const { mutate: raise, isPending } = useRaiseAdvanceForEmployee();
+
+  useEffect(() => {
+    if (!open) return;
+    setEmployee(""); setAmount(""); setReason(""); setNeededBy(""); setMonths("1"); setStartMonth(nextMonth()); setNote("");
+  }, [open]);
+
+  const value = Number(amount);
+  const m = Math.max(1, Math.min(12, Number(months) || 1));
+  const blocked = !!elig && (elig.open || elig.owing > 0);
+  const overLimit = !!elig && value > elig.maxAmount;
+  const ready = !!employee && !blocked && value > 0 && !!reason.trim() && !!startMonth && (!overLimit || !!note.trim());
+
+  return (
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent desktopClassName="max-w-lg">
+        <ResponsiveDialogHeader><ResponsiveDialogTitle>New advance for an employee</ResponsiveDialogTitle></ResponsiveDialogHeader>
+        <div className="space-y-3 px-4 sm:px-0">
+          <div className="space-y-1.5">
+            <Label>Employee *</Label>
+            <EmployeeSelect value={employee} onChange={setEmployee} placeholder="Choose an employee" />
+            {employee && (
+              <p className={cn("text-[11px]", blocked ? "text-destructive" : "text-muted-foreground")}>
+                {checking || !elig
+                  ? "Checking…"
+                  : elig.open
+                    ? "They already have an advance in progress."
+                    : elig.owing > 0
+                      ? `They are still repaying an earlier advance (${money(elig.owing, elig.currency)} left).`
+                      : elig.maxAmount > 0
+                        ? `One month's salary: ${money(elig.maxAmount, elig.currency)}.`
+                        : "No salary on record — any amount needs a note."}
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="raise-amount">Amount ({elig?.currency ?? "AED"}) *</Label>
+              <Input id="raise-amount" type="number" min={1} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="raise-needed">Needed by</Label>
+              <Input id="raise-needed" type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="raise-reason">What is it for? *</Label>
+            <Textarea id="raise-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="raise-months">Recover over (months)</Label>
+              <Input id="raise-months" type="number" min={1} max={12} value={months} onChange={(e) => setMonths(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="raise-start">Starting from</Label>
+              <Input id="raise-start" type="month" min={thisMonth()} value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
+            </div>
+          </div>
+          {value > 0 && (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs">
+              {money(value / m, elig?.currency ?? "AED")} a month for {m} month{m === 1 ? "" : "s"}, from {startMonth || "—"}. It goes straight to
+              finance — HR&rsquo;s approval is this — and nothing is deducted until finance approves it.
+            </p>
+          )}
+          {overLimit && (
+            <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              This is more than one month&rsquo;s salary. Say why in the note — finance will see it marked as over the limit.
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="raise-note">Note{overLimit ? " *" : " (optional)"}</Label>
+            <Input id="raise-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} placeholder="Sent to the employee and to finance" />
+          </div>
+        </div>
+        <ResponsiveDialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            disabled={isPending || !ready}
+            onClick={() => raise(
+              { employee, amount: value, reason: reason.trim(), neededBy: neededBy || null, months: m, startMonth, note: note.trim() || undefined },
+              { onSuccess: () => onOpenChange(false) }
+            )}
+          >
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}Raise — send to finance
+          </Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

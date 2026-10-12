@@ -62,3 +62,22 @@ export const useWithdrawAdvance = () => {
     onError: (e) => toast.error(errMsg(e, "Could not withdraw the request")),
   });
 };
+
+/** HR's form: what the chosen employee may be advanced. */
+export const useEmployeeAdvanceEligibility = (employeeId?: string) =>
+  useQuery({
+    queryKey: [...KEY, "eligibility", employeeId],
+    queryFn: async () => (await api.get<ApiResponse<SalaryAdvanceEligibility>>(`/advances/eligibility/${employeeId}`)).data.data!,
+    enabled: !!employeeId,
+  });
+
+/** HR raising one for an employee — HR's approval comes with it; it goes to finance. */
+export const useRaiseAdvanceForEmployee = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { employee: string; amount: number; reason: string; neededBy?: string | null; months: number; startMonth: string; note?: string }) =>
+      (await api.post<ApiResponse<SalaryAdvance>>("/advances/for-employee", v)).data.data!,
+    onSuccess: () => { invalidate(qc); toast.success("Advance raised — sent to finance, and the employee has been told"); },
+    onError: (e) => toast.error(errMsg(e, "Could not raise the advance")),
+  });
+};
