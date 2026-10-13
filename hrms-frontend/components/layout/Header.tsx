@@ -25,7 +25,7 @@ export function Header() {
   const { data: me } = useMyEmployeeProfile();
   const logout = useLogout();
   const router = useRouter();
-  const { toggleMobileDrawer, toggleSidebarCollapsed } = useUiStore();
+  const { toggleSidebarCollapsed } = useUiStore();
   const pathname = usePathname();
 
   const currentNav = navItems.find(
@@ -40,13 +40,7 @@ export function Header() {
   return (
     <header className="flex h-16 shrink-0 scale-[.99] items-center justify-between rounded-2xl border-b border-border/10 px-4 backdrop-blur-sm md:px-5">
       <div className="flex items-center gap-2">
-        <button
-          onClick={toggleMobileDrawer}
-          className="flex items-center justify-center rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
-          aria-label="Open navigation"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
+        {/* No menu button on phones: the bottom tab bar's Menu opens the drawer. */}
         <button
           onClick={toggleSidebarCollapsed}
           className="hidden items-center justify-center rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:flex"

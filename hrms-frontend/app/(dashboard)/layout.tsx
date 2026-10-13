@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { OnboardingGate } from "@/components/layout/OnboardingGate";
 import { KioskLock } from "@/components/layout/KioskLock";
@@ -31,11 +32,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             on every page, and one that cannot be closed is an advert. The
             profile page carries a permanent copy for anyone who wants it back. */}
         <InstallPrompt />
-        <main className="flex-1 overflow-y-auto rounded-2xl border border-border/40 bg-background p-4 shadow-sm md:p-6">
+        {/* On phones the bottom tab bar floats over the page, so the page keeps
+            its height clear — 64px bar, 10px gap, the home indicator, a little
+            air — and the last row can always be scrolled into view. */}
+        <main className="flex-1 overflow-y-auto rounded-2xl border border-border/40 bg-background p-4 pb-[calc(96px+env(safe-area-inset-bottom))] shadow-sm md:p-6">
           {children}
         </main>
       </div>
     </div>
+    <MobileTabBar />
     </ThemeProvider>
   );
 }
