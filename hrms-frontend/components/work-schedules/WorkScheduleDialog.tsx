@@ -33,7 +33,7 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
     resolver: zodResolver(workScheduleFormSchema),
     defaultValues: {
       name: "", description: "", timeZone: "Asia/Dubai",
-      loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10,
+      loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, earlyClockInMinutes: 180,
       mode: "fixed", requiredHours: 8,
       status: "active",
     },
@@ -70,12 +70,14 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
         workDays: schedule.workDays,
         halfDays: schedule.halfDays ?? [],
         graceMinutes: schedule.graceMinutes,
+        // Schedules from before this setting existed open 30 minutes early.
+        earlyClockInMinutes: schedule.earlyClockInMinutes ?? 30,
         mode: schedule.mode ?? "fixed",
         requiredHours: schedule.requiredHours ?? 8,
         status: schedule.status,
       });
     } else {
-      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, mode: "fixed", requiredHours: 8, status: "active" });
+      reset({ name: "", description: "", timeZone: "Asia/Dubai", loginTime: "09:00", logoutTime: "18:00", workDays: [1, 2, 3, 4, 5, 6], halfDays: [], graceMinutes: 10, earlyClockInMinutes: 180, mode: "fixed", requiredHours: 8, status: "active" });
     }
   }, [open, schedule, reset]);
 
@@ -208,6 +210,14 @@ export function WorkScheduleDialog({ open, onOpenChange, schedule }: Props) {
             <Input id="graceMinutes" type="number" min={0} {...register("graceMinutes")} />
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="earlyClockInMinutes">Clock-in opens (min before)</Label>
+            <Input id="earlyClockInMinutes" type="number" min={0} max={240} {...register("earlyClockInMinutes")} />
+            <p className="text-[11px] text-muted-foreground">
+              {isDuration ? "How early they can clock in before the window opens." : "They can clock in this early; hours count from the shift start."}
+            </p>
+            {errors.earlyClockInMinutes && <p className="text-xs text-destructive">{errors.earlyClockInMinutes.message as string}</p>}
+          </div>
+          <div className="col-span-2 space-y-1.5">
             <Label htmlFor="description">Description</Label>
             <Input id="description" placeholder="Optional" {...register("description")} />
           </div>

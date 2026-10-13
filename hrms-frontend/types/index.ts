@@ -181,6 +181,8 @@ export interface WorkSchedule {
   workDays: number[];
   halfDays: number[];
   graceMinutes: number;
+  /** How long before the shift starts clock-in opens (minutes). */
+  earlyClockInMinutes?: number;
   /** Fixed: judged by arrival time. Duration: loginTime/logoutTime become a punch window, judged by total hours worked. */
   mode: "fixed" | "duration";
   /** Duration mode only — hours required within the window for a full day. */

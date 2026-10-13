@@ -27,7 +27,12 @@ export interface ShiftSchedule {
   mode?: "fixed" | "duration";
   /** Duration mode only — hours required within the window for a full day. */
   requiredHours?: number;
+  /** How long before the shift starts clock-in opens. Defaults to the old fixed 30. */
+  earlyClockInMinutes?: number;
 }
+
+/** What a schedule without its own setting allows — the rule before it was configurable. */
+export const DEFAULT_EARLY_CLOCK_IN_MINUTES = 30;
 
 export const DEFAULT_SCHEDULE: ShiftSchedule = {
   timeZone: "Asia/Dubai",
@@ -75,7 +80,7 @@ export interface ResolvedShift {
   dateMidnightUtc: Date;
   shiftStart: Date;
   shiftEnd: Date;
-  /** Clock-in becomes available 30 min before shift start. */
+  /** Clock-in becomes available this long before shift start — the schedule's `earlyClockInMinutes`. */
   windowOpen: Date;
   /** On-time boundary (shiftStart + grace). */
   lateThreshold: Date;
@@ -98,7 +103,8 @@ export function resolveShift(schedule: ShiftSchedule, now = new Date()): Resolve
   if (shiftEnd.getTime() <= shiftStart.getTime()) {
     shiftEnd = new Date(shiftEnd.getTime() + 86_400_000); // overnight shift
   }
-  const windowOpen = new Date(shiftStart.getTime() - 30 * 60_000);
+  const early = schedule.earlyClockInMinutes ?? DEFAULT_EARLY_CLOCK_IN_MINUTES;
+  const windowOpen = new Date(shiftStart.getTime() - Math.max(0, early) * 60_000);
   const graceMs = (schedule.graceMinutes ?? 15) * 60_000;
   const lateThreshold = new Date(shiftStart.getTime() + graceMs);
   const halfDayThreshold = new Date(shiftStart.getTime() + HALF_DAY_AFTER_MINUTES * 60_000);

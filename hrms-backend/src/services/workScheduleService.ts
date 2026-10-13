@@ -140,6 +140,7 @@ export class WorkScheduleService {
       ...(input.workDays !== undefined && { workDays: input.workDays }),
       ...(input.halfDays !== undefined && { halfDays: input.halfDays }),
       ...(input.graceMinutes !== undefined && { graceMinutes: input.graceMinutes }),
+      ...(input.earlyClockInMinutes !== undefined && { earlyClockInMinutes: input.earlyClockInMinutes }),
       ...(input.status !== undefined && { status: input.status }),
     });
     await record.save();

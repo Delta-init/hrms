@@ -120,6 +120,12 @@ const attendanceSchema = new Schema<IAttendance>(
     checkIn: { type: Date, default: null }, // login
     checkOut: { type: Date, default: null }, // logout
     sessions: { type: [sessionSchema], default: [] },
+    /**
+     * Worked time is counted from here when it is later than a punch — set at
+     * clock-in to the shift start for someone who arrived before it. Coming in
+     * early is allowed; the time before the shift is not paid as worked.
+     */
+    countFrom: { type: Date, default: null },
     status: {
       type: String,
       enum: ["present", "absent", "late", "half_day", "early_out", "on_leave", "holiday", "weekend", "wfh"],
@@ -151,9 +157,11 @@ attendanceSchema.index({ status: 1 });
 attendanceSchema.methods.computeWorkedMinutes = function (): number {
   const sessions = (this.sessions ?? []) as IAttendanceSession[];
   let total = 0;
+  const from = this.countFrom ? new Date(this.countFrom).getTime() : null;
   for (const s of sessions) {
     if (s.checkIn && s.checkOut) {
-      total += Math.max(0, (s.checkOut.getTime() - s.checkIn.getTime()) / 60000);
+      const start = from !== null ? Math.max(s.checkIn.getTime(), from) : s.checkIn.getTime();
+      total += Math.max(0, (s.checkOut.getTime() - start) / 60000);
     }
   }
   return Math.round(total);

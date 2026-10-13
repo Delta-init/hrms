@@ -64,6 +64,18 @@ const workScheduleSchema = new Schema<IWorkSchedule>(
       min: 0,
     },
     /**
+     * How long before `loginTime` clock-in opens. Arriving early is allowed;
+     * the hours before the shift starts are not counted (see Attendance
+     * `countFrom`). Absent on schedules written before this existed, which
+     * then keep the old fixed 30 minutes.
+     */
+    earlyClockInMinutes: {
+      type: Number,
+      default: 180,
+      min: 0,
+      max: 240,
+    },
+    /**
      * Fixed: a shift judged by arrival time against `loginTime`. Duration:
      * `loginTime`/`logoutTime` become the window staff may punch within, and
      * the day is judged by total hours worked instead — there is no "late"

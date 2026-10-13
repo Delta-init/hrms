@@ -600,6 +600,7 @@ export class AttendanceService {
       return {
         timeZone: ws.timeZone, loginTime: ws.loginTime, logoutTime: ws.logoutTime, graceMinutes: ws.graceMinutes ?? 15,
         mode: ws.mode ?? "fixed", requiredHours: ws.requiredHours ?? 8,
+        earlyClockInMinutes: (ws as { earlyClockInMinutes?: number }).earlyClockInMinutes,
       };
     }
     return DEFAULT_SCHEDULE;
@@ -950,6 +951,10 @@ export class AttendanceService {
     att.status = status;
     att.lateMinutes = lateMinutes;
     att.sessions = [{ checkIn: now, checkOut: null, checkInSource: source ?? null }] as never;
+    // In before the shift starts: the punch stands as made, but hours count
+    // from the shift start. A duration schedule has no start — every minute
+    // is the day's.
+    att.countFrom = schedule.mode !== "duration" && now.getTime() < shift.shiftStart.getTime() ? shift.shiftStart : null;
     await att.save();
     return Attendance.findById(att._id).populate("user", "name email designation");
   }

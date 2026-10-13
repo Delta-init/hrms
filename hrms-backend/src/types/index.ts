@@ -277,6 +277,12 @@ export interface IAttendance extends Document {
   /** All punch pairs for the day (supports breaks / multiple sessions). */
   sessions: Types.DocumentArray<IAttendanceSession & Document>;
   status: AttendanceStatus;
+  /**
+   * When worked time starts counting, if later than the first punch: the
+   * shift start, for someone who clocked in before it. The punch itself is
+   * kept as it happened.
+   */
+  countFrom?: Date | null;
   /** Total worked minutes across sessions (computed on save). */
   workedMinutes: number;
   /** Minutes late vs the expected shift start (0 if on time). */
@@ -1013,6 +1019,8 @@ export interface IWorkSchedule extends Document {
   mode: "fixed" | "duration";
   /** Duration mode only — hours required within the window to count as a full day. */
   requiredHours: number;
+  /** How long before the shift starts clock-in opens (minutes). */
+  earlyClockInMinutes?: number;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
