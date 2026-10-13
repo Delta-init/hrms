@@ -33,23 +33,29 @@ export function OneTimeDialog({ open, onOpenChange, adjustment, defaultMonth }: 
   const { mutate: update, isPending: updating } = useUpdateOneTime();
   const isPending = creating || updating;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<OneTimeFormValues>({
+  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<OneTimeFormValues>({
     resolver: zodResolver(oneTimeFormSchema),
-    defaultValues: { employee: "", kind: "payment", label: "", amount: 0, month: defaultMonth || thisMonth(), notes: "" },
+    defaultValues: { employee: "", kind: "payment", label: "", amount: 0, month: defaultMonth || thisMonth(), notes: "", payVia: "payslip" },
   });
 
   useEffect(() => {
     if (!open) return;
     if (adjustment) {
-      reset({ employee: idOf(adjustment.employee), kind: adjustment.kind, label: adjustment.label, amount: adjustment.amount, month: adjustment.month, notes: adjustment.notes ?? "" });
+      reset({ employee: idOf(adjustment.employee), kind: adjustment.kind, label: adjustment.label, amount: adjustment.amount, month: adjustment.month, notes: adjustment.notes ?? "", payVia: adjustment.payVia ?? "payslip" });
     } else {
-      reset({ employee: "", kind: "payment", label: "", amount: 0, month: defaultMonth || thisMonth(), notes: "" });
+      reset({ employee: "", kind: "payment", label: "", amount: 0, month: defaultMonth || thisMonth(), notes: "", payVia: "payslip" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, adjustment, defaultMonth]);
 
+  const kind = watch("kind");
+  const payVia = watch("payVia");
+  // How it's paid is chosen once: a payslip line and a finance payout are
+  // different records, so an existing one keeps its path.
+  const viaLocked = isEditing;
+
   const onSubmit = (data: OneTimeFormValues) => {
-    const payload = { ...data, notes: data.notes || undefined };
+    const payload = { ...data, notes: data.notes || undefined, payVia: data.kind === "payment" ? data.payVia : "payslip" };
     if (isEditing) update({ id: adjustment._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
   };
@@ -89,7 +95,7 @@ export function OneTimeDialog({ open, onOpenChange, adjustment, defaultMonth }: 
               )} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="month">Payout month *</Label>
+              <Label htmlFor="month">{kind === "payment" && payVia === "finance" ? "For month *" : "Payout month *"}</Label>
               <Input id="month" type="month" {...register("month")} />
               {errors.month && <p className="text-xs text-destructive">{errors.month.message}</p>}
             </div>
@@ -107,6 +113,26 @@ export function OneTimeDialog({ open, onOpenChange, adjustment, defaultMonth }: 
               {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
             </div>
           </div>
+
+          {kind === "payment" && (
+            <div className="space-y-1.5">
+              <Label>How is it paid? *</Label>
+              <Controller name="payVia" control={control} render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange} disabled={viaLocked}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="payslip">With salary — on that month&rsquo;s payslip</SelectItem>
+                    <SelectItem value="finance">Send to finance to pay directly</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
+              <p className="text-[11px] text-muted-foreground">
+                {payVia === "finance"
+                  ? "Finance pays it from the finance app and marks it Paid. It never goes on a payslip, so it can't be paid twice."
+                  : "Added to the payslip for the payout month and paid with salary."}
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes</Label>

@@ -3,6 +3,7 @@ import { directoryService, attendanceNow } from "../services/directoryService.js
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
 import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
+import { OneTimeAdjustmentService } from "../services/oneTimeAdjustmentService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
@@ -354,8 +355,9 @@ export const approveSalaryAdvance = asyncRoute(async (req, res) => {
     note: req.body?.note ?? null,
     reference: req.body?.reference ?? null,
     paidOn: req.body?.paidOn ?? null,
+    method: req.body?.method ?? null,
   });
-  sendSuccess(res, "Salary advance approved", record);
+  sendSuccess(res, "Salary advance paid", record);
 });
 
 export const rejectSalaryAdvance = asyncRoute(async (req, res) => {
@@ -365,4 +367,36 @@ export const rejectSalaryAdvance = asyncRoute(async (req, res) => {
     note: req.body?.note ?? null,
   });
   sendSuccess(res, "Salary advance rejected", record);
+});
+
+// ── One-time payments finance pays directly ──────────────────────────────────
+
+const oneTimeService = new OneTimeAdjustmentService();
+
+/** Payments HR sent to finance to pay, waiting on them. */
+export const listOneTimePayments = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId);
+  sendSuccess(res, "One-time payments retrieved", await oneTimeService.listForFinance(organizationId));
+});
+
+/** Finance paid it: when, how, and its own reference. */
+export const markOneTimePaymentPaid = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await oneTimeService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "paid",
+    paidOn: req.body?.paidOn ?? null,
+    method: req.body?.method ?? null,
+    reference: req.body?.reference ?? null,
+    note: req.body?.note ?? null,
+  });
+  sendSuccess(res, "One-time payment paid", record);
+});
+
+export const rejectOneTimePayment = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await oneTimeService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "reject",
+    note: req.body?.note ?? null,
+  });
+  sendSuccess(res, "One-time payment rejected", record);
 });

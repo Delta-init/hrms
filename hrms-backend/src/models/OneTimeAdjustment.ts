@@ -50,11 +50,28 @@ const oneTimeAdjustmentSchema = new Schema<IOneTimeAdjustment>(
     waived: { type: Boolean, default: false },
     waivedAt: { type: Date, default: null },
     waivedRequest: { type: Schema.Types.ObjectId, ref: "DeductionRemovalRequest", default: null },
+
+    /**
+     * How a payment is paid. "payslip" — with that month's salary, as every
+     * one-time item always was. "finance" — finance pays it directly, from the
+     * finance system, and it never touches a payslip (that would pay it twice).
+     * Deductions are always "payslip".
+     */
+    payVia: { type: String, enum: ["payslip", "finance"], default: "payslip" },
+    /** For payVia "finance": where finance has it. Null for everything else. */
+    financeStatus: { type: String, enum: ["with_finance", "paid", "rejected", null], default: null },
+    paidOn: { type: Date, default: null },
+    paymentMethod: { type: String, trim: true, maxlength: 40, default: "" },
+    /** Finance's reference for the payout — its expense number. */
+    paymentRef: { type: String, trim: true, maxlength: 120, default: "" },
+    financeNote: { type: String, trim: true, maxlength: 500, default: "" },
+    financeDecidedAt: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false }
 );
 
 oneTimeAdjustmentSchema.index({ organization: 1, employee: 1, month: 1 });
+oneTimeAdjustmentSchema.index({ organization: 1, financeStatus: 1 });
 // Sparse-unique: only finance-sourced rows carry one, and it must be theirs alone.
 oneTimeAdjustmentSchema.index(
   { externalId: 1 },

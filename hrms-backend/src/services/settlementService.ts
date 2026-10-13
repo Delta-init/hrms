@@ -38,7 +38,8 @@ interface SettlementSources {
 async function collectSettlementSources(employeeId: string): Promise<SettlementSources> {
   const [reimbursements, oneTime, loans] = await Promise.all([
     Reimbursement.find(scoped({ employee: employeeId, status: "approved" })).select("_id").lean(),
-    OneTimeAdjustment.find(scoped({ employee: employeeId, applied: false })).select("_id").lean(),
+    // A payment finance pays directly is finance's to settle, never the settlement's.
+    OneTimeAdjustment.find(scoped({ employee: employeeId, applied: false, payVia: { $ne: "finance" } })).select("_id").lean(),
     Loan.find(scoped({ employee: employeeId, status: "active" })).select("_id").lean(),
   ]);
   return {
@@ -88,7 +89,7 @@ export async function computeFinalSettlement(
   const reimbursements = await Reimbursement.find(scoped({ employee: employeeId, status: "approved" }))
     .select("title amount").lean();
   // Unapplied one-time payments (earnings) and deductions.
-  const oneTime = await OneTimeAdjustment.find(scoped({ employee: employeeId, applied: false }))
+  const oneTime = await OneTimeAdjustment.find(scoped({ employee: employeeId, applied: false, payVia: { $ne: "finance" } }))
     .select("kind label amount").lean();
   // Outstanding balance on active loans, recovered in full.
   const loans = await Loan.find(scoped({ employee: employeeId, status: "active" }))

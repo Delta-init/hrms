@@ -44,3 +44,10 @@ export const useDeleteOneTime = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to remove adjustment")),
   });
 };
+
+/** Your own payments finance pays directly — shown as "paid separately" on My Payslips. */
+export const useMyPaidSeparately = () =>
+  useQuery({
+    queryKey: [...KEY, "mine", "paid-separately"],
+    queryFn: async () => (await api.get<ApiResponse<Array<OneTimeAdjustment & { employee?: { currency?: string } | null }>>>("/one-time-adjustments/mine/paid-separately")).data.data ?? [],
+  });

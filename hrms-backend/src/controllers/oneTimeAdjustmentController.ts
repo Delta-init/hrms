@@ -41,3 +41,9 @@ export const deleteAdjustment = async (req: AuthenticatedRequest, res: Response,
     sendSuccess(res, "Adjustment removed", null);
   } catch (error) { next(error); }
 };
+
+/** The caller's own payments finance pays directly — "paid separately" on My Payslips. */
+export const getMyPaidSeparately = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Payments paid separately", await service.paidSeparatelyFor(req.user!.userId)); }
+  catch (error) { next(error); }
+};

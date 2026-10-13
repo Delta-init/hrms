@@ -7,6 +7,7 @@ import {
   approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
   listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
+  listOneTimePayments, markOneTimePaymentPaid, rejectOneTimePayment,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -54,5 +55,9 @@ router.post("/procurement/requests/:id/reject", serviceOrgScope, rejectProcureme
 router.get("/advances/requests", serviceOrgScope, listSalaryAdvances);
 router.post("/advances/requests/:id/approve", serviceOrgScope, approveSalaryAdvance);
 router.post("/advances/requests/:id/reject", serviceOrgScope, rejectSalaryAdvance);
+// One-time payments HR sent to finance to pay directly (never on a payslip).
+router.get("/one-time-payments/requests", serviceOrgScope, listOneTimePayments);
+router.post("/one-time-payments/requests/:id/paid", serviceOrgScope, markOneTimePaymentPaid);
+router.post("/one-time-payments/requests/:id/reject", serviceOrgScope, rejectOneTimePayment);
 
 export default router;

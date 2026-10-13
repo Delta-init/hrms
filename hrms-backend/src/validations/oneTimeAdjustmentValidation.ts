@@ -10,6 +10,11 @@ export const createOneTimeSchema = z.object({
   amount: z.coerce.number().min(0, "Amount cannot be negative"),
   month,
   notes: z.string().max(300).optional(),
+  /** Payments only: "finance" sends it to finance to pay directly, off the payslip. */
+  payVia: z.enum(["payslip", "finance"]).optional(),
+}).refine((v) => v.kind === "payment" || v.payVia !== "finance", {
+  message: "Only a payment can be sent to finance to pay",
+  path: ["payVia"],
 });
 
 export const updateOneTimeSchema = z.object({

@@ -7,6 +7,8 @@ export const oneTimeFormSchema = z.object({
   amount: z.coerce.number().min(0, "Cannot be negative"),
   month: z.string().regex(/^\d{4}-\d{2}$/, "Pick a month"),
   notes: z.string().max(300).optional(),
+  /** Payments: with salary on the payslip, or paid directly by finance. */
+  payVia: z.enum(["payslip", "finance"]),
 });
 
 export type OneTimeFormValues = z.infer<typeof oneTimeFormSchema>;

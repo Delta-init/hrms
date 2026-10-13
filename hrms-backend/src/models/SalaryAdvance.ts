@@ -32,6 +32,9 @@ const salaryAdvanceSchema = new Schema<ISalaryAdvance>(
     financeReviewedAt: { type: Date, default: null },
     financeNote: { type: String, trim: true, maxlength: 500, default: "" },
     financeRef: { type: String, trim: true, maxlength: 120, default: "" },
+    /** When and how finance paid it out. */
+    paidOn: { type: Date, default: null },
+    paymentMethod: { type: String, trim: true, maxlength: 40, default: "" },
     rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
     loan: { type: Schema.Types.ObjectId, ref: "Loan", default: null },
     /**

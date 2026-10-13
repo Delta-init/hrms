@@ -8,6 +8,10 @@ import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { assertMonthEditable } from "./payrollBatchService.js";
 import { parsePagination } from "../utils/query.js";
+import { User } from "../models/User.js";
+import { notify } from "./notificationService.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 
 interface OneTimeQuery extends PaginationQuery {
   employee?: string;
@@ -23,13 +27,20 @@ const POP = [
 
 export class OneTimeAdjustmentService {
   async create(input: CreateOneTimeInput, createdBy: string) {
+    const viaFinance = input.kind === "payment" && input.payVia === "finance";
     // An adjustment changes what a month pays out, so it is governed by the
     // same lock as the payslips. Adding a bonus after the handover would leave
-    // finance holding a total that no longer matches the payroll.
-    await assertMonthEditable(input.month, "one-time adjustments");
+    // finance holding a total that no longer matches the payroll. One finance
+    // pays directly never reaches the payroll, so the lock is not its business.
+    if (!viaFinance) await assertMonthEditable(input.month, "one-time adjustments");
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    if (viaFinance && !employee.user) {
+      throw Object.assign(new Error("This employee has no login, so they can't be told when it's paid — add their login first"), { statusCode: 400 });
+    }
     const doc = await OneTimeAdjustment.create({
+      payVia: viaFinance ? "finance" : "payslip",
+      financeStatus: viaFinance ? "with_finance" : null,
       organization: getOrgId(),
       employee: input.employee,
       user: employee.user ?? null,
@@ -73,6 +84,14 @@ export class OneTimeAdjustmentService {
   async update(id: string, input: UpdateOneTimeInput) {
     const record = await OneTimeAdjustment.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Adjustment not found"), { statusCode: 404 });
+    if (record.payVia === "finance") {
+      if (record.financeStatus !== "with_finance") throw Object.assign(new Error(`Finance has already ${record.financeStatus === "paid" ? "paid" : "rejected"} this`), { statusCode: 400 });
+      // Kind is fixed: a deduction cannot be paid by finance.
+      const { kind: _k, ...rest } = input;
+      Object.assign(record, rest);
+      await record.save();
+      return OneTimeAdjustment.findById(id).populate(POP);
+    }
     if (record.applied) throw Object.assign(new Error("This adjustment has already been applied to a payslip"), { statusCode: 400 });
     await assertMonthEditable(record.month, "one-time adjustments");
     if (input.month !== undefined && input.month !== record.month) {
@@ -86,9 +105,104 @@ export class OneTimeAdjustmentService {
   async remove(id: string) {
     const record = await OneTimeAdjustment.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Adjustment not found"), { statusCode: 404 });
+    if (record.payVia === "finance") {
+      if (record.financeStatus === "paid") throw Object.assign(new Error("Finance has already paid this"), { statusCode: 400 });
+      await OneTimeAdjustment.deleteOne({ _id: record._id });
+      return;
+    }
     if (record.applied) throw Object.assign(new Error("This adjustment has already been applied to a payslip"), { statusCode: 400 });
     await assertMonthEditable(record.month, "one-time adjustments");
     await OneTimeAdjustment.deleteOne({ _id: record._id });
+  }
+
+  /** The caller's own payments that finance paid directly — "paid separately" under My Payslips. */
+  async paidSeparatelyFor(userId: string) {
+    return OneTimeAdjustment.find(scoped({ user: userId, payVia: "finance", financeStatus: { $in: ["with_finance", "paid", "rejected"] } }))
+      .select("label amount month notes financeStatus paidOn paymentMethod paymentRef financeNote createdAt")
+      .populate({ path: "employee", select: "currency" })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+  }
+
+  // ── Finance integration ────────────────────────────────────────────────────
+  // Called from signed machine requests, with the organization named outright.
+
+  /** Payments HR has sent to finance to pay, not yet paid or refused. */
+  async listForFinance(organization: string) {
+    return OneTimeAdjustment.find({ organization, payVia: "finance", financeStatus: "with_finance" })
+      .populate([
+        { path: "employee", select: "name employeeCode designation currency department", populate: { path: "department", select: "name" } },
+        { path: "createdBy", select: "name" },
+      ])
+      .sort({ createdAt: 1 })
+      .lean();
+  }
+
+  /**
+   * Finance paid it, or will not. A retried "paid" for one already paid answers
+   * with the record rather than refusing, so finance can resend safely.
+   */
+  async recordFinanceDecision(
+    organization: string,
+    id: string,
+    input: { decision: "paid" | "reject"; paidOn?: string | null; method?: string | null; reference?: string | null; note?: string | null }
+  ) {
+    const record = await OneTimeAdjustment.findOne({ _id: id, organization, payVia: "finance" });
+    if (!record) throw Object.assign(new Error("One-time payment not found"), { statusCode: 404 });
+    if (input.decision === "paid" && record.financeStatus === "paid") return OneTimeAdjustment.findById(record._id).lean();
+    if (record.financeStatus !== "with_finance") throw Object.assign(new Error("Only a payment waiting on finance can be decided"), { statusCode: 409 });
+
+    if (input.decision === "paid") {
+      const paidOn = input.paidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) ? input.paidOn : new Date().toISOString().slice(0, 10);
+      record.financeStatus = "paid";
+      record.paidOn = new Date(`${paidOn}T00:00:00.000Z`);
+      record.paymentMethod = (input.method ?? "").slice(0, 40);
+      record.paymentRef = (input.reference ?? "").slice(0, 120);
+      // Settled — so nothing that sweeps up outstanding items ever sees it again.
+      record.applied = true;
+      record.appliedAmount = record.amount;
+    } else {
+      record.financeStatus = "rejected";
+    }
+    record.financeNote = (input.note ?? "").slice(0, 500);
+    record.financeDecidedAt = new Date();
+    await record.save();
+
+    this.announceFinanceDecision(record, organization).catch((err) =>
+      console.error(`one-time: could not announce finance's decision on ${record._id}:`, err instanceof Error ? err.message : err)
+    );
+    return OneTimeAdjustment.findById(record._id).lean();
+  }
+
+  private async announceFinanceDecision(
+    record: { user?: unknown; label: string; amount: number; financeStatus?: string | null; paidOn?: Date | null; paymentMethod?: string; financeNote?: string },
+    organization: string
+  ) {
+    if (!record.user) return;
+    const paid = record.financeStatus === "paid";
+    const title = paid ? `Paid: ${record.label}` : `Not paid: ${record.label}`;
+    const body = paid
+      ? `${record.amount} was paid on ${record.paidOn?.toISOString().slice(0, 10)}${record.paymentMethod ? ` by ${record.paymentMethod.replace(/_/g, " ")}` : ""}.`
+      : `Finance did not pay ${record.amount}.${record.financeNote ? ` ${record.financeNote}` : ""}`;
+    try {
+      await notify({ users: [String(record.user)], kind: "payroll", tone: paid ? "positive" : "negative", title, body, href: "/payroll", organization });
+    } catch { /* mail below */ }
+    const who = await User.findById(record.user).select("email").lean<{ email?: string } | null>();
+    if (who?.email) {
+      try {
+        await sendMail({
+          to: who.email,
+          organization: String(organization),
+          subject: title,
+          text: `${title}\n\n${body}\n\n${env.CLIENT_URL}/payroll\n`,
+          html:
+            `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+            `<h2 style="color:#4f46e5;margin-bottom:4px">${title}</h2><p style="color:#555">${body}</p>` +
+            `<p><a href="${env.CLIENT_URL}/payroll" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open payroll</a></p></div>`,
+        });
+      } catch { /* the decision stands either way */ }
+    }
   }
 }
 
@@ -131,6 +245,8 @@ export async function computeOneTimeAdjustments(
       employee: employeeId,
       applied: false,
       waived: { $ne: true },
+      // Paid directly by finance — never the payslip's.
+      payVia: { $ne: "finance" },
       $or: [
         { kind: "payment", month },
         { kind: "deduction", month: { $lte: month } },

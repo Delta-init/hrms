@@ -1164,9 +1164,22 @@ export interface OneTimeAdjustment {
   applied: boolean;
   /** Forgiven through an approved removal request rather than collected. */
   waived?: boolean;
+  /** "finance": paid directly by finance, never on a payslip. */
+  payVia?: "payslip" | "finance";
+  financeStatus?: OneTimeFinanceStatus | null;
+  paidOn?: string | null;
+  paymentMethod?: string;
+  paymentRef?: string;
+  financeNote?: string;
   createdAt: string;
   updatedAt: string;
 }
+export type OneTimeFinanceStatus = "with_finance" | "paid" | "rejected";
+export const ONE_TIME_FINANCE_STATUS_LABELS: Record<OneTimeFinanceStatus, string> = {
+  with_finance: "With finance",
+  paid: "Paid",
+  rejected: "Rejected by finance",
+};
 
 // ─── Deduction removal request ───────────────────────────────────────────────
 export type DeductionSourceType = "loan" | "adjustment";
@@ -2634,7 +2647,7 @@ export type SalaryAdvanceStatus = "pending" | "hr_approved" | "approved" | "reje
 export const SALARY_ADVANCE_STATUS_LABELS: Record<SalaryAdvanceStatus, string> = {
   pending: "Waiting on HR",
   hr_approved: "Waiting on finance",
-  approved: "Approved",
+  approved: "Paid",
   rejected: "Refused",
 };
 export interface SalaryAdvance {
@@ -2655,6 +2668,8 @@ export interface SalaryAdvance {
   financeReviewedAt?: string | null;
   financeNote?: string;
   financeRef?: string;
+  paidOn?: string | null;
+  paymentMethod?: string;
   rejectedBy?: "hr" | "finance" | null;
   /** HR, when HR raised it on the employee's behalf. */
   raisedBy?: { _id: string; name: string } | string | null;

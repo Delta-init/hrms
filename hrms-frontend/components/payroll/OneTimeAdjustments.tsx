@@ -11,12 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OneTimeDialog } from "@/components/payroll/OneTimeDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { getInitials, cn } from "@/lib/utils";
-import { ONE_TIME_KIND_LABELS, type OneTimeAdjustment, type OneTimeKind } from "@/types";
+import { ONE_TIME_KIND_LABELS, type OneTimeAdjustment, type OneTimeKind, ONE_TIME_FINANCE_STATUS_LABELS, type OneTimeFinanceStatus } from "@/types";
 
 const ALL = "__all__";
 const curMonth = () => new Date().toISOString().slice(0, 7);
 const empOf = (a: OneTimeAdjustment) => (a.employee && typeof a.employee === "object" ? a.employee : null);
 const money = (n: number, c?: string) => `${c ? c + " " : ""}${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+const FINANCE_TONE: Record<OneTimeFinanceStatus, string> = {
+  with_finance: "border-violet-500/20 bg-violet-500/10 text-violet-600",
+  paid: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600",
+  rejected: "border-red-500/20 bg-red-500/10 text-red-600",
+};
 
 export function OneTimeAdjustments() {
   const { hasPermission } = useAuth();
@@ -96,12 +102,23 @@ export function OneTimeAdjustments() {
                       {a.kind === "payment" ? "+" : "−"}{money(a.amount, e?.currency)}
                     </td>
                     <td className="px-4 py-3">
-                      {a.applied
+                      {a.payVia === "finance" && a.financeStatus ? (
+                        <div>
+                          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", FINANCE_TONE[a.financeStatus])}>
+                            {ONE_TIME_FINANCE_STATUS_LABELS[a.financeStatus]}
+                          </span>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            {a.financeStatus === "paid"
+                              ? `${a.paidOn ? new Date(a.paidOn).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : ""}${a.paymentMethod ? ` · ${a.paymentMethod.replace(/_/g, " ")}` : ""}${a.paymentRef ? ` · ${a.paymentRef}` : ""}`
+                              : a.financeStatus === "rejected" ? (a.financeNote || "") : "Paid by finance, not on payslip"}
+                          </p>
+                        </div>
+                      ) : a.applied
                         ? <span className="inline-flex items-center rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-600">Applied</span>
                         : <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">Pending</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {!a.applied && (
+                      {(a.payVia === "finance" ? a.financeStatus === "with_finance" : !a.applied) && (
                         <div className="flex items-center justify-end gap-1">
                           {canEdit && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>}
                           {canDelete && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(a)}><Trash2 className="h-4 w-4" /></Button>}

@@ -1563,6 +1563,14 @@ export interface IOneTimeAdjustment extends Document {
   waivedRequest?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
+  /** "finance": paid directly by finance, never on a payslip. */
+  payVia?: "payslip" | "finance";
+  financeStatus?: "with_finance" | "paid" | "rejected" | null;
+  paidOn?: Date | null;
+  paymentMethod?: string;
+  paymentRef?: string;
+  financeNote?: string;
+  financeDecidedAt?: Date | null;
 }
 
 // ─── Deduction removal request ───────────────────────────────────────────────
@@ -1605,6 +1613,8 @@ export interface ISalaryAdvance extends Document {
   financeNote?: string;
   /** Finance's own reference for the payout — the expense number there. */
   financeRef?: string;
+  paidOn?: Date | null;
+  paymentMethod?: string;
   rejectedBy?: "hr" | "finance" | null;
   /** The loan that recovers it, once finance has paid it out. */
   loan?: Types.ObjectId | null;

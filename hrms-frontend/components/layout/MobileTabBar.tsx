@@ -2,17 +2,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
-import { LayoutDashboard, Sparkles, ClipboardCheck, Menu } from "lucide-react";
+import { LayoutDashboard, Sparkles, ClipboardCheck, CalendarClock, Menu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useUiStore } from "@/lib/store/uiStore";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
+import { usePendingLeaveCount } from "@/hooks/useLeaves";
 import { cn } from "@/lib/utils";
 
 /**
  * Bottom tab bar on phones — below `md`, where there is no sidebar.
  *
- * A floating pill, the same as the LMS's: the three pages people open most
- * from a phone, and Menu, which opens the drawer holding everything the
+ * A floating pill, the same as the LMS's: the pages people open most from a
+ * phone, and Menu, which opens the drawer holding everything the
  * sidebar does. It sits above the iPhone home indicator; the dashboard layout
  * keeps the same height clear at the bottom of the page.
  *
@@ -26,6 +27,7 @@ export function MobileTabBar() {
   const { mobileDrawerOpen, setMobileDrawerOpen } = useUiStore();
   // The same badge the sidebar shows — only for someone who could act on the queue.
   const { data: pendingReg = 0 } = usePendingRegularizationCount(!isKioskOnly && hasPermission("regularization", "view"));
+  const { data: pendingLeave = 0 } = usePendingLeaveCount(!isKioskOnly && hasPermission("leave", "view"));
 
   if (isKioskOnly) return null;
 
@@ -33,6 +35,7 @@ export function MobileTabBar() {
     hasPermission("dashboard", "view") && { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, badge: 0 },
     hasPermission("officeKeeping", "view") && { href: "/office-keeping", label: "Office", icon: Sparkles, badge: 0 },
     { href: "/regularization", label: "Regularize", icon: ClipboardCheck, badge: pendingReg },
+    hasPermission("leave", "view") && { href: "/leave", label: "Leave", icon: CalendarClock, badge: pendingLeave },
   ].filter(Boolean) as Array<{ href: string; label: string; icon: React.ElementType; badge: number }>;
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);

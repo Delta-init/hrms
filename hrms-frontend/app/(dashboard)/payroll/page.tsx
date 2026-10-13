@@ -15,6 +15,7 @@ import { SalaryRegister } from "@/components/payroll/SalaryRegister";
 import { Overtime } from "@/components/payroll/Overtime";
 import { DeductionRemovals } from "@/components/payroll/DeductionRemovals";
 import { SalaryAdvances } from "@/components/payroll/SalaryAdvances";
+import { PaidSeparately } from "@/components/payroll/PaidSeparately";
 import { printPayslip } from "@/components/payroll/printPayslip";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -166,6 +167,7 @@ export default function PayrollPage() {
         />
       )}
 
+      {activeTab === "mine" && <PaidSeparately />}
       {activeTab === "mine" && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {mineLoading ? (

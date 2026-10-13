@@ -336,7 +336,7 @@ export class SalaryAdvanceService {
   async recordFinanceDecision(
     organization: string,
     id: string,
-    input: { decision: "approve" | "reject"; note?: string | null; reference?: string | null; paidOn?: string | null }
+    input: { decision: "approve" | "reject"; note?: string | null; reference?: string | null; paidOn?: string | null; method?: string | null }
   ) {
     const record = await SalaryAdvance.findOne({ _id: id, organization });
     if (!record) throw new AdvanceError("Advance not found", 404);
@@ -363,11 +363,13 @@ export class SalaryAdvanceService {
         status: "active",
         kind: "advance",
         advance: record._id,
-        notes: `Salary advance approved by finance on ${paidOn}${input.reference ? ` (${input.reference})` : ""}; recovered over ${months} month${months === 1 ? "" : "s"} from ${record.startMonth}.`.slice(0, 500),
+        notes: `Salary advance paid on ${paidOn}${input.reference ? ` (${input.reference})` : ""}; recovered over ${months} month${months === 1 ? "" : "s"} from ${record.startMonth}.`.slice(0, 500),
       });
       record.status = "approved";
       record.loan = loan._id;
       record.financeRef = (input.reference ?? "").slice(0, 120);
+      record.paidOn = new Date(`${paidOn}T00:00:00.000Z`);
+      record.paymentMethod = (input.method ?? "").slice(0, 40);
     } else {
       record.status = "rejected";
       record.rejectedBy = "finance";
@@ -393,12 +395,12 @@ export class SalaryAdvanceService {
       const per = money(r2(record.amount / (record.months ?? 1)), record.currency);
       await tellRequester(
         record,
-        "Your salary advance was approved by finance",
+        "Your salary advance has been paid",
         `${amount}. ${per} a month will be taken from your salary for ${record.months} month${record.months === 1 ? "" : "s"}, from ${record.startMonth}.`,
         "positive",
         organization
       );
-      await tellApprovers(`Salary advance approved by finance — ${emp?.name ?? "an employee"}`, `${amount}, recovered from ${record.startMonth}.`, undefined, organization);
+      await tellApprovers(`Salary advance paid — ${emp?.name ?? "an employee"}`, `${amount}, recovered from ${record.startMonth}.`, undefined, organization);
     } else {
       await tellRequester(record, "Your salary advance was not approved by finance", `${amount}${record.financeNote ? `<br><br>${record.financeNote}` : ""}`, "negative", organization);
       await tellApprovers(`Salary advance refused by finance — ${emp?.name ?? "an employee"}`, `${amount}${record.financeNote ? `<br><br>${record.financeNote}` : ""}`, undefined, organization);

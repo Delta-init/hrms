@@ -113,7 +113,7 @@ function MyAdvances() {
             {eligLoading
               ? "Checking…"
               : elig?.canRequest
-                ? `Ask for up to one month's salary — ${money(elig.maxAmount, elig.currency)}. HR approves and sets how it's taken back, then finance approves the payment.`
+                ? `Ask for up to one month's salary — ${money(elig.maxAmount, elig.currency)}. HR approves and sets how it's taken back, then finance pays it.`
                 : elig?.reason}
           </p>
         </div>
@@ -174,7 +174,7 @@ function MyAdvances() {
               <Label htmlFor="adv-needed">Needed by</Label>
               <Input id="adv-needed" type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} />
             </div>
-            <p className="text-[11px] text-muted-foreground">HR decides how many months it&rsquo;s taken back over. Nothing is deducted until finance has approved it.</p>
+            <p className="text-[11px] text-muted-foreground">HR decides how many months it&rsquo;s taken back over. Nothing is deducted until finance has paid it.</p>
           </div>
           <ResponsiveDialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -200,7 +200,7 @@ function MyAdvances() {
 const FILTERS: Array<{ key: string; label: string }> = [
   { key: "pending", label: "Waiting on HR" },
   { key: "hr_approved", label: "With finance" },
-  { key: "approved", label: "Approved" },
+  { key: "approved", label: "Paid" },
   { key: "rejected", label: "Refused" },
 ];
 
@@ -253,6 +253,7 @@ function Queue() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     Asked {when(r.createdAt)}{r.neededBy ? ` · needed by ${when(r.neededBy)}` : ""} · monthly salary {money(r.monthlySalary, r.currency)}
                     {recovery(r) ? ` · ${recovery(r)}` : ""}
+                    {r.status === "approved" && r.paidOn ? ` · paid ${when(r.paidOn)}${r.paymentMethod ? ` by ${r.paymentMethod.replace(/_/g, " ")}` : ""}` : ""}
                     {r.financeRef ? ` · finance ref ${r.financeRef}` : ""}
                   </p>
                   {(r.hrNote || r.financeNote) && (
@@ -293,7 +294,7 @@ function Queue() {
               </div>
               <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs">
                 {money(deciding.amount / m, deciding.currency)} a month for {m} month{m === 1 ? "" : "s"}, from {startMonth || "—"}.
-                It goes to finance next; nothing is deducted until they approve it.
+                It goes to finance next; nothing is deducted until they have paid it.
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="adv-note">Note (optional)</Label>
@@ -417,7 +418,7 @@ function RaiseForEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenC
           {value > 0 && (
             <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs">
               {money(value / m, elig?.currency ?? "AED")} a month for {m} month{m === 1 ? "" : "s"}, from {startMonth || "—"}. It goes straight to
-              finance — HR&rsquo;s approval is this — and nothing is deducted until finance approves it.
+              finance — HR&rsquo;s approval is this — and nothing is deducted until finance has paid it.
             </p>
           )}
           {overLimit && (
