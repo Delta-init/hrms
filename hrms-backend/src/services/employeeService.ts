@@ -1,3 +1,4 @@
+import { closeLoginIfLeft } from "./leaverLogin.js";
 import { Employee } from "../models/Employee.js";
 import { User } from "../models/User.js";
 import { Role } from "../models/Role.js";
@@ -356,6 +357,8 @@ export class EmployeeService {
     if ((record.location as unknown as string) === "") record.location = undefined;
     await record.save();
     await mirrorScheduleToLogin(record, input.workSchedule !== undefined);
+    // Set to resigned or terminated by hand: the login goes with them.
+    if (input.status !== undefined) await closeLoginIfLeft(record._id);
     return Employee.findById(id).populate(POP);
   }
 

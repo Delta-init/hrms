@@ -1,3 +1,4 @@
+import { closeLoginIfLeft } from "./leaverLogin.js";
 import { Resignation } from "../models/Resignation.js";
 import { Employee } from "../models/Employee.js";
 import type { CreateResignationInput, ReviewResignationInput, UpdateResignationInput, ExitDetailsInput, ClearanceInput, ClearanceItemUpdateInput, ExitInterviewInput } from "../validations/resignationValidation.js";
@@ -200,6 +201,7 @@ export class ResignationService {
     record.reviewedAt = new Date();
     await record.save();
     await Employee.findByIdAndUpdate(record.employee, { status: exitStatusFor(record.resignationType) });
+    await closeLoginIfLeft(record.employee);
     return Resignation.findById(id).populate(POP);
   }
 
@@ -227,6 +229,7 @@ export class ResignationService {
       if (input.left) {
         this.markRelieved(record);
         await Employee.findByIdAndUpdate(record.employee, { status: exitStatusFor(record.resignationType) });
+    await closeLoginIfLeft(record.employee);
       } else {
         record.status = "accepted";
         await Employee.findByIdAndUpdate(record.employee, { status: "notice_period" });
@@ -334,6 +337,7 @@ export class ResignationService {
       r.reviewedAt = new Date();
       await r.save();
       await Employee.findByIdAndUpdate(r.employee, { status: exitStatusFor(r.resignationType) });
+      await closeLoginIfLeft(r.employee);
     }
     return due.length;
   }

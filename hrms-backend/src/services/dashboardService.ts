@@ -1,3 +1,4 @@
+import { User } from "../models/User.js";
 import mongoose from "mongoose";
 import { Employee } from "../models/Employee.js";
 import { Card } from "../models/Card.js";
@@ -396,10 +397,17 @@ export class DashboardService {
    * back to the matching employee so the whole tree is employee-to-employee.
    */
   async orgChart() {
-    const emps = await Employee.find(scoped({ status: stillHere() }))
+    const all = await Employee.find(scoped({ status: stillHere() }))
       .select("name employeeCode designation department reportingTo reportingToKind user photo")
       .populate("department", "name")
       .lean<Array<{ _id: unknown; name: string; employeeCode?: string; designation?: string; department?: { name?: string } | null; reportingTo?: unknown; reportingToKind?: string; user?: unknown; photo?: string }>>();
+    // Nor anyone whose login has been made inactive — the chart is the people
+    // working here, and an inactive login says they are not. Someone with no
+    // login at all is still drawn.
+    const inactive = new Set(
+      (await User.find({ _id: { $in: all.map((e) => e.user).filter(Boolean) }, status: "inactive" }).select("_id").lean()).map((u) => String(u._id))
+    );
+    const emps = all.filter((e) => !e.user || !inactive.has(String(e.user)));
 
     const idOf = (v: unknown) => (v ? String(v) : "");
     const byId = new Map(emps.map((e) => [idOf(e._id), e]));
