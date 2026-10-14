@@ -44,7 +44,9 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
     raisedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: {
       type: String,
-      enum: ["draft", "pending", "approved", "rejected", "on_hold", "filled", "cancelled"],
+      // finance_pending: HR approved one that needs accounts, and it waits on
+      // finance's decision (HIRING_FINANCE_STEP=on) — see review().
+      enum: ["draft", "pending", "finance_pending", "approved", "rejected", "on_hold", "filled", "cancelled"],
       default: "pending",
       index: true,
     },
@@ -68,6 +70,14 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
       _id: false,
     },
     reviewNote: { type: String, trim: true, maxlength: 1000 },
+
+    // Finance's half, decided in the finance system over the integration API —
+    // the same way salary advances are. Finance has no login here, so who
+    // decided is the name it sends, kept as text.
+    financeReviewedAt: { type: Date, default: null },
+    financeNote: { type: String, trim: true, maxlength: 1000, default: "" },
+    financeReviewedBy: { type: String, trim: true, maxlength: 120, default: "" },
+    rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
   },
   { timestamps: true, versionKey: false }
 );

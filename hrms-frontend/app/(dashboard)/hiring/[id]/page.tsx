@@ -145,7 +145,33 @@ export default function RequisitionDetailPage() {
                     </span>
                   </span>
                 ))}
+                {/* Finance decides in the finance system, after the chain here. */}
+                {(requisition.status === "finance_pending" || requisition.financeReviewedAt) && (
+                  <span className="flex items-center gap-2">
+                    <span className="opacity-40">→</span>
+                    <span className={cn("rounded-full border px-2 py-0.5",
+                      !requisition.financeReviewedAt ? "border-amber-500/20 bg-amber-500/10 text-amber-600"
+                        : requisition.rejectedBy === "finance" ? "border-red-500/20 bg-red-500/10 text-red-600"
+                        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-600")}>
+                      Finance {!requisition.financeReviewedAt ? "waiting" : requisition.rejectedBy === "finance" ? "rejected" : "approved"}
+                    </span>
+                  </span>
+                )}
               </div>
+            </div>
+          )}
+          {requisition.financeReviewedAt && (
+            <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Finance</p>
+              <p className="text-sm">
+                <span className={cn("font-medium", requisition.rejectedBy === "finance" ? "text-red-600" : "text-emerald-600")}>
+                  {requisition.rejectedBy === "finance" ? "Refused" : "Approved"}
+                </span>
+                {requisition.financeReviewedBy ? ` by ${requisition.financeReviewedBy}` : ""}
+                {" on "}
+                {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(requisition.financeReviewedAt))}
+              </p>
+              {requisition.financeNote && <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{requisition.financeNote}</p>}
             </div>
           )}
           {(requisition.jdUrl || requisition.jdText) && (

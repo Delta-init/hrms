@@ -161,6 +161,12 @@ Or set an absolute interpreter path in `hrms-backend/ecosystem.config.cjs`
 ---
 
 ## Notes
+- `HIRING_FINANCE_STEP` (backend `.env`, see `.env.example`): `on` sends hiring
+  requisitions that need accounts to finance after HR approves them — they wait
+  as "Waiting for finance" until finance decides them over
+  `/api/v1/integrations/hiring/requisitions`. Unset (the default) keeps HR's
+  approval final. Deploy this backend and the finance side first, then set it
+  to `on` and `pm2 startOrReload ecosystem.config.cjs --update-env`.
 - `.env` is gitignored, and the deploy uses `git reset --hard` (which does **not**
   touch untracked files), so your VPS secrets are never overwritten.
 - Password SSH auth is used per request. For better security you can later swap

@@ -27,6 +27,7 @@ const ALL = "__all__";
 const statusStyles: Record<RequisitionStatus, string> = {
   draft: "bg-muted text-muted-foreground border-border",
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  finance_pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   approved: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   rejected: "bg-red-500/10 text-red-600 border-red-500/20",
   on_hold: "bg-sky-500/10 text-sky-600 border-sky-500/20",
@@ -104,6 +105,8 @@ export default function HiringPage() {
             {r.approvalSteps?.find((s) => s.order === r.workflowStep)?.roleName ?? "—"}
             <span className="ml-1 opacity-60">({r.workflowStep}/{r.workflowTotalSteps})</span>
           </span>
+        ) : r.status === "finance_pending" ? (
+          <span className="text-xs text-muted-foreground">Finance</span>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         ),
@@ -111,9 +114,15 @@ export default function HiringPage() {
     {
       id: "status", label: "Status", alwaysVisible: true, sortKey: "status",
       render: (r) => (
-        <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
-          {REQUISITION_STATUS_LABELS[r.status]}
-        </span>
+        <div>
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
+            {REQUISITION_STATUS_LABELS[r.status]}
+          </span>
+          {/* Who made the last call, when it was finance rather than HR. */}
+          {r.financeReviewedAt && (
+            <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">by finance</div>
+          )}
+        </div>
       ),
     },
     {
@@ -168,7 +177,7 @@ export default function HiringPage() {
       {/* Without a configured chain every approvable module falls back to
           single-step, so the Accounts gate would silently not exist. Say so
           rather than letting somebody believe a control is in force. */}
-      {workflow && !workflow.configured && (
+      {workflow && !workflow.configured && !workflow.financeStep && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
@@ -180,11 +189,11 @@ export default function HiringPage() {
         </div>
       )}
 
-      {workflow?.configured && (
+      {(workflow?.configured || workflow?.financeStep) && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
           <Settings className="h-3.5 w-3.5" />
           <span className="font-medium text-foreground">Approval chain</span>
-          {workflow.steps.map((s, i) => (
+          {workflow.configured ? workflow.steps.map((s, i) => (
             <span key={s.order} className="flex items-center gap-2">
               {i > 0 && <span className="opacity-40">→</span>}
               <span className="rounded-full border border-border px-2 py-0.5">
@@ -192,7 +201,18 @@ export default function HiringPage() {
                 {s.when === "budget_increase" && <span className="ml-1 text-amber-600">(budget increases only)</span>}
               </span>
             </span>
-          ))}
+          )) : (
+            <span className="rounded-full border border-border px-2 py-0.5">Approver</span>
+          )}
+          {/* Decided in the finance system, after everything above. */}
+          {workflow.financeStep && (
+            <span className="flex items-center gap-2">
+              <span className="opacity-40">→</span>
+              <span className="rounded-full border border-border px-2 py-0.5">
+                Finance<span className="ml-1 text-amber-600">(needs accounts only)</span>
+              </span>
+            </span>
+          )}
         </div>
       )}
 
@@ -287,6 +307,9 @@ export default function HiringPage() {
           "Raised by": nameOf(r.raisedBy),
           "Wanted by": fmtDate(r.targetStartDate),
           Status: REQUISITION_STATUS_LABELS[r.status],
+          Finance: r.financeReviewedAt
+            ? `${r.rejectedBy === "finance" ? "Refused" : "Approved"}${r.financeReviewedBy ? ` by ${r.financeReviewedBy}` : ""} on ${fmtDate(r.financeReviewedAt)}${r.financeNote ? ` — ${r.financeNote}` : ""}`
+            : "",
         })}
         exportName="hiring-requisitions"
       />

@@ -148,7 +148,7 @@ export class CandidateService {
     if (!req) throw new CandidateError("Requisition not found", 404);
     if (req.status !== "approved") {
       throw new CandidateError(
-        `"${req.title}" is ${req.status}, not approved. Candidates can only be added to an approved requisition.`
+        `"${req.title}" is ${req.status === "finance_pending" ? "waiting for finance" : req.status}, not approved. Candidates can only be added to an approved requisition.`
       );
     }
     const candidate = await Candidate.findOne(scoped({ _id: input.candidate })).select("_id").lean();

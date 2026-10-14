@@ -178,6 +178,13 @@ const envSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.string().min(32, "INTEGRATION_SECRET must be at least 32 characters").optional()
   ),
+  /**
+   * "on" sends a hiring requisition that needs accounts (budgetApprovalRequired)
+   * to finance once HR approves it: it waits as `finance_pending` until finance
+   * decides it over the integration API. Anything else — the default — leaves
+   * HR's approval final, as it always was. Only the exact value "on" counts.
+   */
+  HIRING_FINANCE_STEP: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

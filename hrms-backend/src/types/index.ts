@@ -1925,6 +1925,8 @@ export type RequisitionType = "replacement" | "new_headcount";
 export type RequisitionStatus =
   | "draft"
   | "pending"
+  /** HR approved one that needs accounts; finance decides it next. */
+  | "finance_pending"
   | "approved"
   | "rejected"
   | "on_hold"
@@ -1965,6 +1967,12 @@ export interface IJobRequisition extends Document {
   approvalSteps?: IApprovalStepSnapshot[];
   approvalTrail?: IApprovalTrailEntry[];
   reviewNote?: string;
+  /** Finance's decision, made in the finance system (HIRING_FINANCE_STEP=on). */
+  financeReviewedAt?: Date | null;
+  financeNote?: string;
+  /** Finance's person, as the finance system names them — not an HRMS login. */
+  financeReviewedBy?: string;
+  rejectedBy?: "hr" | "finance" | null;
   createdAt: Date;
   updatedAt: Date;
 }

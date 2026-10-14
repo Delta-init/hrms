@@ -2484,14 +2484,15 @@ export interface DocumentsOverview {
 
 // ─── Hiring ──────────────────────────────────────────────────────────────────
 export type RequisitionType = "replacement" | "new_headcount";
-export type RequisitionStatus = "draft" | "pending" | "approved" | "rejected" | "on_hold" | "filled" | "cancelled";
+/** finance_pending: HR approved one that needs accounts, and finance decides it next. */
+export type RequisitionStatus = "draft" | "pending" | "finance_pending" | "approved" | "rejected" | "on_hold" | "filled" | "cancelled";
 
 export const REQUISITION_TYPE_LABELS: Record<RequisitionType, string> = {
   replacement: "Replacement",
   new_headcount: "New headcount",
 };
 export const REQUISITION_STATUS_LABELS: Record<RequisitionStatus, string> = {
-  draft: "Draft", pending: "Pending", approved: "Approved", rejected: "Rejected",
+  draft: "Draft", pending: "Pending", finance_pending: "Waiting for finance", approved: "Approved", rejected: "Rejected",
   on_hold: "On hold", filled: "Filled", cancelled: "Cancelled",
 };
 
@@ -2524,6 +2525,12 @@ export interface JobRequisition {
   approvalSteps?: { order: number; roleName: string; label?: string }[];
   approvalTrail?: { step: number; roleName?: string; by?: { _id: string; name: string } | string; action: string; note?: string; at: string }[];
   reviewNote?: string;
+  /** Finance's decision, made in the finance system. */
+  financeReviewedAt?: string | null;
+  financeNote?: string;
+  /** Finance's person, as the finance system names them. */
+  financeReviewedBy?: string;
+  rejectedBy?: "hr" | "finance" | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2531,6 +2538,8 @@ export interface JobRequisition {
 /** Whether the organization has actually configured a hiring approval chain. */
 export interface HiringWorkflowState {
   configured: boolean;
+  /** Finance decides the ones that need accounts (HIRING_FINANCE_STEP=on). */
+  financeStep?: boolean;
   steps: { order: number; when: string; roleName: string; label?: string }[];
 }
 

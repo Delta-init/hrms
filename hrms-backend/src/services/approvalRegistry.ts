@@ -346,14 +346,24 @@ export const ADAPTERS: Adapter[] = [
     // is the exact record. `updatedAt` is only what the list is sorted and
     // date-filtered on, since Mongo cannot sort on the last element of an array.
     decided: {
-      filter: { status: { $in: ["approved", "rejected"] } },
+      // finance_pending is decided here — approved — and now waits on finance.
+      filter: { status: { $in: ["approved", "rejected", "finance_pending"] } },
       dateField: "updatedAt",
       populate: [{ path: "approvalTrail.by", select: "name" }],
       outcome: (d): Decision => {
+        // Finance decided it in the finance system: its answer, its person.
+        if (d.financeReviewedAt) {
+          return {
+            outcome: d.status === "approved" ? "approved" : "rejected",
+            at: d.financeReviewedAt as Date,
+            by: { id: null, name: d.financeReviewedBy ? `${String(d.financeReviewedBy)} (finance)` : "Finance" },
+            note: (d.financeNote as string) || null,
+          };
+        }
         const trail = (d.approvalTrail ?? []) as Array<{ by?: unknown; note?: string; at?: Date }>;
         const last = trail[trail.length - 1];
         return {
-          outcome: d.status === "approved" ? "approved" : "rejected",
+          outcome: d.status === "approved" || d.status === "finance_pending" ? "approved" : "rejected",
           at: last?.at ?? (d.updatedAt as Date) ?? null,
           by: last?.by ? person(last.by) : null,
           note: last?.note ?? (d.reviewNote as string) ?? null,

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { JobRequisition } from "../models/JobRequisition.js";
 import { Employee } from "../models/Employee.js";
 import { ApprovalWorkflow } from "../models/ApprovalWorkflow.js";
@@ -13,6 +14,7 @@ import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { watchersFor } from "./watchers.js";
 import { notify } from "./notificationService.js";
 import { stillHere } from "../utils/employeeStatus.js";
+import { env } from "../config/env.js";
 
 /**
  * Requests to fill a role, and the approvals they clear before recruiting
@@ -60,6 +62,18 @@ export function requiresBudgetApproval(
   return proposedMax > replacingSalary;
 }
 
+/**
+ * Whether finance decides the requisitions that need accounts.
+ *
+ * Read on every call rather than once at boot, so it is the deployed value that
+ * decides — and only the exact word "on" turns it on, so a stray "true" or
+ * "yes" leaves HR's approval final rather than parking requests with a finance
+ * side that may not be reading them yet.
+ */
+export const hiringFinanceStepOn = () => env.HIRING_FINANCE_STEP === "on";
+
+const STATUS_WORDS: Record<string, string> = { finance_pending: "waiting for finance" };
+
 interface RequisitionQuery extends PaginationQuery {
   type?: string;
   department?: string;
@@ -83,6 +97,54 @@ function shape<T extends { jdKey?: string | null }>(doc: T | null, forHead = fal
     if (r && typeof r === "object") { const { salary: _s, ...rest } = r; out.replacing = rest; }
   }
   return out as T & { jdUrl: string };
+}
+
+const FINANCE_POP = [
+  { path: "raisedBy", select: "name email" },
+  { path: "department", select: "name" },
+  { path: "replacing", select: "name designation salary" },
+  { path: "approvalTrail.by", select: "name" },
+] as const;
+
+/**
+ * One requisition as finance reads it — the integration contract, so its field
+ * names are fixed. `replacing.salary` is the figure frozen when it was raised
+ * (the one the budget check compared against), falling back to the leaver's
+ * current salary only when none was frozen.
+ */
+function forFinance(r: Record<string, unknown>) {
+  const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : null);
+  const raiser = obj(r.raisedBy);
+  const dept = obj(r.department);
+  const rep = obj(r.replacing);
+  const trail = (r.approvalTrail ?? []) as Array<{ action?: string; at?: Date; by?: unknown }>;
+  const hr = [...trail].reverse().find((t) => t.action === "approved");
+  return {
+    _id: r._id,
+    title: r.title,
+    type: r.type,
+    headcount: r.headcount ?? 1,
+    salaryMin: r.salaryMin ?? null,
+    salaryMax: r.salaryMax ?? null,
+    currency: r.currency ?? "AED",
+    department: dept ? { name: String(dept.name ?? "") } : null,
+    designation: r.designation ?? "",
+    location: r.location ?? "",
+    employmentType: r.employmentType ?? "",
+    justification: r.justification ?? "",
+    targetStartDate: r.targetStartDate ?? null,
+    jdText: r.jdText ?? "",
+    jdFileName: r.jdKey ? (r.jdFileName ?? "") : "",
+    // Signed and short-lived, minted per response — the same link the page uses.
+    jdUrl: r.jdKey ? publicUrl(String(r.jdKey)) : "",
+    raisedBy: { name: String(raiser?.name ?? ""), email: String(raiser?.email ?? "") },
+    replacing: rep
+      ? { name: String(rep.name ?? ""), designation: String(rep.designation ?? ""), salary: (r.replacingSalary as number | null) ?? (rep.salary as number | undefined) ?? null }
+      : null,
+    hrApprovedAt: hr?.at ?? r.updatedAt ?? null,
+    hrApprovedBy: String(obj(hr?.by)?.name ?? ""),
+    createdAt: r.createdAt,
+  };
 }
 
 const forbidden = (message: string) => Object.assign(new Error(message), { statusCode: 403 });
@@ -244,7 +306,9 @@ export class JobRequisitionService {
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
     if (record.status !== "pending" && record.status !== "draft") {
       throw Object.assign(
-        new Error(`This requisition has already been ${record.status} and can no longer be edited`),
+        new Error(record.status === "finance_pending"
+          ? "This requisition is waiting for finance and can no longer be edited"
+          : `This requisition has already been ${record.status} and can no longer be edited`),
         { statusCode: 400 }
       );
     }
@@ -291,17 +355,41 @@ export class JobRequisitionService {
     const outcome = resolveReviewOutcome(
       record.approvalSteps, record.workflowStep, input.status, input.reviewNote, reviewerRole
     );
-    record.approvalTrail = [...(record.approvalTrail ?? []), outcome.trailEntry];
+    // `by` is the person who decided. resolveReviewOutcome fills it from the
+    // reviewer's role, which the trail's User ref cannot name — and finance is
+    // told who approved this here, so it has to be the person.
+    record.approvalTrail = [...(record.approvalTrail ?? []), { ...outcome.trailEntry, by: reviewerId as never }];
+    // HR's approval is the last word here, unless finance has to see it: then
+    // the request waits on finance (HIRING_FINANCE_STEP=on), which decides it
+    // in the finance system — see recordFinanceDecision(). The trail entry
+    // above still records who approved it here.
+    const toFinance = !outcome.advance && input.status === "approved" && record.budgetApprovalRequired && hiringFinanceStepOn();
     if (outcome.advance) {
       record.workflowStep = (record.workflowStep ?? 1) + 1;
+    } else if (toFinance) {
+      record.status = "finance_pending";
     } else {
       record.status = input.status;
+      if (input.status === "rejected") record.rejectedBy = "hr";
     }
     await record.save();
 
+    if (toFinance) {
+      // Not an outcome yet — the raiser hears the real one when finance decides.
+      // One line in-app so the request does not look stuck; no mail.
+      await notify({
+        users: [record.raisedBy],
+        kind: "approval",
+        title: `Hiring requisition approved by HR — waiting for finance`,
+        body: `${record.title} · ${TYPE_LABELS[record.type] ?? record.type}`,
+        href: "/hiring",
+        actor: reviewerId,
+      });
+    }
+
     // Only once the decision is final. An intermediate approval is not an
     // outcome, and telling somebody twice about one request is worse than late.
-    if (!outcome.advance) {
+    if (!outcome.advance && !toFinance) {
       const details = [
         { label: "Role", value: record.title },
         { label: "Type", value: TYPE_LABELS[record.type] ?? record.type },
@@ -344,6 +432,8 @@ export class JobRequisitionService {
       .lean();
     return {
       configured: !!workflow?.enabled && (workflow?.steps?.length ?? 0) > 0,
+      // Finance decides the ones that need accounts, whatever the chain says.
+      financeStep: hiringFinanceStepOn(),
       steps: (workflow?.steps ?? []).map((s) => ({
         order: s.order,
         when: s.when ?? "always",
@@ -351,5 +441,101 @@ export class JobRequisitionService {
         label: s.label,
       })),
     };
+  }
+
+  // ── Finance integration ────────────────────────────────────────────────────
+  // Finance never logs in here. Its half arrives from the finance system over
+  // the integration API, named by organization because a machine request has
+  // no user to infer one from — the same shape as salary advances.
+
+  /** Requisitions HR approved that need accounts, waiting on finance. Newest first. */
+  async listForFinance(organization: string) {
+    const rows = await JobRequisition.find({ organization, status: "finance_pending" })
+      .populate([...FINANCE_POP])
+      .sort({ createdAt: -1 })
+      .lean();
+    return rows.map((r) => forFinance(r as unknown as Record<string, unknown>));
+  }
+
+  /**
+   * Finance's decision. Approved means recruiting may start; refused needs a
+   * note, since the raiser is told and has nothing else to go on.
+   *
+   * A repeat of the decision finance already made — a retry after a lost
+   * response — answers with the record rather than refusing, so finance can
+   * safely send again. Anything else not waiting on finance is a 409.
+   */
+  async recordFinanceDecision(
+    organization: string,
+    id: string,
+    input: { decision: "approve" | "reject"; note?: string | null; by?: string | null }
+  ) {
+    const notFound = () => Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    if (!mongoose.isValidObjectId(id)) throw notFound();
+    const record = await JobRequisition.findOne({ _id: id, organization });
+    if (!record) throw notFound();
+
+    const approve = input.decision === "approve";
+    const repeat = record.financeReviewedAt
+      && ((approve && record.status === "approved") || (!approve && record.status === "rejected" && record.rejectedBy === "finance"));
+    if (!repeat) {
+      if (record.status !== "finance_pending") {
+        throw Object.assign(
+          new Error(`Only a requisition waiting for finance can be decided there — this one is ${STATUS_WORDS[record.status] ?? record.status}`),
+          { statusCode: 409 }
+        );
+      }
+      const note = String(input.note ?? "").trim();
+      if (!approve && note.length < 3) {
+        throw Object.assign(new Error("A note (at least 3 characters) is required to refuse a requisition"), { statusCode: 400 });
+      }
+
+      record.status = approve ? "approved" : "rejected";
+      record.rejectedBy = approve ? null : "finance";
+      record.financeReviewedAt = new Date();
+      record.financeNote = note.slice(0, 1000);
+      record.financeReviewedBy = String(input.by ?? "").trim().slice(0, 120);
+      await record.save();
+
+      // Finance is waiting on this answer; the notice can follow it.
+      this.announceFinanceDecision(record).catch((err) =>
+        console.error(`hiring: could not announce finance's decision on ${record._id}:`, err instanceof Error ? err.message : err)
+      );
+    }
+
+    const saved = await JobRequisition.findById(record._id).populate([...FINANCE_POP]).lean();
+    const r = saved as unknown as Record<string, unknown>;
+    return {
+      ...forFinance(r),
+      status: r.status,
+      financeReviewedAt: r.financeReviewedAt ?? null,
+      financeNote: r.financeNote ?? "",
+      financeReviewedBy: r.financeReviewedBy ?? "",
+      rejectedBy: r.rejectedBy ?? null,
+    };
+  }
+
+  /** The raiser hears the outcome; whoever decides hiring sees it in-app. */
+  private async announceFinanceDecision(record: {
+    _id: unknown; raisedBy: unknown; title: string; type: string; headcount: number; status: string;
+    salaryMax?: number; currency?: string; financeNote?: string; financeReviewedBy?: string;
+  }) {
+    const details = [
+      { label: "Role", value: record.title },
+      { label: "Type", value: TYPE_LABELS[record.type] ?? record.type },
+      { label: "Headcount", value: String(record.headcount) },
+    ];
+    if (record.salaryMax) details.push({ label: "Budget", value: `up to ${record.currency ?? ""} ${record.salaryMax}`.trim() });
+    await notifyReviewed({
+      userId: record.raisedBy,
+      subject: "Hiring requisition",
+      approved: record.status === "approved",
+      details,
+      note: record.financeNote || null,
+      path: "/hiring",
+      kind: "approval",
+      reviewer: { id: null, name: record.financeReviewedBy ? `finance (${record.financeReviewedBy})` : "finance" },
+      watchers: await watchersFor("hiring", String(record.raisedBy)).catch(() => []),
+    });
   }
 }

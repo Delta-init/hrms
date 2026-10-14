@@ -8,6 +8,7 @@ import {
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
   listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
   listOneTimePayments, markOneTimePaymentPaid, rejectOneTimePayment,
+  listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 
@@ -59,5 +60,10 @@ router.post("/advances/requests/:id/reject", serviceOrgScope, rejectSalaryAdvanc
 router.get("/one-time-payments/requests", serviceOrgScope, listOneTimePayments);
 router.post("/one-time-payments/requests/:id/paid", serviceOrgScope, markOneTimePaymentPaid);
 router.post("/one-time-payments/requests/:id/reject", serviceOrgScope, rejectOneTimePayment);
+// Hiring requisitions HR approved that need accounts (HIRING_FINANCE_STEP=on);
+// finance approves or refuses the budget.
+router.get("/hiring/requisitions", serviceOrgScope, listHiringRequisitions);
+router.post("/hiring/requisitions/:id/approve", serviceOrgScope, approveHiringRequisition);
+router.post("/hiring/requisitions/:id/reject", serviceOrgScope, rejectHiringRequisition);
 
 export default router;

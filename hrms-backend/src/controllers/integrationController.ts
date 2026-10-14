@@ -4,6 +4,7 @@ import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
 import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
 import { OneTimeAdjustmentService } from "../services/oneTimeAdjustmentService.js";
+import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
@@ -399,4 +400,37 @@ export const rejectOneTimePayment = asyncRoute(async (req, res) => {
     note: req.body?.note ?? null,
   });
   sendSuccess(res, "One-time payment rejected", record);
+});
+
+// ── Hiring requisitions that need accounts ───────────────────────────────────
+
+const requisitionService = new JobRequisitionService();
+const text = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Requisitions HR approved that need accounts (HIRING_FINANCE_STEP=on), waiting on finance. */
+export const listHiringRequisitions = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId);
+  sendSuccess(res, "Hiring requisitions retrieved", await requisitionService.listForFinance(organizationId));
+});
+
+/** Finance agreed the budget: recruiting may start. */
+export const approveHiringRequisition = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await requisitionService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "approve",
+    note: text(req.body?.note),
+    by: text(req.body?.by),
+  });
+  sendSuccess(res, "Hiring requisition approved", record);
+});
+
+/** Finance refused it — with a note, which the raiser is shown. */
+export const rejectHiringRequisition = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await requisitionService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "reject",
+    note: text(req.body?.note),
+    by: text(req.body?.by),
+  });
+  sendSuccess(res, "Hiring requisition rejected", record);
 });
