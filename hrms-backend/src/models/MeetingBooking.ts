@@ -17,7 +17,11 @@ import type { IMeetingBooking } from "../types/index.js";
 const meetingBookingSchema = new Schema<IMeetingBooking>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
-    room: { type: Schema.Types.ObjectId, ref: "MeetingRoom", required: [true, "Room is required"], index: true },
+    /**
+     * Required for a room meeting — checked in the service rather than here,
+     * because a review meeting may be online or somewhere else instead.
+     */
+    room: { type: Schema.Types.ObjectId, ref: "MeetingRoom", default: null, index: true },
     title: { type: String, required: [true, "Title is required"], trim: true, maxlength: 140 },
     agenda: { type: String, trim: true, maxlength: 1000 },
     start: { type: Date, required: [true, "Start is required"], index: true },
@@ -28,6 +32,40 @@ const meetingBookingSchema = new Schema<IMeetingBooking>(
     participants: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     status: { type: String, enum: ["booked", "cancelled"], default: "booked", index: true },
     firedStages: { type: [String], default: [] },
+
+    /** "review": a review meeting about one employee, with a review form after. */
+    kind: { type: String, enum: ["meeting", "review"], default: "meeting", index: true },
+    /** Where it happens. A plain meeting is always in a room. */
+    mode: { type: String, enum: ["room", "online", "place"], default: "room" },
+    meetingLink: { type: String, trim: true, maxlength: 500, default: "" },
+    placeAddress: { type: String, trim: true, maxlength: 300, default: "" },
+    placeMapUrl: { type: String, trim: true, maxlength: 500, default: "" },
+    /** Review meetings: the employee being reviewed, and their login. */
+    reviewee: { type: Schema.Types.ObjectId, ref: "Employee", default: null, index: true },
+    revieweeUser: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    /** A link to the recording, wherever the meeting tool kept it. */
+    recordingLink: { type: String, trim: true, maxlength: 500, default: "" },
+    /** Set when the review is written — the meeting took place. */
+    heldAt: { type: Date, default: null },
+    review: {
+      type: new Schema(
+        {
+          rating: { type: Number, min: 1, max: 5, default: null },
+          strengths: { type: String, trim: true, maxlength: 2000, default: "" },
+          improvements: { type: String, trim: true, maxlength: 2000, default: "" },
+          actions: {
+            type: [new Schema({ text: { type: String, trim: true, maxlength: 300 }, dueDate: { type: Date, default: null } }, { _id: false })],
+            default: [],
+          },
+          outcome: { type: String, enum: ["on_track", "needs_improvement", "performance_plan", null], default: null },
+          writtenBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+          writtenAt: { type: Date, default: null },
+          acknowledgedAt: { type: Date, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   { timestamps: true, versionKey: false }
 );

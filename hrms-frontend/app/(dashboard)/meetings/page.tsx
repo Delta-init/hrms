@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +13,12 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { MeetingWeekGrid } from "@/components/meetings/MeetingWeekGrid";
 import { MeetingDialog } from "@/components/meetings/MeetingDialog";
 import { RoomsDialog } from "@/components/meetings/RoomsDialog";
+import { ReviewMeetingDialog } from "@/components/meetings/ReviewMeetingDialog";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  useMeetingRooms, useMeetingBookings, useCancelBooking, useDeleteBooking,
+  useMeetingRooms, useMeetingBookings, useCancelBooking, useDeleteBooking, useSetRecording, useAcknowledgeReview,
 } from "@/hooks/useMeetings";
-import type { MeetingBooking } from "@/types";
+import { REVIEW_OUTCOME_LABELS, type MeetingBooking } from "@/types";
 
 const ALL = "__all__";
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -43,6 +45,11 @@ export default function MeetingsPage() {
   const [detail, setDetail] = useState<MeetingBooking | null>(null);
   const [cancelTarget, setCancelTarget] = useState<MeetingBooking | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MeetingBooking | null>(null);
+  const [newKind, setNewKind] = useState<"meeting" | "review">("meeting");
+  const [reviewing, setReviewing] = useState<MeetingBooking | null>(null);
+  const [recording, setRecording] = useState("");
+  const { mutate: saveRecording, isPending: savingRecording } = useSetRecording();
+  const { mutate: acknowledge, isPending: acknowledging } = useAcknowledgeReview();
 
   const days = useMemo(() => {
     if (mode === "day") return [startOfDay(anchor)];
@@ -58,6 +65,8 @@ export default function MeetingsPage() {
   }, [days, room]);
   const { data: bookings = [], isLoading } = useMeetingBookings(params);
 
+  // The open detail follows the list, so a saved review or recording shows at once.
+  const shown = detail ? bookings.find((b) => b._id === detail._id) ?? detail : null;
   const { mutate: cancel, isPending: cancelling } = useCancelBooking();
   const { mutate: remove, isPending: deleting } = useDeleteBooking();
 
@@ -82,15 +91,20 @@ export default function MeetingsPage() {
         title="Meeting Rooms"
         description="Who has which room, and when. Click an empty slot to book it."
         icon={CalendarDays}
-        action={(canManageRooms || (canBook && rooms.length > 0)) && (
+        action={(canManageRooms || canBook) && (
           <div className="flex items-center gap-2">
             {canManageRooms && (
               <Button variant="outline" className="shadow-sm" onClick={() => setRoomsOpen(true)}>
                 <DoorOpen className="h-4 w-4" />Rooms
               </Button>
             )}
+            {canBook && (
+              <Button variant="outline" className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setNewKind("review"); setDialogOpen(true); }}>
+                <ClipboardCheck className="h-4 w-4" />Review meeting
+              </Button>
+            )}
             {canBook && rooms.length > 0 && (
-              <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setDialogOpen(true); }}>
+              <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setNewKind("meeting"); setDialogOpen(true); }}>
                 <Plus className="h-4 w-4" />Book a room
               </Button>
             )}
@@ -152,41 +166,66 @@ export default function MeetingsPage() {
             days={days}
             bookings={bookings}
             onSelect={setDetail}
-            onPick={canBook ? (at) => { setEditing(null); setPickedStart(at); setDialogOpen(true); } : undefined}
+            onPick={canBook ? (at) => { setEditing(null); setPickedStart(at); setNewKind("meeting"); setDialogOpen(true); } : undefined}
           />
         )}
       </Card>
 
-      <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} />
+      <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} />
+      <ReviewMeetingDialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)} booking={reviewing} />
       <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
 
       {/* Detail — who booked it, who is coming, and what may be done about it. */}
-      <ResponsiveDialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <ResponsiveDialogContent desktopClassName="max-w-md">
+      <ResponsiveDialog open={!!shown} onOpenChange={(o) => { if (!o) { setDetail(null); setRecording(""); } }}>
+        <ResponsiveDialogContent desktopClassName="max-w-md max-h-[90vh] overflow-y-auto">
           <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>{detail?.title}</ResponsiveDialogTitle>
+            <ResponsiveDialogTitle>{shown?.title}</ResponsiveDialogTitle>
           </ResponsiveDialogHeader>
-          {detail && (
+          {shown && (() => {
+            const isReview = shown.kind === "review";
+            const me = String(user?._id);
+            const isOrganizer = idOf(shown.organizer) === me || user?.role?.roleName === "Super Admin";
+            const isReviewee = idOf(shown.revieweeUser) === me;
+            const started = new Date(shown.start).getTime() <= Date.now();
+            const r = shown.review;
+            return (
             <div className="space-y-3 px-4 pb-4 text-sm sm:px-0">
               <p className="text-muted-foreground">
-                {new Date(detail.start).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                {new Date(shown.start).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                 {" – "}
-                {new Date(detail.end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {new Date(shown.end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </p>
-              <div className="grid grid-cols-[110px_1fr] gap-y-1.5">
-                <span className="text-muted-foreground">Room</span><span>{nameOf(detail.room) || "—"}</span>
-                <span className="text-muted-foreground">Booked by</span><span>{nameOf(detail.organizer) || "—"}</span>
+              {shown.restricted ? (
+                <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">A review meeting. Only the people in it, their department head and HR can see the details.</p>
+              ) : (<>
+              <div className="grid grid-cols-[120px_1fr] gap-y-1.5">
+                {isReview && (<><span className="text-muted-foreground">Reviewing</span><span className="font-medium">{nameOf(shown.reviewee) || nameOf(shown.revieweeUser) || "—"}</span></>)}
+                <span className="text-muted-foreground">Where</span>
+                <span>
+                  {shown.mode === "online" ? "Online" : shown.mode === "place" ? shown.placeAddress : nameOf(shown.room) || "—"}
+                </span>
+                <span className="text-muted-foreground">{isReview ? "Reviewer" : "Booked by"}</span><span>{nameOf(shown.organizer) || "—"}</span>
                 <span className="text-muted-foreground">Status</span>
-                <span className="capitalize">{detail.status}</span>
+                <span className="capitalize">{shown.status === "cancelled" ? "cancelled" : isReview && r?.writtenAt ? "held" : shown.status}</span>
               </div>
-              {detail.agenda && <p className="rounded-md bg-muted/40 p-2">{detail.agenda}</p>}
+              {(shown.mode === "online" && shown.meetingLink) || (shown.mode === "place" && shown.placeMapUrl) ? (
+                <div className="flex flex-wrap gap-2">
+                  {shown.mode === "online" && shown.meetingLink && (
+                    <Button asChild size="sm"><a href={shown.meetingLink} target="_blank" rel="noopener noreferrer"><Video className="h-3.5 w-3.5" />Join meeting</a></Button>
+                  )}
+                  {shown.mode === "place" && shown.placeMapUrl && (
+                    <Button asChild size="sm" variant="outline"><a href={shown.placeMapUrl} target="_blank" rel="noopener noreferrer"><MapPin className="h-3.5 w-3.5" />Open in Maps</a></Button>
+                  )}
+                </div>
+              ) : null}
+              {shown.agenda && <p className="rounded-md bg-muted/40 p-2">{shown.agenda}</p>}
               <div>
-                <p className="mb-1 text-muted-foreground">Participants ({detail.participants.length})</p>
-                {detail.participants.length === 0 ? (
+                <p className="mb-1 text-muted-foreground">Participants ({shown.participants.length})</p>
+                {shown.participants.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Nobody else invited.</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
-                    {detail.participants.map((p, i) => (
+                    {shown.participants.map((p, i) => (
                       <span key={idOf(p) || i} className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs">
                         {nameOf(p) || "—"}
                       </span>
@@ -194,21 +233,89 @@ export default function MeetingsPage() {
                   </div>
                 )}
               </div>
-              {canManage(detail) && detail.status === "booked" && (
+
+              {/* The recording — a link to wherever the meeting tool kept it. */}
+              <div className="border-t border-border pt-3">
+                <p className="mb-1 text-muted-foreground">Recording</p>
+                {shown.recordingLink ? (
+                  <a href={shown.recordingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-primary hover:underline">
+                    <Link2 className="h-3.5 w-3.5" />Open recording
+                  </a>
+                ) : canManage(shown) && started && shown.status === "booked" ? (
+                  <div className="flex gap-2">
+                    <Input className="h-8" value={recording} onChange={(e) => setRecording(e.target.value)} placeholder="https://… link to the recording" />
+                    <Button size="sm" className="h-8" disabled={savingRecording || !/^https?:\/\//i.test(recording.trim())}
+                      onClick={() => saveRecording({ id: shown._id, recordingLink: recording.trim() }, { onSuccess: () => setRecording("") })}>
+                      Save
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">None yet.</p>
+                )}
+              </div>
+
+              {isReview && (
+                <div className="border-t border-border pt-3">
+                  <p className="mb-1 text-muted-foreground">Review</p>
+                  {r?.writtenAt ? (
+                    <div className="space-y-2 rounded-md bg-muted/30 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((n) => <Star key={n} className={n <= (r.rating ?? 0) ? "h-4 w-4 fill-amber-400 text-amber-400" : "h-4 w-4 text-muted-foreground/40"} />)}
+                        </span>
+                        {r.outcome && <span className="rounded-full border border-border px-2 py-0.5 text-xs">{REVIEW_OUTCOME_LABELS[r.outcome]}</span>}
+                      </div>
+                      {r.strengths && <p><span className="font-medium">Strengths: </span>{r.strengths}</p>}
+                      {r.improvements && <p><span className="font-medium">To improve: </span>{r.improvements}</p>}
+                      {!!r.actions?.length && (
+                        <div>
+                          <p className="font-medium">Actions</p>
+                          <ul className="ml-4 list-disc">
+                            {r.actions.map((a, i) => <li key={i}>{a.text}{a.dueDate ? ` — by ${new Date(a.dueDate).toLocaleDateString([], { day: "numeric", month: "short" })}` : ""}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {r.acknowledgedAt
+                          ? <span className="inline-flex items-center gap-1"><UserCheck className="h-3.5 w-3.5" />Acknowledged {new Date(r.acknowledgedAt).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
+                          : "Not acknowledged yet"}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">{started ? "Not written yet." : "Written after the meeting."}</p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {isOrganizer && started && shown.status === "booked" && !r?.acknowledgedAt && (
+                      <Button size="sm" variant={r?.writtenAt ? "outline" : "default"} onClick={() => setReviewing(shown)}>
+                        <ClipboardCheck className="h-3.5 w-3.5" />{r?.writtenAt ? "Edit review" : "Write review"}
+                      </Button>
+                    )}
+                    {isReviewee && r?.writtenAt && !r.acknowledgedAt && (
+                      <Button size="sm" disabled={acknowledging} onClick={() => acknowledge(shown._id)}>
+                        <Check className="h-3.5 w-3.5" />Acknowledge
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              </>)}
+
+              {!shown.restricted && canManage(shown) && shown.status === "booked" && (
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                  <Button size="sm" variant="outline" onClick={() => { setEditing(detail); setPickedStart(null); setDetail(null); setDialogOpen(true); }}>
+                  <Button size="sm" variant="outline" onClick={() => { setEditing(shown); setPickedStart(null); setDetail(null); setDialogOpen(true); }}>
                     <Pencil className="h-3.5 w-3.5" />Edit
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setCancelTarget(detail)}>
+                  <Button size="sm" variant="outline" onClick={() => setCancelTarget(shown)}>
                     <Ban className="h-3.5 w-3.5" />Cancel
                   </Button>
-                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => setDeleteTarget(detail)}>
+                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => setDeleteTarget(shown)}>
                     <Trash2 className="h-3.5 w-3.5" />Delete
                   </Button>
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
         </ResponsiveDialogContent>
       </ResponsiveDialog>
 

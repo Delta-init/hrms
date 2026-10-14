@@ -101,7 +101,7 @@ export function MeetingWeekGrid({ days, bookings, onSelect, onPick }: Props) {
                 {onThisDay.map((b) => {
                   const top = offsetPx(new Date(b.start), day);
                   const bottom = offsetPx(new Date(b.end), day);
-                  const room = typeof b.room === "object" && b.room ? b.room.name : "";
+                  const room = b.mode === "online" ? "Online" : b.mode === "place" ? "Elsewhere" : typeof b.room === "object" && b.room ? b.room.name : "";
                   const who = typeof b.organizer === "object" && b.organizer ? b.organizer.name : "";
                   return (
                     <button

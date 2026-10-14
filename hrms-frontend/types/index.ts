@@ -1337,9 +1337,38 @@ export interface MeetingRoom {
   notes?: string;
 }
 
+export type ReviewOutcome = "on_track" | "needs_improvement" | "performance_plan";
+export const REVIEW_OUTCOME_LABELS: Record<ReviewOutcome, string> = {
+  on_track: "On track",
+  needs_improvement: "Needs improvement",
+  performance_plan: "Performance plan",
+};
+export interface MeetingReview {
+  rating?: number | null;
+  strengths?: string;
+  improvements?: string;
+  actions?: Array<{ text: string; dueDate?: string | null }>;
+  outcome?: ReviewOutcome | null;
+  writtenBy?: string | null;
+  writtenAt?: string | null;
+  acknowledgedAt?: string | null;
+}
 export interface MeetingBooking {
   _id: string;
-  room: Pick<MeetingRoom, "_id" | "name" | "location" | "capacity"> | string;
+  room?: Pick<MeetingRoom, "_id" | "name" | "location" | "capacity"> | string | null;
+  /** "review": a review meeting about one employee. */
+  kind?: "meeting" | "review";
+  mode?: "room" | "online" | "place";
+  meetingLink?: string;
+  placeAddress?: string;
+  placeMapUrl?: string;
+  reviewee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  revieweeUser?: Pick<User, "_id" | "name" | "email"> | string | null;
+  recordingLink?: string;
+  heldAt?: string | null;
+  review?: MeetingReview | null;
+  /** A review meeting the viewer may not read — shown only as a taken slot. */
+  restricted?: boolean;
   title: string;
   agenda?: string;
   /** An instant, not a wall-clock reading. */

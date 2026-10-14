@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getRooms, createRoom, updateRoom, retireRoom,
   getInvitable, getBookings, getBookingById, createBooking, updateBooking, cancelBooking, deleteBooking,
+  saveReview, setRecording, acknowledgeReview,
 } from "../controllers/meetingController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -31,5 +32,11 @@ router.get("/bookings/:id", checkPermission("meetings", "view"), getBookingById)
 router.put("/bookings/:id", checkPermission("meetings", "create"), updateBooking);
 router.patch("/bookings/:id/cancel", checkPermission("meetings", "create"), cancelBooking);
 router.delete("/bookings/:id", checkPermission("meetings", "create"), deleteBooking);
+// Review meetings. The service checks who: the organiser writes the review,
+// whoever manages the meeting sets the recording, the person reviewed
+// acknowledges it — which needs no meetings permission of its own.
+router.put("/bookings/:id/review", checkPermission("meetings", "create"), saveReview);
+router.patch("/bookings/:id/recording", checkPermission("meetings", "create"), setRecording);
+router.patch("/bookings/:id/acknowledge", acknowledgeReview);
 
 export default router;

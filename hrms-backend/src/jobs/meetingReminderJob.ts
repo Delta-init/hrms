@@ -74,7 +74,13 @@ export async function processMeetingsFor(orgId: string, now = new Date()): Promi
       // Too late to be useful — marked done, deliberately unsent.
       if (staleMs > CATCH_UP_MS[stage]) continue;
 
-      const room = (booking.room as unknown as { name?: string } | null)?.name ?? "the meeting room";
+      // Online and elsewhere have no room — say where it actually is.
+      const b = booking as unknown as { mode?: string; meetingLink?: string; placeAddress?: string };
+      const room = b.mode === "online"
+        ? `online — ${b.meetingLink}`
+        : b.mode === "place"
+          ? (b.placeAddress || "the agreed place")
+          : (booking.room as unknown as { name?: string } | null)?.name ?? "the meeting room";
       const when = new Intl.DateTimeFormat("en-GB", {
         hour: "2-digit", minute: "2-digit", timeZone: booking.timeZone || "Asia/Dubai", hour12: false,
       }).format(booking.start);

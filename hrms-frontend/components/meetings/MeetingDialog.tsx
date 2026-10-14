@@ -20,6 +20,8 @@ interface Props {
   booking?: MeetingBooking | null;
   /** Pre-filled when the grid was clicked on an empty hour. */
   startAt?: Date | null;
+  /** What a new booking starts as — "review" from the New review meeting button. */
+  initialKind?: "meeting" | "review";
 }
 
 /** `datetime-local` wants local wall-clock, not an ISO instant. */
@@ -29,7 +31,7 @@ function toLocalInput(d: Date) {
 }
 const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id: string })._id) : String(v ?? ""));
 
-export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: Props) {
+export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, initialKind = "meeting" }: Props) {
   const isEditing = !!booking;
   const { mutate: create, isPending: creating } = useCreateBooking();
   const { mutate: update, isPending: updating } = useUpdateBooking();
@@ -43,11 +45,24 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
   const [agenda, setAgenda] = useState("");
   const [participants, setParticipants] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  // Review meetings: who is reviewed, and where — online, a room, or elsewhere.
+  const [kind, setKind] = useState<"meeting" | "review">("meeting");
+  const [mode, setMode] = useState<"room" | "online" | "place">("room");
+  const [reviewee, setReviewee] = useState("");
+  const [meetingLink, setMeetingLink] = useState("");
+  const [placeAddress, setPlaceAddress] = useState("");
+  const [placeMapUrl, setPlaceMapUrl] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setSearch("");
     if (booking) {
+      setKind(booking.kind ?? "meeting");
+      setMode(booking.mode ?? "room");
+      setReviewee(idOf(booking.revieweeUser));
+      setMeetingLink(booking.meetingLink ?? "");
+      setPlaceAddress(booking.placeAddress ?? "");
+      setPlaceMapUrl(booking.placeMapUrl ?? "");
       setTitle(booking.title);
       setRoom(idOf(booking.room));
       setStart(toLocalInput(new Date(booking.start)));
@@ -60,8 +75,14 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
       setTitle(""); setRoom(rooms[0]?._id ?? "");
       setStart(toLocalInput(from)); setEnd(toLocalInput(to));
       setAgenda(""); setParticipants([]);
+      setKind(initialKind); setMode(initialKind === "review" && !rooms.length ? "online" : "room");
+      setReviewee(""); setMeetingLink(""); setPlaceAddress(""); setPlaceMapUrl("");
     }
-  }, [open, booking, startAt, rooms]);
+  }, [open, booking, startAt, rooms, initialKind]);
+
+  const isReview = kind === "review";
+  const effectiveMode = isReview ? mode : "room";
+  const linkOk = (v: string) => /^https?:\/\//i.test(v.trim());
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -71,7 +92,13 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
 
   const submit = () => {
     const payload = {
-      title, room, agenda,
+      title, agenda,
+      kind, mode: effectiveMode,
+      room: effectiveMode === "room" ? room : null,
+      meetingLink: effectiveMode === "online" ? meetingLink.trim() : "",
+      placeAddress: effectiveMode === "place" ? placeAddress.trim() : "",
+      placeMapUrl: effectiveMode === "place" ? placeMapUrl.trim() : "",
+      revieweeUser: isReview ? reviewee : null,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -90,7 +117,7 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-lg max-h-[90vh] overflow-y-auto">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>{isEditing ? "Edit meeting" : "Book a room"}</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{isEditing ? "Edit meeting" : isReview ? "Schedule a review meeting" : "Book a room"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <div className="grid grid-cols-2 gap-4 px-4 sm:px-0">
@@ -99,6 +126,70 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
             <Input id="m-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Monthly review" />
           </div>
 
+          <div className={`${field} col-span-2`}>
+            <Label>Type</Label>
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {(["meeting", "review"] as const).map((k) => (
+                <button key={k} type="button" disabled={isEditing} onClick={() => setKind(k)}
+                  className={`flex-1 px-3 py-1.5 text-sm ${kind === k ? "bg-primary text-primary-foreground" : "hover:bg-muted"} disabled:opacity-60`}>
+                  {k === "meeting" ? "Meeting" : "Review meeting"}
+                </button>
+              ))}
+            </div>
+            {isReview && <p className="text-[11px] text-muted-foreground">A review of one employee. After it, you fill in the review form and can add the recording.</p>}
+          </div>
+
+          {isReview && (
+            <div className={`${field} col-span-2`}>
+              <Label>Employee being reviewed *</Label>
+              <Select value={reviewee} onValueChange={setReviewee}>
+                <SelectTrigger><SelectValue placeholder="Choose the employee" /></SelectTrigger>
+                <SelectContent>
+                  {people.map((p) => (
+                    <SelectItem key={p._id} value={p._id}>{p.name}{p.employeeCode ? ` · ${p.employeeCode}` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isReview && (
+            <div className={`${field} col-span-2`}>
+              <Label>Where</Label>
+              <div className="flex overflow-hidden rounded-md border border-border">
+                {([["online", "Online"], ["room", "Meeting room"], ["place", "Other place"]] as const).map(([m, l]) => (
+                  <button key={m} type="button" onClick={() => setMode(m)} disabled={m === "room" && !rooms.length}
+                    className={`flex-1 px-3 py-1.5 text-sm ${mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted"} disabled:opacity-50`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {effectiveMode === "online" && (
+            <div className={`${field} col-span-2`}>
+              <Label htmlFor="m-link">Meeting link *</Label>
+              <Input id="m-link" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/… or Zoom / Teams link" />
+              {meetingLink && !linkOk(meetingLink) && <p className="text-xs text-destructive">Must start with http:// or https://</p>}
+            </div>
+          )}
+
+          {effectiveMode === "place" && (
+            <>
+              <div className={`${field} col-span-2`}>
+                <Label htmlFor="m-place">Address / location *</Label>
+                <Input id="m-place" value={placeAddress} onChange={(e) => setPlaceAddress(e.target.value)} maxLength={300} placeholder="e.g. Floor 3, Business Bay Tower B, Dubai" />
+              </div>
+              <div className={`${field} col-span-2`}>
+                <Label htmlFor="m-map">Google Maps link</Label>
+                <Input id="m-map" value={placeMapUrl} onChange={(e) => setPlaceMapUrl(e.target.value)} placeholder="Optional — https://maps.google.com/…" />
+                {placeMapUrl && !linkOk(placeMapUrl) && <p className="text-xs text-destructive">Must start with http:// or https://</p>}
+              </div>
+            </>
+          )}
+
+          {effectiveMode === "room" && (
           <div className={`${field} col-span-2`}>
             <Label>Room *</Label>
             <Select value={room} onValueChange={setRoom}>
@@ -112,6 +203,7 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
               </SelectContent>
             </Select>
           </div>
+          )}
 
           <div className={field}>
             <Label htmlFor="m-start">Starts *</Label>
@@ -169,9 +261,15 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt }: P
 
           <ResponsiveDialogFooter className="col-span-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={isPending || !title.trim() || !room || !start || !end}>
+            <Button onClick={submit} disabled={
+              isPending || !title.trim() || !start || !end ||
+              (effectiveMode === "room" && !room) ||
+              (effectiveMode === "online" && !linkOk(meetingLink)) ||
+              (effectiveMode === "place" && (!placeAddress.trim() || (!!placeMapUrl && !linkOk(placeMapUrl)))) ||
+              (isReview && !reviewee)
+            }>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditing ? "Save changes" : "Book room"}
+              {isEditing ? "Save changes" : isReview ? "Schedule review" : "Book room"}
             </Button>
           </ResponsiveDialogFooter>
         </div>

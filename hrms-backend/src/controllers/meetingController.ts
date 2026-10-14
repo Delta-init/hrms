@@ -3,13 +3,14 @@ import { MeetingService, type Actor } from "../services/meetingService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import {
-  createRoomSchema, updateRoomSchema, createBookingSchema, updateBookingSchema,
+  createRoomSchema, updateRoomSchema, createBookingSchema, updateBookingSchema, reviewFormSchema, recordingSchema,
 } from "../validations/meetingValidation.js";
 
 const service = new MeetingService();
 const actorOf = (req: AuthenticatedRequest): Actor => ({
   userId: req.user!.userId,
   roleName: req.user?.role?.roleName,
+  role: req.user?.role,
 });
 
 const parsed = <T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { flatten: () => { fieldErrors: unknown } } } }, req: AuthenticatedRequest, res: Response) => {
@@ -59,13 +60,13 @@ export const getInvitable = async (_req: AuthenticatedRequest, res: Response, ne
 
 export const getBookings = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Bookings retrieved", await service.listBookings(req.query as never));
+    sendSuccess(res, "Bookings retrieved", await service.listBookings(req.query as never, actorOf(req)));
   } catch (error) { next(error); }
 };
 
 export const getBookingById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Booking retrieved", await service.getBooking(String(req.params.id)));
+    sendSuccess(res, "Booking retrieved", await service.getBooking(String(req.params.id), actorOf(req)));
   } catch (error) { next(error); }
 };
 
@@ -93,4 +94,25 @@ export const deleteBooking = async (req: AuthenticatedRequest, res: Response, ne
   try {
     sendSuccess(res, "Booking deleted", await service.removeBooking(String(req.params.id), actorOf(req)));
   } catch (error) { next(error); }
+};
+
+// ── Review meetings ──────────────────────────────────────────────────────────
+
+export const saveReview = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = parsed(reviewFormSchema as never, req, res); if (!data) return;
+    sendSuccess(res, "Review saved", await service.saveReview(String(req.params.id), data as never, actorOf(req)));
+  } catch (error) { next(error); }
+};
+
+export const setRecording = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = parsed(recordingSchema as never, req, res); if (!data) return;
+    sendSuccess(res, "Recording saved", await service.setRecording(String(req.params.id), (data as { recordingLink: string }).recordingLink, actorOf(req)));
+  } catch (error) { next(error); }
+};
+
+export const acknowledgeReview = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Review acknowledged", await service.acknowledgeReview(String(req.params.id), actorOf(req))); }
+  catch (error) { next(error); }
 };

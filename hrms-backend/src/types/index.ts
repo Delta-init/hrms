@@ -1292,7 +1292,7 @@ export interface IMeetingRoom extends Document {
 export interface IMeetingBooking extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
-  room: Types.ObjectId | IMeetingRoom;
+  room?: Types.ObjectId | IMeetingRoom | null;
   title: string;
   agenda?: string;
   start: Date;
@@ -1303,6 +1303,25 @@ export interface IMeetingBooking extends Document {
   status: "booked" | "cancelled";
   /** Which reminder stages have already gone out. */
   firedStages: MeetingStage[];
+  kind?: "meeting" | "review";
+  mode?: "room" | "online" | "place";
+  meetingLink?: string;
+  placeAddress?: string;
+  placeMapUrl?: string;
+  reviewee?: Types.ObjectId | IEmployee | null;
+  revieweeUser?: Types.ObjectId | IUser | null;
+  recordingLink?: string;
+  heldAt?: Date | null;
+  review?: {
+    rating?: number | null;
+    strengths?: string;
+    improvements?: string;
+    actions?: Array<{ text: string; dueDate?: Date | null }>;
+    outcome?: "on_track" | "needs_improvement" | "performance_plan" | null;
+    writtenBy?: Types.ObjectId | IUser | null;
+    writtenAt?: Date | null;
+    acknowledgedAt?: Date | null;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }

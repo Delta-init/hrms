@@ -3,8 +3,12 @@ import { MeetingRoom } from "../models/MeetingRoom.js";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
 import type {
-  CreateRoomInput, UpdateRoomInput, CreateBookingInput, UpdateBookingInput,
+  CreateRoomInput, UpdateRoomInput, CreateBookingInput, UpdateBookingInput, ReviewFormInput,
 } from "../validations/meetingValidation.js";
+import { headsDepartmentOf } from "./departmentHeadService.js";
+import { hasPermission } from "../middleware/permissions.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { stillHere } from "../utils/employeeStatus.js";
@@ -14,11 +18,49 @@ const POP = [
   { path: "room", select: "name location capacity" },
   { path: "organizer", select: "name email" },
   { path: "participants", select: "name email" },
+  { path: "reviewee", select: "name employeeCode designation" },
+  { path: "revieweeUser", select: "name email" },
 ];
 
 export interface Actor {
   userId: string;
   roleName?: string;
+  /** The caller's role, for "is this HR" — absent for internal callers. */
+  role?: Parameters<typeof hasPermission>[0];
+}
+
+const idOf = (v: unknown) => String((v as { _id?: unknown } | null)?._id ?? v ?? "");
+
+/**
+ * Who may see a review meeting in full — the person reviewed, whoever is in
+ * the meeting, their department head(s) and HR. Everyone else sees only that
+ * the slot is taken: a review is about one person and is nobody else's to read.
+ */
+async function canSeeReview(b: { organizer: unknown; participants?: unknown[]; revieweeUser?: unknown }, actor: Actor) {
+  if (actor.roleName === "Super Admin") return true;
+  if (actor.role && (hasPermission(actor.role, "performance", "edit") || hasPermission(actor.role, "meetings", "edit"))) return true;
+  const me = String(actor.userId);
+  if (idOf(b.organizer) === me || idOf(b.revieweeUser) === me) return true;
+  if ((b.participants ?? []).some((p) => idOf(p) === me)) return true;
+  return b.revieweeUser ? headsDepartmentOf(me, idOf(b.revieweeUser)) : false;
+}
+
+/** A review meeting as someone outside it sees it: the time is taken, nothing more. */
+function masked<T extends Record<string, unknown>>(b: T): T {
+  return {
+    ...b,
+    title: "Review meeting",
+    agenda: "",
+    meetingLink: "",
+    placeAddress: "",
+    placeMapUrl: "",
+    recordingLink: "",
+    reviewee: null,
+    revieweeUser: null,
+    participants: [],
+    review: null,
+    restricted: true,
+  };
 }
 
 export class MeetingService {
@@ -103,7 +145,7 @@ export class MeetingService {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async listBookings(query: { from?: string; to?: string; room?: string; includeCancelled?: string }) {
+  async listBookings(query: { from?: string; to?: string; room?: string; includeCancelled?: string }, actor?: Actor) {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.room) filter.room = query.room;
     if (query.includeCancelled !== "true") filter.status = "booked";
@@ -116,36 +158,71 @@ export class MeetingService {
       filter.start = { $lt: to };
       filter.end = { $gt: from };
     }
-    return MeetingBooking.find(filter).populate(POP).sort({ start: 1 }).lean();
+    const rows = await MeetingBooking.find(filter).populate(POP).sort({ start: 1 }).lean();
+    if (!actor) return rows;
+    return Promise.all(rows.map(async (b) => (b.kind === "review" && !(await canSeeReview(b, actor)) ? masked(b as never) : b)));
   }
 
-  async getBooking(id: string) {
-    const record = await MeetingBooking.findOne(scoped({ _id: id })).populate(POP);
+  async getBooking(id: string, actor?: Actor) {
+    const record = await MeetingBooking.findOne(scoped({ _id: id })).populate(POP).lean();
     if (!record) throw Object.assign(new Error("Booking not found"), { statusCode: 404 });
+    if (actor && record.kind === "review" && !(await canSeeReview(record, actor))) return masked(record as never);
     return record;
   }
 
-  async createBooking(input: CreateBookingInput, actor: Actor) {
-    const room = await MeetingRoom.findOne(scoped({ _id: input.room }));
-    if (!room) throw Object.assign(new Error("Room not found"), { statusCode: 404 });
-    if (!room.active) throw Object.assign(new Error("That room is no longer bookable"), { statusCode: 400 });
-
-    const clash = await this.clashesWith(String(room._id), input.start, input.end);
-    if (clash) {
-      const who = (clash.organizer as unknown as { name?: string } | null)?.name ?? "someone";
-      throw Object.assign(
-        new Error(`${room.name} is already booked from ${clash.start.toISOString().slice(11, 16)} to ${clash.end.toISOString().slice(11, 16)} UTC by ${who}`),
-        { statusCode: 409 }
-      );
+  /**
+   * Where a booking happens, checked and normalised. A room is looked up and
+   * its clash test run; online and elsewhere need neither. A review meeting
+   * resolves the person reviewed and puts them on the invite list.
+   */
+  private async placeFor(input: CreateBookingInput, excludeId?: string) {
+    const out: Record<string, unknown> = {
+      kind: input.kind, mode: input.mode,
+      room: null, meetingLink: "", placeAddress: "", placeMapUrl: "",
+      reviewee: null, revieweeUser: null,
+    };
+    if (input.mode === "room") {
+      const room = await MeetingRoom.findOne(scoped({ _id: input.room }));
+      if (!room) throw Object.assign(new Error("Room not found"), { statusCode: 404 });
+      if (!room.active) throw Object.assign(new Error("That room is no longer bookable"), { statusCode: 400 });
+      const clash = await this.clashesWith(String(room._id), input.start, input.end, excludeId);
+      if (clash) {
+        const who = (clash.organizer as unknown as { name?: string } | null)?.name ?? "someone";
+        throw Object.assign(
+          new Error(`${room.name} is already booked from ${clash.start.toISOString().slice(11, 16)} to ${clash.end.toISOString().slice(11, 16)} UTC by ${who}`),
+          { statusCode: 409 }
+        );
+      }
+      out.room = room._id;
+    } else if (input.mode === "online") {
+      out.meetingLink = input.meetingLink;
+    } else {
+      out.placeAddress = input.placeAddress;
+      out.placeMapUrl = input.placeMapUrl ?? "";
     }
 
+    let participants = [...new Set((input.participants ?? []).map(String))];
+    if (input.kind === "review") {
+      const emp = await Employee.findOne(scoped({ user: input.revieweeUser, status: stillHere() })).select("_id user").lean<{ _id: unknown; user: unknown } | null>();
+      if (!emp) throw Object.assign(new Error("That person is not a current employee with a login"), { statusCode: 400 });
+      out.reviewee = emp._id;
+      out.revieweeUser = emp.user;
+      if (!participants.includes(String(emp.user))) participants = [String(emp.user), ...participants];
+    }
+    out.participants = participants;
+    return out;
+  }
+
+  async createBooking(input: CreateBookingInput, actor: Actor) {
+    const place = await this.placeFor(input);
     const record = await MeetingBooking.create({
-      ...input,
+      title: input.title, agenda: input.agenda, start: input.start, end: input.end, timeZone: input.timeZone,
+      ...place,
       organization: getOrgId(),
       organizer: actor.userId,
     });
 
-    await this.tellParticipants(String(record._id), input.participants, `${input.title} — you have been invited`, actor.userId);
+    await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — you have been invited`, actor.userId);
     return MeetingBooking.findById(record._id).populate(POP);
   }
 
@@ -179,8 +256,7 @@ export class MeetingService {
     if (!record) throw Object.assign(new Error("Booking not found"), { statusCode: 404 });
     await this.assertCanManage(record, actor);
 
-    const clash = await this.clashesWith(String(input.room), input.start, input.end, String(record._id));
-    if (clash) throw Object.assign(new Error("That room is already booked for part of this time"), { statusCode: 409 });
+    const place = await this.placeFor(input, String(record._id));
 
     /**
      * Moving a meeting un-fires its reminders.
@@ -192,7 +268,11 @@ export class MeetingService {
      */
     const moved = record.start.getTime() !== new Date(input.start).getTime();
     await MeetingBooking.updateOne({ _id: record._id }, {
-      $set: { ...input, ...(moved ? { firedStages: [] } : {}) },
+      $set: {
+        title: input.title, agenda: input.agenda, start: input.start, end: input.end, timeZone: input.timeZone,
+        ...place,
+        ...(moved ? { firedStages: [] } : {}),
+      },
     });
     return MeetingBooking.findById(record._id).populate(POP);
   }
@@ -214,6 +294,88 @@ export class MeetingService {
     await this.assertCanManage(record, actor);
     await MeetingBooking.deleteOne({ _id: record._id });
     return { message: "Booking deleted" };
+  }
+
+  /**
+   * The review form, after the meeting. Written by the organiser (or Super
+   * Admin); saving it marks the meeting held and tells the person reviewed.
+   * Can be rewritten until they acknowledge it.
+   */
+  async saveReview(id: string, input: ReviewFormInput, actor: Actor) {
+    const record = await MeetingBooking.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Meeting not found"), { statusCode: 404 });
+    if (record.kind !== "review") throw Object.assign(new Error("Only a review meeting has a review"), { statusCode: 400 });
+    if (record.status === "cancelled") throw Object.assign(new Error("This meeting was cancelled"), { statusCode: 400 });
+    if (idOf(record.organizer) !== String(actor.userId) && actor.roleName !== "Super Admin") {
+      throw Object.assign(new Error("Only the person who held the review can write it"), { statusCode: 403 });
+    }
+    if (record.review?.acknowledgedAt) throw Object.assign(new Error("The employee has already acknowledged this review"), { statusCode: 400 });
+    if (record.start.getTime() > Date.now()) throw Object.assign(new Error("The meeting hasn't started yet"), { statusCode: 400 });
+
+    const first = !record.review?.writtenAt;
+    record.review = {
+      rating: input.rating,
+      strengths: input.strengths,
+      improvements: input.improvements,
+      actions: input.actions.map((a) => ({ text: a.text, dueDate: a.dueDate ? new Date(`${a.dueDate}T00:00:00.000Z`) : null })),
+      outcome: input.outcome,
+      writtenBy: actor.userId as never,
+      writtenAt: new Date(),
+      acknowledgedAt: null,
+    } as never;
+    if (input.recordingLink !== undefined) record.recordingLink = input.recordingLink;
+    record.heldAt = record.heldAt ?? new Date();
+    await record.save();
+
+    if (record.revieweeUser) {
+      const title = first ? `Your review is ready — ${record.title}` : `Your review was updated — ${record.title}`;
+      try {
+        await notify({ users: [String(record.revieweeUser)], kind: "reminder", title, body: "Open it in Meetings to read and acknowledge it.", href: "/meetings", actor: actor.userId });
+      } catch { /* the mail below */ }
+      const who = await User.findById(record.revieweeUser).select("email").lean<{ email?: string } | null>();
+      if (who?.email) {
+        try {
+          await sendMail({
+            to: who.email,
+            organization: String(getOrgId() ?? ""),
+            subject: title,
+            text: `${title}\n\nOpen it in Meetings to read and acknowledge it.\n\n${env.CLIENT_URL}/meetings\n`,
+            html:
+              `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+              `<h2 style="color:#4f46e5;margin-bottom:4px">${title}</h2><p style="color:#555">Open it in Meetings to read and acknowledge it.</p>` +
+              `<p><a href="${env.CLIENT_URL}/meetings" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open meetings</a></p></div>`,
+          });
+        } catch { /* the review stands either way */ }
+      }
+    }
+    return MeetingBooking.findById(record._id).populate(POP).lean();
+  }
+
+  /** The recording link — added or changed by whoever may manage the meeting, any time after it. */
+  async setRecording(id: string, recordingLink: string, actor: Actor) {
+    const record = await MeetingBooking.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Meeting not found"), { statusCode: 404 });
+    await this.assertCanManage(record, actor);
+    record.recordingLink = recordingLink;
+    await record.save();
+    return MeetingBooking.findById(record._id).populate(POP).lean();
+  }
+
+  /** The person reviewed has read it. */
+  async acknowledgeReview(id: string, actor: Actor) {
+    const record = await MeetingBooking.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Meeting not found"), { statusCode: 404 });
+    if (idOf(record.revieweeUser) !== String(actor.userId)) throw Object.assign(new Error("Only the person reviewed can acknowledge it"), { statusCode: 403 });
+    if (!record.review?.writtenAt) throw Object.assign(new Error("There is no review to acknowledge yet"), { statusCode: 400 });
+    if (!record.review.acknowledgedAt) {
+      record.review.acknowledgedAt = new Date();
+      record.markModified("review");
+      await record.save();
+      try {
+        await notify({ users: [idOf(record.organizer)], kind: "reminder", title: `Review acknowledged — ${record.title}`, body: "", href: "/meetings", actor: actor.userId });
+      } catch { /* nothing hangs on it */ }
+    }
+    return MeetingBooking.findById(record._id).populate(POP).lean();
   }
 
   /** In-app only; the mail is the reminder job's, so an invite is not two mails. */

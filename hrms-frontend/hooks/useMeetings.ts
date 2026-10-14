@@ -102,3 +102,33 @@ export const useRetireRoom = () => {
     onError: (e) => toast.error(errMsg(e, "Could not retire the room")),
   });
 };
+
+/** The review form, after a review meeting. */
+export const useSaveReview = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      (await api.put<ApiResponse<MeetingBooking>>(`/meetings/bookings/${id}/review`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Review saved — the employee has been told"); },
+    onError: (e) => toast.error(errMsg(e, "Could not save the review")),
+  });
+};
+
+export const useSetRecording = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, recordingLink }: { id: string; recordingLink: string }) =>
+      (await api.patch<ApiResponse<MeetingBooking>>(`/meetings/bookings/${id}/recording`, { recordingLink })).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Recording saved"); },
+    onError: (e) => toast.error(errMsg(e, "Could not save the recording")),
+  });
+};
+
+export const useAcknowledgeReview = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.patch<ApiResponse<MeetingBooking>>(`/meetings/bookings/${id}/acknowledge`)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Acknowledged"); },
+    onError: (e) => toast.error(errMsg(e, "Could not acknowledge")),
+  });
+};
