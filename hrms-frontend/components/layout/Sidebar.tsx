@@ -164,10 +164,17 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // `departments` permission to ask the question. Empty for almost everyone.
   const { data: myDepartments = [] } = useMyDepartments();
   /** What waits behind each link, for the badge. Absent means no badge. */
+  // The approvals summary already counts every queue that waits on this
+  // person, by module — so each section's link carries its own share of it.
+  const mod = (m: string) => approvals?.byModule?.find((x) => x.module === m)?.count ?? 0;
   const waiting: Record<string, number> = {
     "/leave": pendingLeave,
     "/regularization": pendingReg,
     "/approvals": approvals?.total ?? 0,
+    "/hiring": mod("hiring") + mod("offer"),
+    "/reimbursements": mod("reimbursement"),
+    "/resignations": mod("resignation"),
+    "/confirmations": mod("confirmation"),
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 

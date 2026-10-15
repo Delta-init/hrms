@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { UserCheck, Clock3, Hourglass, LogOut, Plane, UserX, Home, Timer } from "lucide-react";
+import { UserCheck, Clock3, Hourglass, LogOut, Plane, UserX, Home, Timer, UserRoundSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Attendance, AttendanceStatus } from "@/types";
 
@@ -35,10 +35,13 @@ function useCountUp(target: number, duration = 900) {
 }
 
 function StatCard({
-  icon: Icon, label, value, suffix, tone, delay, decimals = 0,
+  icon: Icon, label, value, suffix, tone, delay, decimals = 0, active = false, onClick,
 }: {
   icon: React.ElementType; label: string; value: number; suffix?: string;
   tone: { text: string; bg: string; ring: string; glow: string }; delay: number; decimals?: number;
+  active?: boolean;
+  /** Present when the card filters the table below; absent for a figure that cannot (Avg hours). */
+  onClick?: () => void;
 }) {
   const shown = useCountUp(value);
   return (
@@ -47,7 +50,17 @@ function StatCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
       whileHover={{ y: -4 }}
-      className="group relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-lg"
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-pressed={onClick ? active : undefined}
+      title={onClick ? (active ? "Showing these — click to show everyone" : `Show today's ${label.toLowerCase()} below`) : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-lg",
+        onClick && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        active ? "border-primary ring-2 ring-primary/30" : "border-border"
+      )}
     >
       {/* soft glow that blooms on hover */}
       <div className={cn("pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100", tone.glow)} />
@@ -78,7 +91,21 @@ const TONES = {
   primary: { text: "text-primary", bg: "bg-primary/10", ring: "ring-primary/20", glow: "bg-primary/30" },
 };
 
-export function AttendanceStatsBar({ records, loading }: { records: Attendance[]; loading?: boolean }) {
+export function AttendanceStatsBar({ records, loading, active, onSelect, notYetIn, onNotYetIn }: {
+  records: Attendance[];
+  loading?: boolean;
+  /** The status filter a card has applied, e.g. "late" or "present,wfh". */
+  active?: string | null;
+  /** Clicking a card filters the table to today's records with that status; clicking it again clears it. */
+  onSelect?: (status: string | null) => void;
+  /**
+   * People due to work today with nothing recorded yet — from the day view,
+   * since they have no record for the table to hold. Undefined hides the card.
+   */
+  notYetIn?: number;
+  /** Opens the list of who they are. */
+  onNotYetIn?: () => void;
+}) {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
@@ -98,14 +125,16 @@ export function AttendanceStatsBar({ records, loading }: { records: Attendance[]
   const withHours = records.filter((r) => (r.workedMinutes || 0) > 0).length;
   const avgHours = withHours > 0 ? totalWorked / withHours / 60 : 0;
 
-  const cards = [
-    { icon: UserCheck, label: "Present today", value: present, tone: TONES.emerald },
-    { icon: Clock3, label: "Late", value: late, tone: TONES.amber },
-    { icon: Hourglass, label: "Half-day", value: halfDay, tone: TONES.amber },
-    { icon: LogOut, label: "Early out", value: earlyOut, tone: TONES.amber },
-    { icon: Plane, label: "On leave", value: onLeave, tone: TONES.violet },
-    { icon: UserX, label: "Absent", value: absent, tone: TONES.rose },
-    { icon: Home, label: "Working remote", value: wfh, tone: TONES.sky },
+  // `filter` is what the card sets on the table — the same statuses its count is made of.
+  const cards: Array<{ icon: React.ElementType; label: string; value: number; tone: typeof TONES.emerald; suffix?: string; decimals?: number; filter?: string }> = [
+    { icon: UserCheck, label: "Present today", value: present, tone: TONES.emerald, filter: "present,wfh" },
+    { icon: Clock3, label: "Late", value: late, tone: TONES.amber, filter: "late" },
+    { icon: Hourglass, label: "Half-day", value: halfDay, tone: TONES.amber, filter: "half_day" },
+    { icon: LogOut, label: "Early out", value: earlyOut, tone: TONES.amber, filter: "early_out" },
+    { icon: Plane, label: "On leave", value: onLeave, tone: TONES.violet, filter: "on_leave" },
+    { icon: UserX, label: "Absent", value: absent, tone: TONES.rose, filter: "absent" },
+    { icon: Home, label: "Working remote", value: wfh, tone: TONES.sky, filter: "wfh" },
+    ...(notYetIn !== undefined ? [{ icon: UserRoundSearch, label: "Not yet in", value: notYetIn, tone: TONES.rose, filter: "__not_yet_in__" }] : []),
     { icon: Timer, label: "Avg hours", value: avgHours, tone: TONES.primary, suffix: "h", decimals: 1 },
   ];
 
@@ -129,9 +158,13 @@ export function AttendanceStatsBar({ records, loading }: { records: Attendance[]
           </p>
         )}
       </div>
-      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8", loading && "opacity-60")}>
+      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9", loading && "opacity-60")}>
         {cards.map((c, i) => (
-          <StatCard key={c.label} icon={c.icon} label={c.label} value={c.value} suffix={c.suffix} decimals={c.decimals} tone={c.tone} delay={i * 0.06} />
+          <StatCard
+            key={c.label} icon={c.icon} label={c.label} value={c.value} suffix={c.suffix} decimals={c.decimals} tone={c.tone} delay={i * 0.06}
+            active={!!c.filter && active === c.filter}
+            onClick={c.filter === "__not_yet_in__" ? onNotYetIn : onSelect && c.filter ? () => onSelect(active === c.filter ? null : c.filter!) : undefined}
+          />
         ))}
       </div>
     </div>

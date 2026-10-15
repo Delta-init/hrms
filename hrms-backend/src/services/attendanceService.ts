@@ -366,7 +366,8 @@ export class AttendanceService {
 
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.user) filter.user = query.user;
-    if (query.status) filter.status = query.status;
+    // One status, or several comma-separated — "Present today" is present and WFH.
+    if (query.status) filter.status = String(query.status).includes(",") ? { $in: String(query.status).split(",") } : query.status;
 
     /**
      * Search by the person, not by the row.

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { CalendarCheck, Plus, MoreHorizontal, Pencil, Trash2, LogIn, LogOut, ListChecks, CalendarRange, CalendarDays, Users, ShieldAlert, Monitor, Globe, MapPin } from "lucide-react";
-import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus } from "@/hooks/useAttendance";
+import { useAttendance, useDeleteAttendance, useBulkSetAttendanceStatus, useAttendanceDaily } from "@/hooks/useAttendance";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -60,12 +60,17 @@ export default function AttendancePage() {
   const orgTz = useOrgTimeZone();
   const today = dayKeyIn(new Date(), orgTz);
   const { data: todayData, isLoading: todayLoading } = useAttendance({ dateFrom: today, dateTo: today, limit: "500" });
+  // Who is due today with nothing recorded — the day view's own count, which knows
+  // weekends, holidays, leave and employment dates.
+  const { data: todayDaily } = useAttendanceDaily(today, undefined, canManage);
   const { mutate: remove, isPending: deleting } = useDeleteAttendance();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Attendance | null>(null);
   const [tab, setTab] = useState("records");
+  // Set when the "Not yet in" card opens the day view, so it starts on that list.
+  const [dayStatus, setDayStatus] = useState<string | undefined>(undefined);
   /** Rows ticked for a bulk change — distinct from `selected`, the row being edited. */
   const [chosen, setChosen] = useState<Set<string>>(() => new Set());
   const bulkStatus = useBulkSetAttendanceStatus();
@@ -306,17 +311,31 @@ export default function AttendancePage() {
         action={canManage && tab === "records" && <Button onClick={() => { setSelected(null); setDialogOpen(true); }} className="shadow-sm"><Plus className="h-4 w-4" />Record Attendance</Button>}
       />
 
-      <Tabs tabs={tabs} value={tab} onChange={setTab} />
+      <Tabs tabs={tabs} value={tab} onChange={(t) => { setDayStatus(undefined); setTab(t); }} />
 
       {tab === "day" ? (
-        <AttendanceDayView canManage={canManage} />
+        <AttendanceDayView key={dayStatus ?? "all"} canManage={canManage} initialStatus={dayStatus} />
       ) : tab === "calendar" ? (
         <AttendanceCalendar />
       ) : tab === "team" ? (
         <AttendanceTeamView />
       ) : (
         <>
-          <AttendanceStatsBar records={todayData?.data ?? []} loading={todayLoading} />
+          <AttendanceStatsBar
+            records={todayData?.data ?? []}
+            loading={todayLoading}
+            // Only for whoever can see everyone's day — for anyone else it is their own, and meaningless.
+            notYetIn={canManage ? todayDaily?.counts?.not_marked ?? 0 : undefined}
+            onNotYetIn={() => { setDayStatus("not_marked"); setTab("day"); }}
+            // A card is "on" only while the table shows exactly today with its statuses.
+            active={query.filters.dateFrom === today && query.filters.dateTo === today ? query.filters.status ?? null : null}
+            onSelect={(status) => {
+              query.setFilters(status ? { status, dateFrom: today, dateTo: today } : { status: undefined, dateFrom: undefined, dateTo: undefined });
+              // Bring the filtered list into view, since the cards sit above it.
+              requestAnimationFrame(() => document.getElementById("attendance-records")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
+          />
+          <div id="attendance-records" className="scroll-mt-4" />
 
           <DataTable
             tableId="attendance"

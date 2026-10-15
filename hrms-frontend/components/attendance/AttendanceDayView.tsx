@@ -58,11 +58,15 @@ const fmtWorked = (m?: number) => (m && m > 0 ? `${Math.floor(m / 60)}h ${m % 60
 const fmtLongDate = (date: string) =>
   new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T00:00:00.000Z`));
 
-export function AttendanceDayView({ canManage }: { canManage: boolean }) {
+export function AttendanceDayView({ canManage, initialStatus }: {
+  canManage: boolean;
+  /** Opened from a stat card — start filtered to that status (e.g. "not_marked"). */
+  initialStatus?: string;
+}) {
   const orgTz = useOrgTimeZone();
   const today = dayKeyIn(new Date(), orgTz);
   const [date, setDate] = useState(today);
-  const query = useTableQuery({ defaultLimit: 100 });
+  const query = useTableQuery({ defaultLimit: 100, defaultFilters: initialStatus ? { status: initialStatus } : {} });
   const { data, isLoading, isFetching } = useAttendanceDaily(date);
   const { hasPermission } = useAuth();
   const canEdit = canManage && hasPermission("attendance", "edit");

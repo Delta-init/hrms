@@ -18,11 +18,11 @@ export const useAttendanceCalendar = (month: string, employee?: string) =>
   });
 
 /** Everybody's status on one day. Kept fresh — it is a "right now" screen. */
-export const useAttendanceDaily = (date: string, employee?: string) =>
+export const useAttendanceDaily = (date: string, employee?: string, enabled = true) =>
   useQuery({
     queryKey: [...KEY, "daily", date, employee ?? "all"],
     queryFn: async () => (await api.get<ApiResponse<DailyAttendanceData>>("/attendance/daily", { params: { date, ...(employee ? { employee } : {}) } })).data.data!,
-    enabled: !!date,
+    enabled: !!date && enabled,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });

@@ -51,6 +51,10 @@ export default function HiringPage() {
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useRequisitions(query.params);
+  // Passed on by HR, now waiting on finance — not anybody's to act on here, so
+  // a note rather than a badge, and one click shows which.
+  const { data: withFinance } = useRequisitions({ status: "finance_pending", limit: "1" });
+  const financeWaiting = withFinance?.pagination?.total ?? 0;
   const { data: workflow } = useHiringWorkflow(!headOnly);
   const { mutate: review, isPending: reviewing } = useReviewRequisition();
   const { mutate: remove, isPending: deleting } = useDeleteRequisition();
@@ -177,6 +181,18 @@ export default function HiringPage() {
       {/* Without a configured chain every approvable module falls back to
           single-step, so the Accounts gate would silently not exist. Say so
           rather than letting somebody believe a control is in force. */}
+      {financeWaiting > 0 && query.filters.status !== "finance_pending" && (
+        <button
+          type="button"
+          onClick={() => query.setFilter("status", "finance_pending")}
+          className="flex w-full items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-left text-sm text-amber-700 transition hover:bg-amber-500/10 dark:text-amber-400"
+        >
+          <ShieldAlert className="h-4 w-4 shrink-0" />
+          <span><strong>{financeWaiting}</strong> requisition{financeWaiting === 1 ? " is" : "s are"} with finance, waiting on the budget decision.</span>
+          <span className="ml-auto text-xs font-medium underline">Show</span>
+        </button>
+      )}
+
       {workflow && !workflow.configured && !workflow.financeStep && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
