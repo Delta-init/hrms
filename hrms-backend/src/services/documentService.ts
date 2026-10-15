@@ -21,6 +21,7 @@ const DOC_TYPES: DocumentType[] = [
   "photo",
   "education_certificate",
   "experience_certificate",
+  "signed_offer",
 ];
 
 class DocError extends Error {

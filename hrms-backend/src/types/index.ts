@@ -633,7 +633,8 @@ export type DocumentType =
   | "aadhaar"
   | "photo"
   | "education_certificate"
-  | "experience_certificate";
+  | "experience_certificate"
+  | "signed_offer";
 
 export interface IEmployeeDocument {
   type: DocumentType;
@@ -2032,6 +2033,47 @@ export interface ICandidate extends Document {
   updatedAt: Date;
 }
 
+/** An email that goes out with an offer: subject and body with {{tokens}}. */
+export interface IOfferEmailTemplate extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | null;
+  name: string;
+  subject: string;
+  body: string;
+  status: "active" | "inactive";
+  createdBy?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IOfferMailAttachment {
+  key: string;
+  fileName: string;
+  contentType?: string;
+  size?: number;
+}
+
+/** One email in an offer's thread — sent by HR, a candidate's reply, or a signed copy HR uploaded. */
+export interface IOfferMail extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | null;
+  application: Types.ObjectId | IApplication;
+  candidate: Types.ObjectId | ICandidate;
+  direction: "out" | "in";
+  source: "email" | "upload";
+  subject?: string;
+  from?: string;
+  to?: string[];
+  text?: string;
+  messageId?: string | null;
+  inReplyTo?: string | null;
+  attachments: IOfferMailAttachment[];
+  sentBy?: Types.ObjectId | IUser | null;
+  at: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IApplication extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
@@ -2055,6 +2097,21 @@ export interface IApplication extends Document {
     decidedBy?: Types.ObjectId | IUser | null;
     decidedAt?: Date | null;
     note?: string;
+  };
+  /**
+   * The offer as it went out by email and came back signed. `signedKey` is the
+   * copy that counts — the latest signed letter, whether it arrived as a reply
+   * or HR uploaded it.
+   */
+  offer?: {
+    sentAt?: Date | null;
+    sentBy?: Types.ObjectId | IUser | null;
+    sentCount?: number;
+    letterKey?: string | null;
+    signedAt?: Date | null;
+    signedKey?: string | null;
+    signedFileName?: string | null;
+    signedSource?: "email" | "upload" | null;
   };
   /** Every stage this application has been through, and who moved it. */
   stageHistory?: Array<{

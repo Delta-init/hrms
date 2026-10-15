@@ -13,6 +13,10 @@ import {
   cancelInterview, deleteInterview, getConflicts, submitFeedback, deleteFeedback,
 } from "../controllers/interviewController.js";
 import { getHirePrefill, hireApplicant, unlinkHire } from "../controllers/hireController.js";
+import {
+  getOfferTemplates, getOfferLetterTemplates, createOfferTemplate, updateOfferTemplate, deleteOfferTemplate, getOfferInboxStatus,
+  previewOffer, sendOffer, getOfferThread, uploadSignedOffer,
+} from "../controllers/offerController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadSingle } from "../middleware/upload.js";
 import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/permissions.js";
@@ -77,6 +81,19 @@ router.delete("/feedback/:id", checkPermission("hiring", "view"), deleteFeedback
 // Creating an employee is an employees-module action, so it is gated on that
 // rather than on `hiring` — recruiting rights should not confer the ability to
 // add people to the payroll.
+// Offers by email: the templates, sending one, and the thread it starts —
+// replies are read from the HR mailbox, or a signed copy uploaded by hand.
+router.get("/offer-templates", checkPermission("hiring", "view"), getOfferTemplates);
+router.get("/offer-letter-templates", checkPermission("hiring", "view"), getOfferLetterTemplates);
+router.post("/offer-templates", checkPermission("hiring", "edit"), createOfferTemplate);
+router.put("/offer-templates/:id", checkPermission("hiring", "edit"), updateOfferTemplate);
+router.delete("/offer-templates/:id", checkPermission("hiring", "edit"), deleteOfferTemplate);
+router.get("/offer-inbox", checkPermission("hiring", "view"), getOfferInboxStatus);
+router.post("/applications/:id/offer/preview", checkPermission("hiring", "edit"), previewOffer);
+router.post("/applications/:id/offer/send", checkPermission("hiring", "edit"), sendOffer);
+router.get("/applications/:id/offer/mails", checkPermission("hiring", "view"), getOfferThread);
+router.post("/applications/:id/offer/signed", checkPermission("hiring", "edit"), uploadSingle, uploadSignedOffer);
+
 router.get("/applications/:id/hire", checkPermission("employees", "create"), getHirePrefill);
 router.post("/applications/:id/hire", checkPermission("employees", "create"), hireApplicant);
 router.delete("/applications/:id/hire", checkPermission("employees", "edit"), unlinkHire);

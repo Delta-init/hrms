@@ -121,3 +121,58 @@ export async function sendMail({ to, subject, html, text, organization, attachme
     return false;
   }
 }
+
+export interface DetailedMailInput extends MailInput {
+  /** Where replies go — a plus-address on the mailbox the inbox reader watches. */
+  replyTo?: string;
+  /** Our own Message-ID, so a reply's In-Reply-To can be matched back to it. */
+  messageId?: string;
+}
+
+/**
+ * Send one email and say what happened, rather than the bare yes/no above.
+ *
+ * For mail somebody is waiting on — an offer is sent from a button, and the
+ * person who pressed it has to know it did not go. With no SMTP configured this
+ * sends nothing and says so; it never pretends.
+ */
+export async function sendMailDetailed(input: DetailedMailInput): Promise<{ sent: boolean; reason?: string; from?: string; messageId?: string }> {
+  const recipients = Array.isArray(input.to) ? input.to.filter(Boolean) : [input.to].filter(Boolean);
+  if (recipients.length === 0) return { sent: false, reason: "There is no address to send to" };
+  let scopedOrg: unknown = input.organization;
+  if (scopedOrg === undefined) {
+    try { scopedOrg = getOrgId(); } catch { scopedOrg = null; }
+  }
+  const cfg = (await orgConfig(scopedOrg)) ?? envConfig();
+  if (!cfg) return { sent: false, reason: "Email isn't set up for this organisation — add SMTP in Settings" };
+  try {
+    const info = await transportFor(cfg).sendMail({
+      from: cfg.from, to: recipients.join(", "), subject: input.subject, html: input.html, text: input.text,
+      attachments: input.attachments, replyTo: input.replyTo, messageId: input.messageId,
+    });
+    console.log(`✉️  sent "${input.subject}" to ${recipients.length} recipient(s)`);
+    return { sent: true, from: cfg.from, messageId: info.messageId };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`✉️  failed to send "${input.subject}":`, reason);
+    return { sent: false, reason: `The email could not be sent: ${reason}` };
+  }
+}
+
+/** The SMTP mailbox's own address — where a plus-addressed reply lands. */
+export async function mailboxAddress(orgId: unknown): Promise<string | null> {
+  const cfg = (await orgConfig(orgId)) ?? envConfig();
+  return cfg?.user && cfg.user.includes("@") ? cfg.user : null;
+}
+
+/**
+ * Reading the same mailbox the organisation sends from: the SMTP login, with
+ * the IMAP host beside the SMTP one (smtp.gmail.com → imap.gmail.com). Null
+ * when there is no SMTP to start from.
+ */
+export async function imapConfig(orgId: unknown): Promise<{ host: string; port: number; user: string; pass: string } | null> {
+  const cfg = (await orgConfig(orgId)) ?? envConfig();
+  if (!cfg) return null;
+  const host = cfg.host.replace(/^smtp\./i, "imap.");
+  return { host, port: 993, user: cfg.user, pass: cfg.pass };
+}

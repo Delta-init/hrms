@@ -16,6 +16,7 @@ export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   photo: "Photo",
   education_certificate: "Educational certificate",
   experience_certificate: "Experience certificate",
+  signed_offer: "Signed offer letter",
 };
 
 const ALL_DOC_TYPES = Object.keys(DOC_TYPE_LABELS) as DocumentType[];

@@ -1,11 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Plus, FileText, Loader2, XCircle, ChevronRight, Users, AlertTriangle,
   CalendarPlus, CalendarCheck, Video, MapPin, UserPlus, Phone, Link2, ExternalLink,
-  Pencil, Check, X, KanbanSquare,
+  Pencil, Check, X, KanbanSquare, FileSignature, Mail,
 } from "lucide-react";
 import { useRequisitions } from "@/hooks/useHiring";
 import { usePipeline, useCandidates, useApplyCandidate, useMoveApplication } from "@/hooks/useCandidates";
@@ -17,6 +17,9 @@ import { CandidateDialog } from "@/components/hiring/CandidateDialog";
 import { ScheduleInterviewDialog } from "@/components/hiring/ScheduleInterviewDialog";
 import { HireDialog } from "@/components/hiring/HireDialog";
 import { PipelineBoard } from "@/components/hiring/PipelineBoard";
+import { SendOfferDialog } from "@/components/hiring/SendOfferDialog";
+import { OfferMailsDialog } from "@/components/hiring/OfferMailsDialog";
+import { OfferTemplatesDialog } from "@/components/hiring/OfferTemplatesDialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,8 +82,55 @@ export default function RequisitionDetailPage() {
   const [hiring, setHiring] = useState<Application | null>(null);
   const [closing, setClosing] = useState<{ app: Application; kind: "rejected" | "waitlisted" } | null>(null);
   const [reason, setReason] = useState("");
+  const [sendingOffer, setSendingOffer] = useState<Application | null>(null);
+  const [mailsFor, setMailsFor] = useState<Application | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const canHire = hasPermission("employees", "create");
 
   const approved = requisition?.status === "approved";
+
+  const everyone = useMemo(
+    () => [...(pipeline?.columns ?? []).flatMap((c) => c.applications), ...(pipeline?.closed ?? [])],
+    [pipeline]
+  );
+
+  // A notification's link names the application whose thread to open.
+  const router = useRouter();
+  const params = useSearchParams();
+  const offerParam = params.get("offer");
+  useEffect(() => {
+    if (!offerParam || !pipeline) return;
+    const app = everyone.find((a) => a._id === offerParam);
+    if (app) setMailsFor(app);
+    router.replace(`/hiring/${requisitionId}`, { scroll: false });
+  }, [offerParam, pipeline, everyone, router, requisitionId]);
+
+  /**
+   * A signed offer has come back and they are still at Offer: ask, once per
+   * signed copy, whether to accept them and create their employee record.
+   * "Later" is remembered for this browser session.
+   */
+  const [dismissed, setDismissed] = useState<string[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem("offer-signed-dismissed") ?? "[]"); } catch { return []; }
+  });
+  const signedKey = (a: Application) => `${a._id}:${a.offer?.signedAt ?? ""}`;
+  const awaiting = canEdit
+    ? everyone.find((a) => a.status === "active" && a.stage === "offer" && a.offer?.signedAt && !dismissed.includes(signedKey(a)))
+    : undefined;
+  const dismiss = (a: Application) => {
+    const next = [...dismissed, signedKey(a)];
+    setDismissed(next);
+    try { sessionStorage.setItem("offer-signed-dismissed", JSON.stringify(next)); } catch { /* private mode */ }
+  };
+  const acceptAndHire = (a: Application) => {
+    dismiss(a);
+    move({ id: a._id, stage: "accepted" }, {
+      onSuccess: () => {
+        setMailsFor(null);
+        if (canHire) setHiring(a);
+      },
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -97,9 +147,14 @@ export default function RequisitionDetailPage() {
         }
         icon={Users}
         action={
-          canCreate && approved && (
-            <Button onClick={() => setAddOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Add candidate</Button>
-          )
+          <div className="flex flex-wrap gap-2">
+            {canEdit && !headOnly && (
+              <Button variant="outline" onClick={() => setTemplatesOpen(true)}><Mail className="h-4 w-4" />Offer emails</Button>
+            )}
+            {canCreate && approved && (
+              <Button onClick={() => setAddOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Add candidate</Button>
+            )}
+          </div>
         }
       />
 
@@ -214,6 +269,8 @@ export default function RequisitionDetailPage() {
             onRestore={(id) => move({ id, status: "active" })}
             onSchedule={setScheduling}
             onHire={setHiring}
+            onSendOffer={canEdit && !headOnly ? setSendingOffer : undefined}
+            onOfferMails={!headOnly ? setMailsFor : undefined}
           />
         )
       ) : (
@@ -239,6 +296,58 @@ export default function RequisitionDetailPage() {
           candidateName={asCandidate(hiring.candidate)?.name}
         />
       )}
+
+      {sendingOffer && (
+        <SendOfferDialog
+          open={!!sendingOffer}
+          onOpenChange={(o) => !o && setSendingOffer(null)}
+          application={sendingOffer}
+          onManageTemplates={() => setTemplatesOpen(true)}
+        />
+      )}
+
+      {mailsFor && (
+        <OfferMailsDialog
+          open={!!mailsFor}
+          onOpenChange={(o) => !o && setMailsFor(null)}
+          application={everyone.find((a) => a._id === mailsFor._id) ?? mailsFor}
+          canEdit={canEdit}
+          onAcceptAndHire={acceptAndHire}
+        />
+      )}
+
+      <OfferTemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
+
+      {/* The signed letter is back — the one moment worth interrupting for. */}
+      <ResponsiveDialog open={!!awaiting && !mailsFor && !hiring && !sendingOffer} onOpenChange={(o) => !o && awaiting && dismiss(awaiting)}>
+        <ResponsiveDialogContent desktopClassName="max-w-lg">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>
+              <span className="flex items-center gap-2"><FileSignature className="h-5 w-5 text-emerald-600" />Signed offer received</span>
+            </ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          {awaiting && (
+            <div className="space-y-2 px-4 text-sm sm:px-0">
+              <p>
+                <strong>{asCandidate(awaiting.candidate)?.name ?? "The candidate"}</strong> sent back the signed offer letter
+                {awaiting.offer?.signedAt ? ` on ${new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(awaiting.offer.signedAt))}` : ""}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {canHire
+                  ? "Accepting moves them to Accepted and opens Hire, filled in from the offer, to create their employee record."
+                  : "Accepting moves them to Accepted. Someone who can add employees then creates their record."}
+              </p>
+            </div>
+          )}
+          <ResponsiveDialogFooter>
+            <Button variant="ghost" onClick={() => awaiting && dismiss(awaiting)}>Later</Button>
+            <Button variant="outline" onClick={() => awaiting && setMailsFor(awaiting)}>View emails</Button>
+            <Button disabled={moving} onClick={() => awaiting && acceptAndHire(awaiting)}>
+              {moving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Accept &amp; create employee
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {scheduling && (
         <ScheduleInterviewDialog

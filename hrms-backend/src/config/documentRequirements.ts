@@ -40,12 +40,14 @@ export const DOCUMENT_REQUIREMENTS: Record<EmployeeLocation, DocRequirement[]> =
     { key: "photo", label: "Photo", required: true, isPhoto: true, accepts: ["photo"] },
     { key: "education_certificate", label: "Educational certificate", required: false, accepts: ["education_certificate"] },
     { key: "experience_certificate", label: "Experience certificate", required: false, accepts: ["experience_certificate"] },
+    { key: "signed_offer", label: "Signed offer letter", required: false, accepts: ["signed_offer"] },
   ],
   india: [
     { key: "identity", label: "Aadhaar / Passport", required: false, accepts: ["aadhaar", "passport"] },
     { key: "photo", label: "Photo", required: true, isPhoto: true, accepts: ["photo"] },
     { key: "education_certificate", label: "Educational certificate", required: false, accepts: ["education_certificate"] },
     { key: "experience_certificate", label: "Experience certificate", required: false, accepts: ["experience_certificate"] },
+    { key: "signed_offer", label: "Signed offer letter", required: false, accepts: ["signed_offer"] },
   ],
 };
 

@@ -6,6 +6,7 @@ import { EmployeeService } from "./employeeService.js";
 import { OnboardingService } from "./onboardingService.js";
 import { scoped } from "../utils/orgContext.js";
 import type { HireInput } from "../validations/hireValidation.js";
+import { OfferService } from "./offerService.js";
 
 /**
  * Turning an accepted offer into an employee.
@@ -119,6 +120,13 @@ export class HireService {
       { stage: "hired", by: by as never, at: new Date(), note: `Employee ${input.employeeCode}` },
     ];
     await app.save();
+
+    // The signed offer, if one came back, goes on their file.
+    try {
+      await new OfferService().fileSignedOffer(String(app._id), employeeId);
+    } catch (error) {
+      console.error("hire: could not file the signed offer:", error instanceof Error ? error.message : error);
+    }
 
     let onboardingError: string | undefined;
     if (input.onboardingTemplate) {

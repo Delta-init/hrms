@@ -160,6 +160,7 @@ const documentSchema = new Schema(
         "photo",
         "education_certificate",
         "experience_certificate",
+        "signed_offer",
       ],
     },
     fileName: { type: String, trim: true, maxlength: 260 },

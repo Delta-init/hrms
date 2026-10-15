@@ -330,7 +330,8 @@ export type DocumentType =
   | "aadhaar"
   | "photo"
   | "education_certificate"
-  | "experience_certificate";
+  | "experience_certificate"
+  | "signed_offer";
 
 export interface DocRequirement {
   key: string;
@@ -2620,8 +2621,47 @@ export interface Application {
     decidedAt?: string | null;
     note?: string;
   };
+  /** The offer as emailed, and the signed copy once it is back. */
+  offer?: ApplicationOffer | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ApplicationOffer {
+  sentAt?: string | null;
+  sentBy?: string | null;
+  sentCount?: number;
+  signedAt?: string | null;
+  signedFileName?: string | null;
+  signedSource?: "email" | "upload" | null;
+  /** Present on the thread endpoint: a short-lived link to the signed copy. */
+  signedUrl?: string | null;
+}
+
+export interface OfferEmailTemplate {
+  _id: string;
+  name: string;
+  subject: string;
+  body: string;
+  status: "active" | "inactive";
+}
+
+export interface OfferMail {
+  _id: string;
+  direction: "out" | "in";
+  source: "email" | "upload";
+  subject?: string;
+  from?: string;
+  to?: string[];
+  text?: string;
+  attachments: Array<{ key: string; fileName: string; contentType?: string; size?: number; url: string }>;
+  sentBy?: { _id: string; name: string } | string | null;
+  at: string;
+}
+
+export interface OfferThread {
+  offer: ApplicationOffer | null;
+  mails: OfferMail[];
 }
 
 export interface Pipeline {

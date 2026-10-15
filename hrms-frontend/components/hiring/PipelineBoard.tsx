@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   FileText, FileWarning, Video, MapPin, CalendarPlus, CalendarCheck,
   XCircle, PauseCircle, RotateCcw, UserPlus, GripVertical, ShieldCheck, ShieldAlert,
+  Mail, MailCheck, FileSignature,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getInitials, cn } from "@/lib/utils";
@@ -39,6 +40,10 @@ interface Props {
   onRestore: (id: string) => void;
   onSchedule: (app: Application) => void;
   onHire: (app: Application) => void;
+  /** Email an approved offer. */
+  onSendOffer?: (app: Application) => void;
+  /** Open the offer's email thread. */
+  onOfferMails?: (app: Application) => void;
   /**
    * Whether a name opens the full candidate page. Off for a department head,
    * whose pipeline is trimmed and who cannot open that page anyway.
@@ -54,7 +59,7 @@ function CandidateName({ id, name, link, className }: { id?: string; name?: stri
 }
 
 export function PipelineBoard({
-  columns, closed, canEdit, busy, onMove, onReject, onWaitlist, onRestore, onSchedule, onHire, linkCandidates = true,
+  columns, closed, canEdit, busy, onMove, onReject, onWaitlist, onRestore, onSchedule, onHire, onSendOffer, onOfferMails, linkCandidates = true,
 }: Props) {
   const [dragging, setDragging] = useState<Application | null>(null);
   const [over, setOver] = useState<ApplicationStage | null>(null);
@@ -110,6 +115,8 @@ export function PipelineBoard({
                     onWaitlist={onWaitlist}
                     onSchedule={onSchedule}
                     onHire={onHire}
+                    onSendOffer={onSendOffer}
+                    onOfferMails={onOfferMails}
                   />
                 ))}
                 {col.applications.length === 0 && (
@@ -154,7 +161,7 @@ export function PipelineBoard({
 }
 
 function Card({
-  app, canEdit, busy, dragging, onDragStart, onDragEnd, onMove, onReject, onWaitlist, onSchedule, onHire, linkCandidates,
+  app, canEdit, busy, dragging, onDragStart, onDragEnd, onMove, onReject, onWaitlist, onSchedule, onHire, onSendOffer, onOfferMails, linkCandidates,
 }: {
   app: Application; canEdit: boolean; linkCandidates: boolean; busy: boolean; dragging: boolean;
   onDragStart: () => void; onDragEnd: () => void;
@@ -163,6 +170,8 @@ function Card({
   onWaitlist: (a: Application) => void;
   onSchedule: (a: Application) => void;
   onHire: (a: Application) => void;
+  onSendOffer?: (a: Application) => void;
+  onOfferMails?: (a: Application) => void;
 }) {
   const c = asCandidate(app.candidate);
   const live = (app.interviews ?? []).filter((i) => i.status !== "cancelled");
@@ -224,6 +233,19 @@ function Card({
         </div>
       )}
 
+      {/* Where the emailed offer stands — and the way into its thread. */}
+      {app.offer?.signedAt ? (
+        <button type="button" onClick={() => onOfferMails?.(app)}
+          className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-emerald-600 hover:underline">
+          <FileSignature className="h-3 w-3" />Signed offer received
+        </button>
+      ) : app.offer?.sentAt ? (
+        <button type="button" onClick={() => onOfferMails?.(app)}
+          className="mt-1.5 flex items-center gap-1 text-[10px] text-sky-600 hover:underline">
+          <MailCheck className="h-3 w-3" />Offer sent {shortDate(app.offer.sentAt)}
+        </button>
+      ) : null}
+
       {canEdit && (
         <div className="mt-2 flex items-center gap-1">
           {app.stage === "accepted" ? (
@@ -240,6 +262,12 @@ function Card({
             >
               {COLUMNS.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
             </select>
+          )}
+          {onSendOffer && ["offer", "accepted"].includes(app.stage) && offer === "approved" && (
+            <Button size="sm" variant="ghost" className="h-7 px-1.5 text-primary" disabled={busy}
+              onClick={() => onSendOffer(app)} aria-label={app.offer?.sentAt ? "Send the offer again" : "Send offer"} title={app.offer?.sentAt ? "Send the offer again" : "Send offer"}>
+              <Mail className="h-3.5 w-3.5" />
+            </Button>
           )}
           <Button size="sm" variant="ghost" className="h-7 px-1.5" disabled={busy}
             onClick={() => onSchedule(app)} aria-label="Schedule an interview" title="Schedule an interview">

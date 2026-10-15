@@ -30,6 +30,17 @@ const applicationSchema = new Schema<IApplication>(
     // Kept rather than derived: "how long did this sit in screening" is the
     // question a hiring process gets judged on, and a single current stage
     // cannot answer it.
+    offer: {
+      sentAt: { type: Date, default: null },
+      sentBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      sentCount: { type: Number, default: 0 },
+      letterKey: { type: String, default: null },
+      signedAt: { type: Date, default: null },
+      signedKey: { type: String, default: null },
+      signedFileName: { type: String, default: null },
+      signedSource: { type: String, enum: ["email", "upload", null], default: null },
+    },
+
     stageHistory: {
       type: [{
         stage: String,
