@@ -64,6 +64,9 @@ function metresBetween(a: { latitude: number; longitude: number }, b: { latitude
   return Math.round(2 * R * Math.asin(Math.sqrt(h)));
 }
 
+/** The join link opens this long before the start, and closes at the end. */
+const OPENS_BEFORE_MS = 10 * 60_000;
+
 /** The address an online review meeting is joined through — HRMS first, the meeting after. */
 const joinUrl = (id: unknown) => `${env.CLIENT_URL}/meet/${String(id)}`;
 
@@ -84,6 +87,7 @@ async function forViewer<T extends Record<string, unknown>>(b: T, actor: Actor):
   }
   const seesJoins = organiser || isHr(actor) || (b.revieweeUser ? await headsDepartmentOf(me, idOf(b.revieweeUser)) : false);
   if (!seesJoins) out.joins = [];
+  out.joinsVisible = seesJoins;
   return out as T;
 }
 
@@ -269,8 +273,8 @@ export class MeetingService {
       organizer: actor.userId,
     });
 
+    // In-app only: an online review's mail goes at the start, with the join link.
     await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — you have been invited`, actor.userId);
-    await this.mailParticipants(String(record._id), "invite");
     return MeetingBooking.findById(record._id).populate(POP);
   }
 
@@ -327,7 +331,10 @@ export class MeetingService {
         ...(moved ? { firedStages: [] } : {}),
       },
     });
-    if (changed) await this.mailParticipants(String(record._id), "update");
+    // Moved, or a new link: an in-app word now; the mail still goes at the (new) start.
+    if (changed && place.kind === "review" && place.mode === "online") {
+      await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — the time or link changed`, actor.userId);
+    }
     return forViewer((await MeetingBooking.findById(record._id).populate(POP).lean()) as never, actor);
   }
 
@@ -434,24 +441,33 @@ export class MeetingService {
   }
 
   /**
-   * Email everyone invited to an online review meeting — the reviewed employee
-   * included — with the HRMS join link, never the meeting link itself. Sent on
-   * booking, again when the time or link changes, and when it is cancelled.
-   * Other meetings keep the in-app invite and the reminder mails they had.
+   * Email everyone in an online review meeting with the HRMS join link, never
+   * the meeting link itself — at the start (from the reminder job, organiser
+   * included), and when it is cancelled. Booking and moving it are in-app
+   * only: the one mail that matters is the one that arrives as it begins.
    */
-  private async mailParticipants(id: string, why: "invite" | "update" | "cancel") {
+  async mailParticipants(id: string, why: "start" | "cancel") {
     try {
       const b = await MeetingBooking.findById(id)
-        .populate([{ path: "participants", select: "name email status" }, { path: "organizer", select: "name" }, { path: "reviewee", select: "name" }])
+        .populate([{ path: "participants", select: "name email status" }, { path: "organizer", select: "name email status" }, { path: "reviewee", select: "name" }])
         .lean<Record<string, any> | null>();
       if (!b || b.kind !== "review" || b.mode !== "online") return;
       const tz = b.timeZone || "Asia/Dubai";
       const when = `${new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(b.start))}` +
         ` – ${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(b.end))} (${tz})`;
-      const subject = why === "cancel" ? `Cancelled: ${b.title}` : why === "update" ? `Updated: ${b.title}` : `Review meeting: ${b.title}`;
-      const lead = why === "cancel" ? "This review meeting has been cancelled." : why === "update" ? "The time or link of this review meeting has changed." : "You have been invited to a review meeting.";
+      const subject = why === "cancel" ? `Cancelled: ${b.title}` : `Starting now: ${b.title}`;
+      const lead = why === "cancel" ? "This review meeting has been cancelled." : "Your review meeting is starting now. Join through the button below.";
       const link = joinUrl(b._id);
-      const recipients = (b.participants ?? []).filter((p: any) => p?.email && p.status !== "inactive" && String(p._id) !== String(b.organizer?._id));
+      // At the start the organiser joins the same way; a cancellation is theirs, so they are spared it.
+      const people = [...(why === "start" && b.organizer ? [b.organizer] : []), ...(b.participants ?? [])];
+      const seen = new Set<string>();
+      const recipients = people.filter((p: any) => {
+        const key = String(p?._id);
+        if (!p?.email || p.status === "inactive" || seen.has(key)) return false;
+        if (why === "cancel" && key === String(b.organizer?._id)) return false;
+        seen.add(key);
+        return true;
+      });
       for (const p of recipients) {
         await sendMail({
           to: p.email,
@@ -492,6 +508,15 @@ export class MeetingService {
     const invited = idOf(record.organizer) === me || (record.participants ?? []).some((p) => idOf(p) === me);
     if (!invited) throw Object.assign(new Error("You are not invited to this meeting"), { statusCode: 403 });
 
+    const now = Date.now();
+    if (now < record.start.getTime() - OPENS_BEFORE_MS) {
+      const opens = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: record.timeZone || "Asia/Dubai" })
+        .format(new Date(record.start.getTime() - OPENS_BEFORE_MS));
+      throw Object.assign(new Error(`The meeting opens at ${opens}`), { statusCode: 400 });
+    }
+    if (now > record.end.getTime()) throw Object.assign(new Error("This meeting has ended"), { statusCode: 400 });
+    const lateMinutes = Math.max(0, Math.floor((now - record.start.getTime()) / 60_000));
+
     // Today's clock-in: the latest record whose first punch was in the last day.
     const since = new Date(Date.now() - 20 * 3600_000);
     const att = await Attendance.findOne({ user: actor.userId, checkIn: { $gte: since } })
@@ -509,9 +534,10 @@ export class MeetingService {
       clockedIn: !!att,
       distanceMetres,
       sameLocation: distanceMetres === null ? null : distanceMetres <= SAME_PLACE_M,
+      lateMinutes,
     }] as never;
     await record.save();
-    return { meetingLink: record.meetingLink, clockedIn: !!att, distanceMetres, sameLocation: distanceMetres === null ? null : distanceMetres <= SAME_PLACE_M };
+    return { meetingLink: record.meetingLink, clockedIn: !!att, distanceMetres, sameLocation: distanceMetres === null ? null : distanceMetres <= SAME_PLACE_M, lateMinutes };
   }
 
   /** In-app only; the mail is the reminder job's, so an invite is not two mails. */

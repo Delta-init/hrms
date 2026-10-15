@@ -61,6 +61,8 @@ const meetingBookingSchema = new Schema<IMeetingBooking>(
         /** Metres from today's clock-in position, when there was one. */
         distanceMetres: { type: Number, default: null },
         sameLocation: { type: Boolean, default: null },
+        /** Whole minutes after the start; 0 for anyone in before it. */
+        lateMinutes: { type: Number, default: null },
       }, { _id: false })],
       default: [],
     },

@@ -119,8 +119,8 @@ const envSchema = z.object({
   HOLIDAY_REMINDER_CRON: z.string().default("0 18 * * *"),
   /** Probation: raise due confirmations, and warn the day before one completes. */
   PROBATION_CRON: z.string().default("10 0 * * *"),
-  /** Meeting reminders: 30 minutes before, and as it starts. */
-  MEETING_REMINDER_CRON: z.string().default("*/5 * * * *"),
+  /** Meeting reminders: 30 minutes before, and as it starts — every minute, so "starting now" is. */
+  MEETING_REMINDER_CRON: z.string().default("* * * * *"),
   /**
    * Frequent enough that a reminder's 30-minute and 5-minute stages land
    * close to on time, the same reasoning as the punch reminder's own cadence.

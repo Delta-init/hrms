@@ -2,12 +2,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, MapPin, Video, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, MapPin, Video, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMeetingBooking, useJoinMeeting } from "@/hooks/useMeetings";
 
 type Step = "asking" | "denied" | "unsupported" | "joining" | "redirecting" | "error";
+
+/** The link opens this long before the start, and closes at the end — the server holds the same line. */
+const OPENS_BEFORE_MS = 10 * 60_000;
 
 const nameOf = (v: unknown) => (v && typeof v === "object" ? String((v as { name?: string }).name ?? "") : "");
 
@@ -19,6 +22,9 @@ const nameOf = (v: unknown) => (v && typeof v === "object" ? String((v as { name
  * records it against where they clocked in today, and only then hands back the
  * meeting link and sends them on. Without a location there is no link: the
  * page explains how to allow it and lets them try again.
+ *
+ * It opens ten minutes before the start and closes at the end. Opened early,
+ * the page waits and asks for location the moment it opens.
  */
 export default function MeetJoinPage() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +33,16 @@ export default function MeetJoinPage() {
   const [step, setStep] = useState<Step>("asking");
   const [message, setMessage] = useState("");
   const started = useRef(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Ticks while waiting for the meeting to open, so it opens without a reload.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const opensAt = meeting ? new Date(meeting.start).getTime() - OPENS_BEFORE_MS : 0;
+  const phase = !meeting ? "open" : now < opensAt ? "early" : now > new Date(meeting.end).getTime() ? "ended" : "open";
 
   const attempt = useCallback(() => {
     if (!id) return;
@@ -57,11 +73,11 @@ export default function MeetJoinPage() {
   // Ask as soon as the meeting is known to be one we can join.
   useEffect(() => {
     if (started.current || !meeting) return;
-    if (meeting.kind === "review" && meeting.mode === "online" && meeting.status === "booked" && !meeting.restricted) {
+    if (meeting.kind === "review" && meeting.mode === "online" && meeting.status === "booked" && !meeting.restricted && phase === "open") {
       started.current = true;
       attempt();
     }
-  }, [meeting, attempt]);
+  }, [meeting, attempt, phase]);
 
   const title = meeting?.restricted ? "Review meeting" : meeting?.title;
   const when = meeting
@@ -74,6 +90,10 @@ export default function MeetJoinPage() {
     if (meeting.restricted) return <Notice tone="error" text="You are not invited to this meeting." />;
     if (meeting.status === "cancelled") return <Notice tone="error" text="This meeting was cancelled." />;
     if (meeting.kind !== "review" || meeting.mode !== "online") return <Notice tone="error" text="This meeting isn't held online." />;
+    if (phase === "early") {
+      return <Notice icon={Clock} text={`The meeting opens at ${new Date(opensAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — keep this page open and it will continue by itself.`} />;
+    }
+    if (phase === "ended") return <Notice tone="error" text="This meeting has ended." />;
     switch (step) {
       case "asking":
         return <Notice icon={MapPin} text="Allow your location when the browser asks — it's checked against your clock-in before you join." spin />;

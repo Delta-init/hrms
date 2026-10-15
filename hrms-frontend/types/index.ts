@@ -1378,7 +1378,11 @@ export interface MeetingBooking {
     clockedIn: boolean;
     distanceMetres?: number | null;
     sameLocation?: boolean | null;
+    /** Whole minutes after the start; absent on joins recorded before this was kept. */
+    lateMinutes?: number | null;
   }>;
+  /** Whether this viewer is shown who joined — the organiser, HR and the department head. */
+  joinsVisible?: boolean;
   title: string;
   agenda?: string;
   /** An instant, not a wall-clock reading. */

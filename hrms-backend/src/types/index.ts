@@ -1313,7 +1313,7 @@ export interface IMeetingBooking extends Document {
   recordingLink?: string;
   joins?: Array<{
     user: Types.ObjectId | IUser; at: Date; latitude: number; longitude: number; accuracy?: number | null;
-    clockedIn: boolean; distanceMetres?: number | null; sameLocation?: boolean | null;
+    clockedIn: boolean; distanceMetres?: number | null; sameLocation?: boolean | null; lateMinutes?: number | null;
   }>;
   heldAt?: Date | null;
   review?: {

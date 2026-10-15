@@ -28,6 +28,36 @@ const startOfWeek = (d: Date) => addDays(startOfDay(d), -((d.getDay() + 6) % 7))
 const nameOf = (v: unknown) => (v && typeof v === "object" ? String((v as { name?: string }).name ?? "") : "");
 const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id: string })._id) : String(v ?? ""));
 
+/** The join link opens this long before an online review starts. */
+const JOIN_OPENS_BEFORE_MS = 10 * 60_000;
+/** Joining up to this many minutes after the start still counts as on time. */
+const LATE_GRACE_MIN = 5;
+
+type Join = NonNullable<MeetingBooking["joins"]>[number];
+
+/** Everybody in an online review — reviewer first — with the first time each came in through HRMS. */
+function attendees(b: MeetingBooking): Array<{ id: string; name: string; join: Join | null; joinCount: number }> {
+  const people = [b.organizer, ...b.participants];
+  const seen = new Set<string>();
+  const joins = [...(b.joins ?? [])].sort((x, y) => new Date(x.at).getTime() - new Date(y.at).getTime());
+  return people.flatMap((p) => {
+    const id = idOf(p);
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    const mine = joins.filter((j) => idOf(j.user) === id);
+    return [{ id, name: nameOf(p) || "—", join: mine[0] ?? null, joinCount: mine.length }];
+  });
+}
+
+function Chip({ tone, children }: { tone: "ok" | "warn" | "muted"; children: React.ReactNode }) {
+  const cls = tone === "ok"
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+    : tone === "warn"
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      : "border-border text-muted-foreground";
+  return <span className={`rounded-full border px-2 py-0.5 ${cls}`}>{children}</span>;
+}
+
 export default function MeetingsPage() {
   const { hasPermission, user } = useAuth();
   const canView = hasPermission("meetings", "view");
@@ -187,6 +217,10 @@ export default function MeetingsPage() {
             const isOrganizer = idOf(shown.organizer) === me || user?.role?.roleName === "Super Admin";
             const isReviewee = idOf(shown.revieweeUser) === me;
             const started = new Date(shown.start).getTime() <= Date.now();
+            // The join link opens ten minutes before and closes at the end — the server holds the same line.
+            const opensAt = new Date(shown.start).getTime() - JOIN_OPENS_BEFORE_MS;
+            const ended = new Date(shown.end).getTime() < Date.now();
+            const joinable = shown.status === "booked" && Date.now() >= opensAt && !ended;
             const r = shown.review;
             return (
             <div className="space-y-3 px-4 pb-4 text-sm sm:px-0">
@@ -208,10 +242,15 @@ export default function MeetingsPage() {
                 <span className="text-muted-foreground">Status</span>
                 <span className="capitalize">{shown.status === "cancelled" ? "cancelled" : isReview && r?.writtenAt ? "held" : shown.status}</span>
               </div>
-              {(shown.mode === "online" && (shown.meetingLink || shown.hasLink)) || (shown.mode === "place" && shown.placeMapUrl) ? (
+              {shown.mode === "online" && (shown.meetingLink || shown.hasLink) && shown.status === "booked" && !joinable && !ended && (
+                <p className="text-xs text-muted-foreground">
+                  The join link opens at {new Date(opensAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} and is emailed to everyone as it starts.
+                </p>
+              )}
+              {(shown.mode === "online" && (shown.meetingLink || shown.hasLink) && joinable) || (shown.mode === "place" && shown.placeMapUrl) ? (
                 <div className="flex flex-wrap gap-2">
                   {/* Through HRMS's join page — location first, then the meeting. */}
-                  {shown.mode === "online" && (shown.meetingLink || shown.hasLink) && shown.status === "booked" && (
+                  {shown.mode === "online" && (shown.meetingLink || shown.hasLink) && joinable && (
                     <Button asChild size="sm"><a href={`/meet/${shown._id}`}><Video className="h-3.5 w-3.5" />Join meeting</a></Button>
                   )}
                   {shown.mode === "place" && shown.placeMapUrl && (
@@ -235,29 +274,43 @@ export default function MeetingsPage() {
                 )}
               </div>
 
-              {/* Who opened it through HRMS, and whether they were where they clocked in. */}
-              {isReview && shown.mode === "online" && !!shown.joins?.length && (
+              {/* Everyone invited: when they first came in through HRMS, how late, and whether they were where they clocked in. */}
+              {isReview && shown.mode === "online" && shown.joinsVisible && shown.status === "booked" && Date.now() >= opensAt && (
                 <div className="border-t border-border pt-3">
-                  <p className="mb-1 text-muted-foreground">Joined ({shown.joins.length})</p>
-                  <div className="space-y-1">
-                    {shown.joins.map((j, i) => (
-                      <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="font-medium">{nameOf(j.user) || "—"}
-                          <span className="ml-1.5 font-normal text-muted-foreground">{new Date(j.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                        </span>
-                        {!j.clockedIn ? (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-400">Not clocked in today</span>
-                        ) : j.sameLocation ? (
-                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-700 dark:text-emerald-400">Same place as clock-in{j.distanceMetres != null ? ` (${j.distanceMetres} m)` : ""}</span>
-                        ) : j.distanceMetres != null ? (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-400">
-                            {j.distanceMetres >= 1000 ? `${(j.distanceMetres / 1000).toFixed(1)} km` : `${j.distanceMetres} m`} from clock-in
+                  <p className="mb-1 text-muted-foreground">Attendance</p>
+                  <div className="space-y-1.5">
+                    {attendees(shown).map(({ id, name, join, joinCount }) => {
+                      if (!join) {
+                        return (
+                          <div key={id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span className="font-medium">{name}</span>
+                            <Chip tone="muted">{ended ? "Not joined" : "Not joined yet"}</Chip>
+                          </div>
+                        );
+                      }
+                      const late = join.lateMinutes ?? Math.max(0, Math.floor((new Date(join.at).getTime() - new Date(shown.start).getTime()) / 60_000));
+                      return (
+                        <div key={id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="font-medium">{name}
+                            <span className="ml-1.5 font-normal text-muted-foreground">
+                              {new Date(join.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{joinCount > 1 ? ` · opened ${joinCount}×` : ""}
+                            </span>
                           </span>
-                        ) : (
-                          <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">Clock-in had no location</span>
-                        )}
-                      </div>
-                    ))}
+                          <span className="flex flex-wrap gap-1">
+                            {late <= LATE_GRACE_MIN ? <Chip tone="ok">On time</Chip> : <Chip tone="warn">{late} min late</Chip>}
+                            {!join.clockedIn ? (
+                              <Chip tone="warn">Not clocked in today</Chip>
+                            ) : join.sameLocation ? (
+                              <Chip tone="ok">Same place as clock-in{join.distanceMetres != null ? ` (${join.distanceMetres} m)` : ""}</Chip>
+                            ) : join.distanceMetres != null ? (
+                              <Chip tone="warn">{join.distanceMetres >= 1000 ? `${(join.distanceMetres / 1000).toFixed(1)} km` : `${join.distanceMetres} m`} from clock-in</Chip>
+                            ) : (
+                              <Chip tone="muted">Clock-in had no location</Chip>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

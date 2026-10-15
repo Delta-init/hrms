@@ -8,6 +8,9 @@ import type { MeetingStage } from "../types/index.js";
 import { sendMail } from "../utils/mailer.js";
 import { notify } from "../services/notificationService.js";
 import { runWithOrg } from "../utils/orgContext.js";
+import { MeetingService } from "../services/meetingService.js";
+
+const meetings = new MeetingService();
 
 /**
  * A word before a meeting, and a word as it starts.
@@ -74,11 +77,26 @@ export async function processMeetingsFor(orgId: string, now = new Date()): Promi
       // Too late to be useful — marked done, deliberately unsent.
       if (staleMs > CATCH_UP_MS[stage]) continue;
 
+      // An online review gets one mail, as it starts, with the HRMS join link —
+      // no half-hour warning, and nothing that points at the raw meeting link.
+      const kind = (booking as unknown as { kind?: string }).kind;
+      if (kind === "review" && (booking as unknown as { mode?: string }).mode === "online") {
+        if (stage !== "ontime") continue;
+        const ids = [...new Set([String(booking.organizer?._id ?? booking.organizer), ...booking.participants.map(String)])];
+        try {
+          await withOrg(orgId, () =>
+            notify({ users: ids, kind: "reminder", title: `${booking.title} is starting now`, body: "Join through HRMS — your location is checked first.", href: `/meet/${String(booking._id)}` })
+          );
+        } catch { /* the mail is the part that matters */ }
+        await withOrg(orgId, () => meetings.mailParticipants(String(booking._id), "start"));
+        fired++;
+        continue;
+      }
+
       // Online and elsewhere have no room — say where it actually is.
       const b = booking as unknown as { mode?: string; meetingLink?: string; placeAddress?: string };
-      // An online review is joined through HRMS (location first), never the raw link.
       const room = b.mode === "online"
-        ? `online — ${(booking as unknown as { kind?: string }).kind === "review" ? `${env.CLIENT_URL}/meet/${String(booking._id)}` : b.meetingLink}`
+        ? `online — ${b.meetingLink}`
         : b.mode === "place"
           ? (b.placeAddress || "the agreed place")
           : (booking.room as unknown as { name?: string } | null)?.name ?? "the meeting room";
