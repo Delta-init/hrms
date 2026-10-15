@@ -30,5 +30,8 @@ export const config = {
     "/users/:path*",
     "/roles/:path*",
     "/settings/:path*",
+    // The join link in meeting emails — a signed-out click lands on sign-in
+    // and comes back here, where the location check runs.
+    "/meet/:path*",
   ],
 };

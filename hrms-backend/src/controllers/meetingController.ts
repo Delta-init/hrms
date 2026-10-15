@@ -3,7 +3,7 @@ import { MeetingService, type Actor } from "../services/meetingService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import {
-  createRoomSchema, updateRoomSchema, createBookingSchema, updateBookingSchema, reviewFormSchema, recordingSchema,
+  createRoomSchema, updateRoomSchema, createBookingSchema, updateBookingSchema, reviewFormSchema, recordingSchema, joinSchema,
 } from "../validations/meetingValidation.js";
 
 const service = new MeetingService();
@@ -115,4 +115,12 @@ export const setRecording = async (req: AuthenticatedRequest, res: Response, nex
 export const acknowledgeReview = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Review acknowledged", await service.acknowledgeReview(String(req.params.id), actorOf(req))); }
   catch (error) { next(error); }
+};
+
+/** The join page: where the person is, checked against today's clock-in, then the link. */
+export const joinMeeting = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = parsed(joinSchema as never, req, res); if (!data) return;
+    sendSuccess(res, "Joining", await service.join(String(req.params.id), data as never, actorOf(req)));
+  } catch (error) { next(error); }
 };

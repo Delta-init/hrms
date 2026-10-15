@@ -132,3 +132,21 @@ export const useAcknowledgeReview = () => {
     onError: (e) => toast.error(errMsg(e, "Could not acknowledge")),
   });
 };
+
+/** One meeting, for the join page. */
+export const useMeetingBooking = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "booking", id],
+    queryFn: async () => (await api.get<ApiResponse<MeetingBooking>>(`/meetings/bookings/${id}`)).data.data!,
+    enabled: !!id,
+    retry: false,
+  });
+
+/** Send where we are; get the meeting link back. */
+export const useJoinMeeting = () =>
+  useMutation({
+    mutationFn: async ({ id, latitude, longitude, accuracy }: { id: string; latitude: number; longitude: number; accuracy?: number | null }) =>
+      (await api.post<ApiResponse<{ meetingLink: string; clockedIn: boolean; distanceMetres: number | null; sameLocation: boolean | null }>>(
+        `/meetings/bookings/${id}/join`, { latitude, longitude, accuracy }
+      )).data.data!,
+  });

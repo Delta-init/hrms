@@ -45,6 +45,25 @@ const meetingBookingSchema = new Schema<IMeetingBooking>(
     revieweeUser: { type: Schema.Types.ObjectId, ref: "User", default: null },
     /** A link to the recording, wherever the meeting tool kept it. */
     recordingLink: { type: String, trim: true, maxlength: 500, default: "" },
+    /**
+     * Every time someone opened the meeting through HRMS's join page: where
+     * they were, against where they clocked in today. Online review meetings
+     * only — the real link is handed out there and nowhere else.
+     */
+    joins: {
+      type: [new Schema({
+        user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        at: { type: Date, required: true },
+        latitude: { type: Number, required: true },
+        longitude: { type: Number, required: true },
+        accuracy: { type: Number, default: null },
+        clockedIn: { type: Boolean, default: false },
+        /** Metres from today's clock-in position, when there was one. */
+        distanceMetres: { type: Number, default: null },
+        sameLocation: { type: Boolean, default: null },
+      }, { _id: false })],
+      default: [],
+    },
     /** Set when the review is written — the meeting took place. */
     heldAt: { type: Date, default: null },
     review: {

@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   getRooms, createRoom, updateRoom, retireRoom,
   getInvitable, getBookings, getBookingById, createBooking, updateBooking, cancelBooking, deleteBooking,
-  saveReview, setRecording, acknowledgeReview,
+  saveReview, setRecording, acknowledgeReview, joinMeeting,
 } from "../controllers/meetingController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -38,5 +38,7 @@ router.delete("/bookings/:id", checkPermission("meetings", "create"), deleteBook
 router.put("/bookings/:id/review", checkPermission("meetings", "create"), saveReview);
 router.patch("/bookings/:id/recording", checkPermission("meetings", "create"), setRecording);
 router.patch("/bookings/:id/acknowledge", acknowledgeReview);
+// Anyone invited — the service checks the invite list, not a permission.
+router.post("/bookings/:id/join", joinMeeting);
 
 export default router;

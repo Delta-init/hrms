@@ -83,6 +83,8 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, ini
   const isReview = kind === "review";
   const effectiveMode = isReview ? mode : "room";
   const linkOk = (v: string) => /^https?:\/\//i.test(v.trim());
+  // Someone other than the organiser is never shown the link; blank keeps it.
+  const keepsHiddenLink = isEditing && !!booking?.hasLink && !meetingLink.trim();
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -170,7 +172,8 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, ini
           {effectiveMode === "online" && (
             <div className={`${field} col-span-2`}>
               <Label htmlFor="m-link">Meeting link *</Label>
-              <Input id="m-link" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/… or Zoom / Teams link" />
+              <Input id="m-link" value={meetingLink} onChange={(e) => setMeetingLink(e.target.value)}
+                placeholder={booking?.hasLink ? "Leave blank to keep the current link" : "https://meet.google.com/… or Zoom / Teams link"} />
               {meetingLink && !linkOk(meetingLink) && <p className="text-xs text-destructive">Must start with http:// or https://</p>}
             </div>
           )}
@@ -264,7 +267,7 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, ini
             <Button onClick={submit} disabled={
               isPending || !title.trim() || !start || !end ||
               (effectiveMode === "room" && !room) ||
-              (effectiveMode === "online" && !linkOk(meetingLink)) ||
+              (effectiveMode === "online" && !linkOk(meetingLink) && !keepsHiddenLink) ||
               (effectiveMode === "place" && (!placeAddress.trim() || (!!placeMapUrl && !linkOk(placeMapUrl)))) ||
               (isReview && !reviewee)
             }>

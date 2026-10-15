@@ -1311,6 +1311,10 @@ export interface IMeetingBooking extends Document {
   reviewee?: Types.ObjectId | IEmployee | null;
   revieweeUser?: Types.ObjectId | IUser | null;
   recordingLink?: string;
+  joins?: Array<{
+    user: Types.ObjectId | IUser; at: Date; latitude: number; longitude: number; accuracy?: number | null;
+    clockedIn: boolean; distanceMetres?: number | null; sameLocation?: boolean | null;
+  }>;
   heldAt?: Date | null;
   review?: {
     rating?: number | null;

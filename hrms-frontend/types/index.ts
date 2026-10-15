@@ -1369,6 +1369,16 @@ export interface MeetingBooking {
   review?: MeetingReview | null;
   /** A review meeting the viewer may not read — shown only as a taken slot. */
   restricted?: boolean;
+  /** The link exists but is only handed out through the join page. */
+  hasLink?: boolean;
+  /** Who opened it through HRMS, and where they were against their clock-in. */
+  joins?: Array<{
+    user: Pick<User, "_id" | "name"> | string;
+    at: string;
+    clockedIn: boolean;
+    distanceMetres?: number | null;
+    sameLocation?: boolean | null;
+  }>;
   title: string;
   agenda?: string;
   /** An instant, not a wall-clock reading. */

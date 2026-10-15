@@ -2,6 +2,7 @@ import { MeetingBooking } from "../models/MeetingBooking.js";
 import { MeetingRoom } from "../models/MeetingRoom.js";
 import { User } from "../models/User.js";
 import { Employee } from "../models/Employee.js";
+import { Attendance } from "../models/Attendance.js";
 import type {
   CreateRoomInput, UpdateRoomInput, CreateBookingInput, UpdateBookingInput, ReviewFormInput,
 } from "../validations/meetingValidation.js";
@@ -20,6 +21,7 @@ const POP = [
   { path: "participants", select: "name email" },
   { path: "reviewee", select: "name employeeCode designation" },
   { path: "revieweeUser", select: "name email" },
+  { path: "joins.user", select: "name" },
 ];
 
 export interface Actor {
@@ -45,6 +47,46 @@ async function canSeeReview(b: { organizer: unknown; participants?: unknown[]; r
   return b.revieweeUser ? headsDepartmentOf(me, idOf(b.revieweeUser)) : false;
 }
 
+const isHr = (actor: Actor) =>
+  actor.roleName === "Super Admin" ||
+  !!(actor.role && (hasPermission(actor.role, "performance", "edit") || hasPermission(actor.role, "meetings", "edit")));
+
+/** Within this of today's clock-in counts as the same place. */
+const SAME_PLACE_M = 200;
+
+/** Straight-line distance between two points, in metres. */
+function metresBetween(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
+  const R = 6_371_000;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.latitude - a.latitude);
+  const dLon = rad(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+/** The address an online review meeting is joined through — HRMS first, the meeting after. */
+const joinUrl = (id: unknown) => `${env.CLIENT_URL}/meet/${String(id)}`;
+
+/**
+ * An online review meeting as one viewer may see it. The real link is the
+ * organiser's alone — everyone else goes through the join page, which checks
+ * where they are first — and the join log is for the organiser, HR and the
+ * employee's department head.
+ */
+async function forViewer<T extends Record<string, unknown>>(b: T, actor: Actor): Promise<T> {
+  if (b.kind !== "review" || b.restricted) return b;
+  const me = String(actor.userId);
+  const organiser = idOf(b.organizer) === me || actor.roleName === "Super Admin";
+  const out: Record<string, unknown> = { ...b };
+  if (b.mode === "online" && !organiser) {
+    out.hasLink = !!b.meetingLink;
+    out.meetingLink = "";
+  }
+  const seesJoins = organiser || isHr(actor) || (b.revieweeUser ? await headsDepartmentOf(me, idOf(b.revieweeUser)) : false);
+  if (!seesJoins) out.joins = [];
+  return out as T;
+}
+
 /** A review meeting as someone outside it sees it: the time is taken, nothing more. */
 function masked<T extends Record<string, unknown>>(b: T): T {
   return {
@@ -59,6 +101,7 @@ function masked<T extends Record<string, unknown>>(b: T): T {
     revieweeUser: null,
     participants: [],
     review: null,
+    joins: [],
     restricted: true,
   };
 }
@@ -160,14 +203,16 @@ export class MeetingService {
     }
     const rows = await MeetingBooking.find(filter).populate(POP).sort({ start: 1 }).lean();
     if (!actor) return rows;
-    return Promise.all(rows.map(async (b) => (b.kind === "review" && !(await canSeeReview(b, actor)) ? masked(b as never) : b)));
+    return Promise.all(rows.map(async (b) =>
+      b.kind === "review" && !(await canSeeReview(b, actor)) ? masked(b as never) : forViewer(b as never, actor)
+    ));
   }
 
   async getBooking(id: string, actor?: Actor) {
     const record = await MeetingBooking.findOne(scoped({ _id: id })).populate(POP).lean();
     if (!record) throw Object.assign(new Error("Booking not found"), { statusCode: 404 });
     if (actor && record.kind === "review" && !(await canSeeReview(record, actor))) return masked(record as never);
-    return record;
+    return actor ? forViewer(record as never, actor) : record;
   }
 
   /**
@@ -175,7 +220,7 @@ export class MeetingService {
    * its clash test run; online and elsewhere need neither. A review meeting
    * resolves the person reviewed and puts them on the invite list.
    */
-  private async placeFor(input: CreateBookingInput, excludeId?: string) {
+  private async placeFor(input: CreateBookingInput, excludeId?: string, keepLinkFrom?: string) {
     const out: Record<string, unknown> = {
       kind: input.kind, mode: input.mode,
       room: null, meetingLink: "", placeAddress: "", placeMapUrl: "",
@@ -195,7 +240,9 @@ export class MeetingService {
       }
       out.room = room._id;
     } else if (input.mode === "online") {
-      out.meetingLink = input.meetingLink;
+      // Blank on an edit keeps the saved link — only its organiser is ever shown it.
+      out.meetingLink = input.meetingLink || keepLinkFrom || "";
+      if (!out.meetingLink) throw Object.assign(new Error("Add the meeting link"), { statusCode: 400 });
     } else {
       out.placeAddress = input.placeAddress;
       out.placeMapUrl = input.placeMapUrl ?? "";
@@ -223,6 +270,7 @@ export class MeetingService {
     });
 
     await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — you have been invited`, actor.userId);
+    await this.mailParticipants(String(record._id), "invite");
     return MeetingBooking.findById(record._id).populate(POP);
   }
 
@@ -256,7 +304,12 @@ export class MeetingService {
     if (!record) throw Object.assign(new Error("Booking not found"), { statusCode: 404 });
     await this.assertCanManage(record, actor);
 
-    const place = await this.placeFor(input, String(record._id));
+    const place = await this.placeFor(input, String(record._id), record.meetingLink || undefined);
+    const changed =
+      record.start.getTime() !== new Date(input.start).getTime() ||
+      record.end.getTime() !== new Date(input.end).getTime() ||
+      (record.meetingLink ?? "") !== (place.meetingLink ?? "") ||
+      (record.mode ?? "room") !== place.mode;
 
     /**
      * Moving a meeting un-fires its reminders.
@@ -274,7 +327,8 @@ export class MeetingService {
         ...(moved ? { firedStages: [] } : {}),
       },
     });
-    return MeetingBooking.findById(record._id).populate(POP);
+    if (changed) await this.mailParticipants(String(record._id), "update");
+    return forViewer((await MeetingBooking.findById(record._id).populate(POP).lean()) as never, actor);
   }
 
   /** Cancelled rather than deleted: the room frees up, the record stays. */
@@ -284,6 +338,7 @@ export class MeetingService {
     await this.assertCanManage(record, actor);
 
     await MeetingBooking.updateOne({ _id: record._id }, { $set: { status: "cancelled" } });
+    await this.mailParticipants(String(record._id), "cancel");
     await this.tellParticipants(String(record._id), record.participants.map(String), `${record.title} — cancelled`, actor.userId);
     return { message: "Booking cancelled" };
   }
@@ -348,7 +403,7 @@ export class MeetingService {
         } catch { /* the review stands either way */ }
       }
     }
-    return MeetingBooking.findById(record._id).populate(POP).lean();
+    return forViewer((await MeetingBooking.findById(record._id).populate(POP).lean()) as never, actor);
   }
 
   /** The recording link — added or changed by whoever may manage the meeting, any time after it. */
@@ -358,7 +413,7 @@ export class MeetingService {
     await this.assertCanManage(record, actor);
     record.recordingLink = recordingLink;
     await record.save();
-    return MeetingBooking.findById(record._id).populate(POP).lean();
+    return forViewer((await MeetingBooking.findById(record._id).populate(POP).lean()) as never, actor);
   }
 
   /** The person reviewed has read it. */
@@ -375,7 +430,88 @@ export class MeetingService {
         await notify({ users: [idOf(record.organizer)], kind: "reminder", title: `Review acknowledged — ${record.title}`, body: "", href: "/meetings", actor: actor.userId });
       } catch { /* nothing hangs on it */ }
     }
-    return MeetingBooking.findById(record._id).populate(POP).lean();
+    return forViewer((await MeetingBooking.findById(record._id).populate(POP).lean()) as never, actor);
+  }
+
+  /**
+   * Email everyone invited to an online review meeting — the reviewed employee
+   * included — with the HRMS join link, never the meeting link itself. Sent on
+   * booking, again when the time or link changes, and when it is cancelled.
+   * Other meetings keep the in-app invite and the reminder mails they had.
+   */
+  private async mailParticipants(id: string, why: "invite" | "update" | "cancel") {
+    try {
+      const b = await MeetingBooking.findById(id)
+        .populate([{ path: "participants", select: "name email status" }, { path: "organizer", select: "name" }, { path: "reviewee", select: "name" }])
+        .lean<Record<string, any> | null>();
+      if (!b || b.kind !== "review" || b.mode !== "online") return;
+      const tz = b.timeZone || "Asia/Dubai";
+      const when = `${new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(b.start))}` +
+        ` – ${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz }).format(new Date(b.end))} (${tz})`;
+      const subject = why === "cancel" ? `Cancelled: ${b.title}` : why === "update" ? `Updated: ${b.title}` : `Review meeting: ${b.title}`;
+      const lead = why === "cancel" ? "This review meeting has been cancelled." : why === "update" ? "The time or link of this review meeting has changed." : "You have been invited to a review meeting.";
+      const link = joinUrl(b._id);
+      const recipients = (b.participants ?? []).filter((p: any) => p?.email && p.status !== "inactive" && String(p._id) !== String(b.organizer?._id));
+      for (const p of recipients) {
+        await sendMail({
+          to: p.email,
+          organization: String(b.organization ?? getOrgId() ?? ""),
+          subject,
+          text: `${lead}\n\n${b.title}\n${when}\nReviewing: ${b.reviewee?.name ?? "—"} · Reviewer: ${b.organizer?.name ?? "—"}\n` +
+            (why === "cancel" ? "" : `\nJoin: ${link}\nYou'll be asked to share your location, then taken to the meeting.\n`),
+          html:
+            `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+            `<h2 style="color:#4f46e5;margin-bottom:4px">${subject}</h2><p style="color:#555">${lead}</p>` +
+            `<p style="color:#333"><strong>${b.title}</strong><br>${when}<br>Reviewing: ${b.reviewee?.name ?? "—"} · Reviewer: ${b.organizer?.name ?? "—"}</p>` +
+            (why === "cancel" ? "" :
+              `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Join meeting</a></p>` +
+              `<p style="color:#888;font-size:12px">You'll be asked to share your location, then taken to the meeting.</p>`) +
+            `<p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS.</p></div>`,
+        });
+      }
+    } catch (err) {
+      console.error(`meetings: could not email participants of ${id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /**
+   * Opening an online review meeting through HRMS: record where the person is
+   * against where they clocked in today, then hand over the meeting link.
+   *
+   * No location, no link — the page asks for it before calling this. Not
+   * having clocked in does not stop anyone; it is recorded and shown.
+   */
+  async join(id: string, coords: { latitude: number; longitude: number; accuracy?: number | null }, actor: Actor) {
+    const record = await MeetingBooking.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Meeting not found"), { statusCode: 404 });
+    if (record.kind !== "review" || record.mode !== "online" || !record.meetingLink) {
+      throw Object.assign(new Error("This meeting is not joined online"), { statusCode: 400 });
+    }
+    if (record.status === "cancelled") throw Object.assign(new Error("This meeting was cancelled"), { statusCode: 400 });
+    const me = String(actor.userId);
+    const invited = idOf(record.organizer) === me || (record.participants ?? []).some((p) => idOf(p) === me);
+    if (!invited) throw Object.assign(new Error("You are not invited to this meeting"), { statusCode: 403 });
+
+    // Today's clock-in: the latest record whose first punch was in the last day.
+    const since = new Date(Date.now() - 20 * 3600_000);
+    const att = await Attendance.findOne({ user: actor.userId, checkIn: { $gte: since } })
+      .sort({ checkIn: -1 }).select("sessions").lean<{ sessions?: Array<{ checkInSource?: { latitude?: number | null; longitude?: number | null } | null }> } | null>();
+    const src = att?.sessions?.[0]?.checkInSource;
+    const clockAt = src?.latitude != null && src?.longitude != null ? { latitude: src.latitude, longitude: src.longitude } : null;
+    const distanceMetres = clockAt ? metresBetween(clockAt, coords) : null;
+
+    record.joins = [...(record.joins ?? []), {
+      user: actor.userId as never,
+      at: new Date(),
+      latitude: Math.round(coords.latitude * 1e5) / 1e5,
+      longitude: Math.round(coords.longitude * 1e5) / 1e5,
+      accuracy: coords.accuracy ?? null,
+      clockedIn: !!att,
+      distanceMetres,
+      sameLocation: distanceMetres === null ? null : distanceMetres <= SAME_PLACE_M,
+    }] as never;
+    await record.save();
+    return { meetingLink: record.meetingLink, clockedIn: !!att, distanceMetres, sameLocation: distanceMetres === null ? null : distanceMetres <= SAME_PLACE_M };
   }
 
   /** In-app only; the mail is the reminder job's, so an invite is not two mails. */

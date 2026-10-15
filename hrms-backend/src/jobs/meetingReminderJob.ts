@@ -76,8 +76,9 @@ export async function processMeetingsFor(orgId: string, now = new Date()): Promi
 
       // Online and elsewhere have no room — say where it actually is.
       const b = booking as unknown as { mode?: string; meetingLink?: string; placeAddress?: string };
+      // An online review is joined through HRMS (location first), never the raw link.
       const room = b.mode === "online"
-        ? `online — ${b.meetingLink}`
+        ? `online — ${(booking as unknown as { kind?: string }).kind === "review" ? `${env.CLIENT_URL}/meet/${String(booking._id)}` : b.meetingLink}`
         : b.mode === "place"
           ? (b.placeAddress || "the agreed place")
           : (booking.room as unknown as { name?: string } | null)?.name ?? "the meeting room";

@@ -208,10 +208,11 @@ export default function MeetingsPage() {
                 <span className="text-muted-foreground">Status</span>
                 <span className="capitalize">{shown.status === "cancelled" ? "cancelled" : isReview && r?.writtenAt ? "held" : shown.status}</span>
               </div>
-              {(shown.mode === "online" && shown.meetingLink) || (shown.mode === "place" && shown.placeMapUrl) ? (
+              {(shown.mode === "online" && (shown.meetingLink || shown.hasLink)) || (shown.mode === "place" && shown.placeMapUrl) ? (
                 <div className="flex flex-wrap gap-2">
-                  {shown.mode === "online" && shown.meetingLink && (
-                    <Button asChild size="sm"><a href={shown.meetingLink} target="_blank" rel="noopener noreferrer"><Video className="h-3.5 w-3.5" />Join meeting</a></Button>
+                  {/* Through HRMS's join page — location first, then the meeting. */}
+                  {shown.mode === "online" && (shown.meetingLink || shown.hasLink) && shown.status === "booked" && (
+                    <Button asChild size="sm"><a href={`/meet/${shown._id}`}><Video className="h-3.5 w-3.5" />Join meeting</a></Button>
                   )}
                   {shown.mode === "place" && shown.placeMapUrl && (
                     <Button asChild size="sm" variant="outline"><a href={shown.placeMapUrl} target="_blank" rel="noopener noreferrer"><MapPin className="h-3.5 w-3.5" />Open in Maps</a></Button>
@@ -233,6 +234,33 @@ export default function MeetingsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Who opened it through HRMS, and whether they were where they clocked in. */}
+              {isReview && shown.mode === "online" && !!shown.joins?.length && (
+                <div className="border-t border-border pt-3">
+                  <p className="mb-1 text-muted-foreground">Joined ({shown.joins.length})</p>
+                  <div className="space-y-1">
+                    {shown.joins.map((j, i) => (
+                      <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-medium">{nameOf(j.user) || "—"}
+                          <span className="ml-1.5 font-normal text-muted-foreground">{new Date(j.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </span>
+                        {!j.clockedIn ? (
+                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-400">Not clocked in today</span>
+                        ) : j.sameLocation ? (
+                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-700 dark:text-emerald-400">Same place as clock-in{j.distanceMetres != null ? ` (${j.distanceMetres} m)` : ""}</span>
+                        ) : j.distanceMetres != null ? (
+                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-700 dark:text-amber-400">
+                            {j.distanceMetres >= 1000 ? `${(j.distanceMetres / 1000).toFixed(1)} km` : `${j.distanceMetres} m`} from clock-in
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">Clock-in had no location</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* The recording — a link to wherever the meeting tool kept it. */}
               <div className="border-t border-border pt-3">

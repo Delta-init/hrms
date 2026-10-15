@@ -38,7 +38,7 @@ const sane = <T extends { start: Date; end: Date; kind: string; mode: string; ro
   // A plain meeting books a room; only a review meeting may be online or elsewhere.
   if (v.kind === "meeting" && v.mode !== "room") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "A meeting books a room" });
   if (v.mode === "room" && !v.room) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["room"], message: "Room is required" });
-  if (v.mode === "online" && !v.meetingLink) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["meetingLink"], message: "Add the meeting link" });
+  if (v.mode === "online" && !v.meetingLink && !(v as { keepLink?: boolean }).keepLink) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["meetingLink"], message: "Add the meeting link" });
   if (v.mode === "place" && !v.placeAddress?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["placeAddress"], message: "Say where it is" });
   if (v.kind === "review" && !v.revieweeUser) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revieweeUser"], message: "Choose who is being reviewed" });
   if (v.end <= v.start) {
@@ -51,7 +51,19 @@ const sane = <T extends { start: Date; end: Date; kind: string; mode: string; ro
 };
 
 export const createBookingSchema = z.object(booking).superRefine(sane);
-export const updateBookingSchema = z.object(booking).superRefine(sane);
+/**
+ * Editing an online meeting may leave the link blank: only the organiser is
+ * ever shown it, so anyone else editing (a department head, HR) cannot send
+ * it back — blank keeps the one already saved.
+ */
+export const updateBookingSchema = z.object({ ...booking, keepLink: z.literal(true).default(true) }).superRefine(sane);
+
+/** Where somebody is as they open the meeting — required; there is no joining without it. */
+export const joinSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracy: z.number().min(0).max(100_000).optional().nullable(),
+});
 
 /** The review form, written by the organiser after the meeting. */
 export const reviewFormSchema = z.object({
