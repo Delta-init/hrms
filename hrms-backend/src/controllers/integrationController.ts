@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { directoryService, attendanceNow } from "../services/directoryService.js";
+import { directoryService, attendanceNow, attendanceDay } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
 import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
@@ -10,6 +10,7 @@ import { financeAdjustmentService, type FinanceAdjustmentInput } from "../servic
 import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
 import { notifyPayrollReturned } from "../services/payrollNotifyService.js";
 import { getOrgId } from "../utils/orgContext.js";
+import { readAttendanceDayQuery } from "../utils/attendanceDayQuery.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 /**
@@ -94,6 +95,17 @@ export const listAttendanceNow = asyncRoute(async (req, res) => {
   if (emails.length > 200) { sendError(res, "At most 200 emails at a time", 400); return; }
   const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
   sendSuccess(res, "Attendance retrieved", await attendanceNow({ emails, organizationId }));
+});
+
+/**
+ * GET /integrations/directory/attendance-day?emails=a@x,b@y&day=YYYY-MM-DD[&organizationId=]
+ * Somebody's shift and that day's clock-ins and clock-outs — a sales CRM's Activity and team pages show them. At
+ * most 200 a call; a day up to two ahead of today in UTC (utils/attendanceDayQuery.ts says what it takes).
+ */
+export const listAttendanceDay = asyncRoute(async (req, res) => {
+  const q = readAttendanceDayQuery(req.query as Record<string, unknown>);
+  if (!q.ok) { sendError(res, q.message, 400); return; }
+  sendSuccess(res, "Attendance retrieved", await attendanceDay(q));
 });
 
 /** Lets the finance server prove its credentials are right before a real sync. */

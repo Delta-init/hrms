@@ -5,7 +5,9 @@ import { stillHere } from "../utils/employeeStatus.js";
 import { WorkSchedule } from "../models/WorkSchedule.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Attendance } from "../models/Attendance.js";
-import { scheduleOf, leavesIn, type WorkHoursRow } from "../utils/workHours.js";
+import { User } from "../models/User.js";
+import { RosterAssignment } from "../models/RosterAssignment.js";
+import { scheduleOf, leavesIn, type WorkHoursRow, type WorkHoursSchedule } from "../utils/workHours.js";
 
 /**
  * The read-only view of who exists in HRMS, for Delta Finance to map against.
@@ -239,5 +241,212 @@ export async function attendanceNow(opts: { emails: string[]; organizationId?: s
       since: since ? since.toISOString() : null,
       leave: leave ? { type: leave.type, halfDay: leave.halfDay } : null,
     };
+  });
+}
+
+/** Somebody's day, for a sales CRM's Activity and team pages: their shift, and when they clocked in and out. */
+export interface AttendanceDayRow {
+  email: string;
+  name: string;
+  /** The shift the day is judged by (a roster's, else the login's, else the default — said so); see attendanceDay. */
+  schedule: WorkHoursSchedule;
+  /** The day is one of their schedule's working days. */
+  workDay: boolean;
+  /** That day's record as the HRMS keeps it; null when there is none (never clocked in, nothing marked). */
+  attendance: {
+    /** present, late, half_day, early_out, on_leave, absent, holiday, weekend or wfh. */
+    status: string;
+    /** The first clock-in and the last clock-out; lastOut is null while they are still clocked in. */
+    firstIn: string | null;
+    lastOut: string | null;
+    /** Every clock-in and clock-out that day, in order; `out` null for one still open. */
+    sessions: Array<{ in: string; out: string | null }>;
+    workedMinutes: number;
+    lateMinutes: number;
+  } | null;
+  /** Approved leave covering the day — not working from home, which is `wfh`. */
+  leave: { type: string; halfDay: boolean } | null;
+  wfh: boolean;
+  /**
+   * For today (Dubai) only: clocked in now, on leave, or out. Clocked in is a session of the day still open — or a
+   * clock-in still open from the last 18 hours (a night shift begun yesterday, as /attendance-now reads it) that came
+   * after the day's last clock-out. Null for another day, and for a row the HRMS couldn't read.
+   */
+  now: "in" | "out" | "leave" | null;
+}
+
+const DUBAI_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai", year: "numeric", month: "2-digit", day: "2-digit" });
+const DAY_MS = 86_400_000;
+
+type ScheduleRef = { _id: unknown } | string | null | undefined;
+const refId = (v: ScheduleRef): string => (v ? String(typeof v === "object" && "_id" in v ? v._id : v) : "");
+
+/**
+ * Somebody's day by email (the user, 2026-10-15: "show the HRMS shift and the clock-in and clock-out times in the
+ * sales CRM"): their shift, and that day's record — the first clock-in, the last clock-out, every session, worked and
+ * late minutes, the status. The record is matched on the day as written where the person works (`localDay`), as the
+ * HRMS's own jobs read it; two records on one day (a time zone changed mid-day) are read as one.
+ *
+ * Every part of a row is that employee's own, joined by their login — never by email, so two employee records that
+ * share an address can't trade shifts, leave or "now". The shift is the one the HRMS judged the day against, as
+ * clock-in resolves it (workScheduleService.resolveWorkScheduleForUser): the roster assignment covering the first
+ * clock-in (or, nobody punched, the day's start, as the HRMS's calendar reads it), else their own schedule, else the
+ * default. Where and how they punched (address, device, face match) is not given out. Leavers are left out. A record
+ * that can't be read costs only its own row. Read only.
+ */
+export async function attendanceDay(opts: { emails: string[]; day: string; organizationId?: string }): Promise<AttendanceDayRow[]> {
+  const filter: Record<string, unknown> = { email: { $in: opts.emails }, status: stillHere() };
+  if (opts.organizationId) filter.organization = opts.organizationId;
+  const employees = await Employee.find(filter).select("email name user workSchedule").lean();
+  if (!employees.length) return [];
+
+  const nowMs = Date.now();
+  const isToday = opts.day === DUBAI_DAY.format(new Date(nowMs));
+  const dayStart = new Date(`${opts.day}T00:00:00.000Z`).getTime();
+  // An id that isn't one (raw-imported junk) is no login, not a failed batch.
+  const isId = (v: string) => /^[a-f\d]{24}$/i.test(v);
+  const loginOf = (e: { user?: unknown }) => (e.user && isId(String(e.user)) ? String(e.user) : "");
+  const userIds = [...new Set(employees.map(loginOf).filter(Boolean))];
+  const none = Promise.resolve([] as never[]);
+
+  const [users, records, open, leaveDocs, rosters] = await Promise.all([
+    userIds.length ? User.find({ _id: { $in: userIds } }).select("workSchedule").lean() : none,
+    userIds.length
+      ? Attendance.find({ user: { $in: userIds }, localDay: opts.day })
+        .select("user status checkIn checkOut sessions.checkIn sessions.checkOut workedMinutes lateMinutes").lean()
+      : none,
+    // Clocked in now, as /attendance-now reads it: a check-in from the last 18 hours with no check-out yet.
+    isToday && userIds.length
+      ? Attendance.find({ user: { $in: userIds }, checkIn: { $ne: null, $gte: new Date(nowMs - OPEN_FOR_AT_MOST_MS) }, checkOut: null })
+        .select("user checkIn localDay").lean()
+      : none,
+    // A day either side, as workHours reads leave: it is stored as instants, its days read in its own time zone below.
+    userIds.length
+      ? LeaveRequest.find({
+        user: { $in: userIds },
+        status: "approved",
+        startDate: { $lte: new Date(dayStart + 2 * DAY_MS) },
+        endDate: { $gte: new Date(dayStart - 2 * DAY_MS) },
+      }).select("user type startDate endDate halfDay timeZone").lean()
+      : none,
+    userIds.length
+      ? RosterAssignment.find({
+        user: { $in: userIds },
+        effectiveFrom: { $lte: new Date(dayStart + 2 * DAY_MS) },
+        $or: [{ effectiveTo: null }, { effectiveTo: { $gte: new Date(dayStart - 2 * DAY_MS) } }],
+      }).select("user workSchedule effectiveFrom effectiveTo").sort({ effectiveFrom: -1 }).lean()
+      : none,
+  ]);
+
+  const group = <T extends { user?: unknown }>(rows: T[]) => {
+    const by = new Map<string, T[]>();
+    for (const r of rows) by.set(String(r.user), [...(by.get(String(r.user)) ?? []), r]);
+    return by;
+  };
+  const recordsOf = group(records);
+  const leavesOf = group(leaveDocs);
+  const rostersOf = group(rosters);
+  // The latest clock-in still open from the last 18 hours on another day's record, per person — a night shift begun
+  // yesterday, or one past midnight in the person's own zone. The day's own records go by their sessions alone.
+  const openSince = new Map<string, number>();
+  for (const a of open) {
+    if (a.localDay === opts.day) continue;
+    const t = new Date(a.checkIn as Date).getTime();
+    if (!Number.isNaN(t) && t > (openSince.get(String(a.user)) ?? 0)) openSince.set(String(a.user), t);
+  }
+  const userSchedule = new Map(users.map((u) => [String(u._id), refId(u.workSchedule as ScheduleRef)]));
+  const scheduleIds = [...new Set([
+    ...rosters.map((a) => refId(a.workSchedule as ScheduleRef)),
+    ...userSchedule.values(),
+    ...employees.map((e) => refId(e.workSchedule as ScheduleRef)),
+  ].filter(isId))];
+  const schedules = new Map(
+    (scheduleIds.length ? await WorkSchedule.find({ _id: { $in: scheduleIds } }).lean() : []).map((w) => [String(w._id), w]),
+  );
+
+  // The weekday of a calendar date is the same wherever it is read.
+  const weekday = new Date(`${opts.day}T12:00:00.000Z`).getUTCDay();
+  const iso = (d: unknown) => {
+    const t = d ? new Date(d as Date).getTime() : NaN;
+    return Number.isNaN(t) ? null : new Date(t).toISOString();
+  };
+  const knownZone = (tz: unknown) => {
+    try {
+      return typeof tz === "string" && !!tz && !!new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+    } catch {
+      return false;
+    }
+  };
+  type Rec = (typeof records)[number];
+  const sessionsOf = (r: Rec) => (r.sessions?.length ? r.sessions : r.checkIn ? [{ checkIn: r.checkIn, checkOut: r.checkOut }] : [])
+    // A clock-out that is there but can't be read is not "still open": that session is left out, as an unreadable
+    // clock-in is.
+    .filter((x) => !x.checkOut || iso(x.checkOut) !== null)
+    .map((x) => ({ in: iso(x.checkIn), out: iso(x.checkOut) }))
+    .filter((x): x is { in: string; out: string | null } => x.in !== null);
+  const minutes = (v: unknown) => {
+    const n = Number(v ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const rowOf = (e: (typeof employees)[number]): AttendanceDayRow => {
+    const uid = loginOf(e);
+    const recs = uid ? recordsOf.get(uid) ?? [] : [];
+    const sessions = recs.flatMap(sessionsOf).sort((a, b) => a.in.localeCompare(b.in));
+    // Still in while any session is open; else out at the latest clock-out (merged records can overlap).
+    const open = sessions.some((x) => x.out === null);
+    const lastOut = open ? null : sessions.reduce<string | null>((max, x) => (x.out && (!max || x.out > max) ? x.out : max), null);
+    // The record the day began with sets its status and lateness; worked time is the day's.
+    const primary = [...recs].sort((a, b) => (sessionsOf(a)[0]?.in ?? "~").localeCompare(sessionsOf(b)[0]?.in ?? "~"))[0];
+
+    // The shift the day is judged by: the roster covering the first clock-in (what clock-in used), or — nobody punched —
+    // covering the day as the HRMS's calendar reads it (its start, UTC: a roster's last day is still rostered); else
+    // the login's own; else the default.
+    const at = sessions[0] ? Date.parse(sessions[0].in) : dayStart;
+    const roster = (rostersOf.get(uid) ?? []).find((a) =>
+      new Date(a.effectiveFrom as Date).getTime() <= at && (!a.effectiveTo || new Date(a.effectiveTo as Date).getTime() >= at));
+    const scheduleId = (roster && schedules.has(refId(roster.workSchedule as ScheduleRef)) ? refId(roster.workSchedule as ScheduleRef) : "")
+      || (uid ? userSchedule.get(uid) ?? "" : refId(e.workSchedule as ScheduleRef));
+    const schedule = scheduleOf(scheduleId ? schedules.get(scheduleId) : null);
+
+    const leaveDocsOf = (leavesOf.get(uid) ?? []).map((l) => (knownZone(l.timeZone) ? l : { ...l, timeZone: undefined }));
+    const leaves = uid ? leavesIn(leaveDocsOf, opts.day, opts.day) : [];
+    const leave = leaves.find((l) => l.type.toLowerCase() !== "wfh") ?? null;
+    const latestOut = sessions.reduce((max, x) => (x.out && Date.parse(x.out) > max ? Date.parse(x.out) : max), 0);
+    const nightShift = openSince.get(uid) ?? 0;
+    const clockedIn = sessions.some((x) => x.out === null && Date.parse(x.in) >= nowMs - OPEN_FOR_AT_MOST_MS)
+      || (nightShift > 0 && nightShift > latestOut);
+    return {
+      email: e.email ?? "",
+      name: e.name,
+      schedule,
+      workDay: schedule.workDays.includes(weekday),
+      attendance: primary
+        ? {
+          status: String(primary.status ?? "present"),
+          firstIn: sessions[0]?.in ?? null,
+          lastOut,
+          sessions,
+          workedMinutes: recs.reduce((sum, r) => sum + minutes(r.workedMinutes), 0),
+          lateMinutes: minutes(primary.lateMinutes),
+        }
+        : null,
+      leave: leave ? { type: leave.type, halfDay: leave.halfDay } : null,
+      wfh: leaves.some((l) => l.type.toLowerCase() === "wfh") || recs.some((r) => r.status === "wfh"),
+      // As /attendance-now: clocked in beats leave (a half day's leave, then at work), and leave beats out.
+      now: !isToday ? null : clockedIn ? "in" : leave ? "leave" : "out",
+    };
+  };
+
+  // A record the runtime can't read must not cost the other 199 their rows: that one person comes back bare.
+  return employees.map((e) => {
+    try {
+      return rowOf(e);
+    } catch (err) {
+      console.error(`[attendance-day] could not read ${e.email || String(e._id)}:`, err instanceof Error ? err.message : err);
+      const schedule = scheduleOf(null);
+      // Bare, and "now" unknown (null) — not a confident "out" the caller would show.
+      return { email: e.email ?? "", name: e.name, schedule, workDay: schedule.workDays.includes(weekday), attendance: null, leave: null, wfh: false, now: null };
+    }
   });
 }
