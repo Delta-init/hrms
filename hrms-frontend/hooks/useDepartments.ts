@@ -70,11 +70,21 @@ export const useUpdateDepartment = () => {
   });
 };
 
+/** Who deleting this department would leave without one — former employees included. */
+export const useDepartmentEmployees = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "employees", id ?? ""],
+    queryFn: async () =>
+      (await api.get<ApiResponse<Array<{ _id: string; name: string; employeeCode?: string; status?: string }>>>(`/departments/${id}/employees`)).data.data ?? [],
+    enabled: !!id,
+  });
+
 export const useDeleteDepartment = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => { await api.delete(`/departments/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Department deleted"); },
+    mutationFn: async (id: string) => (await api.delete<ApiResponse<null>>(`/departments/${id}`)).data.message,
+    // Its employees lose their department too, so their lists are stale as well.
+    onSuccess: (msg) => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["employees"] }); toast.success(msg ?? "Department deleted"); },
     onError: (e) => toast.error(errMsg(e, "Failed to delete department")),
   });
 };

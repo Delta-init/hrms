@@ -58,6 +58,12 @@ export const updateDepartment = async (req: AuthenticatedRequest, res: Response,
   } catch (error) { next(error); }
 };
 
+export const getDepartmentEmployees = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Employees in department", await service.employeesIn(req.params.id));
+  } catch (error) { next(error); }
+};
+
 export const deleteDepartment = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await service.remove(req.params.id);

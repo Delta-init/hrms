@@ -335,13 +335,28 @@ export class DepartmentService {
     };
   }
 
+  /** Everyone still pointing at a department — former employees included — shown before it is deleted. */
+  async employeesIn(id: string) {
+    const dept = await Department.findOne(scoped({ _id: id })).select("_id").lean();
+    if (!dept) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
+    return Employee.find(scoped({ department: dept._id })).select("name employeeCode status").sort({ name: 1 }).lean();
+  }
+
+  /**
+   * Delete a department, leaving its employees with none.
+   *
+   * They are not refused or moved anywhere: the delete dialog has already
+   * listed them, and they are put in a department again from Employees. The
+   * head, co-heads and members were the department's own, and go with it.
+   */
   async remove(id: string) {
-    const count = await Employee.countDocuments({ department: id });
-    if (count > 0) {
-      throw Object.assign(new Error(`Cannot delete: ${count} employee(s) belong to this department`), { statusCode: 400 });
-    }
     const record = await Department.findOneAndDelete(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
-    return { message: "Department deleted successfully" };
+    const { modifiedCount } = await Employee.updateMany(scoped({ department: record._id }), { $set: { department: null } });
+    return {
+      message: modifiedCount
+        ? `Department deleted — ${modifiedCount} employee(s) now have no department`
+        : "Department deleted successfully",
+    };
   }
 }

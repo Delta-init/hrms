@@ -3,7 +3,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Building2, Plus, Pencil, Trash2, Loader2, Users as UsersIcon, BarChart3 } from "lucide-react";
-import { useDepartments, useDeleteDepartment } from "@/hooks/useDepartments";
+import { useDepartments, useDeleteDepartment, useDepartmentEmployees } from "@/hooks/useDepartments";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -37,6 +37,7 @@ export default function DepartmentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Department | null>(null);
+  const { data: affected = [], isLoading: loadingAffected } = useDepartmentEmployees(deleteOpen ? selected?._id : undefined);
 
   if (!canView) {
     return (
@@ -155,8 +156,31 @@ export default function DepartmentsPage() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete department"
-        description="This department will be permanently removed. If any employees are still assigned to it, reassign them first."
-        isPending={deleting}
+        description={
+          <span className="block space-y-2">
+            <span className="block">This department will be permanently removed.</span>
+            {loadingAffected ? (
+              <span className="flex items-center gap-1.5 text-xs"><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking who is in it…</span>
+            ) : affected.length > 0 ? (
+              <>
+                <span className="block">
+                  {affected.length === 1 ? "1 employee" : `${affected.length} employees`} will be left with <strong>no department</strong>. Put them in one again from Employees.
+                </span>
+                <span className="block max-h-40 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-xs">
+                  {affected.map((e) => (
+                    <span key={e._id} className="flex justify-between gap-2 py-0.5">
+                      <span className="font-medium text-foreground">{e.name}{e.employeeCode ? <span className="ml-1.5 font-normal text-muted-foreground">{e.employeeCode}</span> : null}</span>
+                      {e.status && e.status !== "active" && <span className="capitalize text-muted-foreground">{e.status.replace(/_/g, " ")}</span>}
+                    </span>
+                  ))}
+                </span>
+              </>
+            ) : (
+              <span className="block text-xs">Nobody is in it.</span>
+            )}
+          </span>
+        }
+        isPending={deleting || loadingAffected}
         onConfirm={() => selected && remove(selected._id, { onSuccess: () => setDeleteOpen(false) })}
       />
     </div>

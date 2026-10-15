@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createDepartment, getDepartments, getAllDepartmentsSimple, getMyDepartments,
-  getDepartmentById, getDepartmentReport, updateDepartment, deleteDepartment,
+  getDepartmentById, getDepartmentReport, updateDepartment, deleteDepartment, getDepartmentEmployees,
 } from "../controllers/departmentController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission, checkPermissionOrHeadsDepartment } from "../middleware/permissions.js";
@@ -23,6 +23,8 @@ router.post("/", checkPermission("departments", "create"), createDepartment);
 router.get("/:id", checkPermissionOrHeadsDepartment("departments", "view"), getDepartmentById);
 router.get("/:id/report", checkPermissionOrHeadsDepartment("departments", "view"), getDepartmentReport);
 router.put("/:id", checkPermission("departments", "edit"), updateDepartment);
+// Who a delete would leave without a department — for the confirm dialog.
+router.get("/:id/employees", checkPermission("departments", "delete"), getDepartmentEmployees);
 router.delete("/:id", checkPermission("departments", "delete"), deleteDepartment);
 
 export default router;
