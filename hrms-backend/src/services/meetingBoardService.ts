@@ -1,7 +1,6 @@
-import { randomBytes } from "node:crypto";
 import { Organization } from "../models/Organization.js";
 import { MeetingBooking } from "../models/MeetingBooking.js";
-import { getOrgId } from "../utils/orgContext.js";
+import { MeetingRoom } from "../models/MeetingRoom.js";
 
 const fail = (message: string, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
@@ -19,65 +18,42 @@ function startOfToday(timeZone: string, now = new Date()) {
   return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day) - offset);
 }
 
-const newToken = () => randomBytes(18).toString("base64url");
-
 /**
- * The public meeting board — today's room bookings on a screen, no sign-in.
+ * The public meeting board — today's room bookings on a screen, at a plain
+ * address anyone can open. It shows the main organisation: the first one set
+ * up, which is the office the screens are in.
  *
- * The link carries a random code per organisation. It opens this board and
- * nothing else, and resetting it retires every copy handed out before.
+ * Titles and organisers are shown; a review meeting is only ever "Review
+ * meeting", with no names. Meetings held online or elsewhere have no room and
+ * are not on the board.
  */
 export class MeetingBoardService {
-  /** The organisation's code, made the first time anyone asks for it. */
-  async link() {
-    const orgId = getOrgId();
-    if (!orgId) throw fail("Choose an organisation first");
-    const org = await Organization.findById(orgId).select("+meetingBoardToken").lean<{ meetingBoardToken?: string | null } | null>();
-    if (!org) throw fail("Organisation not found", 404);
-    if (org.meetingBoardToken) return { token: org.meetingBoardToken };
-    const token = newToken();
-    // Only set when still empty, so two people opening it at once agree on one code.
-    await Organization.updateOne({ _id: orgId, meetingBoardToken: { $in: [null, undefined] } }, { $set: { meetingBoardToken: token } });
-    const after = await Organization.findById(orgId).select("+meetingBoardToken").lean<{ meetingBoardToken?: string | null } | null>();
-    return { token: after?.meetingBoardToken ?? token };
-  }
-
-  /** A new code; the old link stops working at once. */
-  async resetLink() {
-    const orgId = getOrgId();
-    if (!orgId) throw fail("Choose an organisation first");
-    const token = newToken();
-    await Organization.updateOne({ _id: orgId }, { $set: { meetingBoardToken: token } });
-    return { token };
-  }
-
-  /**
-   * Today's bookings in rooms, in time order. Titles and organisers are shown;
-   * a review meeting is only ever "Review meeting", with no names. Meetings
-   * held online or elsewhere have no room and are not on the board.
-   */
-  async board(token: string, now = new Date()) {
-    if (!/^[\w-]{16,64}$/.test(token)) throw fail("This board link is not valid", 404);
-    const org = await Organization.findOne({ meetingBoardToken: token, status: "active" })
+  async board(now = new Date()) {
+    const org = await Organization.findOne({ status: "active" }).sort({ createdAt: 1 })
       .select("name settings.timeZone").lean<{ _id: unknown; name: string; settings?: { timeZone?: string } } | null>();
-    if (!org) throw fail("This board link is not valid, or has been reset", 404);
+    if (!org) throw fail("There is no organisation to show", 404);
     const timeZone = org.settings?.timeZone || "Asia/Dubai";
     const from = startOfToday(timeZone, now);
     const to = new Date(from.getTime() + 24 * 3600_000);
 
-    const rows = await MeetingBooking.find({
-      organization: org._id, room: { $ne: null }, status: { $in: ["booked", "cancelled"] },
-      start: { $lt: to }, end: { $gt: from },
-    })
-      .populate("room", "name location")
-      .populate("organizer", "name")
-      .sort({ start: 1 })
-      .lean<Array<{ _id: unknown; kind?: string; title: string; start: Date; end: Date; status: string; room?: { name?: string; location?: string } | null; organizer?: { name?: string } | null }>>();
+    const [rooms, rows] = await Promise.all([
+      MeetingRoom.find({ organization: org._id, active: true }).select("name").lean<Array<{ name: string }>>(),
+      MeetingBooking.find({
+        organization: org._id, room: { $ne: null }, status: { $in: ["booked", "cancelled"] },
+        start: { $lt: to }, end: { $gt: from },
+      })
+        .populate("room", "name")
+        .populate("organizer", "name")
+        .sort({ start: 1 })
+        .lean<Array<{ _id: unknown; kind?: string; title: string; start: Date; end: Date; status: string; room?: { name?: string } | null; organizer?: { name?: string } | null }>>(),
+    ]);
 
     return {
       organization: org.name,
       timeZone,
       now,
+      // Natural order, so Pod 2 comes before Pod 10.
+      rooms: rooms.map((r) => r.name).sort((a, b) => a.localeCompare(b, "en", { numeric: true })),
       bookings: rows
         .filter((b) => b.end.getTime() > now.getTime() - KEEP_ENDED_MS)
         .map((b) => ({
@@ -85,7 +61,6 @@ export class MeetingBoardService {
           title: b.kind === "review" ? "Review meeting" : b.title,
           organiser: b.kind === "review" ? "" : b.organizer?.name ?? "",
           room: b.room?.name ?? "",
-          location: b.room?.location ?? "",
           start: b.start,
           end: b.end,
           cancelled: b.status === "cancelled",

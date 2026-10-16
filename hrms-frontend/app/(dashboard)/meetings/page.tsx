@@ -209,7 +209,7 @@ export default function MeetingsPage() {
       <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} />
       <ReviewMeetingDialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)} booking={reviewing} />
       <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
-      <BoardLinkDialog open={boardOpen} onOpenChange={setBoardOpen} canReset={canManageRooms} />
+      <BoardLinkDialog open={boardOpen} onOpenChange={setBoardOpen} />
 
       {/* Detail — who booked it, who is coming, and what may be done about it. */}
       <ResponsiveDialog open={!!shown} onOpenChange={(o) => { if (!o) { setDetail(null); setRecording(""); } }}>

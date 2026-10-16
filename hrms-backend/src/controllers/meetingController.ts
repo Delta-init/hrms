@@ -130,15 +130,7 @@ export const joinMeeting = async (req: AuthenticatedRequest, res: Response, next
 
 const board = new MeetingBoardService();
 
-/** No sign-in: the code in the link is the whole of the permission. */
-export const getPublicBoard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Meeting board", await board.board(String(req.params.token))); } catch (error) { next(error); }
-};
-
-export const getBoardLink = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Board link", await board.link()); } catch (error) { next(error); }
-};
-
-export const resetBoardLink = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Board link reset — the old link no longer works", await board.resetLink()); } catch (error) { next(error); }
+/** No sign-in: the board is public by design. */
+export const getPublicBoard = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Meeting board", await board.board()); } catch (error) { next(error); }
 };

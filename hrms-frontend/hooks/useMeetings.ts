@@ -150,22 +150,3 @@ export const useJoinMeeting = () =>
         `/meetings/bookings/${id}/join`, { latitude, longitude, accuracy }
       )).data.data!,
   });
-
-/** The public board's link code — made the first time anyone asks for it. */
-export const useBoardLink = (enabled = true) =>
-  useQuery({
-    queryKey: [...KEY, "board-link"],
-    queryFn: async () => (await api.get<ApiResponse<{ token: string }>>("/meetings/board-link")).data.data!,
-    enabled,
-    staleTime: Infinity,
-  });
-
-/** A new code: every copy of the old link stops working. */
-export const useResetBoardLink = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async () => (await api.post<ApiResponse<{ token: string }>>("/meetings/board-link/reset")).data.data!,
-    onSuccess: (d) => { qc.setQueryData([...KEY, "board-link"], d); toast.success("Board link reset — the old link no longer works"); },
-    onError: (e) => toast.error(errMsg(e, "Could not reset the link")),
-  });
-};
