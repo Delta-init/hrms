@@ -104,6 +104,7 @@ export interface IOrganization extends Document {
   logo?: string;
   status: "active" | "inactive";
   settings: IOrganizationSettings;
+  meetingBoardToken?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

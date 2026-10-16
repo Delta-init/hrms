@@ -82,6 +82,12 @@ const organizationSchema = new Schema<IOrganization>(
     logo: { type: String, trim: true },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     settings: { type: settingsSchema, default: () => ({}) },
+    /**
+     * The secret in the public meeting board's link. Not a credential for
+     * anything else — it opens today's room bookings and nothing more — but kept
+     * out of ordinary reads so it travels only where somebody asked for it.
+     */
+    meetingBoardToken: { type: String, default: null, select: false, index: { unique: true, sparse: true } },
   },
   { timestamps: true, versionKey: false }
 );

@@ -3,7 +3,9 @@ import {
   getRooms, createRoom, updateRoom, retireRoom,
   getInvitable, getBookings, getBookingById, createBooking, updateBooking, cancelBooking, deleteBooking,
   saveReview, setRecording, acknowledgeReview, joinMeeting,
+  getPublicBoard, getBoardLink, resetBoardLink,
 } from "../controllers/meetingController.js";
+import { boardLimiter } from "../middleware/rateLimit.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 
@@ -18,7 +20,14 @@ import { checkPermission } from "../middleware/permissions.js";
  * meeting they just arranged.
  */
 const router = Router();
+// The public board — above `authenticate`: the code in the link is its only key.
+router.get("/board/:token", boardLimiter, getPublicBoard);
+
 router.use(authenticate);
+
+// Anyone in Meetings may have the link; resetting it is a room admin's call.
+router.get("/board-link", checkPermission("meetings", "view"), getBoardLink);
+router.post("/board-link/reset", checkPermission("meetings", "edit"), resetBoardLink);
 
 router.get("/rooms", checkPermission("meetings", "view"), getRooms);
 router.post("/rooms", checkPermission("meetings", "edit"), createRoom);

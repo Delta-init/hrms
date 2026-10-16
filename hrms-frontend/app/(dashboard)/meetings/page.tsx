@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck } from "lucide-react";
+import { MonitorPlay, CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { MeetingWeekGrid } from "@/components/meetings/MeetingWeekGrid";
 import { MeetingDialog } from "@/components/meetings/MeetingDialog";
 import { RoomsDialog } from "@/components/meetings/RoomsDialog";
+import { BoardLinkDialog } from "@/components/meetings/BoardLinkDialog";
 import { ReviewMeetingDialog } from "@/components/meetings/ReviewMeetingDialog";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -70,6 +71,7 @@ export default function MeetingsPage() {
   const [room, setRoom] = useState(ALL);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [roomsOpen, setRoomsOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const [editing, setEditing] = useState<MeetingBooking | null>(null);
   const [pickedStart, setPickedStart] = useState<Date | null>(null);
   const [detail, setDetail] = useState<MeetingBooking | null>(null);
@@ -121,8 +123,11 @@ export default function MeetingsPage() {
         title="Meeting Rooms"
         description="Who has which room, and when. Click an empty slot to book it."
         icon={CalendarDays}
-        action={(canManageRooms || canBook) && (
-          <div className="flex items-center gap-2">
+        action={canView && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" className="shadow-sm" onClick={() => setBoardOpen(true)}>
+              <MonitorPlay className="h-4 w-4" />Public board
+            </Button>
             {canManageRooms && (
               <Button variant="outline" className="shadow-sm" onClick={() => setRoomsOpen(true)}>
                 <DoorOpen className="h-4 w-4" />Rooms
@@ -204,6 +209,7 @@ export default function MeetingsPage() {
       <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} />
       <ReviewMeetingDialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)} booking={reviewing} />
       <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
+      <BoardLinkDialog open={boardOpen} onOpenChange={setBoardOpen} canReset={canManageRooms} />
 
       {/* Detail — who booked it, who is coming, and what may be done about it. */}
       <ResponsiveDialog open={!!shown} onOpenChange={(o) => { if (!o) { setDetail(null); setRecording(""); } }}>

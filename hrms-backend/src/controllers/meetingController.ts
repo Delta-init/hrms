@@ -1,5 +1,6 @@
-import type { NextFunction, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { MeetingService, type Actor } from "../services/meetingService.js";
+import { MeetingBoardService } from "../services/meetingBoardService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import {
@@ -123,4 +124,21 @@ export const joinMeeting = async (req: AuthenticatedRequest, res: Response, next
     const data = parsed(joinSchema as never, req, res); if (!data) return;
     sendSuccess(res, "Joining", await service.join(String(req.params.id), data as never, actorOf(req)));
   } catch (error) { next(error); }
+};
+
+// ── Public board ─────────────────────────────────────────────────────────────
+
+const board = new MeetingBoardService();
+
+/** No sign-in: the code in the link is the whole of the permission. */
+export const getPublicBoard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Meeting board", await board.board(String(req.params.token))); } catch (error) { next(error); }
+};
+
+export const getBoardLink = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Board link", await board.link()); } catch (error) { next(error); }
+};
+
+export const resetBoardLink = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Board link reset — the old link no longer works", await board.resetLink()); } catch (error) { next(error); }
 };

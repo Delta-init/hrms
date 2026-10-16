@@ -34,6 +34,19 @@ export const kioskPunchLimiter = rateLimit({
  * Looser limit for token exchange/refresh: these run on a legitimate cadence
  * for active sessions, so they need headroom the login limiter shouldn't give.
  */
+/**
+ * The public meeting board: a screen refreshing every half minute, perhaps a
+ * few of them behind one office address. Generous for that, and still a stop
+ * to anyone trying links at speed.
+ */
+export const boardLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests. Wait a moment." },
+});
+
 export const tokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
