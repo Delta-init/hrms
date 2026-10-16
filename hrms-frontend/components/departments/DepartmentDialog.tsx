@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, X, UserRound, User as UserIcon } from "lucide-react";
@@ -18,13 +18,26 @@ import { useCreateDepartment, useUpdateDepartment } from "@/hooks/useDepartments
 import { useEmployees } from "@/hooks/useEmployees";
 import { useUsers } from "@/hooks/useUsers";
 import { PersonPicker, type PickerPerson, type BlockedReason } from "@/components/departments/PersonPicker";
-import type { Department, Employee, PersonKind } from "@/types";
+import type { Department, DepartmentMember, Employee, PersonKind } from "@/types";
 
 const NONE = "__none__";
 const keyOf = (kind: PersonKind, id: string) => `${kind}:${id}`;
 const parseKey = (k: string) => {
   const [kind, ref] = k.split(":");
   return { kind: kind as PersonKind, ref };
+};
+
+/**
+ * The id a roster entry points at, tolerating a target that no longer exists.
+ *
+ * A populated reference whose record has been deleted arrives as `null`, and
+ * `typeof null === "object"` — so reading `._id` off it threw and took the whole
+ * dialog down rather than just skipping the one dead entry.
+ */
+const refId = (m: DepartmentMember): string => {
+  const r = m.ref;
+  if (!r) return "";
+  return typeof r === "object" ? r._id : String(r);
 };
 
 type Person = PickerPerson;
@@ -76,6 +89,93 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
   }, [empData, usersData]);
   const byKey = useMemo(() => Object.fromEntries(people.map((p) => [p.key, p])), [people]);
 
+  /**
+   * Everybody the department itself names, whether or not the pickers can list them.
+   *
+   * The pickers only offer current staff and the first hundred logins, so a
+   * leaver on the roster, or a login outside that hundred, was in the form's
+   * value but not in `byKey` — and the chip was skipped for want of a name. It
+   * stayed on the department invisibly and could not be removed. The department
+   * arrives with every roster entry already named, so the chip is drawn from
+   * that instead.
+   */
+  const namedByDepartment = useMemo(() => {
+    const out: Record<string, Person> = {};
+    const add = (m: DepartmentMember) => {
+      const id = refId(m);
+      if (!id) return;
+      const r = typeof m.ref === "object" ? m.ref : null;
+      const key = keyOf(m.kind, id);
+      out[key] = {
+        key, kind: m.kind, id,
+        label: r?.name ?? "Unknown person",
+        sub: r?.employeeCode ?? r?.email ?? "",
+        deptId: department?._id ?? null, deptName: department?.name ?? null,
+      };
+    };
+    (department?.members ?? []).forEach(add);
+    (department?.coLeaders ?? []).forEach(add);
+    return out;
+  }, [department]);
+
+  /** A chip's person: the pickers' list first, then what the department says, never nothing. */
+  const lookup = (k: string): Person =>
+    byKey[k] ?? namedByDepartment[k] ?? {
+      // Still shown, as something that can be removed, rather than skipped: a
+      // member who is not drawn is a member nobody can take off.
+      key: k, kind: parseKey(k).kind, id: parseKey(k).ref, label: "Unknown person", sub: "",
+    };
+
+  /**
+   * People who belong to this department by their own record but are on no roster.
+   *
+   * Everything else in the system — the member count, the department page,
+   * approvals — reads `Employee.department`; the roster below is only what this
+   * dialog stores. Somebody given a department from their own profile, by the
+   * migration or by a script is in the department without the roster knowing,
+   * and the dialog opened without them: forty-two people across nine
+   * departments. Worse, saving then sent a short list.
+   *
+   * The head and co-leaders are left out because they have their own slots, and
+   * so is anyone already on the roster as a login rather than an employee — the
+   * same human, and a second chip for them would only be a duplicate.
+   */
+  const seedKeys = useMemo(() => {
+    if (!department) return [] as string[];
+    const employees = empData?.data ?? [];
+    const userIdOf = (e: Employee) => (e.user ? (typeof e.user === "object" ? e.user._id : String(e.user)) : null);
+    const empByUserId = new Map(employees.flatMap((e) => { const u = userIdOf(e); return u ? [[u, e._id] as const] : []; }));
+
+    // The humans the department already accounts for, however each is recorded.
+    const accounted = new Set<string>();
+    const note = (kind: PersonKind, id: string) => {
+      if (!id) return;
+      if (kind === "User") { const e = empByUserId.get(id); if (e) accounted.add(e); }
+      else accounted.add(id);
+    };
+    (department.members ?? []).forEach((m) => note(m.kind, refId(m)));
+    (department.coLeaders ?? []).forEach((m) => note(m.kind, refId(m)));
+    const leaderId = department.leader ? (typeof department.leader === "object" ? department.leader._id : department.leader) : "";
+    if (leaderId) note(department.leaderKind ?? "Employee", leaderId);
+
+    return employees
+      .filter((e) => e.department && typeof e.department === "object" && e.department._id === department._id)
+      .filter((e) => !accounted.has(e._id))
+      .map((e) => keyOf("Employee", e._id));
+  }, [department, empData]);
+  // Compared by content: the array is rebuilt on every employee refetch, and
+  // resetting the form each time would throw away whatever has been typed.
+  const seedSig = seedKeys.join("|");
+
+  /**
+   * Who the editor was shown as a member when the form opened.
+   *
+   * Sent back as `removedMembers`, so the server can tell "took them off" from
+   * "was never listed". Without it the only signal is a list shorter than the
+   * department, which is exactly what an incomplete form produces too.
+   */
+  const shownAsMembers = useRef<Set<string>>(new Set());
+
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
     defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" },
@@ -86,8 +186,12 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
     if (department) {
       const leaderId = department.leader ? (typeof department.leader === "object" ? department.leader._id : department.leader) : "";
       const leaderKey = leaderId && department.leaderKind ? keyOf(department.leaderKind, leaderId) : "";
-      const memberKeys = (department.members ?? []).map((m) => keyOf(m.kind, typeof m.ref === "object" ? m.ref._id : m.ref));
-      const coLeaderKeys = (department.coLeaders ?? []).map((m) => keyOf(m.kind, typeof m.ref === "object" ? m.ref._id : m.ref));
+      // A roster entry whose target no longer exists is skipped, not fatal.
+      const rosterKeys = (department.members ?? []).filter((m) => refId(m)).map((m) => keyOf(m.kind, refId(m)));
+      const coLeaderKeys = (department.coLeaders ?? []).filter((m) => refId(m)).map((m) => keyOf(m.kind, refId(m)));
+      // The stored roster plus everyone whose own record puts them here.
+      const memberKeys = Array.from(new Set([...rosterKeys, ...seedKeys]));
+      shownAsMembers.current = new Set(memberKeys);
       reset({
         name: department.name,
         code: department.code ?? "",
@@ -99,9 +203,12 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
         status: department.status,
       });
     } else {
+      shownAsMembers.current = new Set();
       reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" });
     }
-  }, [open, department, reset]);
+    // `seedKeys` is read through `seedSig`, deliberately — see where it is built.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, department, reset, seedSig]);
 
   // Live form values so each picker can grey out whoever the other one has taken.
   const currentLeader = watch("leader");
@@ -148,8 +255,16 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       members: (data.members ?? []).map(parseKey),
       webOnlyForRemote: data.webOnlyForRemote,
     };
-    if (isEditing) update({ id: department._id, data: payload }, { onSuccess: () => onOpenChange(false) });
-    else create(payload, { onSuccess: () => onOpenChange(false) });
+    if (isEditing) {
+      // Shown when the form opened, gone now, and not simply moved to another
+      // slot. These are the only people the server is told to take off the
+      // department; everybody else is left exactly as they were.
+      const stillOnIt = new Set([...(data.members ?? []), ...(data.coLeaders ?? []), ...(data.leader ? [data.leader] : [])]);
+      payload.removedMembers = Array.from(shownAsMembers.current).filter((k) => !stillOnIt.has(k)).map(parseKey);
+      update({ id: department._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    } else {
+      create(payload, { onSuccess: () => onOpenChange(false) });
+    }
   };
 
   return (
@@ -250,8 +365,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
                     {selected.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {selected.map((k) => {
-                          const p = byKey[k];
-                          if (!p) return null;
+                          const p = lookup(k);
                           return (
                             <span key={k} className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 py-1 pl-2 pr-1 text-xs">
                               {p.kind === "Employee" ? <UserRound className="h-3 w-3 text-primary" /> : <UserIcon className="h-3 w-3 text-indigo-500" />}
@@ -290,8 +404,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
                     {selected.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {selected.map((k) => {
-                          const p = byKey[k];
-                          if (!p) return null;
+                          const p = lookup(k);
                           return (
                             <span key={k} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 py-1 pl-2 pr-1 text-xs">
                               {p.kind === "Employee" ? <UserRound className="h-3 w-3 text-primary" /> : <UserIcon className="h-3 w-3 text-indigo-500" />}

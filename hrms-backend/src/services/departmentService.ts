@@ -46,13 +46,34 @@ export class DepartmentService {
    *
    * A member may be recorded as a login User rather than an Employee; those are
    * resolved through `Employee.user` so the same human is assigned either way.
+   *
+   * What gets released is decided by `edit`, never by "who is missing from the
+   * list I was handed". The stored roster and `Employee.department` drift apart
+   * — anybody given a department from their own profile, by the migration or by
+   * a script is in the department without being on its roster — so a short list
+   * is as likely to mean "the roster never knew about them" as "somebody took
+   * them off", and treating the two alike un-departmented whole teams whenever
+   * an edit was saved from a form that couldn't show them. Only two kinds of
+   * person are released: those the department's own record dropped in this edit,
+   * and those the editor was shown and explicitly removed.
    */
   private async syncEmployeeDepartments(
     departmentId: unknown,
     leader: unknown,
     leaderKind: string | undefined,
     members: { kind: string; ref: unknown }[],
-    coLeaders: { kind: string; ref: unknown }[] = []
+    coLeaders: { kind: string; ref: unknown }[] = [],
+    /** Absent when a department is being created: nobody can be on it already. */
+    edit?: {
+      before: {
+        leader: unknown;
+        leaderKind?: string;
+        members: { kind: string; ref: unknown }[];
+        coLeaders: { kind: string; ref: unknown }[];
+      };
+      /** People the editor was shown on this department and took off. */
+      removed?: { kind: string; ref: unknown }[];
+    }
   ) {
     const leaderEmpIds = await this.resolveToEmployeeIds([{ kind: leaderKind, ref: leader }]);
     // Counted as assigned, or the release below would drop a co-lead out of the
@@ -60,20 +81,50 @@ export class DepartmentService {
     const coLeaderEmpIds = await this.resolveToEmployeeIds(coLeaders ?? []);
     const memberEmpIds = await this.resolveToEmployeeIds(members ?? []);
     const assigned = [...new Set([...leaderEmpIds, ...coLeaderEmpIds, ...memberEmpIds])];
+    const assignedSet = new Set(assigned);
+
+    // Read before anything is written: who is already here, by their own record.
+    // Only people joining in this save are given a manager below, so an edit that
+    // merely shows somebody who was already in the department does not quietly
+    // rewrite their reporting line.
+    const alreadyHere = new Set(
+      (await Employee.find(scoped({ department: departmentId })).select("_id").lean()).map((e) => String(e._id))
+    );
+
+    let release: string[] = [];
+    if (edit) {
+      const before = await this.resolveToEmployeeIds([
+        { kind: edit.before.leaderKind, ref: edit.before.leader },
+        ...edit.before.coLeaders,
+        ...edit.before.members,
+      ]);
+      const removed = await this.resolveToEmployeeIds(edit.removed ?? []);
+      // Still assigned wins: moving someone from members to co-leaders, or
+      // swapping their User row for their Employee row, removes nobody.
+      release = [...new Set([...before, ...removed])].filter((id) => !assignedSet.has(id));
+    }
 
     await Promise.all([
       assigned.length
         ? Employee.updateMany(scoped({ _id: { $in: assigned } }), { $set: { department: departmentId } })
         : Promise.resolve(),
-      // Anyone previously in this department but no longer on the roster is
-      // released, so removing a member actually takes effect on their record.
-      Employee.updateMany(
-        scoped({ department: departmentId, _id: { $nin: assigned } }),
-        { $set: { department: null } }
-      ),
+      // Matched on the department as well as the id: somebody who has been moved
+      // elsewhere since the editor opened this must not be pulled out of there.
+      release.length
+        ? Employee.updateMany(
+            scoped({ department: departmentId, _id: { $in: release } }),
+            { $set: { department: null } }
+          )
+        : Promise.resolve(),
     ]);
 
-    await this.syncReportingLine(departmentId, leader, leaderKind, leaderEmpIds, memberEmpIds);
+    await this.syncReportingLine(
+      departmentId,
+      leader,
+      leaderKind,
+      leaderEmpIds,
+      memberEmpIds.filter((id) => !alreadyHere.has(id))
+    );
   }
 
   /**
@@ -192,6 +243,16 @@ export class DepartmentService {
     const record = await Department.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
 
+    // The roster as stored, copied out before it is overwritten below. Mongoose
+    // arrays are live: reading `record.members` after the assignment would hand
+    // back the new list and there would be nothing left to diff against.
+    const before = {
+      leader: record.leader,
+      leaderKind: record.leaderKind,
+      members: (record.members ?? []).map((m) => ({ kind: String(m.kind), ref: m.ref })),
+      coLeaders: (record.coLeaders ?? []).map((m) => ({ kind: String(m.kind), ref: m.ref })),
+    };
+
     if (input.name && input.name !== record.name) {
       const dupe = await Department.findOne(scoped({ name: input.name.trim(), _id: { $ne: id } }));
       if (dupe) throw Object.assign(new Error("A department with this name already exists"), { statusCode: 409 });
@@ -213,7 +274,10 @@ export class DepartmentService {
     // Only re-sync when the roster itself changed — a rename or status edit
     // shouldn't reshuffle anyone's department.
     if (input.leader !== undefined || input.members !== undefined || input.coLeaders !== undefined) {
-      await this.syncEmployeeDepartments(record._id, record.leader, record.leaderKind, record.members ?? [], record.coLeaders ?? []);
+      await this.syncEmployeeDepartments(
+        record._id, record.leader, record.leaderKind, record.members ?? [], record.coLeaders ?? [],
+        { before, removed: input.removedMembers }
+      );
     }
     return Department.findById(id).populate(POP);
   }

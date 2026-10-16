@@ -1,0 +1,17 @@
+import mongoose from "mongoose";
+import { env } from "../config/env.js";
+if (!env.MONGODB_URI.includes("127.0.0.1:27080")) throw new Error("refusing: not the scratch DB");
+await mongoose.connect(env.MONGODB_URI);
+const db = mongoose.connection.db!;
+const oid = () => new mongoose.Types.ObjectId();
+const org = oid(), u1 = oid(), u2 = oid();
+await db.collection("organizations").insertOne({ _id: org, name: "Delta International", code: "C01", status: "active", settings: { timeZone: "Asia/Kolkata" }, createdAt: new Date() });
+await db.collection("users").insertMany([{ _id: u1, name: "Fathima", email: "f@x.test", organization: org }, { _id: u2, name: "Anand", email: "a@x.test", organization: org }]);
+const names = [...Array.from({ length: 11 }, (_, i) => `Pod ${i + 1}`), "Meeting Room 1", "Meeting Room 2", "Ball Room 1", "Ball Room 2"];
+const rooms = names.map((name) => ({ _id: oid(), organization: org, name, active: true, capacity: 0 }));
+await db.collection("meetingrooms").insertMany(rooms);
+const M = 60_000, now = Date.now(), r = (n: string) => rooms.find((x) => x.name === n)!._id;
+const b = (title: string, room: string, s: number, d: number, by = u1) => ({ organization: org, title, kind: "meeting", mode: "room", room: r(room), organizer: by, participants: [], start: new Date(now + s * M), end: new Date(now + (s + d) * M), status: "booked", firedStages: [], joins: [] });
+await db.collection("meetingbookings").insertMany([b("Sales pipeline review", "Meeting Room 1", -20, 60, u2), b("Client call — Emaar", "Pod 1", 8, 30, u2), b("Design sync", "Pod 5", 40, 30), b("Training batch 4", "Ball Room 2", -30, 90)]);
+console.log("seeded");
+await mongoose.disconnect();

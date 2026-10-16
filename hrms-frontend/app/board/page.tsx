@@ -1,9 +1,25 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { RotateCw } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
 const REFRESH_MS = 30_000;
 const SOON_MS = 15 * 60_000;
+const ROTATIONS = [0, 90, 180, 270] as const;
+type Rotation = (typeof ROTATIONS)[number];
+const ROTATION_KEY = "meeting-board-rotation";
+
+/** ?rotate=90 in the link, else what this screen last chose, else upright. */
+function initialRotation(): Rotation {
+  const q = new URLSearchParams(window.location.search);
+  const fromUrl = Number(q.get("rotate"));
+  if (q.has("rotate") && (ROTATIONS as readonly number[]).includes(fromUrl)) return fromUrl as Rotation;
+  try {
+    const saved = Number(localStorage.getItem(ROTATION_KEY));
+    if ((ROTATIONS as readonly number[]).includes(saved)) return saved as Rotation;
+  } catch { /* storage blocked — upright */ }
+  return 0;
+}
 
 interface BoardRow {
   id: string;
@@ -62,6 +78,11 @@ function roomState(room: string, bookings: BoardRow[], now: number): { state: "b
  * portrait screen or a phone each booking is a card, so the room and its
  * status are never pushed off the edge. Sizes follow the screen, so the same
  * page reads from across a room on a TV and up close on a phone.
+ *
+ * A TV hung on its side often cannot turn its own picture, so the board turns
+ * itself: the rotate button (or ?rotate=90 in the link) turns everything a
+ * quarter at a time, and the layout follows the way the board now faces. The
+ * choice is remembered by that screen. The button hides when the mouse is still.
  */
 export default function MeetingBoardPage() {
   const [board, setBoard] = useState<Board | null>(null);
@@ -71,6 +92,47 @@ export default function MeetingBoardPage() {
   // there would only be replaced, with a mismatch, a moment later.
   const [mounted, setMounted] = useState<number | null>(null);
   const now = mounted ?? 0;
+
+  const [rotation, setRotation] = useState<Rotation>(0);
+  const [view, setView] = useState({ w: 0, h: 0 });
+  const [showControls, setShowControls] = useState(true);
+
+  useEffect(() => {
+    setRotation(initialRotation());
+    const size = () => setView({ w: window.innerWidth, h: window.innerHeight });
+    size();
+    window.addEventListener("resize", size);
+    return () => window.removeEventListener("resize", size);
+  }, []);
+
+  const rotate = useCallback(() => {
+    setRotation((r) => {
+      const next = ROTATIONS[(ROTATIONS.indexOf(r) + 1) % ROTATIONS.length];
+      try { localStorage.setItem(ROTATION_KEY, String(next)); } catch { /* not remembered */ }
+      return next;
+    });
+  }, []);
+
+  // The button shows while the mouse moves (or on a tap), and fades after a few seconds.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const wake = () => {
+      setShowControls(true);
+      clearTimeout(t);
+      t = setTimeout(() => setShowControls(false), 4000);
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === "r" || e.key === "R") rotate(); };
+    wake();
+    window.addEventListener("mousemove", wake);
+    window.addEventListener("touchstart", wake);
+    window.addEventListener("keydown", key);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("mousemove", wake);
+      window.removeEventListener("touchstart", wake);
+      window.removeEventListener("keydown", key);
+    };
+  }, [rotate]);
 
   useEffect(() => {
     setMounted(Date.now());
@@ -114,15 +176,35 @@ export default function MeetingBoardPage() {
   const busy = rooms.filter((r) => r.state === "busy").length;
   const upcoming = board?.bookings ?? [];
 
+  // The board's own shape once turned: a quarter turn swaps width and height.
+  const sideways = rotation === 90 || rotation === 270;
+  const boardW = sideways ? view.h : view.w;
+  const boardH = sideways ? view.w : view.h;
+  const orient = boardH > boardW ? "portrait" : "landscape";
+  const layout = orient === "landscape" && boardW >= 640 ? "table" : "cards";
+  const wide = boardW >= 768;
+
   return (
-    <main className="flex min-h-screen flex-col gap-[clamp(1rem,2.5vmin,2rem)] bg-[#07090d] px-[clamp(1rem,3vmin,3rem)] py-[clamp(1rem,3vmin,2.5rem)] font-mono text-[#ece6d6]">
+    <div className="fixed inset-0 overflow-hidden bg-[#07090d]">
+    <div
+      className="group absolute left-1/2 top-1/2 overflow-y-auto"
+      data-orient={orient}
+      data-layout={layout}
+      data-wide={wide}
+      style={{
+        width: view.w ? boardW : "100vw",
+        height: view.h ? boardH : "100vh",
+        transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+      }}
+    >
+    <main className="flex min-h-full flex-col gap-[clamp(1rem,2.5vmin,2rem)] bg-[#07090d] px-[clamp(1rem,3vmin,3rem)] py-[clamp(1rem,3vmin,2.5rem)] font-mono text-[#ece6d6]">
       {/* ── Header: where, and the time — the clock leads on a portrait screen ── */}
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b-2 border-[#ffb81c] pb-[clamp(0.75rem,2vmin,1.5rem)] portrait:flex-col-reverse portrait:items-start">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b-2 border-[#ffb81c] pb-[clamp(0.75rem,2vmin,1.5rem)] group-data-[orient=portrait]:flex-col-reverse group-data-[orient=portrait]:items-start">
         <div>
           <p className="text-[clamp(0.65rem,1.4vmin,0.9rem)] uppercase tracking-[0.35em] text-[#ffb81c]">Meeting rooms · Today</p>
           <h1 className="mt-1 text-[clamp(1.4rem,4.2vmin,3.5rem)] font-bold uppercase leading-tight tracking-wider">{board?.organization ?? "Meeting rooms"}</h1>
         </div>
-        <div className="landscape:text-right">
+        <div className="group-data-[orient=landscape]:text-right">
           <p className="font-bold tabular-nums leading-none text-[#ffb81c]">
             <span className="text-[clamp(2.5rem,9vmin,7rem)]">{clock}</span>
             <span className="ml-1 text-[clamp(1rem,3vmin,2.5rem)] text-[#a07a1c]">{seconds}</span>
@@ -167,7 +249,7 @@ export default function MeetingBoardPage() {
             ) : (
               <>
                 {/* Portrait screens and phones: a card per booking. */}
-                <ul className="grid gap-[clamp(0.4rem,1vmin,0.8rem)] landscape:sm:hidden">
+                <ul className="grid gap-[clamp(0.4rem,1vmin,0.8rem)] group-data-[layout=table]:hidden">
                   {upcoming.map((b) => {
                     const s = statusOf(b, now);
                     const faded = s.tone === "ended" || s.tone === "cancelled";
@@ -191,13 +273,13 @@ export default function MeetingBoardPage() {
                 </ul>
 
                 {/* Landscape screens: a departures table. */}
-                <div className="hidden overflow-x-auto landscape:sm:block">
+                <div className="hidden overflow-x-auto group-data-[layout=table]:block">
                   <table className="w-full border-separate border-spacing-y-[clamp(0.3rem,0.8vmin,0.6rem)] text-left">
                     <thead>
                       <tr className="text-[clamp(0.6rem,1.3vmin,0.9rem)] uppercase tracking-[0.25em] text-[#8a93a3]">
                         <th className="px-3 py-1 font-normal">Time</th>
                         <th className="px-3 py-1 font-normal">Meeting</th>
-                        <th className="hidden px-3 py-1 font-normal md:table-cell">Booked by</th>
+                        <th className="hidden px-3 py-1 font-normal group-data-[wide=true]:table-cell">Booked by</th>
                         <th className="px-3 py-1 font-normal">Room</th>
                         <th className="px-3 py-1 text-right font-normal">Status</th>
                       </tr>
@@ -213,7 +295,7 @@ export default function MeetingBoardPage() {
                               {hm(b.start)}<span className="text-[#8a93a3]">–{hm(b.end)}</span>
                             </td>
                             <td className={`max-w-[32ch] truncate px-3 tracking-wide ${s.tone === "cancelled" ? "line-through" : ""}`}>{b.title}</td>
-                            <td className="hidden max-w-[22ch] truncate px-3 text-[#b9b4a6] md:table-cell">{b.organiser || "—"}</td>
+                            <td className="hidden max-w-[22ch] truncate px-3 text-[#b9b4a6] group-data-[wide=true]:table-cell">{b.organiser || "—"}</td>
                             <td className="whitespace-nowrap px-3 font-bold tracking-wider">{b.room}</td>
                             <td className="whitespace-nowrap rounded-r-md px-3 text-right">
                               <span className={`font-bold tracking-wider ${TONE[s.tone]}`}>{s.label}</span>
@@ -236,5 +318,18 @@ export default function MeetingBoardPage() {
         {updated && <span>Updated {hm(updated)}</span>}
       </footer>
     </main>
+    </div>
+
+      {/* Turn the board for a screen hung on its side. Hidden while the mouse is still. */}
+      <button
+        type="button"
+        onClick={rotate}
+        aria-label={`Rotate the board (now ${rotation}°)`}
+        title="Rotate (R)"
+        className={`fixed bottom-4 right-4 z-10 flex items-center gap-2 rounded-full border border-[#ffb81c]/40 bg-[#10151d]/90 px-4 py-2 font-mono text-xs uppercase tracking-widest text-[#ffb81c] transition-opacity duration-500 hover:bg-[#1a212c] focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ffb81c] ${showControls ? "opacity-100" : "pointer-events-none opacity-0"}`}
+      >
+        <RotateCw className="h-4 w-4" />Rotate · {rotation}°
+      </button>
+    </div>
   );
 }
