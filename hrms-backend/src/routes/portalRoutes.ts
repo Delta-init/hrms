@@ -10,6 +10,7 @@ import {
   provisionFromPortal,
 } from "../services/portalService.js";
 import { pendingOverview } from "../services/pendingOverviewService.js";
+import { hrmsWatchForPortal } from "../services/hrmsWatchService.js";
 
 const router = Router();
 
@@ -122,6 +123,18 @@ router.get(
   "/pending",
   wrap(async (_req, res) => {
     sendSuccess(res, "Pending", await pendingOverview());
+  }),
+);
+
+/**
+ * Leave, regularization, hiring, office keeping and procurement waiting, and
+ * who is on leave today — each with the department — for the portal's
+ * Pending → HRMS tab (hrmsWatchService). Reads only.
+ */
+router.get(
+  "/hrms-watch",
+  wrap(async (_req, res) => {
+    sendSuccess(res, "HRMS watch", await hrmsWatchForPortal());
   }),
 );
 
