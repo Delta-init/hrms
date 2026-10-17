@@ -23,11 +23,12 @@ const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDat
 const addDays = (d: Date, n: number) => { const o = new Date(d); o.setDate(o.getDate() + n); return o; };
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-/** Minutes from the top of the grid, clamped so a booking that starts before
- *  the window still shows where it reaches into it. */
+/** Minutes from the top of the grid, clamped to the day's window: a booking
+ *  that starts before it still shows where it reaches in, and one running past
+ *  it — into the night, or over several days — stops at the bottom. */
 function offsetPx(when: Date, day: Date) {
   const mins = (when.getTime() - startOfDay(day).getTime()) / 60_000 - FIRST_HOUR * 60;
-  return (Math.max(0, mins) / 60) * HOUR_PX;
+  return (Math.min(Math.max(0, mins), (LAST_HOUR - FIRST_HOUR) * 60) / 60) * HOUR_PX;
 }
 
 interface Props {

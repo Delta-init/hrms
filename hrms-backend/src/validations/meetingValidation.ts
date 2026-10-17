@@ -29,11 +29,10 @@ const booking = {
 };
 
 /**
- * A booking that ends before it starts is a typo, and one running for days is
- * almost always a date picked in the wrong month. Both are refused here rather
- * than left to block a room for a week.
+ * A booking that ends before it starts is a typo, and is refused. There is no
+ * upper limit on length: rooms are booked for whole-day trainings and
+ * multi-day events as well as meetings.
  */
-const MAX_HOURS = 12;
 const sane = <T extends { start: Date; end: Date; kind: string; mode: string; room?: string | null; meetingLink?: string; placeAddress?: string; revieweeUser?: string | null }>(v: T, ctx: z.RefinementCtx) => {
   // A plain meeting books a room; only a review meeting may be online or elsewhere.
   if (v.kind === "meeting" && v.mode !== "room") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "A meeting books a room" });
@@ -43,10 +42,6 @@ const sane = <T extends { start: Date; end: Date; kind: string; mode: string; ro
   if (v.kind === "review" && !v.revieweeUser) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revieweeUser"], message: "Choose who is being reviewed" });
   if (v.end <= v.start) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "The meeting must end after it starts" });
-    return;
-  }
-  if (v.end.getTime() - v.start.getTime() > MAX_HOURS * 3600_000) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: `A booking cannot run longer than ${MAX_HOURS} hours` });
   }
 };
 
