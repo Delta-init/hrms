@@ -11,6 +11,7 @@ import {
 } from "../services/portalService.js";
 import { pendingOverview } from "../services/pendingOverviewService.js";
 import { hrmsWatchForPortal } from "../services/hrmsWatchService.js";
+import { hrmsReportForPortal } from "../services/hrmsReportService.js";
 
 const router = Router();
 
@@ -135,6 +136,22 @@ router.get(
   "/hrms-watch",
   wrap(async (_req, res) => {
     sendSuccess(res, "HRMS watch", await hrmsWatchForPortal());
+  }),
+);
+
+/**
+ * One organization over a period — attendance, leave, regularization, hiring,
+ * joiners and leavers, payroll, purchase and office-keeping requests, overtime
+ * and reimbursements — for the Root portal's Reports → HRMS tab
+ * (hrmsReportService). Reads only.
+ */
+router.get(
+  "/hrms-report",
+  wrap(async (req, res) => {
+    const q = (k: string) => (typeof req.query[k] === "string" && (req.query[k] as string).trim() ? (req.query[k] as string).trim() : undefined);
+    const data = await hrmsReportForPortal({ org: q("org"), from: q("from"), to: q("to") });
+    if (typeof data === "string") return sendError(res, data, 400);
+    sendSuccess(res, "HRMS report", data);
   }),
 );
 
