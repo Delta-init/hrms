@@ -58,7 +58,8 @@ export async function processMeetingsFor(orgId: string, now = new Date()): Promi
   // every meeting ever booked.
   const from = new Date(now.getTime() - 3 * 3600_000);
   const to = new Date(now.getTime() + 3 * 3600_000);
-  const bookings = await MeetingBooking.find({ organization: orgId, status: "booked", start: { $gte: from, $lte: to } })
+  // Another system's bookings (the LMS's class pods) are reminded by that system, not here.
+  const bookings = await MeetingBooking.find({ organization: orgId, status: "booked", start: { $gte: from, $lte: to }, "source.system": { $in: [null, ""] } })
     .populate("room", "name")
     .populate("organizer", "name email");
 

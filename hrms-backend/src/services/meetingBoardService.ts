@@ -45,7 +45,7 @@ export class MeetingBoardService {
         .populate("room", "name")
         .populate("organizer", "name")
         .sort({ start: 1 })
-        .lean<Array<{ _id: unknown; kind?: string; title: string; start: Date; end: Date; status: string; room?: { name?: string } | null; organizer?: { name?: string } | null }>>(),
+        .lean<Array<{ _id: unknown; kind?: string; title: string; start: Date; end: Date; status: string; room?: { name?: string } | null; organizer?: { name?: string } | null; source?: { label?: string } | null }>>(),
     ]);
 
     return {
@@ -59,7 +59,8 @@ export class MeetingBoardService {
         .map((b) => ({
           id: String(b._id),
           title: b.kind === "review" ? "Review meeting" : b.title,
-          organiser: b.kind === "review" ? "" : b.organizer?.name ?? "",
+          // Another system's booking (an LMS class pod) says whose it is with its own label.
+          organiser: b.kind === "review" ? "" : b.organizer?.name || b.source?.label || "",
           room: b.room?.name ?? "",
           start: b.start,
           end: b.end,

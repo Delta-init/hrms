@@ -27,11 +27,20 @@ const meetingBookingSchema = new Schema<IMeetingBooking>(
     start: { type: Date, required: [true, "Start is required"], index: true },
     end: { type: Date, required: [true, "End is required"] },
     timeZone: { type: String, default: "Asia/Dubai", trim: true, maxlength: 64 },
-    organizer: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    /** Required unless another system made it (`source`) for somebody with no login here. */
+    organizer: {
+      type: Schema.Types.ObjectId, ref: "User", index: true, default: null,
+      required: [function (this: { source?: { system?: string } | null }) { return !this.source?.system; }, "Organizer is required"],
+    },
     /** Employees with a login — the only people this can reach. */
     participants: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     status: { type: String, enum: ["booked", "cancelled"], default: "booked", index: true },
     firedStages: { type: [String], default: [] },
+    /** Made by another system (the LMS's class pods, 2026-10-18): which, for what, and the name shown for it. */
+    source: {
+      type: new Schema({ system: { type: String, required: true }, ref: { type: String, required: true }, label: { type: String, default: "" } }, { _id: false }),
+      default: null,
+    },
 
     /** "review": a review meeting about one employee, with a review form after. */
     kind: { type: String, enum: ["meeting", "review"], default: "meeting", index: true },
@@ -94,5 +103,6 @@ const meetingBookingSchema = new Schema<IMeetingBooking>(
 // The clash lookup: one room, the bookings still standing, ordered by start.
 meetingBookingSchema.index({ room: 1, status: 1, start: 1 });
 meetingBookingSchema.index({ organization: 1, start: 1 });
+meetingBookingSchema.index({ "source.system": 1, "source.ref": 1, status: 1 });
 
 export const MeetingBooking = mongoose.model<IMeetingBooking>("MeetingBooking", meetingBookingSchema);

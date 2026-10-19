@@ -1299,9 +1299,15 @@ export interface IMeetingBooking extends Document {
   start: Date;
   end: Date;
   timeZone: string;
-  organizer: Types.ObjectId | IUser;
+  /** Who booked it. Absent on a booking another system made for somebody with no login here (`source`). */
+  organizer: Types.ObjectId | IUser | null;
   participants: Array<Types.ObjectId | IUser>;
   status: "booked" | "cancelled";
+  /**
+   * Made by another system rather than by a person here (2026-10-18): the LMS books a pod for each online class —
+   * `ref` is the class, `label` what the screens show for who has it ("LMS class · <mentor>").
+   */
+  source?: { system: string; ref: string; label: string } | null;
   /** Which reminder stages have already gone out. */
   firedStages: MeetingStage[];
   kind?: "meeting" | "review";

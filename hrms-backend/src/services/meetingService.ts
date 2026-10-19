@@ -14,6 +14,7 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { stillHere } from "../utils/employeeStatus.js";
 import { notify } from "./notificationService.js";
+import { heldBefore, heldBesides } from "../utils/roomClaim.js";
 
 const POP = [
   { path: "room", select: "name location capacity" },
@@ -272,6 +273,14 @@ export class MeetingService {
       organization: getOrgId(),
       organizer: actor.userId,
     });
+    // Somebody took the room at the same moment, and got there first: this one goes (utils/roomClaim.ts).
+    if (record.room) {
+      const first = await heldBefore(record._id, record.room, record.start, record.end);
+      if (first) {
+        await MeetingBooking.deleteOne({ _id: record._id });
+        throw Object.assign(new Error(`That room was just booked from ${first.start.toISOString().slice(11, 16)} to ${first.end.toISOString().slice(11, 16)} UTC — pick another time or room`), { statusCode: 409 });
+      }
+    }
 
     // In-app only: an online review's mail goes at the start, with the join link.
     await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — you have been invited`, actor.userId);
@@ -324,6 +333,7 @@ export class MeetingService {
      * is no longer at.
      */
     const moved = record.start.getTime() !== new Date(input.start).getTime();
+    const before = record.toObject();
     await MeetingBooking.updateOne({ _id: record._id }, {
       $set: {
         title: input.title, agenda: input.agenda, start: input.start, end: input.end, timeZone: input.timeZone,
@@ -331,6 +341,14 @@ export class MeetingService {
         ...(moved ? { firedStages: [] } : {}),
       },
     });
+    // Somebody took the room at the same moment: put this one back as it was (utils/roomClaim.ts).
+    if (place.room) {
+      const other = await heldBesides(record._id, place.room, new Date(input.start), new Date(input.end));
+      if (other) {
+        await MeetingBooking.replaceOne({ _id: record._id }, before);
+        throw Object.assign(new Error(`That room was just booked from ${other.start.toISOString().slice(11, 16)} to ${other.end.toISOString().slice(11, 16)} UTC — pick another time or room`), { statusCode: 409 });
+      }
+    }
     // Moved, or a new link: an in-app word now; the mail still goes at the (new) start.
     if (changed && place.kind === "review" && place.mode === "online") {
       await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — the time or link changed`, actor.userId);

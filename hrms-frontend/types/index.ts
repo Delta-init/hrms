@@ -1390,7 +1390,9 @@ export interface MeetingBooking {
   start: string;
   end: string;
   timeZone: string;
-  organizer: Pick<User, "_id" | "name" | "email"> | string;
+  organizer: Pick<User, "_id" | "name" | "email"> | string | null;
+  /** Made by another system — the LMS's class pods (2026-10-18): whose it is, as that system names it. */
+  source?: { system: string; ref: string; label: string } | null;
   participants: Array<Pick<User, "_id" | "name" | "email"> | string>;
   status: "booked" | "cancelled";
   createdAt: string;

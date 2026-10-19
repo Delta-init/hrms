@@ -11,6 +11,7 @@ import {
   listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
+import { listPods, listPodBookings, holdClassPod, releaseClassPod, listClassPods } from "../controllers/classPodController.js";
 
 const router = Router();
 
@@ -67,5 +68,12 @@ router.post("/one-time-payments/requests/:id/reject", serviceOrgScope, rejectOne
 router.get("/hiring/requisitions", serviceOrgScope, listHiringRequisitions);
 router.post("/hiring/requisitions/:id/approve", serviceOrgScope, approveHiringRequisition);
 router.post("/hiring/requisitions/:id/reject", serviceOrgScope, rejectHiringRequisition);
+
+// Pods for the LMS's online classes (2026-10-18): the rooms, who has them when, and one held or let go per class.
+router.get("/meetings/pods", serviceOrgScope, listPods);
+router.get("/meetings/pod-bookings", serviceOrgScope, listPodBookings);
+router.get("/meetings/class-pods", serviceOrgScope, listClassPods);
+router.put("/meetings/class-pods/:ref", serviceOrgScope, holdClassPod);
+router.delete("/meetings/class-pods/:ref", serviceOrgScope, releaseClassPod);
 
 export default router;

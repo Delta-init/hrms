@@ -244,7 +244,7 @@ export default function MeetingsPage() {
                 <span>
                   {shown.mode === "online" ? "Online" : shown.mode === "place" ? shown.placeAddress : nameOf(shown.room) || "—"}
                 </span>
-                <span className="text-muted-foreground">{isReview ? "Reviewer" : "Booked by"}</span><span>{nameOf(shown.organizer) || "—"}</span>
+                <span className="text-muted-foreground">{isReview ? "Reviewer" : "Booked by"}</span><span>{nameOf(shown.organizer) || shown.source?.label || "—"}</span>
                 <span className="text-muted-foreground">Status</span>
                 <span className="capitalize">{shown.status === "cancelled" ? "cancelled" : isReview && r?.writtenAt ? "held" : shown.status}</span>
               </div>

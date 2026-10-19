@@ -103,7 +103,8 @@ export function MeetingWeekGrid({ days, bookings, onSelect, onPick }: Props) {
                   const top = offsetPx(new Date(b.start), day);
                   const bottom = offsetPx(new Date(b.end), day);
                   const room = b.mode === "online" ? "Online" : b.mode === "place" ? "Elsewhere" : typeof b.room === "object" && b.room ? b.room.name : "";
-                  const who = typeof b.organizer === "object" && b.organizer ? b.organizer.name : "";
+                  // Another system's booking (an LMS class pod) names whose it is itself.
+                  const who = typeof b.organizer === "object" && b.organizer ? b.organizer.name : b.source?.label ?? "";
                   return (
                     <button
                       key={b._id}
