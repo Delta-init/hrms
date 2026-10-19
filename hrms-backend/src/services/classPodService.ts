@@ -122,6 +122,15 @@ export async function holdForClass(input: HoldInput): Promise<HoldResult> {
       await MeetingBooking.deleteOne({ _id: made._id });
       continue;
     }
+    // The same class asked twice at once, and the other was made first: that one is its pod, this one goes.
+    const twin = await MeetingBooking.findOne(scoped({
+      "source.system": LMS, "source.ref": input.ref, status: "booked",
+      _id: { $lt: made._id, ...(have ? { $ne: have._id } : {}) },
+    })).select("_id").lean();
+    if (twin) {
+      await MeetingBooking.deleteOne({ _id: made._id });
+      return { ok: true, booking: await asPod(twin._id), changed: true };
+    }
     if (have) await MeetingBooking.updateOne({ _id: have._id }, { $set: { status: "cancelled" } });
     return { ok: true, booking: await asPod(made._id), changed: true };
   }

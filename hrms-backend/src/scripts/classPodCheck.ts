@@ -115,6 +115,10 @@ const live = await MeetingBooking.find({ status: "booked", start: { $lt: at("18:
 check("seven held, thirteen told no pod is free", held.length === 7 && many.length - held.length === 13, `${held.length} held`);
 check("never two in one pod", new Set(roomsUsed).size === 7 && new Set(live.map((b) => String(b.room))).size === live.length, j(roomsUsed));
 
+const twice = await Promise.all([hold("dup", "21:00", "22:00"), hold("dup", "21:00", "22:00"), hold("dup", "21:00", "22:00")]);
+check("one class asking three times at once: one pod, all three told the same", (await MeetingBooking.countDocuments({ "source.ref": "dup", status: "booked" })) === 1
+  && new Set(twice.map((t: any) => t.booking?.id)).size === 1, j(twice.map((t: any) => t.booking?.roomName)));
+
 step("6. People booking one room at once");
 const svc = new MeetingService();
 const people = [asha, bilal].map((u) => inHq(() => svc.createBooking({ title: `Meet ${u}`, start: at("19:00"), end: at("19:30"), timeZone: "Asia/Dubai", room: String(pod5._id), kind: "meeting", mode: "room", participants: [] } as never, { userId: String(u), roleName: "Employee" } as never)).then(() => "ok", (e: any) => e.statusCode));
