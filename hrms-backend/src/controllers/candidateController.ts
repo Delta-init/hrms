@@ -80,6 +80,8 @@ export const getPipeline = async (req: AuthenticatedRequest, res: Response, next
   try {
     const head = hasPermission(req.user?.role, "hiring", "view") ? undefined : req.user!.userId;
     if (head) await requisitions.getById(req.params.id, head);
+    // Nobody sees the pipeline for their own replacement.
+    await requisitions.assertNotAbout(req.params.id, req.user!.userId);
     sendSuccess(res, "Pipeline", await service.pipeline(req.params.id, !!head));
   }
   catch (error) { next(error); }

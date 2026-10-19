@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import {
-  createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema,
+  createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema, withdrawRequisitionSchema,
 } from "../validations/jobRequisitionValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
@@ -31,13 +31,13 @@ export const createRequisition = async (req: AuthenticatedRequest, res: Response
 
 export const getRequisitions = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { records, pagination } = await service.list(req.query as Record<string, string>, headOnly(req, "view"));
+    const { records, pagination } = await service.list(req.query as Record<string, string>, headOnly(req, "view"), req.user!.userId);
     sendSuccess(res, "Requisitions retrieved", records, 200, pagination);
   } catch (error) { next(error); }
 };
 
 export const getRequisitionById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  try { sendSuccess(res, "Requisition retrieved", await service.getById(req.params.id, headOnly(req, "view"))); }
+  try { sendSuccess(res, "Requisition retrieved", await service.getById(req.params.id, headOnly(req, "view"), req.user!.userId)); }
   catch (error) { next(error); }
 };
 
@@ -45,7 +45,7 @@ export const updateRequisition = async (req: AuthenticatedRequest, res: Response
   try {
     const parsed = updateRequisitionSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    sendSuccess(res, "Requisition updated", await service.update(req.params.id, parsed.data, headOnly(req, "edit")));
+    sendSuccess(res, "Requisition updated", await service.update(req.params.id, parsed.data, headOnly(req, "edit"), req.user!.userId));
   } catch (error) { next(error); }
 };
 
@@ -55,6 +55,20 @@ export const reviewRequisition = async (req: AuthenticatedRequest, res: Response
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const record = await service.review(req.params.id, parsed.data, req.user!.userId, req.user!.role as never);
     sendSuccess(res, `Requisition ${parsed.data.status}`, record);
+  } catch (error) { next(error); }
+};
+
+/** The raiser (or HR) taking it back before it is decided. */
+export const withdrawRequisition = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = withdrawRequisitionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.withdraw(
+      req.params.id,
+      { userId: req.user!.userId, canEdit: hasPermission(req.user?.role, "hiring", "edit") },
+      parsed.data.reason
+    );
+    sendSuccess(res, "Requisition withdrawn", record);
   } catch (error) { next(error); }
 };
 

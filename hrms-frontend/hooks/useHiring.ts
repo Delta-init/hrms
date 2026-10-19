@@ -59,6 +59,28 @@ export const useReviewRequisition = () => {
   });
 };
 
+/** Change a requisition — while it is pending and nobody has approved a step. */
+export const useUpdateRequisition = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<JobRequisition> }) =>
+      (await api.put<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}`, data)).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Requisition updated"); },
+    onError: (e) => toast.error(errMsg(e, "Could not update the requisition")),
+  });
+};
+
+/** Take a requisition back before it is decided. */
+export const useWithdrawRequisition = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) =>
+      (await api.patch<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}/withdraw`, { reason })).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Requisition withdrawn"); },
+    onError: (e) => toast.error(errMsg(e, "Could not withdraw the requisition")),
+  });
+};
+
 export const useDeleteRequisition = () => {
   const qc = useQueryClient();
   return useMutation({

@@ -148,6 +148,27 @@ function forFinance(r: Record<string, unknown>) {
 }
 
 const forbidden = (message: string) => Object.assign(new Error(message), { statusCode: 403 });
+
+/**
+ * The login of whoever a replacement requisition would backfill. They are
+ * never told about their own replacement and never shown it — strictly, in
+ * every alert, list and queue — so this is the one name every notice is
+ * filtered against.
+ */
+export async function replacedUserId(replacing: unknown): Promise<string | null> {
+  if (!replacing) return null;
+  const id = (replacing as { _id?: unknown })?._id ?? replacing;
+  const emp = await Employee.findById(id).select("user").lean<{ user?: unknown } | null>();
+  return emp?.user ? String(emp.user) : null;
+}
+
+/** Every employee record a login stands for — what "replacing" would point at. */
+export async function employeeIdsOf(userId: string): Promise<mongoose.Types.ObjectId[]> {
+  const rows = await Employee.find({ user: userId }).select("_id").lean<Array<{ _id: mongoose.Types.ObjectId }>>();
+  return rows.map((r) => r._id);
+}
+
+const without = (users: string[], excluded: string | null) => (excluded ? users.filter((u) => String(u) !== excluded) : users);
 const deptOf = (doc: { department?: unknown }) => {
   const d = doc.department as { _id?: unknown } | string | null | undefined;
   return d ? String(typeof d === "object" && d._id ? d._id : d) : "";
@@ -215,9 +236,10 @@ export class JobRequisitionService {
     if (doc.status === "pending") {
       const raiser = (created as unknown as { raisedBy?: { name?: string } })?.raisedBy?.name ?? "Someone";
       const dept = (created as unknown as { department?: { name?: string } })?.department?.name;
+      const hidden = await replacedUserId(doc.replacing);
       watchersFor("hiring", raisedBy)
         .then((users) => notify({
-          users,
+          users: without(users, hidden),
           kind: "approval",
           title: `New requisition: ${input.title}`,
           body: `${raiser}${dept ? ` (${dept})` : ""} — ${TYPE_LABELS[input.type] ?? input.type}, ${input.headcount ?? 1} position${(input.headcount ?? 1) === 1 ? "" : "s"}`,
@@ -234,10 +256,15 @@ export class JobRequisitionService {
    * permission: their own departments' requisitions and nothing else,
    * whatever department the query asks for.
    */
-  async list(query: RequisitionQuery, restrictToUserId?: string) {
+  async list(query: RequisitionQuery, restrictToUserId?: string, viewerUserId?: string) {
     const { page, limit, skip } = parsePagination(query, 20, 100);
 
     const filter: Record<string, unknown> = { ...orgFilter() };
+    // Never the requisition that replaces the person looking.
+    if (viewerUserId) {
+      const mine = await employeeIdsOf(viewerUserId);
+      if (mine.length) filter.replacing = { $nin: mine };
+    }
     if (query.status) filter.status = query.status;
     if (query.type) filter.type = query.type;
     if (restrictToUserId) {
@@ -259,14 +286,72 @@ export class JobRequisitionService {
     return { records: records.map((r) => shape(r, !!restrictToUserId)), pagination: buildPagination(total, page, limit) };
   }
 
-  async getById(id: string, restrictToUserId?: string) {
+  async getById(id: string, restrictToUserId?: string, viewerUserId?: string) {
     const record = await JobRequisition.findOne(scoped({ _id: id })).populate(POP);
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    if (viewerUserId) await this.assertNotAbout(record, viewerUserId);
     if (restrictToUserId) {
       const heads = await departmentsHeadedBy(restrictToUserId);
       if (!heads.includes(deptOf(record))) throw forbidden("That requisition is not for a department you head");
     }
     return shape(record.toObject(), !!restrictToUserId);
+  }
+
+  /**
+   * The requisition replacing the person asking does not exist, as far as they
+   * can tell — the same "not found" as an id that was never there.
+   */
+  async assertNotAbout(record: { replacing?: unknown } | string, viewerUserId: string) {
+    const doc = typeof record === "string"
+      ? await JobRequisition.findOne(scoped({ _id: record })).select("replacing").lean<{ replacing?: unknown } | null>()
+      : record;
+    if (!doc) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    if ((await replacedUserId(doc.replacing)) === String(viewerUserId)) {
+      throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    }
+  }
+
+  /**
+   * Withdraw a requisition before it is decided — pending, part-way through
+   * its approvals, or waiting for finance. The one who raised it may, and so
+   * may anyone holding hiring edit. It leaves every queue (finance's too: a
+   * decision sent for it afterwards is refused) and stays on record as
+   * withdrawn, with who and why. Approvers hear in-app; the person it would
+   * have replaced never does.
+   */
+  async withdraw(id: string, actor: { userId: string; canEdit: boolean }, reason = "") {
+    const record = await JobRequisition.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    await this.assertNotAbout(record, actor.userId);
+    if (String(record.raisedBy) !== String(actor.userId) && !actor.canEdit) {
+      throw forbidden("Only the person who raised it, or HR, can withdraw this requisition");
+    }
+    if (!["draft", "pending", "finance_pending", "on_hold"].includes(record.status)) {
+      throw Object.assign(
+        new Error(`This requisition has already been ${record.status === "cancelled" ? "withdrawn or cancelled" : record.status} and can no longer be withdrawn`),
+        { statusCode: 400 }
+      );
+    }
+    record.status = "cancelled";
+    record.withdrawnAt = new Date();
+    record.withdrawnBy = actor.userId as never;
+    record.withdrawReason = reason;
+    await record.save();
+
+    const hidden = await replacedUserId(record.replacing);
+    const users = without(await watchersFor("hiring", String(record.raisedBy)), hidden)
+      .concat(String(record.raisedBy) !== String(actor.userId) ? [String(record.raisedBy)] : []);
+    await notify({
+      users,
+      kind: "approval",
+      title: `Requisition withdrawn: ${record.title}`,
+      body: reason || "No longer needed",
+      href: "/hiring",
+      actor: actor.userId,
+    }).catch(() => null);
+
+    const updated = await JobRequisition.findById(id).populate(POP);
+    return shape(updated!.toObject(), !actor.canEdit);
   }
 
   /**
@@ -291,7 +376,8 @@ export class JobRequisitionService {
    * agreed to are part of the record, and changing them underneath would make
    * the trail a record of a decision nobody actually took.
    */
-  async update(id: string, input: UpdateRequisitionInput, headOnly?: string) {
+  async update(id: string, input: UpdateRequisitionInput, headOnly?: string, viewerUserId?: string) {
+    if (viewerUserId) await this.assertNotAbout(id, viewerUserId);
     if (headOnly) {
       await this.assertHeadMayEdit(id, headOnly);
       const current = await JobRequisition.findOne(scoped({ _id: id })).select("department type replacing").lean<Record<string, unknown> | null>();
@@ -344,6 +430,7 @@ export class JobRequisitionService {
 
   /** Approve or reject at the current step. */
   async review(id: string, input: ReviewRequisitionInput, reviewerId: string, reviewerRole: ReviewerRole) {
+    await this.assertNotAbout(id, reviewerId);
     const record = await JobRequisition.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
     if (record.status !== "pending") {
@@ -535,7 +622,7 @@ export class JobRequisitionService {
       path: "/hiring",
       kind: "approval",
       reviewer: { id: null, name: record.financeReviewedBy ? `finance (${record.financeReviewedBy})` : "finance" },
-      watchers: await watchersFor("hiring", String(record.raisedBy)).catch(() => []),
+      watchers: without(await watchersFor("hiring", String(record.raisedBy)).catch(() => []), await replacedUserId((record as { replacing?: unknown }).replacing)),
     });
   }
 }

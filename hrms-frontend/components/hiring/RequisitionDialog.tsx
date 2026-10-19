@@ -12,12 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
-import { useCreateRequisition, useUploadJd, useReplaceable } from "@/hooks/useHiring";
+import { useCreateRequisition, useUpdateRequisition, useUploadJd, useReplaceable } from "@/hooks/useHiring";
 import { useDepartments, useMyDepartments } from "@/hooks/useDepartments";
 import { useEmployee } from "@/hooks/useEmployees";
 import {
   EMPLOYMENT_TYPE_LABELS, LOCATION_LABELS, REQUISITION_TYPE_LABELS,
-  type EmployeeLocation, type EmploymentType, type RequisitionType,
+  type EmployeeLocation, type EmploymentType, type JobRequisition, type RequisitionType,
 } from "@/types";
 
 interface Props {
@@ -30,6 +30,8 @@ interface Props {
    * it would refuse.
    */
   headMode?: boolean;
+  /** Editing this one rather than raising a new one. */
+  requisition?: JobRequisition | null;
 }
 
 interface FormValues {
@@ -63,8 +65,25 @@ const EMPTY: FormValues = {
  * Finance, and a replacement does only when it costs more than the person
  * leaving. Discovering that after submitting would make the rule feel arbitrary.
  */
-export function RequisitionDialog({ open, onOpenChange, headMode = false }: Props) {
-  const { mutate: create, isPending } = useCreateRequisition();
+const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id: string })._id) : String(v ?? ""));
+
+/** A saved requisition as the form holds it. */
+function toForm(r: JobRequisition): FormValues {
+  return {
+    type: r.type, replacing: r.type === "replacement" ? idOf(r.replacing) : "", title: r.title,
+    department: idOf(r.department), designation: r.designation ?? "", location: r.location ?? "",
+    employmentType: r.employmentType ?? "full_time", headcount: r.headcount ?? 1,
+    salaryMin: r.salaryMin != null ? String(r.salaryMin) : "", salaryMax: r.salaryMax != null ? String(r.salaryMax) : "",
+    currency: r.currency ?? "AED", justification: r.justification ?? "",
+    targetStartDate: r.targetStartDate ? r.targetStartDate.slice(0, 10) : "", jdText: r.jdText ?? "",
+  };
+}
+
+export function RequisitionDialog({ open, onOpenChange, headMode = false, requisition = null }: Props) {
+  const { mutate: create, isPending: creating } = useCreateRequisition();
+  const { mutate: update, isPending: updating } = useUpdateRequisition();
+  const isPending = creating || updating;
+  const editing = !!requisition;
   const { mutateAsync: uploadJd, isPending: uploading } = useUploadJd();
   const { data: departmentData } = useDepartments(undefined, { enabled: !headMode });
   const { data: myDepartments = [] } = useMyDepartments();
@@ -100,12 +119,16 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false }: Prop
   // A head of one department has nothing to choose; it is filled in for them.
   useEffect(() => {
     if (!open) return;
-    reset({ ...EMPTY, department: headMode && myDepartments.length === 1 ? myDepartments[0]._id : "" });
+    reset(requisition ? toForm(requisition) : { ...EMPTY, department: headMode && myDepartments.length === 1 ? myDepartments[0]._id : "" });
     setJdFile(null);
-  }, [open, reset, headMode, myDepartments]);
+  }, [open, reset, headMode, myDepartments, requisition]);
 
   const onSubmit = (data: FormValues) => {
-    create(
+    const save = (payload: Record<string, unknown>, done: (record: JobRequisition) => Promise<void>) =>
+      requisition
+        ? update({ id: requisition._id, data: payload as never }, { onSuccess: done })
+        : create(payload as never, { onSuccess: done });
+    save(
       {
         ...data,
         replacing: data.type === "replacement" ? data.replacing : null,
@@ -116,14 +139,12 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false }: Prop
         headcount: Number(data.headcount) || 1,
         targetStartDate: data.targetStartDate || null,
         jdText: data.jdText || undefined,
-      } as never,
-      {
-        onSuccess: async (record) => {
-          // A JD that will not upload must not cost us the requisition — it is
-          // saved either way, and the hook has already said what went wrong.
-          if (jdFile) await uploadJd({ id: record._id, file: jdFile }).catch(() => {});
-          onOpenChange(false);
-        },
+      },
+      async (record) => {
+        // A JD that will not upload must not cost us the requisition — it is
+        // saved either way, and the hook has already said what went wrong.
+        if (jdFile) await uploadJd({ id: record._id, file: jdFile }).catch(() => {});
+        onOpenChange(false);
       }
     );
   };
@@ -132,7 +153,7 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false }: Prop
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-2xl">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Raise a hiring requisition</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{editing ? "Edit requisition" : "Raise a hiring requisition"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
@@ -323,7 +344,7 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false }: Prop
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={isPending || uploading}>
               {(isPending || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {uploading ? "Attaching JD…" : "Raise requisition"}
+              {uploading ? "Attaching JD…" : editing ? "Save changes" : "Raise requisition"}
             </Button>
           </ResponsiveDialogFooter>
         </form>

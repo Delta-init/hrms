@@ -42,6 +42,10 @@ export const reviewRequisitionSchema = z.object({
   reviewNote: z.string().trim().max(1000).nullish(),
 });
 
+export const withdrawRequisitionSchema = z.object({
+  reason: z.string().trim().max(500).optional().default(""),
+});
+
 export type CreateRequisitionInput = z.infer<typeof createRequisitionSchema>;
 export type UpdateRequisitionInput = z.infer<typeof updateRequisitionSchema>;
 export type ReviewRequisitionInput = z.infer<typeof reviewRequisitionSchema>;

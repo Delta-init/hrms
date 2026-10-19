@@ -5,6 +5,8 @@ import { env } from "../config/env.js";
 import { sendMail } from "../utils/mailer.js";
 import { ApprovalInboxService, STALE_AFTER_DAYS, SYSTEM_SCOPE } from "../services/approvalInboxService.js";
 import type { ApprovalRow } from "../services/approvalRegistry.js";
+import { JobRequisition } from "../models/JobRequisition.js";
+import { replacedUserId } from "../services/jobRequisitionService.js";
 
 /**
  * A daily note to management about what is still waiting.
@@ -108,19 +110,51 @@ export async function runApprovalDigest() {
 
   // No `organization` on the mail: this is cross-tenant by nature, so it goes
   // out through the default transport rather than any one tenant's SMTP.
-  const emailed = await sendMail({
-    to: recipients,
-    subject: stale.length
-      ? `${rows.length} waiting for approval — ${stale.length} over ${STALE_AFTER_DAYS} days`
-      : `${rows.length} request${rows.length === 1 ? "" : "s"} waiting for approval`,
-    html: buildHtml(rows, stale),
-    text: rows
-      .map((r) => `${r.moduleLabel}: ${r.title} (${r.organization.name ?? "—"}) — waiting ${age(r.raisedAt)}`)
-      .join("\n"),
-  });
+  const send = (to: string[], list: ApprovalRow[]) => {
+    const old = list.filter((r) => r.raisedAt && new Date(r.raisedAt).getTime() < cutoff);
+    return sendMail({
+      to,
+      subject: old.length
+        ? `${list.length} waiting for approval — ${old.length} over ${STALE_AFTER_DAYS} days`
+        : `${list.length} request${list.length === 1 ? "" : "s"} waiting for approval`,
+      html: buildHtml(list, old),
+      text: list
+        .map((r) => `${r.moduleLabel}: ${r.title} (${r.organization.name ?? "—"}) — waiting ${age(r.raisedAt)}`)
+        .join("\n"),
+    });
+  };
+
+  // A requisition to replace somebody is never in their own copy. Anyone it
+  // concerns gets the digest without it; everybody else gets it whole.
+  const withheld = await replacementsByRecipient(rows, recipients);
+  const plain = recipients.filter((e) => !withheld.has(e));
+  let emailed = plain.length ? await send(plain, rows) : false;
+  for (const [email, ids] of withheld) {
+    const theirs = rows.filter((r) => !ids.has(r.id));
+    if (theirs.length) emailed = (await send([email], theirs)) || emailed;
+  }
 
   console.log(`📥 approvals digest: ${rows.length} waiting (${stale.length} stale) → ${recipients.length} recipient(s).`);
   return { waiting: rows.length, stale: stale.length, emailed, recipients: recipients.length };
+}
+
+/** For each recipient, the pending requisitions that would replace them — left out of their copy. */
+async function replacementsByRecipient(rows: ApprovalRow[], recipients: string[]): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  const ids = rows.filter((r) => r.module === "hiring").map((r) => r.id);
+  if (!ids.length) return out;
+  const reqs = await JobRequisition.find({ _id: { $in: ids }, replacing: { $ne: null } }).select("replacing").lean<Array<{ _id: unknown; replacing?: unknown }>>();
+  const wanted = new Set(recipients.map((e) => e.toLowerCase()));
+  for (const r of reqs) {
+    const userId = await replacedUserId(r.replacing);
+    if (!userId) continue;
+    const u = await User.findById(userId).select("email").lean<{ email?: string } | null>();
+    const email = recipients.find((e) => e.toLowerCase() === (u?.email ?? "").toLowerCase());
+    if (!email || !wanted.has(email.toLowerCase())) continue;
+    if (!out.has(email)) out.set(email, new Set());
+    out.get(email)!.add(String(r._id));
+  }
+  return out;
 }
 
 /** Schedule the daily digest (server local time). */

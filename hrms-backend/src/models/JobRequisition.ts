@@ -78,6 +78,10 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
     financeNote: { type: String, trim: true, maxlength: 1000, default: "" },
     financeReviewedBy: { type: String, trim: true, maxlength: 120, default: "" },
     rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
+    // Withdrawn before it was decided — the status is "cancelled", these say who and why.
+    withdrawnAt: { type: Date, default: null },
+    withdrawnBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    withdrawReason: { type: String, trim: true, maxlength: 500, default: "" },
   },
   { timestamps: true, versionKey: false }
 );

@@ -2540,6 +2540,9 @@ export interface JobRequisition {
   workflowStep?: number | null;
   workflowTotalSteps?: number | null;
   approvalSteps?: { order: number; roleName: string; label?: string }[];
+  /** Set when whoever raised it (or HR) withdrew it before it was decided; status is then "cancelled". */
+  withdrawnAt?: string | null;
+  withdrawReason?: string;
   approvalTrail?: { step: number; roleName?: string; by?: { _id: string; name: string } | string; action: string; note?: string; at: string }[];
   reviewNote?: string;
   /** Finance's decision, made in the finance system. */

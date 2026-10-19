@@ -7,6 +7,7 @@ import { teamMemberUserIds } from "./departmentHeadService.js";
 import { hasPermission } from "../middleware/permissions.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
+import { employeeIdsOf } from "./jobRequisitionService.js";
 
 /**
  * Everything waiting on management, across every organisation.
@@ -47,6 +48,11 @@ export interface InboxScope {
   approve: Set<ApprovalModule>;
   /** Their department's people — empty for almost everybody. */
   teamUserIds: string[];
+  /**
+   * The viewer's own employee records. A requisition to replace them is never
+   * in their queue — not shown, not decidable — whatever else they approve.
+   */
+  selfEmployeeIds?: string[];
 }
 
 /**
@@ -82,8 +88,9 @@ export async function resolveInboxScope(
   orgId: string | null
 ): Promise<InboxScope> {
   const role = user.role;
+  const selfEmployeeIds = (await employeeIdsOf(user.userId)).map(String);
   if (role?.isSystemRole && role.roleName === "Super Admin") {
-    return { everything: true, orgId, approve: new Set(ADAPTERS.map((a) => a.module)), teamUserIds: [] };
+    return { everything: true, orgId, approve: new Set(ADAPTERS.map((a) => a.module)), teamUserIds: [], selfEmployeeIds };
   }
   const approve = new Set(
     ADAPTERS.filter((a) => hasPermission(role, a.permissionModule, "approve")).map((a) => a.module)
@@ -91,7 +98,7 @@ export async function resolveInboxScope(
   // Only looked up when it could matter. Almost nobody heads a department, and
   // this runs on every load of the page and of the sidebar badge.
   const teamUserIds = await teamMemberUserIds(user.userId);
-  return { everything: false, orgId, approve, teamUserIds };
+  return { everything: false, orgId, approve, teamUserIds, selfEmployeeIds };
 }
 
 /**
@@ -155,6 +162,14 @@ function mergeFilters(scope: Record<string, unknown>, department: Record<string,
 }
 
 export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Record<string, unknown> | null {
+  const base = baseScopeFilter(scope, module);
+  if (base && module === "hiring" && scope.selfEmployeeIds?.length) {
+    return { ...base, replacing: { $nin: scope.selfEmployeeIds.map((id) => new mongoose.Types.ObjectId(id)) } };
+  }
+  return base;
+}
+
+function baseScopeFilter(scope: InboxScope, module: ApprovalModule): Record<string, unknown> | null {
   if (scope.everything) return {};
   // No organisation resolved means no safe way to narrow, so nothing is shown.
   if (!scope.orgId) return null;

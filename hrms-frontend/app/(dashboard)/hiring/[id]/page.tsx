@@ -165,7 +165,7 @@ export default function RequisitionDetailPage() {
         <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            This requisition is <strong>{REQUISITION_STATUS_LABELS[requisition.status].toLowerCase()}</strong>.
+            This requisition is <strong>{(requisition.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[requisition.status]).toLowerCase()}</strong>.
             Candidates can only be added once it is approved.
           </span>
         </div>
@@ -174,7 +174,7 @@ export default function RequisitionDetailPage() {
       {requisition && (
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-2xl border border-border bg-card p-4 text-sm shadow-sm sm:grid-cols-4">
           {([
-            ["Status", REQUISITION_STATUS_LABELS[requisition.status]],
+            ["Status", (requisition.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[requisition.status])],
             ["Type", REQUISITION_TYPE_LABELS[requisition.type]],
             ["Replacing", requisition.type === "replacement" ? nameOf(requisition.replacing) : "—"],
             ["Headcount", String(requisition.headcount)],

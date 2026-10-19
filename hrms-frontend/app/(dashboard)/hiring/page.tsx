@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users, ShieldAlert } from "lucide-react";
+import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users, ShieldAlert, Pencil, Undo2, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition } from "@/hooks/useHiring";
+import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition, useWithdrawRequisition } from "@/hooks/useHiring";
 import { usePendingOffers, useDecideOffer } from "@/hooks/useCandidates";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
@@ -10,6 +10,10 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { RequisitionDialog } from "@/components/hiring/RequisitionDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,6 +42,10 @@ const statusStyles: Record<RequisitionStatus, string> = {
 const fmtDate = (iso?: string | null) =>
   iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—";
 const nameOf = (v: unknown) => (v && typeof v === "object" ? (v as { name?: string }).name ?? "—" : "—");
+const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id?: string })._id ?? "") : String(v ?? ""));
+/** Editable while nobody has decided anything; withdrawable until it is fully decided. */
+const EDITABLE = ["draft", "pending"];
+const WITHDRAWABLE = ["draft", "pending", "finance_pending", "on_hold"];
 
 export default function HiringPage() {
   const { hasPermission, user } = useAuth();
@@ -48,6 +56,7 @@ export default function HiringPage() {
   const canCreate = hasPermission("hiring", "create") || headOnly;
   const canApprove = hasPermission("hiring", "approve");
   const canDelete = hasPermission("hiring", "delete");
+  const canEditAny = hasPermission("hiring", "edit");
 
   const query = useTableQuery({ defaultSortBy: "createdAt", defaultSortOrder: "desc" });
   const { data, isLoading, isFetching } = useRequisitions(query.params);
@@ -62,6 +71,13 @@ export default function HiringPage() {
   const { mutate: decideOffer, isPending: deciding } = useDecideOffer();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<JobRequisition | null>(null);
+  const [withdrawTarget, setWithdrawTarget] = useState<JobRequisition | null>(null);
+  const [withdrawReason, setWithdrawReason] = useState("");
+  const { mutate: withdraw, isPending: withdrawing } = useWithdrawRequisition();
+  const mine = (r: JobRequisition) => idOf(r.raisedBy) === String(user?._id ?? "");
+  const canEditRow = (r: JobRequisition) => (mine(r) || canEditAny) && EDITABLE.includes(r.status) && !(r.approvalTrail ?? []).length;
+  const canWithdrawRow = (r: JobRequisition) => (mine(r) || canEditAny) && WITHDRAWABLE.includes(r.status);
   const [deleteTarget, setDeleteTarget] = useState<JobRequisition | null>(null);
 
   const columns: DataTableColumn<JobRequisition>[] = [
@@ -120,8 +136,11 @@ export default function HiringPage() {
       render: (r) => (
         <div>
           <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
-            {REQUISITION_STATUS_LABELS[r.status]}
+            {r.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[r.status]}
           </span>
+          {r.withdrawnAt && r.withdrawReason && (
+            <div className="mt-0.5 max-w-[16rem] truncate text-[10px] text-muted-foreground" title={r.withdrawReason}>{r.withdrawReason}</div>
+          )}
           {/* Who made the last call, when it was finance rather than HR. */}
           {r.financeReviewedAt && (
             <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">by finance</div>
@@ -133,6 +152,16 @@ export default function HiringPage() {
       id: "actions", label: "", alwaysVisible: true, align: "right",
       render: (r) => (
         <div className="flex items-center justify-end gap-1">
+          {canEditRow(r) && (
+            <Button size="sm" variant="ghost" onClick={() => setEditTarget(r)} aria-label="Edit requisition">
+              <Pencil className="h-3.5 w-3.5" />Edit
+            </Button>
+          )}
+          {canWithdrawRow(r) && (
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => { setWithdrawTarget(r); setWithdrawReason(""); }} aria-label="Withdraw requisition">
+              <Undo2 className="h-3.5 w-3.5" />Withdraw
+            </Button>
+          )}
           {canApprove && r.status === "pending" && (
             <>
               <Button size="sm" variant="outline" disabled={reviewing}
@@ -331,6 +360,29 @@ export default function HiringPage() {
       />
 
       <RequisitionDialog open={dialogOpen} onOpenChange={setDialogOpen} headMode={headOnly} />
+      <RequisitionDialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)} headMode={headOnly} requisition={editTarget} />
+
+      <ResponsiveDialog open={!!withdrawTarget} onOpenChange={(o) => !o && setWithdrawTarget(null)}>
+        <ResponsiveDialogContent desktopClassName="max-w-md">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Withdraw this requisition?</ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
+          <div className="space-y-3 px-4 sm:px-0">
+            <p className="text-sm text-muted-foreground">
+              &ldquo;{withdrawTarget?.title}&rdquo; leaves every approval queue, finance&rsquo;s included, and stays on record as withdrawn.
+              {withdrawTarget?.type === "replacement" ? " The person it would replace is not told." : ""}
+            </p>
+            <Textarea rows={3} maxLength={500} value={withdrawReason} onChange={(e) => setWithdrawReason(e.target.value)} placeholder="Why? (optional) — e.g. no longer needed, filled internally" />
+          </div>
+          <ResponsiveDialogFooter>
+            <Button variant="outline" onClick={() => setWithdrawTarget(null)}>Keep it</Button>
+            <Button variant="destructive" disabled={withdrawing}
+              onClick={() => withdrawTarget && withdraw({ id: withdrawTarget._id, reason: withdrawReason.trim() }, { onSuccess: () => setWithdrawTarget(null) })}>
+              {withdrawing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}Withdraw
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createRequisition, getRequisitions, getRequisitionById,
-  updateRequisition, reviewRequisition, deleteRequisition, getHiringWorkflowState, uploadJd, getReplaceable,
+  updateRequisition, reviewRequisition, deleteRequisition, withdrawRequisition, getHiringWorkflowState, uploadJd, getReplaceable,
 } from "../controllers/jobRequisitionController.js";
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
@@ -41,6 +41,8 @@ router.put("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "edit"
 // Approving is its own permission, and the workflow narrows it further to the
 // role holding the current step.
 router.patch("/requisitions/:id/review", checkPermission("hiring", "approve"), reviewRequisition);
+// Whoever raised it may withdraw it, as may HR — the service checks which.
+router.patch("/requisitions/:id/withdraw", withdrawRequisition);
 router.delete("/requisitions/:id", checkPermission("hiring", "delete"), deleteRequisition);
 router.post("/requisitions/:id/jd", checkPermissionOrDepartmentHead("hiring", "edit"), uploadSingle, uploadJd);
 

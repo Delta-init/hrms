@@ -1984,6 +1984,10 @@ export interface IJobRequisition extends Document {
   /** Finance's person, as the finance system names them — not an HRMS login. */
   financeReviewedBy?: string;
   rejectedBy?: "hr" | "finance" | null;
+  /** Withdrawn by whoever raised it (or HR) before it was decided. Status is then "cancelled". */
+  withdrawnAt?: Date | null;
+  withdrawnBy?: Types.ObjectId | IUser | null;
+  withdrawReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
