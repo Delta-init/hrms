@@ -66,7 +66,7 @@ const book = (o: Partial<Parameters<typeof rooms.bookCrmRoom>[0]>, now = NOW) =>
 
 step("1. Where mentors work");
 await db.collection("employees").insertMany([
-  { _id: id(), organization: hq, employeeCode: "E1", name: "Haffiz Khan", email: "haffiz@t.io", workMode: "office", location: "dubai", status: "active", designation: "Forex Mentor" },
+  { _id: id(), organization: hq, employeeCode: "E1", name: "Haffiz Khan", email: "haffiz@t.io", workMode: "office", location: "dubai", status: "active", designation: "Forex Mentor", photo: "employees/haffiz.jpg" },
   { _id: id(), organization: hq, employeeCode: "E2", name: "Mary Roy", email: "mary@t.io", workMode: "wfh", location: "india", status: "active", designation: "DM Mentor" },
   { _id: id(), organization: hq, employeeCode: "E3", name: "Libin  Paul", email: "libinpaul@t.io", status: "active", location: "dubai", designation: "Senior Mentor" },
   { _id: id(), organization: hq, employeeCode: "E4", name: "Old Self", email: "re@t.io", workMode: "wfh", status: "resigned" },
@@ -84,6 +84,7 @@ check("a different email: found by the exact name (spacing aside), with the HRMS
 check("a leaver and a returner on one email: the one still here", wm[3].status === "probation" && wm[3].workMode === "office", j(wm[3]));
 check("two people with one name: not a match", wm[4].matchedBy === null, j(wm[4]));
 check("not in the HRMS: nothing", wm[5].matchedBy === null && wm[5].workMode === null, j(wm[5]));
+check("a photo: its link; none: null", String(wm[0].photoUrl).includes("employees/haffiz.jpg") && wm[1].photoUrl === null, j([wm[0].photoUrl, wm[1].photoUrl]));
 const otherOrg = await staffWorkModes([{ email: "haffiz@t.io" }], String(other));
 check("asked of another organization: not theirs", otherOrg[0].matchedBy === null, j(otherOrg));
 

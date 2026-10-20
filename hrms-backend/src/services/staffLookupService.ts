@@ -1,4 +1,5 @@
 import { Employee } from "../models/Employee.js";
+import { publicUrl } from "../config/r2.js";
 
 /*
  * Where somebody works, for another system (the user, 2026-10-19: "only office employees get a pod — check from
@@ -19,13 +20,15 @@ export interface StaffWorkMode {
   location: "india" | "dubai" | null;
   status: string | null;
   designation: string | null;
+  /** Their photo, as a link — for another system's screens (the Root portal's Sales TV, 2026-10-20); null when none. */
+  photoUrl: string | null;
 }
 
 const LEFT = new Set(["terminated", "resigned"]);
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-type Row = { _id: unknown; name?: string; email?: string; workMode?: string; location?: string; status?: string; designation?: string };
+type Row = { _id: unknown; name?: string; email?: string; workMode?: string; location?: string; status?: string; designation?: string; photo?: string };
 
 /** Of several records for one person, the one still working here. */
 const pick = (rows: Row[]): Row | undefined => rows.find((r) => !LEFT.has(String(r.status))) ?? rows[0];
@@ -34,7 +37,7 @@ export async function staffWorkModes(people: StaffAsk[], organizationId?: string
   const org = organizationId ? { organization: organizationId } : {};
   const emails = [...new Set(people.map((p) => norm(p.email)).filter(Boolean))];
   const byEmailRows = emails.length
-    ? await Employee.find({ ...org, email: { $in: emails } }).select("name email workMode location status designation").lean<Row[]>()
+    ? await Employee.find({ ...org, email: { $in: emails } }).select("name email workMode location status designation photo").lean<Row[]>()
     : [];
   const byEmail = new Map<string, Row[]>();
   for (const r of byEmailRows) byEmail.set(norm(r.email), [...(byEmail.get(norm(r.email)) ?? []), r]);
@@ -43,7 +46,7 @@ export async function staffWorkModes(people: StaffAsk[], organizationId?: string
   const names = [...new Set(people.filter((p) => !byEmail.has(norm(p.email)) && norm(p.name)).map((p) => norm(p.name)))];
   const byNameRows = names.length
     ? await Employee.find({ ...org, $or: names.map((n) => ({ name: new RegExp(`^\\s*${escape(n).replace(/ /g, "\\s+")}\\s*$`, "i") })) })
-        .select("name email workMode location status designation").lean<Row[]>()
+        .select("name email workMode location status designation photo").lean<Row[]>()
     : [];
   const byName = new Map<string, Row[]>();
   for (const r of byNameRows) byName.set(norm(r.name), [...(byName.get(norm(r.name)) ?? []), r]);
@@ -66,6 +69,7 @@ export async function staffWorkModes(people: StaffAsk[], organizationId?: string
       location: found?.location === "dubai" || found?.location === "india" ? found.location : null,
       status: found?.status ?? null,
       designation: found?.designation ?? null,
+      photoUrl: found?.photo ? publicUrl(String(found.photo)) : null,
     };
   });
 }
