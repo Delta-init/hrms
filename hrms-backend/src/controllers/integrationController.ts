@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { directoryService, attendanceNow, attendanceDay } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
-import { SalaryAdvanceService } from "../services/salaryAdvanceService.js";
+import { SalaryAdvanceService, FINANCE_ADVANCE_STATUSES, type FinanceAdvanceStatus } from "../services/salaryAdvanceService.js";
 import { OneTimeAdjustmentService } from "../services/oneTimeAdjustmentService.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
@@ -355,9 +355,15 @@ export const rejectProcurementRequest = asyncRoute(async (req, res) => {
 const salaryAdvanceService = new SalaryAdvanceService();
 
 /** Advances HR has approved, waiting on finance to pay them out. */
+/** ?status= — none: finance's queue (HR-approved, waiting); pending | approved | rejected | all: finance's full record. */
 export const listSalaryAdvances = asyncRoute(async (req, res) => {
   const organizationId = String(req.query.organizationId);
-  sendSuccess(res, "Salary advances retrieved", await salaryAdvanceService.listForFinance(organizationId));
+  const status = String(req.query.status ?? "hr_approved");
+  if (!(FINANCE_ADVANCE_STATUSES as readonly string[]).includes(status)) {
+    sendError(res, `status must be one of ${FINANCE_ADVANCE_STATUSES.join(", ")}`, 400);
+    return;
+  }
+  sendSuccess(res, "Salary advances retrieved", await salaryAdvanceService.listForFinance(organizationId, status as FinanceAdvanceStatus));
 });
 
 /** Finance paid it out: HRMS creates the recovery on HR's terms. */

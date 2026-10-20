@@ -25,6 +25,10 @@ import { env } from "../config/env.js";
  * because a machine request has no user to infer it from.
  */
 
+/** Which advances finance asks for: its queue (hr_approved, the default), or its full record by status. */
+export const FINANCE_ADVANCE_STATUSES = ["hr_approved", "pending", "approved", "rejected", "all"] as const;
+export type FinanceAdvanceStatus = (typeof FINANCE_ADVANCE_STATUSES)[number];
+
 class AdvanceError extends Error {
   statusCode: number;
   constructor(message: string, statusCode = 400) {
@@ -313,16 +317,25 @@ export class SalaryAdvanceService {
 
   // ── Finance integration ────────────────────────────────────────────────────
 
-  /** What HR has approved and finance has not yet approved or refused. */
-  async listForFinance(organization: string) {
-    return SalaryAdvance.find({ organization, status: "hr_approved" })
-      .populate([
-        { path: "employee", select: "name employeeCode designation department", populate: { path: "department", select: "name" } },
-        { path: "user", select: "name email" },
-        { path: "hrReviewedBy", select: "name email" },
-      ])
-      .sort({ neededBy: 1, hrReviewedAt: 1 })
-      .lean();
+  /**
+   * Advances for finance. By default what HR has approved and finance has not
+   * yet approved or refused — the queue finance acts on. With a status, finance's
+   * full record (2026-10-20): "pending" still with HR, "approved" paid out,
+   * "rejected" refused by HR or finance, "all" every one — newest first, the
+   * latest 500.
+   */
+  async listForFinance(organization: string, status: FinanceAdvanceStatus = "hr_approved") {
+    const populate = [
+      { path: "employee", select: "name employeeCode designation department", populate: { path: "department", select: "name" } },
+      { path: "user", select: "name email" },
+      { path: "hrReviewedBy", select: "name email" },
+      { path: "raisedBy", select: "name" },
+    ];
+    if (status === "hr_approved") {
+      return SalaryAdvance.find({ organization, status: "hr_approved" }).populate(populate).sort({ neededBy: 1, hrReviewedAt: 1 }).lean();
+    }
+    const filter = status === "all" ? { organization } : { organization, status };
+    return SalaryAdvance.find(filter).populate(populate).sort({ createdAt: -1 }).limit(500).lean();
   }
 
   /**
