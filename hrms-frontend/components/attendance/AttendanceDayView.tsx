@@ -136,6 +136,11 @@ export function AttendanceDayView({ canManage, initialStatus }: {
         );
       },
     },
+    {
+      id: "head", label: "Dept head",
+      render: (r) => <span className="text-xs text-muted-foreground">{r.employee?.head || "—"}{r.employee?.department ? <span className="block text-[10px] opacity-70">{r.employee?.department}</span> : null}</span>,
+    },
+    { id: "shift", label: "Shift", render: (r) => <span className="text-xs text-muted-foreground">{r.employee?.shift || "—"}</span> },
     { id: "login", label: "Login", render: (r) => <span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3.5 w-3.5" />{fmtTime(r.checkIn, r.timeZone ?? orgTz)}</span> },
     { id: "logout", label: "Logout", render: (r) => <span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3.5 w-3.5" />{fmtTime(r.checkOut, r.timeZone ?? orgTz)}</span> },
     { id: "worked", label: "Worked", render: (r) => <span className="font-medium">{fmtWorked(r.workedMinutes)}</span> },

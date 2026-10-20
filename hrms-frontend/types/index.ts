@@ -584,9 +584,13 @@ export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   wfh: "Work From Home",
 };
 
+/** Department, its head, and the person's usual shift — shown beside attendance. */
+export interface StaffInfo { department: string; head: string; shift: string }
+
 export interface Attendance {
   _id: string;
   user: Pick<User, "_id" | "name" | "email" | "designation"> | string;
+  staff?: StaffInfo | null;
   date: string;
   timeZone: string;
   checkIn?: string | null;
@@ -1568,7 +1572,7 @@ export interface AttendanceCalendarData {
 export type DayViewStatus = AttendanceStatus | "not_marked" | "not_employed";
 
 export interface DailyAttendanceRow extends Omit<AttendanceCalendarDay, "status"> {
-  employee: { _id: string; name: string; employeeCode?: string; designation?: string };
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } & Partial<StaffInfo>;
   status: DayViewStatus;
 }
 export interface DailyAttendanceData {

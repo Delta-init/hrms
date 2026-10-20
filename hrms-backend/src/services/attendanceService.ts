@@ -7,6 +7,7 @@ import { Regularization } from "../models/Regularization.js";
 import { Holiday } from "../models/Holiday.js";
 import { Organization } from "../models/Organization.js";
 import { Department } from "../models/Department.js";
+import { stillHere, hasLeftFilter } from "../utils/employeeStatus.js";
 import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { leavePolicyIndex, leaveLabel } from "./leavePolicyResolver.js";
 import { employmentWindows, employedOn } from "./employmentWindow.js";
@@ -223,6 +224,47 @@ interface AttendanceQuery extends PaginationQuery {
 }
 
 
+/** Logins of people who have left — kept out of every attendance view. */
+async function leaverUserIds(): Promise<string[]> {
+  const rows = await Employee.find({ ...orgFilter(), status: hasLeftFilter(), user: { $ne: null } }).select("user").lean();
+  return rows.map((r) => String(r.user));
+}
+
+export interface StaffInfo { department: string; head: string; shift: string }
+
+/**
+ * Department, its head, and the usual shift, per login — the two columns the
+ * records list and the day view both show. The head is the department's
+ * leader, recorded as either an employee or a login; the shift is the work
+ * schedule the person is on, by name.
+ */
+async function staffInfoByUser(userIds: string[]): Promise<Map<string, StaffInfo>> {
+  const out = new Map<string, StaffInfo>();
+  if (!userIds.length) return out;
+  const [emps, users] = await Promise.all([
+    Employee.find({ ...orgFilter(), user: { $in: userIds } }).select("user department").lean<Array<{ user: unknown; department?: unknown }>>(),
+    User.find({ _id: { $in: userIds } }).select("workSchedule").populate("workSchedule", "name").lean<Array<{ _id: unknown; workSchedule?: { name?: string } | null }>>(),
+  ]);
+  const deptIds = [...new Set(emps.map((e) => e.department).filter(Boolean).map(String))];
+  const depts = await Department.find({ _id: { $in: deptIds } }).select("name leader leaderKind").lean<Array<{ _id: unknown; name?: string; leader?: unknown; leaderKind?: string }>>();
+  const empLeaders = depts.filter((d) => d.leader && d.leaderKind !== "User").map((d) => d.leader);
+  const userLeaders = depts.filter((d) => d.leader && d.leaderKind === "User").map((d) => d.leader);
+  const [le, lu] = await Promise.all([
+    empLeaders.length ? Employee.find({ _id: { $in: empLeaders } }).select("name").lean() : [],
+    userLeaders.length ? User.find({ _id: { $in: userLeaders } }).select("name").lean() : [],
+  ]);
+  const leaderName = new Map<string, string>([...le, ...lu].map((x) => [String(x._id), String((x as { name?: string }).name ?? "")]));
+  const deptInfo = new Map(depts.map((d) => [String(d._id), { name: d.name ?? "", head: d.leader ? leaderName.get(String(d.leader)) ?? "" : "" }]));
+  const shift = new Map(users.map((u) => [String(u._id), u.workSchedule?.name ?? ""]));
+  for (const id of userIds) out.set(String(id), { department: "", head: "", shift: shift.get(String(id)) ?? "" });
+  for (const e of emps) {
+    const d = e.department ? deptInfo.get(String(e.department)) : undefined;
+    const cur = out.get(String(e.user));
+    if (cur && d) { cur.department = d.name; cur.head = d.head; }
+  }
+  return out;
+}
+
 export class AttendanceService {
   private applySessions(doc: { checkIn?: Date | null; checkOut?: Date | null; sessions: unknown }, checkIn?: Date | null, checkOut?: Date | null) {
     // Build a single session from top-level check-in/out so worked minutes compute.
@@ -396,6 +438,17 @@ export class AttendanceService {
         ? query.user
         : { $in: [...ids].map((id) => new Types.ObjectId(id)) };
     }
+    // People who have left are not in the list — unless somebody asked for
+    // that one person, which is how their history stays reachable.
+    if (!query.user) {
+      const gone = new Set(await leaverUserIds());
+      if (gone.size) {
+        const cur = filter.user as { $in?: unknown[] } | undefined;
+        filter.user = cur && Array.isArray(cur.$in)
+          ? { $in: cur.$in.filter((id) => !gone.has(String(id))) }
+          : { $nin: [...gone].map((id) => new Types.ObjectId(id)) };
+      }
+    }
     if (query.dateFrom || query.dateTo) {
       // Matched on the day the record is written under, not on a range of
       // instants. A range has to be anchored in one timezone, and every person
@@ -424,7 +477,11 @@ export class AttendanceService {
     // on one tab and clean on the other, which is worse than not flagging it at
     // all. The rows still carry their raw sessions — this only adds the summary
     // the list actually reads.
-    const records = found.map((r) => ({ ...r, ...anomalyOf(r.sessions), ...punchOriginOf(r.sessions) }));
+    const info = await staffInfoByUser([...new Set(found.map((r) => String((r.user as { _id?: unknown } | null)?._id ?? r.user)))]);
+    const records = found.map((r) => ({
+      ...r, ...anomalyOf(r.sessions), ...punchOriginOf(r.sessions),
+      staff: info.get(String((r.user as { _id?: unknown } | null)?._id ?? r.user)) ?? null,
+    }));
 
     return { records, pagination: buildPagination(total, page, limit) };
   }
@@ -1101,6 +1158,9 @@ export class AttendanceService {
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = Array.isArray(employeeId) ? { $in: employeeId } : employeeId;
+    // People who have left are not on the calendar or the day view at all —
+    // not as "not marked", not in a single count. Asked for by name, they are.
+    else empFilter.status = stillHere();
     const employees = await Employee.find(empFilter)
       .select("name employeeCode designation user joiningDate workMode")
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "workDays timeZone" } })
@@ -1112,6 +1172,7 @@ export class AttendanceService {
     // theirs to account for. Without this a mid-month joiner was marked absent
     // for every working day before they existed as an employee.
     const windows = await employmentWindows(employees as never);
+    const staff = await staffInfoByUser(userIds.map(String));
 
 
     const [att, monthLeaves, holidays, rosterMap, regs, exclusiveScheduleIdList] = await Promise.all([
@@ -1281,7 +1342,10 @@ export class AttendanceService {
       summary.avgWorkedMinutes = workedDays ? Math.round(workedTotal / workedDays) : 0;
 
       return {
-        employee: { _id: e._id, name: e.name, employeeCode: e.employeeCode, designation: e.designation },
+        employee: {
+          _id: e._id, name: e.name, employeeCode: e.employeeCode, designation: e.designation,
+          ...(staff.get(String((e.user as { _id?: unknown } | null)?._id ?? e.user)) ?? { department: "", head: "", shift: "" }),
+        },
         days,
         summary,
         // Reported so a caller looking at one day can tell a day nobody marked

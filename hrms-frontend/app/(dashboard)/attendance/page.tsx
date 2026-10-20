@@ -113,6 +113,11 @@ export default function AttendancePage() {
     },
     { id: "date", label: "Date", sortKey: "date", render: (r) => <span className="text-muted-foreground">{fmtDate(r.date, r.timeZone)}</span> },
     { id: "region", label: "Region", defaultVisible: false, render: (r) => <span className="text-xs text-muted-foreground">{r.timeZone}</span> },
+    {
+      id: "head", label: "Dept head",
+      render: (r) => <span className="text-xs text-muted-foreground">{r.staff?.head || "—"}{r.staff?.department ? <span className="block text-[10px] opacity-70">{r.staff?.department}</span> : null}</span>,
+    },
+    { id: "shift", label: "Shift", render: (r) => <span className="text-xs text-muted-foreground">{r.staff?.shift || "—"}</span> },
     { id: "login", label: "Login", render: (r) => <span className="inline-flex items-center gap-1 text-emerald-600"><LogIn className="h-3.5 w-3.5" />{fmtTime(r.checkIn, r.timeZone)}</span> },
     { id: "logout", label: "Logout", render: (r) => <span className="inline-flex items-center gap-1 text-rose-500"><LogOut className="h-3.5 w-3.5" />{fmtTime(r.checkOut, r.timeZone)}</span> },
     { id: "worked", label: "Worked", sortKey: "workedMinutes", render: (r) => <span className="font-medium">{fmtWorked(r.workedMinutes)}</span> },

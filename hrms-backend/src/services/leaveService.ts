@@ -1,5 +1,6 @@
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
+import { hasLeftFilter } from "../utils/employeeStatus.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
 import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput } from "../validations/leaveValidation.js";
@@ -313,8 +314,14 @@ export class LeaveService {
    * every navigation. Scoped like every other read here, so one tenant's queue
    * is never counted into another's.
    */
+  /** Logins of people who have left — their pending requests are nobody's to decide. */
+  private async leaverUserIds() {
+    const rows = await Employee.find({ ...orgFilter(), status: hasLeftFilter(), user: { $ne: null } }).select("user").lean();
+    return rows.map((r) => r.user);
+  }
+
   async pendingCount(): Promise<number> {
-    return LeaveRequest.countDocuments(scoped({ status: "pending" }));
+    return LeaveRequest.countDocuments(scoped({ status: "pending", user: { $nin: await this.leaverUserIds() } }));
   }
 
   async list(query: LeaveQuery) {
@@ -327,6 +334,9 @@ export class LeaveService {
       else if (userIds.length > 1) filter.user = { $in: userIds };
     }
     if (query.status) filter.status = query.status;
+    // The pending queue is for people still here; a leaver's history stays in
+    // the other views, and anyone asked for by name is shown.
+    if (query.status === "pending" && !query.user) filter.user = { $nin: await this.leaverUserIds() };
     if (query.type) filter.type = query.type;
     // Date-range overlap: leave overlaps [from,to] if endDate >= from AND startDate <= to.
     if (query.dateFrom) filter.endDate = { $gte: new Date(query.dateFrom) };
