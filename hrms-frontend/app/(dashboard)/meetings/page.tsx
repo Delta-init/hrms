@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MonitorPlay, CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -10,7 +10,7 @@ import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { MeetingWeekGrid } from "@/components/meetings/MeetingWeekGrid";
+import { MeetingRoomDayGrid, MeetingWeekGrid } from "@/components/meetings/MeetingWeekGrid";
 import { MeetingDialog } from "@/components/meetings/MeetingDialog";
 import { RoomsDialog } from "@/components/meetings/RoomsDialog";
 import { BoardLinkDialog } from "@/components/meetings/BoardLinkDialog";
@@ -22,6 +22,12 @@ import {
 import { REVIEW_OUTCOME_LABELS, type MeetingBooking } from "@/types";
 
 const ALL = "__all__";
+/** Day and Week draw days side by side; By room draws one day with a column per room. */
+type View = "day" | "week" | "rooms";
+const VIEWS: Array<{ id: View; label: string }> = [
+  { id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "rooms", label: "By room" },
+];
+const VIEW_KEY = "meetings-view";
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number) => { const o = new Date(d); o.setDate(o.getDate() + n); return o; };
 /** Monday-first, matching the work week everywhere else in this app. */
@@ -66,7 +72,18 @@ export default function MeetingsPage() {
   // The rooms themselves are an administrator's job, not a booker's.
   const canManageRooms = hasPermission("meetings", "edit");
 
-  const [mode, setMode] = useState<"day" | "week">("week");
+  const [mode, setModeState] = useState<View>("week");
+  // The last view this browser chose — read after mount so the server render and the first client render agree.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY);
+      if (saved && VIEWS.some((v) => v.id === saved)) setModeState(saved as View);
+    } catch { /* storage blocked — week */ }
+  }, []);
+  const setMode = (m: View) => {
+    setModeState(m);
+    try { localStorage.setItem(VIEW_KEY, m); } catch { /* not remembered */ }
+  };
   const [anchor, setAnchor] = useState(() => new Date());
   const [room, setRoom] = useState(ALL);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -74,6 +91,7 @@ export default function MeetingsPage() {
   const [boardOpen, setBoardOpen] = useState(false);
   const [editing, setEditing] = useState<MeetingBooking | null>(null);
   const [pickedStart, setPickedStart] = useState<Date | null>(null);
+  const [pickedRoom, setPickedRoom] = useState<string | null>(null);
   const [detail, setDetail] = useState<MeetingBooking | null>(null);
   const [cancelTarget, setCancelTarget] = useState<MeetingBooking | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MeetingBooking | null>(null);
@@ -84,7 +102,7 @@ export default function MeetingsPage() {
   const { mutate: acknowledge, isPending: acknowledging } = useAcknowledgeReview();
 
   const days = useMemo(() => {
-    if (mode === "day") return [startOfDay(anchor)];
+    if (mode !== "week") return [startOfDay(anchor)];
     const from = startOfWeek(anchor);
     return Array.from({ length: 7 }, (_, i) => addDays(from, i));
   }, [mode, anchor]);
@@ -109,7 +127,9 @@ export default function MeetingsPage() {
   const canManage = (b: MeetingBooking) =>
     idOf(b.organizer) === String(user?._id) || !!user?.isDepartmentHead || hasPermission("meetings", "edit");
 
-  const label = mode === "day"
+  const startBooking = (at: Date, roomId: string | null = null) => { setEditing(null); setPickedStart(at); setPickedRoom(roomId); setNewKind("meeting"); setDialogOpen(true); };
+
+  const label = mode !== "week"
     ? anchor.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" })
     : `${days[0]!.toLocaleDateString([], { day: "numeric", month: "short" })} – ${days[6]!.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
 
@@ -134,12 +154,12 @@ export default function MeetingsPage() {
               </Button>
             )}
             {canBook && (
-              <Button variant="outline" className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setNewKind("review"); setDialogOpen(true); }}>
+              <Button variant="outline" className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setPickedRoom(null); setNewKind("review"); setDialogOpen(true); }}>
                 <ClipboardCheck className="h-4 w-4" />Review meeting
               </Button>
             )}
             {canBook && rooms.length > 0 && (
-              <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setNewKind("meeting"); setDialogOpen(true); }}>
+              <Button className="shadow-sm" onClick={() => { setEditing(null); setPickedStart(null); setPickedRoom(null); setNewKind("meeting"); setDialogOpen(true); }}>
                 <Plus className="h-4 w-4" />Book a room
               </Button>
             )}
@@ -150,12 +170,12 @@ export default function MeetingsPage() {
       <Card className="mb-4 flex flex-wrap items-center gap-3 p-3">
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" className="h-8 w-8"
-            onClick={() => setAnchor((d) => addDays(d, mode === "day" ? -1 : -7))}>
+            onClick={() => setAnchor((d) => addDays(d, mode === "week" ? -7 : -1))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" className="h-8" onClick={() => setAnchor(new Date())}>Today</Button>
           <Button variant="outline" size="icon" className="h-8 w-8"
-            onClick={() => setAnchor((d) => addDays(d, mode === "day" ? 1 : 7))}>
+            onClick={() => setAnchor((d) => addDays(d, mode === "week" ? 7 : 1))}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -170,10 +190,10 @@ export default function MeetingsPage() {
             </SelectContent>
           </Select>
           <div className="flex overflow-hidden rounded-md border border-border">
-            {(["day", "week"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
-                className={`px-3 py-1 text-xs capitalize ${mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-                {m}
+            {VIEWS.map((v) => (
+              <button key={v.id} onClick={() => setMode(v.id)}
+                className={`px-3 py-1 text-xs ${mode === v.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
+                {v.label}
               </button>
             ))}
           </div>
@@ -196,17 +216,28 @@ export default function MeetingsPage() {
           </div>
         ) : isLoading ? (
           <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : mode === "rooms" ? (
+          <MeetingRoomDayGrid
+            day={days[0]!}
+            rooms={room === ALL ? rooms : rooms.filter((r) => r._id === room)}
+            bookings={bookings}
+            onSelect={setDetail}
+            // The room clicked and the time carry over into the booking form.
+            onPick={canBook ? (at, roomId) => startBooking(at, roomId) : undefined}
+          />
         ) : (
           <MeetingWeekGrid
             days={days}
             bookings={bookings}
             onSelect={setDetail}
-            onPick={canBook ? (at) => { setEditing(null); setPickedStart(at); setNewKind("meeting"); setDialogOpen(true); } : undefined}
+            onPick={canBook ? (at) => startBooking(at) : undefined}
+            // Too many at once to sit side by side: that day, one column per room.
+            onMore={mode === "week" ? (day) => { setAnchor(day); setMode("rooms"); } : undefined}
           />
         )}
       </Card>
 
-      <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} />
+      <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} initialRoom={pickedRoom} />
       <ReviewMeetingDialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)} booking={reviewing} />
       <RoomsDialog open={roomsOpen} onOpenChange={setRoomsOpen} />
       <BoardLinkDialog open={boardOpen} onOpenChange={setBoardOpen} />
@@ -389,7 +420,7 @@ export default function MeetingsPage() {
 
               {!shown.restricted && canManage(shown) && shown.status === "booked" && (
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                  <Button size="sm" variant="outline" onClick={() => { setEditing(shown); setPickedStart(null); setDetail(null); setDialogOpen(true); }}>
+                  <Button size="sm" variant="outline" onClick={() => { setEditing(shown); setPickedStart(null); setPickedRoom(null); setDetail(null); setDialogOpen(true); }}>
                     <Pencil className="h-3.5 w-3.5" />Edit
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setCancelTarget(shown)}>

@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { holdForClass, lmsHolds, podBookings, podsNamed, releaseForClass } from "../services/classPodService.js";
+import { staffWorkModes } from "../services/staffLookupService.js";
+import { bookCrmRoom, cancelCrmBooking, crmRoomDay } from "../services/crmRoomService.js";
 
 /*
  * The LMS's class pods (services/classPodService.ts), behind the signed integration API and the caller's named
@@ -59,4 +61,48 @@ export const releaseClassPod = asyncRoute(async (req, res) => {
 export const listClassPods = asyncRoute(async (req, res) => {
   const from = date(req.query.from) ?? new Date();
   sendSuccess(res, "Class pods retrieved", await lmsHolds(from));
+});
+
+/* ── Where the LMS's mentors work (2026-10-19): services/staffLookupService.ts ── */
+
+/** POST /integrations/directory/work-modes { people: [{ email, name? }], organizationId? } → each one's HRMS work mode, location and status. */
+export const listWorkModes = asyncRoute(async (req, res) => {
+  const b = req.body ?? {};
+  const people = (Array.isArray(b.people) ? b.people : [])
+    .map((p: { email?: unknown; name?: unknown }) => ({ email: String(p?.email ?? "").trim(), name: p?.name ? String(p.name).slice(0, 120) : undefined }))
+    .filter((p: { email: string; name?: string }) => p.email || p.name);
+  if (!people.length) { sendError(res, "people is required", 400); return; }
+  if (people.length > 300) { sendError(res, "At most 300 people at a time", 400); return; }
+  const org = String(b.organizationId ?? req.query.organizationId ?? "").trim() || undefined;
+  sendSuccess(res, "Work modes retrieved", await staffWorkModes(people, org));
+});
+
+/* ── Meeting rooms for the sales CRMs (2026-10-19): services/crmRoomService.ts ── */
+
+/** GET /integrations/meetings/crm-rooms?organizationId&crm&day=YYYY-MM-DD&viewerEmail → the CRM rooms and that day's bookings. */
+export const crmRoomsDay = asyncRoute(async (req, res) => {
+  sendSuccess(res, "Rooms retrieved", await crmRoomDay({
+    crm: String(req.query.crm ?? ""), day: req.query.day ? String(req.query.day) : undefined,
+    viewerEmail: req.query.viewerEmail ? String(req.query.viewerEmail) : undefined,
+  }));
+});
+
+/** POST /integrations/meetings/crm-bookings { organizationId, crm, roomId, start, end, title, bookerEmail, bookerName } */
+export const crmBook = asyncRoute(async (req, res) => {
+  const b = req.body ?? {};
+  const start = date(b.start), end = date(b.end);
+  if (!start || !end) { sendError(res, "start and end are required", 400); return; }
+  const booking = await bookCrmRoom({
+    crm: String(b.crm ?? ""), roomId: String(b.roomId ?? ""), start, end, title: String(b.title ?? ""),
+    bookerEmail: String(b.bookerEmail ?? ""), bookerName: String(b.bookerName ?? ""),
+  });
+  sendSuccess(res, "Room booked", booking, 201);
+});
+
+/** DELETE /integrations/meetings/crm-bookings/:id?organizationId&crm&bookerEmail[&any=1] → taken back. */
+export const crmCancel = asyncRoute(async (req, res) => {
+  sendSuccess(res, "Booking cancelled", await cancelCrmBooking({
+    crm: String(req.query.crm ?? ""), id: String(req.params.id ?? ""), bookerEmail: String(req.query.bookerEmail ?? ""),
+    any: String(req.query.any ?? "") === "1",
+  }));
 });

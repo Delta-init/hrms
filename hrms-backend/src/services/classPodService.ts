@@ -115,7 +115,7 @@ export async function holdForClass(input: HoldInput): Promise<HoldResult> {
     const made = await MeetingBooking.create({
       organization: getOrgId(), room: new Types.ObjectId(roomId), title, start: input.start, end: input.end,
       timeZone: "Asia/Dubai", organizer: organizer?._id ?? null, participants: [], status: "booked", kind: "meeting", mode: "room",
-      agenda: "Booked by the LMS for an online class.", source: { system: LMS, ref: input.ref, label },
+      agenda: "Booked by the LMS for a class.", source: { system: LMS, ref: input.ref, label },
     });
     // Somebody took it at the same moment and was first: this one goes, and the next pod is tried.
     if (await heldBefore(made._id, made.room, made.start, made.end, have ? [have._id] : [])) {

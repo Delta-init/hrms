@@ -11,7 +11,9 @@ import {
   listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
-import { listPods, listPodBookings, holdClassPod, releaseClassPod, listClassPods } from "../controllers/classPodController.js";
+import {
+  listPods, listPodBookings, holdClassPod, releaseClassPod, listClassPods, listWorkModes, crmRoomsDay, crmBook, crmCancel,
+} from "../controllers/classPodController.js";
 
 const router = Router();
 
@@ -75,5 +77,13 @@ router.get("/meetings/pod-bookings", serviceOrgScope, listPodBookings);
 router.get("/meetings/class-pods", serviceOrgScope, listClassPods);
 router.put("/meetings/class-pods/:ref", serviceOrgScope, holdClassPod);
 router.delete("/meetings/class-pods/:ref", serviceOrgScope, releaseClassPod);
+
+// Where the LMS's mentors work — office or from home — so only office staff get a pod (2026-10-19).
+router.post("/directory/work-modes", listWorkModes);
+
+// Meeting Room 1 and 2 for the sales CRMs, one Dubai day at a time, inside office hours (2026-10-19).
+router.get("/meetings/crm-rooms", serviceOrgScope, crmRoomsDay);
+router.post("/meetings/crm-bookings", serviceOrgScope, crmBook);
+router.delete("/meetings/crm-bookings/:id", serviceOrgScope, crmCancel);
 
 export default router;

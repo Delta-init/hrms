@@ -22,6 +22,8 @@ interface Props {
   startAt?: Date | null;
   /** What a new booking starts as — "review" from the New review meeting button. */
   initialKind?: "meeting" | "review";
+  /** Pre-filled when an empty slot in a room's column was clicked (the By room view). */
+  initialRoom?: string | null;
 }
 
 /** `datetime-local` wants local wall-clock, not an ISO instant. */
@@ -31,7 +33,7 @@ function toLocalInput(d: Date) {
 }
 const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id: string })._id) : String(v ?? ""));
 
-export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, initialKind = "meeting" }: Props) {
+export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, initialKind = "meeting", initialRoom = null }: Props) {
   const isEditing = !!booking;
   const { mutate: create, isPending: creating } = useCreateBooking();
   const { mutate: update, isPending: updating } = useUpdateBooking();
@@ -72,13 +74,13 @@ export function MeetingDialog({ open, onOpenChange, rooms, booking, startAt, ini
     } else {
       const from = startAt ?? new Date();
       const to = new Date(from.getTime() + 60 * 60_000);
-      setTitle(""); setRoom(rooms[0]?._id ?? "");
+      setTitle(""); setRoom(initialRoom && rooms.some((r) => r._id === initialRoom) ? initialRoom : rooms[0]?._id ?? "");
       setStart(toLocalInput(from)); setEnd(toLocalInput(to));
       setAgenda(""); setParticipants([]);
       setKind(initialKind); setMode(initialKind === "review" && !rooms.length ? "online" : "room");
       setReviewee(""); setMeetingLink(""); setPlaceAddress(""); setPlaceMapUrl("");
     }
-  }, [open, booking, startAt, rooms, initialKind]);
+  }, [open, booking, startAt, rooms, initialKind, initialRoom]);
 
   const isReview = kind === "review";
   const effectiveMode = isReview ? mode : "room";
