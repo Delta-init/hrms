@@ -1457,7 +1457,8 @@ export interface IResignation extends Document {
 }
 
 // ─── Probation confirmation ─────────────────────────────────────────────────
-export type ConfirmationStatus = "pending" | "confirmed" | "rejected";
+/** "closed" — taken off the queue without a decision (a clean-up of old requests). */
+export type ConfirmationStatus = "pending" | "confirmed" | "rejected" | "closed";
 
 export interface IConfirmation extends Document {
   _id: Types.ObjectId;

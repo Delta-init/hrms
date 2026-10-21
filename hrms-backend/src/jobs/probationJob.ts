@@ -97,7 +97,9 @@ async function hrContacts(orgId: string): Promise<Array<{ id: string; email: str
 
 /** Raise the confirmation paperwork for anyone whose probation is up. */
 async function raiseDue(orgId: string, emp: Candidate, end: Date): Promise<boolean> {
-  const open = await Confirmation.findOne({ organization: orgId, employee: emp._id, status: "pending" })
+  // A confirmation closed without a decision is not raised again: closing it
+  // was the decision. HR can still raise one by hand.
+  const open = await Confirmation.findOne({ organization: orgId, employee: emp._id, status: { $in: ["pending", "closed"] } })
     .select("_id")
     .lean();
   if (open) return false;

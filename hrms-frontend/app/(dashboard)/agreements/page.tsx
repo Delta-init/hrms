@@ -31,6 +31,8 @@ const statusStyles: Record<string, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
   approved: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   rejected: "bg-red-500/10 text-red-600 border-red-500/20",
+  // Taken off the queue without a decision — the pre-October clean-up.
+  closed: "bg-muted text-muted-foreground border-border",
 };
 
 const fmt = (iso?: string | null) =>

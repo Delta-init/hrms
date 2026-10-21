@@ -1749,7 +1749,7 @@ export interface ResignationLite {
 }
 
 // ─── Probation confirmation ─────────────────────────────────────────────────
-export type ConfirmationStatus = "pending" | "confirmed" | "rejected";
+export type ConfirmationStatus = "pending" | "confirmed" | "rejected" | "closed";
 
 export interface DueConfirmation {
   employee: {
@@ -2927,7 +2927,7 @@ export interface SignedAgreementRow {
   employee?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
   variant: AgreementVariant;
   typedName: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "superseded" | "closed";
   signedAt: string;
   signedIp?: string | null;
   reviewNote?: string;

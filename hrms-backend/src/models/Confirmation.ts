@@ -20,7 +20,7 @@ const confirmationSchema = new Schema<IConfirmation>(
     confirmationDate: { type: Date, required: [true, "Confirmation date is required"] },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "rejected"],
+      enum: ["pending", "confirmed", "rejected", "closed"],
       default: "pending",
       index: true,
     },

@@ -56,7 +56,7 @@ const signedAgreementSchema = new Schema(
      * exists. It is not a verdict — nobody decided anything about it — so it
      * sits outside the pending/approved/rejected set HR works through.
      */
-    status: { type: String, enum: ["pending", "approved", "rejected", "superseded"], default: "pending", index: true },
+    status: { type: String, enum: ["pending", "approved", "rejected", "superseded", "closed"], default: "pending", index: true },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },
