@@ -13,6 +13,10 @@ import { notify } from "./notificationService.js";
 import { sendMail } from "../utils/mailer.js";
 import { env } from "../config/env.js";
 
+/** Which one-time payments finance asks for: its queue (with_finance, the default), or its full record by status. */
+export const FINANCE_ONE_TIME_STATUSES = ["with_finance", "paid", "rejected", "all"] as const;
+export type FinanceOneTimeStatus = (typeof FINANCE_ONE_TIME_STATUSES)[number];
+
 interface OneTimeQuery extends PaginationQuery {
   employee?: string;
   month?: string;
@@ -128,15 +132,22 @@ export class OneTimeAdjustmentService {
   // ── Finance integration ────────────────────────────────────────────────────
   // Called from signed machine requests, with the organization named outright.
 
-  /** Payments HR has sent to finance to pay, not yet paid or refused. */
-  async listForFinance(organization: string) {
-    return OneTimeAdjustment.find({ organization, payVia: "finance", financeStatus: "with_finance" })
-      .populate([
-        { path: "employee", select: "name employeeCode designation currency department", populate: { path: "department", select: "name" } },
-        { path: "createdBy", select: "name" },
-      ])
-      .sort({ createdAt: 1 })
-      .lean();
+  /**
+   * Payments for finance. By default what HR has sent to finance to pay, not
+   * yet paid or refused — the queue finance acts on. With a status, finance's
+   * full record (2026-10-21): "paid", "rejected" by finance, or "all" sent to
+   * finance — newest first, the latest 500.
+   */
+  async listForFinance(organization: string, status: FinanceOneTimeStatus = "with_finance") {
+    const populate = [
+      { path: "employee", select: "name employeeCode designation currency department", populate: { path: "department", select: "name" } },
+      { path: "createdBy", select: "name" },
+    ];
+    if (status === "with_finance") {
+      return OneTimeAdjustment.find({ organization, payVia: "finance", financeStatus: "with_finance" }).populate(populate).sort({ createdAt: 1 }).lean();
+    }
+    const financeStatus = status === "all" ? { $in: ["with_finance", "paid", "rejected"] } : status;
+    return OneTimeAdjustment.find({ organization, payVia: "finance", financeStatus }).populate(populate).sort({ createdAt: -1 }).limit(500).lean();
   }
 
   /**

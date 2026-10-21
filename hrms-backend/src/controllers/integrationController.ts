@@ -3,7 +3,7 @@ import { directoryService, attendanceNow, attendanceDay } from "../services/dire
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService } from "../services/procurementService.js";
 import { SalaryAdvanceService, FINANCE_ADVANCE_STATUSES, type FinanceAdvanceStatus } from "../services/salaryAdvanceService.js";
-import { OneTimeAdjustmentService } from "../services/oneTimeAdjustmentService.js";
+import { OneTimeAdjustmentService, FINANCE_ONE_TIME_STATUSES, type FinanceOneTimeStatus } from "../services/oneTimeAdjustmentService.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
@@ -393,9 +393,15 @@ export const rejectSalaryAdvance = asyncRoute(async (req, res) => {
 const oneTimeService = new OneTimeAdjustmentService();
 
 /** Payments HR sent to finance to pay, waiting on them. */
+/** ?status= — none: finance's queue (sent to finance, waiting); paid | rejected | all: finance's full record. */
 export const listOneTimePayments = asyncRoute(async (req, res) => {
   const organizationId = String(req.query.organizationId);
-  sendSuccess(res, "One-time payments retrieved", await oneTimeService.listForFinance(organizationId));
+  const status = String(req.query.status ?? "with_finance");
+  if (!(FINANCE_ONE_TIME_STATUSES as readonly string[]).includes(status)) {
+    sendError(res, `status must be one of ${FINANCE_ONE_TIME_STATUSES.join(", ")}`, 400);
+    return;
+  }
+  sendSuccess(res, "One-time payments retrieved", await oneTimeService.listForFinance(organizationId, status as FinanceOneTimeStatus));
 });
 
 /** Finance paid it: when, how, and its own reference. */
