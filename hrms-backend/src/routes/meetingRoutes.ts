@@ -3,7 +3,7 @@ import {
   getRooms, createRoom, updateRoom, retireRoom,
   getInvitable, getBookings, getBookingById, createBooking, updateBooking, cancelBooking, deleteBooking,
   saveReview, setRecording, acknowledgeReview, joinMeeting,
-  getPublicBoard,
+  getPublicBoard, getBookingAlerts, updateBookingAlerts,
 } from "../controllers/meetingController.js";
 import { boardLimiter } from "../middleware/rateLimit.js";
 import { authenticate } from "../middleware/auth.js";
@@ -26,6 +26,9 @@ router.get("/board", boardLimiter, getPublicBoard);
 router.use(authenticate);
 
 router.get("/rooms", checkPermission("meetings", "view"), getRooms);
+// Who is emailed about every booking — room admins set it in the Rooms dialog.
+router.get("/booking-alerts", checkPermission("meetings", "edit"), getBookingAlerts);
+router.put("/booking-alerts", checkPermission("meetings", "edit"), updateBookingAlerts);
 router.post("/rooms", checkPermission("meetings", "edit"), createRoom);
 router.put("/rooms/:id", checkPermission("meetings", "edit"), updateRoom);
 router.patch("/rooms/:id/retire", checkPermission("meetings", "edit"), retireRoom);

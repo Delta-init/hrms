@@ -11,6 +11,8 @@ const settingsSchema = new Schema(
     smtpPass: { type: String, trim: true, maxlength: 200 },
     smtpSecure: { type: Boolean, default: false },
     mailFrom: { type: String, trim: true, maxlength: 200 },
+    /** Who is emailed about every room booking — booked, moved, cancelled — wherever it was made. */
+    bookingAlertUsers: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
     /**
      * Hold office staff to punching at a kiosk.
      *

@@ -4,6 +4,7 @@ import { User } from "../models/User.js";
 import { getOrgId, scoped } from "../utils/orgContext.js";
 import { heldBefore } from "../utils/roomClaim.js";
 import { podsNamed, type PodRoom } from "./classPodService.js";
+import { announceBooking } from "./bookingAlertService.js";
 
 /*
  * Meeting rooms for the sales CRMs (the user, 2026-10-19: "the sales portals can book meeting room 1 and 2 only,
@@ -136,6 +137,7 @@ export async function bookCrmRoom(input: CrmBookInput, now = new Date()): Promis
     await MeetingBooking.deleteOne({ _id: made._id });
     throw bad(`${room.name} was just booked by someone else`, 409);
   }
+  announceBooking(made._id, "booked");
   const mine = (await crmRoomDay({ crm: input.crm, day, viewerEmail: email })).bookings.find((b) => b.id === String(made._id));
   if (!mine) throw bad("Booking vanished", 500);
   return mine;
@@ -151,5 +153,6 @@ export async function cancelCrmBooking(input: { crm: string; id: string; bookerE
   const email = String(input.bookerEmail ?? "").trim().toLowerCase();
   if (!input.any && String(src.ref ?? "").toLowerCase() !== email) throw bad("Only the person who booked it can take it back", 403);
   const r = await MeetingBooking.updateOne({ _id: b._id, status: "booked" }, { $set: { status: "cancelled" } });
+  if (r.modifiedCount) announceBooking(b._id, "cancelled");
   return { cancelled: r.modifiedCount > 0 };
 }

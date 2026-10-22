@@ -15,6 +15,7 @@ import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { stillHere } from "../utils/employeeStatus.js";
 import { notify } from "./notificationService.js";
 import { heldBefore, heldBesides } from "../utils/roomClaim.js";
+import { announceBooking } from "./bookingAlertService.js";
 
 const POP = [
   { path: "room", select: "name location capacity" },
@@ -282,6 +283,7 @@ export class MeetingService {
       }
     }
 
+    if (place.room) announceBooking(record._id, "booked");
     // In-app only: an online review's mail goes at the start, with the join link.
     await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — you have been invited`, actor.userId);
     return MeetingBooking.findById(record._id).populate(POP);
@@ -333,6 +335,10 @@ export class MeetingService {
      * is no longer at.
      */
     const moved = record.start.getTime() !== new Date(input.start).getTime();
+    const roomBefore = record.room ? await MeetingRoom.findById(record.room).select("name").lean<{ name?: string } | null>() : null;
+    const wasAt = { room: roomBefore?.name, start: record.start, end: record.end };
+    const roomMoved = String(record.room ?? "") !== String(place.room ?? "") ||
+      record.start.getTime() !== new Date(input.start).getTime() || record.end.getTime() !== new Date(input.end).getTime();
     const before = record.toObject();
     await MeetingBooking.updateOne({ _id: record._id }, {
       $set: {
@@ -349,6 +355,7 @@ export class MeetingService {
         throw Object.assign(new Error(`That room was just booked from ${other.start.toISOString().slice(11, 16)} to ${other.end.toISOString().slice(11, 16)} UTC — pick another time or room`), { statusCode: 409 });
       }
     }
+    if (place.room && roomMoved) announceBooking(record._id, record.room ? "moved" : "booked", record.room ? wasAt : undefined);
     // Moved, or a new link: an in-app word now; the mail still goes at the (new) start.
     if (changed && place.kind === "review" && place.mode === "online") {
       await this.tellParticipants(String(record._id), place.participants as string[], `${input.title} — the time or link changed`, actor.userId);
@@ -363,6 +370,7 @@ export class MeetingService {
     await this.assertCanManage(record, actor);
 
     await MeetingBooking.updateOne({ _id: record._id }, { $set: { status: "cancelled" } });
+    if (record.room) announceBooking(record._id, "cancelled");
     await this.mailParticipants(String(record._id), "cancel");
     await this.tellParticipants(String(record._id), record.participants.map(String), `${record.title} — cancelled`, actor.userId);
     return { message: "Booking cancelled" };

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2, MapPin, Pencil, Plus, RotateCcw, Users, X } from "lucide-react";
+import { BellRing, Loader2, MapPin, Pencil, Plus, RotateCcw, Users, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useMeetingRooms, useCreateRoom, useUpdateRoom, useRetireRoom } from "@/hooks/useMeetings";
+import { useMeetingRooms, useCreateRoom, useUpdateRoom, useRetireRoom, useBookingAlerts, useSaveBookingAlerts, useInvitablePeople } from "@/hooks/useMeetings";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { MeetingRoom } from "@/types";
 
@@ -155,8 +156,55 @@ export function RoomsDialog({ open, onOpenChange }: Props) {
               {editing ? "Save changes" : <><Plus className="h-4 w-4" />Add room</>}
             </Button>
           </div>
+
+          <BookingAlerts open={open} />
         </div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/**
+ * Who hears about every room booking — booked, moved or cancelled, whether a
+ * person made it here, a sales CRM did, or the LMS did for a class. One email
+ * each time, so keep the list to the people who actually look after the rooms.
+ */
+function BookingAlerts({ open }: { open: boolean }) {
+  const { data: list = [], isLoading } = useBookingAlerts(open);
+  const { data: people = [] } = useInvitablePeople(open);
+  const { mutate: save, isPending } = useSaveBookingAlerts();
+  const ids = list.map((p) => p._id);
+  const addable = people.filter((p) => !ids.includes(p._id));
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border p-3">
+      <p className="flex items-center gap-1.5 text-sm font-medium"><BellRing className="h-4 w-4 text-primary" />Booking alerts</p>
+      <p className="text-xs text-muted-foreground">
+        Emailed about every booking as it happens — booked, moved or cancelled, from HRMS, the sales CRMs or the LMS.
+      </p>
+      {isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {list.length === 0 && <span className="text-xs text-muted-foreground">Nobody yet.</span>}
+          {list.map((p) => (
+            <span key={p._id} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 py-0.5 pl-2.5 pr-1 text-xs">
+              {p.name}
+              <button type="button" aria-label={`Remove ${p.name}`} disabled={isPending}
+                onClick={() => save(ids.filter((id) => id !== p._id))}
+                className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <Select value="" onValueChange={(id) => id && save([...ids, id])} disabled={isPending}>
+        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Add someone…" /></SelectTrigger>
+        <SelectContent>
+          {addable.map((p) => <SelectItem key={p._id} value={p._id}>{p.name}{p.employeeCode ? ` · ${p.employeeCode}` : ""}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

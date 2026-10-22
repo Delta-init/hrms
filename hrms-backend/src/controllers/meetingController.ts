@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { MeetingService, type Actor } from "../services/meetingService.js";
 import { MeetingBoardService } from "../services/meetingBoardService.js";
+import { getBookingAlertUsers, setBookingAlertUsers } from "../services/bookingAlertService.js";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import {
@@ -133,4 +134,19 @@ const board = new MeetingBoardService();
 /** No sign-in: the board is public by design. */
 export const getPublicBoard = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Meeting board", await board.board()); } catch (error) { next(error); }
+};
+
+// ── Booking alerts ───────────────────────────────────────────────────────────
+
+/** Who is emailed about every room booking. */
+export const getBookingAlerts = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try { sendSuccess(res, "Booking alerts", await getBookingAlertUsers()); } catch (error) { next(error); }
+};
+
+export const updateBookingAlerts = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const users = Array.isArray(req.body?.users) ? req.body.users.map(String).filter((id: string) => /^[a-f0-9]{24}$/.test(id)).slice(0, 20) : null;
+    if (!users) { sendError(res, "Send the list of people as `users`", 400); return; }
+    sendSuccess(res, "Booking alerts saved", await setBookingAlertUsers(users));
+  } catch (error) { next(error); }
 };

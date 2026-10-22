@@ -1,9 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RotateCw } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
 const REFRESH_MS = 30_000;
+/** How long each page of bookings stays up before the next. */
+const PAGE_MS = 10_000;
 const SOON_MS = 15 * 60_000;
 const ROTATIONS = [0, 90, 180, 270] as const;
 type Rotation = (typeof ROTATIONS)[number];
@@ -176,6 +178,43 @@ export default function MeetingBoardPage() {
   const busy = rooms.filter((r) => r.state === "busy").length;
   const upcoming = board?.bookings ?? [];
 
+  /**
+   * Pages, sized to the screen: as many bookings as fit below the rooms, the
+   * rest on further pages that turn by themselves. Measured rather than fixed,
+   * so a big TV shows more per page than a small one, and a turn to portrait
+   * re-fits. Where not even two fit — a phone — the list just scrolls.
+   */
+  const listArea = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const count = upcoming.length;
+  useLayoutEffect(() => { setPageSize(null); }, [count, view.w, view.h, rotation]);
+  useLayoutEffect(() => {
+    if (pageSize !== null || !count) return;
+    const area = listArea.current;
+    // The rows of whichever list is showing — the other is display:none and measures 0.
+    // Sized by the tallest, so a page never ends on a row cut in half.
+    const rows = Array.from(area?.querySelectorAll<HTMLElement>("[data-row]") ?? []).filter((el) => el.offsetHeight > 0);
+    const row = rows[0];
+    if (!area || !row) return;
+    const tallest = Math.max(...rows.map((el) => el.offsetHeight));
+    const list = row.parentElement!;
+    const css = getComputedStyle(list.tagName === "TBODY" ? list.closest("table")! : list);
+    const gap = list.tagName === "TBODY" ? parseFloat(css.borderSpacing.split(" ")[1] ?? "0") || 0 : parseFloat(css.rowGap) || 0;
+    const head = area.querySelector<HTMLElement>("thead")?.offsetHeight ?? 0;
+    const fits = Math.floor((area.clientHeight - head + gap) / (tallest + gap));
+    setPageSize(fits >= 2 ? fits : Infinity);
+  }, [pageSize, count, board]);
+  const size = pageSize ?? Infinity;
+  const pages = Number.isFinite(size) ? Math.max(1, Math.ceil(count / size)) : 1;
+  useEffect(() => { if (page >= pages) setPage(0); }, [page, pages]);
+  useEffect(() => {
+    if (pages <= 1) return;
+    const t = setInterval(() => setPage((p) => (p + 1) % pages), PAGE_MS);
+    return () => clearInterval(t);
+  }, [pages]);
+  const shown = Number.isFinite(size) ? upcoming.slice(page * size, page * size + size) : upcoming;
+
   // The board's own shape once turned: a quarter turn swaps width and height.
   const sideways = rotation === 90 || rotation === 270;
   const boardW = sideways ? view.h : view.w;
@@ -197,7 +236,7 @@ export default function MeetingBoardPage() {
         transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
       }}
     >
-    <main className="flex min-h-full flex-col gap-[clamp(1rem,2.5vmin,2rem)] bg-[#07090d] px-[clamp(1rem,3vmin,3rem)] py-[clamp(1rem,3vmin,2.5rem)] font-mono text-[#ece6d6]">
+    <main className="flex h-full flex-col gap-[clamp(1rem,2.5vmin,2rem)] bg-[#07090d] px-[clamp(1rem,3vmin,3rem)] py-[clamp(1rem,3vmin,2.5rem)] font-mono text-[#ece6d6]">
       {/* ── Header: where, and the time — the clock leads on a portrait screen ── */}
       <header className="flex flex-wrap items-end justify-between gap-4 border-b-2 border-[#ffb81c] pb-[clamp(0.75rem,2vmin,1.5rem)] group-data-[orient=portrait]:flex-col-reverse group-data-[orient=portrait]:items-start">
         <div>
@@ -242,19 +281,32 @@ export default function MeetingBoardPage() {
           )}
 
           {/* ── Today's bookings ── */}
-          <section className="flex-1">
-            <p className="mb-2 text-[clamp(0.65rem,1.4vmin,0.9rem)] uppercase tracking-[0.35em] text-[#ffb81c]">Bookings</p>
+          <section className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[clamp(0.65rem,1.4vmin,0.9rem)] uppercase tracking-[0.35em] text-[#ffb81c]">Bookings</p>
+              {pages > 1 && (
+                <div className="flex items-center gap-3" aria-label={`Page ${page + 1} of ${pages}`}>
+                  <span className="text-[clamp(0.6rem,1.3vmin,0.9rem)] uppercase tracking-[0.25em] text-[#8a93a3] tabular-nums">Page {page + 1} of {pages}</span>
+                  <span className="flex gap-1.5">
+                    {Array.from({ length: pages }, (_, i) => (
+                      <span key={i} className={`h-[clamp(0.35rem,0.8vmin,0.6rem)] rounded-full transition-all duration-500 ${i === page ? "w-[clamp(1rem,2.4vmin,1.8rem)] bg-[#ffb81c]" : "w-[clamp(0.35rem,0.8vmin,0.6rem)] bg-[#2a323e]"}`} />
+                    ))}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div ref={listArea} className={`min-h-0 flex-1 ${Number.isFinite(size) ? "overflow-hidden" : "overflow-y-auto"}`}>
             {upcoming.length === 0 ? (
               <p className="py-16 text-center text-[clamp(1rem,2.4vmin,1.6rem)] uppercase tracking-[0.3em] text-[#8a93a3]">No meetings booked for the rest of today</p>
             ) : (
               <>
                 {/* Portrait screens and phones: a card per booking. */}
-                <ul className="grid gap-[clamp(0.4rem,1vmin,0.8rem)] group-data-[layout=table]:hidden">
-                  {upcoming.map((b) => {
+                <ul key={`c${page}`} className="grid gap-[clamp(0.4rem,1vmin,0.8rem)] motion-safe:animate-fade-in group-data-[layout=table]:hidden">
+                  {shown.map((b) => {
                     const s = statusOf(b, now);
                     const faded = s.tone === "ended" || s.tone === "cancelled";
                     return (
-                      <li key={b.id} className={`rounded-lg border-l-4 bg-[#10151d] px-[clamp(0.75rem,2vmin,1.5rem)] py-[clamp(0.6rem,1.6vmin,1.2rem)] uppercase ${faded ? "opacity-55" : ""} ${
+                      <li key={b.id} data-row className={`rounded-lg border-l-4 bg-[#10151d] px-[clamp(0.75rem,2vmin,1.5rem)] py-[clamp(0.6rem,1.6vmin,1.2rem)] uppercase ${faded ? "opacity-55" : ""} ${
                         s.tone === "live" ? "border-[#3ee089]" : s.tone === "soon" ? "border-[#ffb81c]" : s.tone === "cancelled" ? "border-[#ff5d50]" : "border-[#2a323e]"}`}>
                         <div className="flex items-baseline justify-between gap-3">
                           <span className="text-[clamp(1rem,2.6vmin,2rem)] font-bold tabular-nums text-[#ffb81c]">{hm(b.start)}<span className="text-[#8a93a3]">–{hm(b.end)}</span></span>
@@ -284,12 +336,12 @@ export default function MeetingBoardPage() {
                         <th className="px-3 py-1 text-right font-normal">Status</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {upcoming.map((b) => {
+                    <tbody key={`t${page}`} className="motion-safe:animate-fade-in">
+                      {shown.map((b) => {
                         const s = statusOf(b, now);
                         const faded = s.tone === "ended" || s.tone === "cancelled";
                         return (
-                          <tr key={b.id} className={`bg-[#10151d] text-[clamp(0.85rem,2vmin,1.6rem)] uppercase ${faded ? "opacity-55" : ""}`}>
+                          <tr key={b.id} data-row className={`bg-[#10151d] text-[clamp(0.85rem,2vmin,1.6rem)] uppercase ${faded ? "opacity-55" : ""}`}>
                             <td className={`whitespace-nowrap rounded-l-md border-l-4 px-3 py-[clamp(0.6rem,1.5vmin,1.1rem)] font-bold tabular-nums text-[#ffb81c] ${
                               s.tone === "live" ? "border-[#3ee089]" : s.tone === "soon" ? "border-[#ffb81c]" : s.tone === "cancelled" ? "border-[#ff5d50]" : "border-transparent"}`}>
                               {hm(b.start)}<span className="text-[#8a93a3]">–{hm(b.end)}</span>
@@ -309,6 +361,7 @@ export default function MeetingBoardPage() {
                 </div>
               </>
             )}
+            </div>
           </section>
         </>
       )}

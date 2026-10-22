@@ -150,3 +150,21 @@ export const useJoinMeeting = () =>
         `/meetings/bookings/${id}/join`, { latitude, longitude, accuracy }
       )).data.data!,
   });
+
+/** Who is emailed about every room booking. */
+export const useBookingAlerts = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "booking-alerts"],
+    queryFn: async () => (await api.get<ApiResponse<Array<{ _id: string; name: string; email: string }>>>("/meetings/booking-alerts")).data.data ?? [],
+    enabled,
+  });
+
+export const useSaveBookingAlerts = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (users: string[]) =>
+      (await api.put<ApiResponse<Array<{ _id: string; name: string; email: string }>>>("/meetings/booking-alerts", { users })).data.data ?? [],
+    onSuccess: (d) => { qc.setQueryData([...KEY, "booking-alerts"], d); toast.success("Booking alerts saved"); },
+    onError: (e) => toast.error(errMsg(e, "Could not save booking alerts")),
+  });
+};

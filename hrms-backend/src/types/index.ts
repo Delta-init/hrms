@@ -85,6 +85,8 @@ export interface IOrganizationSettings {
   smtpPass?: string;
   smtpSecure?: boolean;
   mailFrom?: string;
+  /** Emailed about every room booking — booked, moved, cancelled. */
+  bookingAlertUsers?: Types.ObjectId[];
   /** Hold office staff to punching at a kiosk. See the model for why it is opt-in. */
   enforceWorkMode?: boolean;
   /** How closely remote staff are held to one browser. See the model. */

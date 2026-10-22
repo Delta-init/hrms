@@ -4,6 +4,7 @@ import { MeetingRoom } from "../models/MeetingRoom.js";
 import { User } from "../models/User.js";
 import { getOrgId, scoped } from "../utils/orgContext.js";
 import { heldBefore } from "../utils/roomClaim.js";
+import { announceBooking } from "./bookingAlertService.js";
 
 /*
  * Pods for the LMS's online classes (the user, 2026-10-18: "every online class gets a meeting room from the HRMS —
@@ -132,15 +133,25 @@ export async function holdForClass(input: HoldInput): Promise<HoldResult> {
       return { ok: true, booking: await asPod(twin._id), changed: true };
     }
     if (have) await MeetingBooking.updateOne({ _id: have._id }, { $set: { status: "cancelled" } });
+    // One mail for a class that moved, not a cancel and a booking.
+    if (have) {
+      const was = await MeetingRoom.findById(have.room).select("name").lean<{ name?: string } | null>();
+      announceBooking(made._id, "moved", { room: was?.name, start: have.start, end: have.end });
+    } else announceBooking(made._id, "booked");
     return { ok: true, booking: await asPod(made._id), changed: true };
   }
-  if (have) await MeetingBooking.updateOne({ _id: have._id }, { $set: { status: "cancelled" } });
+  if (have) {
+    await MeetingBooking.updateOne({ _id: have._id }, { $set: { status: "cancelled" } });
+    announceBooking(have._id, "cancelled");
+  }
   return { ok: false, reason: "no_room", message: `No pod is free from ${input.start.toISOString()} to ${input.end.toISOString()}` };
 }
 
 /** The class no longer needs a pod: whatever it holds is let go. */
 export async function releaseForClass(ref: string): Promise<{ released: number }> {
-  const r = await MeetingBooking.updateMany(scoped({ "source.system": LMS, "source.ref": ref, status: "booked" }), { $set: { status: "cancelled" } });
+  const held = await MeetingBooking.find(scoped({ "source.system": LMS, "source.ref": ref, status: "booked" })).select("_id").lean();
+  const r = await MeetingBooking.updateMany({ _id: { $in: held.map((h) => h._id) }, status: "booked" }, { $set: { status: "cancelled" } });
+  for (const h of held) announceBooking(h._id, "cancelled");
   return { released: r.modifiedCount };
 }
 
