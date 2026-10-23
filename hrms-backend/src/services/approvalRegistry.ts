@@ -9,12 +9,14 @@ import { Confirmation } from "../models/Confirmation.js";
 import { JobRequisition } from "../models/JobRequisition.js";
 import { Resignation } from "../models/Resignation.js";
 import { Application } from "../models/Application.js";
+import { Procurement } from "../models/Procurement.js";
 import { LeaveService } from "./leaveService.js";
 import { RegularizationService } from "./regularizationService.js";
 import { ReimbursementService } from "./reimbursementService.js";
 import { ConfirmationService } from "./confirmationService.js";
 import { JobRequisitionService } from "./jobRequisitionService.js";
 import { ResignationService } from "./resignationService.js";
+import { ProcurementService } from "./procurementService.js";
 import { CandidateService } from "./candidateService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 
@@ -34,7 +36,7 @@ import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 export type ApprovalModule =
   | "leave" | "regularization" | "reimbursement" | "confirmation"
-  | "hiring" | "offer" | "resignation" | "agreement";
+  | "hiring" | "offer" | "resignation" | "agreement" | "procurement";
 
 /** What was decided about a request, once somebody has decided it. */
 export interface Decision {
@@ -141,6 +143,7 @@ const confirmation = new ConfirmationService();
 const requisition = new JobRequisitionService();
 const resignation = new ResignationService();
 const candidates = new CandidateService();
+const procurement = new ProcurementService();
 
 const name = (v: unknown): string =>
   v && typeof v === "object" ? String((v as { name?: string }).name ?? "—") : "—";
@@ -463,6 +466,45 @@ export const ADAPTERS: Adapter[] = [
     // The one review that takes no reviewer role — it has no chain to check.
     decide: (id, approve, note, userId) =>
       resignation.review(id, { status: approve ? "accepted" : "rejected", reviewNote: note } as never, userId),
+  },
+  {
+    // HR's step on a new purchase request. Finance's step happens in the finance
+    // app; an already-bought record needs no approval and never appears here.
+    module: "procurement",
+    departmentFilter: (ids) => ({ department: ids.departmentId }),
+    permissionModule: "procurement",
+    label: "Procurement",
+    model: Procurement as never,
+    raisedField: "createdAt",
+    pendingFilter: { status: "requested", kind: "new" },
+    populate: [{ path: "requestedBy", select: "name email" }, { path: "department", select: "name" }],
+    decided: {
+      filter: { kind: "new", hrReviewedAt: { $ne: null } },
+      dateField: "hrReviewedAt",
+      populate: [{ path: "hrReviewedBy", select: "name" }],
+      outcome: (d): Decision => ({
+        outcome: d.status === "rejected" && d.rejectedBy === "hr" ? "rejected" : "approved",
+        at: (d.hrReviewedAt as Date) ?? null,
+        by: person(d.hrReviewedBy),
+        note: (d.hrNote as string) || null,
+      }),
+    },
+    toRow: (d) => ({
+      id: String(d._id),
+      title: `${d.quantity ?? 1} × ${String(d.item ?? "Item")}`,
+      raisedBy: person(d.requestedBy),
+      raisedAt: (d.createdAt as Date) ?? null,
+      summary: [
+        { label: "Estimated cost", value: d.estimatedCost ? `${String(d.currency ?? "AED")} ${d.estimatedCost}` : "—" },
+        { label: "Category", value: String(d.category ?? "—") },
+        { label: "Department", value: label(d.department) },
+        { label: "Needed by", value: day(d.neededBy) },
+      ],
+      chain: null,
+      href: "/assets",
+    }),
+    decide: (id, approve, note, userId) =>
+      procurement.review(id, { decision: approve ? "approve" : "reject", note } as never, userId),
   },
 ];
 

@@ -2796,7 +2796,7 @@ export interface SalaryAdvanceEligibility {
 // ─── Approvals console ────────────────────────────────────────────────────────
 export const APPROVAL_MODULES = [
   "leave", "regularization", "reimbursement", "confirmation",
-  "hiring", "offer", "resignation", "agreement",
+  "hiring", "offer", "resignation", "agreement", "procurement",
 ] as const;
 export type ApprovalModule = (typeof APPROVAL_MODULES)[number];
 
@@ -2810,6 +2810,7 @@ export const APPROVAL_MODULE_HREF: Record<ApprovalModule, string> = {
   offer: "/hiring/candidates",
   resignation: "/resignations",
   agreement: "/agreements",
+  procurement: "/assets",
 };
 
 export interface ApprovalDecision {

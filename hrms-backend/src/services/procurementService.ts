@@ -178,22 +178,23 @@ export class ProcurementService {
 
   async create(input: CreateProcurementInput, requestedBy: string) {
     const kind = input.kind ?? "existing";
-    // Both kinds start waiting for HR (2026-10-23): a request goes on to finance once approved; a record of something
-    // already bought becomes what it was entered as — ordered or received — and never goes to finance.
-    const boughtStatus = kind === "existing" ? (input.status === "received" ? "received" : "ordered") : null;
+    // A request waits for HR, then finance. A record of something already bought
+    // needs neither (2026-10-23, reversing the same day's "another member
+    // approves"): it stands as entered — ordered or received — straight away.
+    const status = kind === "new" ? "requested" : input.status === "received" ? "received" : "ordered";
 
     const record = await Procurement.create({
       ...input,
       kind,
-      status: "requested",
-      boughtStatus,
+      status,
+      boughtStatus: null,
       department: input.department || null,
       organization: getOrgId(),
       requestedBy,
     });
 
-    // Both kinds wait for HR now, so both tell who can approve (once, in this block).
-    {
+    // Only a request waits for anyone, so only a request tells the approvers.
+    if (kind === "new") {
       // The approvers (and the requester's department head) as before, plus
       // office keeping's people — in-app, and push through notify().
       const [approvers, facilities] = await Promise.all([
@@ -204,7 +205,7 @@ export class ProcurementService {
         // Not the one who raised it: they can't approve it (2026-10-23).
         users: [...approvers, ...facilities].filter((id) => String(id) !== String(requestedBy)),
         kind: "approval",
-        title: kind === "existing" ? `${input.item} recorded as bought — to approve` : `${input.item} requested`,
+        title: `${input.item} requested`,
         body: `${input.quantity ?? 1} × ${input.item}`,
         href: "/assets",
         actor: requestedBy,
@@ -213,9 +214,7 @@ export class ProcurementService {
       const raiser = await User.findById(requestedBy).select("name").lean<{ name?: string } | null>();
       sendWhatsAppToUsers(
         await this.facilitiesPeople(requestedBy),
-        kind === "existing"
-          ? `Bought item to approve: ${input.quantity ?? 1} × ${input.item}, recorded by ${raiser?.name ?? "somebody"}.`
-          : `New procurement request: ${input.quantity ?? 1} × ${input.item}, raised by ${raiser?.name ?? "somebody"}.`
+        `New procurement request: ${input.quantity ?? 1} × ${input.item}, raised by ${raiser?.name ?? "somebody"}.`
       ).catch(() => null);
     }
     const created = await Procurement.findById(record._id).populate(POP);

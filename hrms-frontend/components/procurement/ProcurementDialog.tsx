@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { FileText, Loader2, Upload, X } from "lucide-react";
+import { FileText, Loader2, Upload, X, Minus, Plus } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -43,7 +43,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
   const { data: departments = [] } = useDepartmentsSimple({ enabled: open });
   const isPending = creating || updating || uploading;
 
-  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<ProcurementFormValues>({
+  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm<ProcurementFormValues>({
     resolver: zodResolver(procurementFormSchema),
     defaultValues: EMPTY,
   });
@@ -140,7 +140,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
             <p className="text-xs text-muted-foreground">
               {kind === "new"
                 ? "Goes to HR, then to finance. You will be emailed either way."
-                : "A record of something already bought — another member approves it; it doesn't go to finance."}
+                : "A record of something already bought — saved as it is, with no approval, and nothing for finance."}
             </p>
           </div>
 
@@ -156,7 +156,19 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
           </div>
           <div className={field}>
             <Label htmlFor="quantity">Quantity *</Label>
-            <Input id="quantity" type="number" min="1" {...register("quantity")} />
+            {/* − and + for the usual small changes; the box still takes a typed number. */}
+            <div className="flex items-center gap-1.5">
+              <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label="One fewer"
+                disabled={(Number(watch("quantity")) || 1) <= 1}
+                onClick={() => setValue("quantity", Math.max(1, (Number(watch("quantity")) || 1) - 1) as never, { shouldDirty: true, shouldValidate: true })}>
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Input id="quantity" type="number" min="1" inputMode="numeric" className="text-center tabular-nums" {...register("quantity")} />
+              <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label="One more"
+                onClick={() => setValue("quantity", ((Number(watch("quantity")) || 0) + 1) as never, { shouldDirty: true, shouldValidate: true })}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
             {errors.quantity && <p className="text-xs text-destructive">{errors.quantity.message}</p>}
           </div>
 

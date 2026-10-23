@@ -53,6 +53,8 @@ export interface InboxScope {
    * in their queue — not shown, not decidable — whatever else they approve.
    */
   selfEmployeeIds?: string[];
+  /** The viewer's login — nobody decides a procurement request they raised. */
+  selfUserId?: string;
 }
 
 /**
@@ -90,7 +92,7 @@ export async function resolveInboxScope(
   const role = user.role;
   const selfEmployeeIds = (await employeeIdsOf(user.userId)).map(String);
   if (role?.isSystemRole && role.roleName === "Super Admin") {
-    return { everything: true, orgId, approve: new Set(ADAPTERS.map((a) => a.module)), teamUserIds: [], selfEmployeeIds };
+    return { everything: true, orgId, approve: new Set(ADAPTERS.map((a) => a.module)), teamUserIds: [], selfEmployeeIds, selfUserId: user.userId };
   }
   const approve = new Set(
     ADAPTERS.filter((a) => hasPermission(role, a.permissionModule, "approve")).map((a) => a.module)
@@ -98,7 +100,7 @@ export async function resolveInboxScope(
   // Only looked up when it could matter. Almost nobody heads a department, and
   // this runs on every load of the page and of the sidebar badge.
   const teamUserIds = await teamMemberUserIds(user.userId);
-  return { everything: false, orgId, approve, teamUserIds, selfEmployeeIds };
+  return { everything: false, orgId, approve, teamUserIds, selfEmployeeIds, selfUserId: user.userId };
 }
 
 /**
@@ -165,6 +167,9 @@ export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Recor
   const base = baseScopeFilter(scope, module);
   if (base && module === "hiring" && scope.selfEmployeeIds?.length) {
     return { ...base, replacing: { $nin: scope.selfEmployeeIds.map((id) => new mongoose.Types.ObjectId(id)) } };
+  }
+  if (base && module === "procurement" && scope.selfUserId) {
+    return { ...base, requestedBy: { $ne: new mongoose.Types.ObjectId(scope.selfUserId) } };
   }
   return base;
 }

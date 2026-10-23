@@ -175,6 +175,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/reimbursements": mod("reimbursement"),
     "/resignations": mod("resignation"),
     "/confirmations": mod("confirmation"),
+    // Procurement lives under Assets: new requests waiting for HR.
+    "/assets": mod("procurement"),
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
 

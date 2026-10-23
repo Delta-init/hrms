@@ -37,7 +37,7 @@ import { headContactsFor } from "./departmentHeadService.js";
 
 /** Sidebar order: Leave, Regularization, then the other queues by their own links. */
 const ORDER: ApprovalModule[] = [
-  "leave", "regularization", "hiring", "offer", "agreement", "resignation", "reimbursement", "confirmation",
+  "leave", "regularization", "hiring", "offer", "agreement", "resignation", "reimbursement", "confirmation", "procurement",
 ];
 
 /** Keys the portal sees — stable, so changing a label here breaks nothing there. */
@@ -50,6 +50,7 @@ const KEYS: Record<ApprovalModule, string> = {
   resignation: "resignations",
   reimbursement: "reimbursements",
   confirmation: "confirmations",
+  procurement: "procurement_requests",
 };
 
 /** The halves of Leave and Regularization that name a person. */
