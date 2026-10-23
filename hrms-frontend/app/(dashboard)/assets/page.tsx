@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-import { useProcurements, useDeleteProcurement, useReviewProcurement } from "@/hooks/useProcurements";
+import { useProcurements, useProcurementSummary, useDeleteProcurement, useReviewProcurement } from "@/hooks/useProcurements";
 import { AssetDialog } from "@/components/assets/AssetDialog";
 import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
 import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
@@ -113,7 +113,21 @@ export default function AssetsPage() {
 
   // Only fetched while the tab is actually open — the assets page is opened
   // far more often for a laptop than for a purchase request.
-  const { data: procurement, isLoading: procLoading } = useProcurements({ limit: "200" }, canViewProcurement && activeTab === "procurement");
+  // Every request, with filters and totals by status (2026-10-23): what was asked, waits, was bought, refused.
+  const [procStatus, setProcStatus] = useState(ALL);
+  const [procKind, setProcKind] = useState(ALL);
+  const [procSearch, setProcSearch] = useState("");
+  const [procFrom, setProcFrom] = useState("");
+  const [procTo, setProcTo] = useState("");
+  const procFilters: Record<string, string> = {};
+  if (procKind !== ALL) procFilters.kind = procKind;
+  if (procSearch.trim()) procFilters.search = procSearch.trim();
+  if (procFrom) procFilters.from = procFrom;
+  if (procTo) procFilters.to = procTo;
+  const procOpen = canViewProcurement && activeTab === "procurement";
+  const { data: procurement, isLoading: procLoading } = useProcurements(
+    { limit: "200", ...procFilters, ...(procStatus !== ALL ? { status: procStatus } : {}) }, procOpen);
+  const { data: procSummary } = useProcurementSummary(procFilters, procOpen);
   const { mutate: removeProcurement, isPending: deletingProcurement } = useDeleteProcurement();
   const { mutate: review, isPending: reviewing } = useReviewProcurement();
 
@@ -300,6 +314,53 @@ export default function AssetsPage() {
       {activeTab === "procurement" && (!canViewProcurement ? (
         <Card className="p-16 text-center text-muted-foreground">You do not have access to procurement.</Card>
       ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setProcStatus(ALL)}
+              className={cn("rounded-full border px-3 py-1 text-sm font-medium", procStatus === ALL ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted/50")}>
+              All <span className="tabular-nums opacity-80">{procSummary?.total ?? "…"}</span>
+            </button>
+            {(Object.keys(PROCUREMENT_STATUS_LABELS) as ProcurementStatus[]).map((k) => {
+              const t = procSummary?.byStatus.find((s) => s.status === k);
+              const cost = t?.costs.map((c) => `${c.currency} ${c.amount.toLocaleString()}`).join(" + ");
+              return (
+                <button key={k} type="button" onClick={() => setProcStatus(procStatus === k ? ALL : k)} title={cost ? `Estimated ${cost}` : undefined}
+                  className={cn("rounded-full border px-3 py-1 text-sm font-medium", procStatus === k ? "border-primary bg-primary text-primary-foreground" : cn("bg-card hover:bg-muted/50", procurementStatusStyles[k]))}>
+                  {PROCUREMENT_STATUS_LABELS[k]} <span className="tabular-nums opacity-80">{t?.count ?? 0}</span>
+                  {cost && <span className="ml-1 text-xs opacity-70">· {cost}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <Card className="flex flex-wrap items-end gap-4 p-4">
+            <div className="min-w-[200px] flex-1 space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Search</Label>
+              <Input placeholder="Item…" value={procSearch} onChange={(e) => setProcSearch(e.target.value)} className="h-9" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Kind</Label>
+              <Select value={procKind} onValueChange={setProcKind}>
+                <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All kinds</SelectItem>
+                  {(Object.keys(PROCUREMENT_KIND_LABELS) as (keyof typeof PROCUREMENT_KIND_LABELS)[]).map((k) => <SelectItem key={k} value={k}>{PROCUREMENT_KIND_LABELS[k]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Raised from</Label>
+              <Input type="date" value={procFrom} max={procTo || undefined} onChange={(e) => setProcFrom(e.target.value)} className="h-9 w-[150px]" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">To</Label>
+              <Input type="date" value={procTo} min={procFrom || undefined} onChange={(e) => setProcTo(e.target.value)} className="h-9 w-[150px]" />
+            </div>
+            {(procStatus !== ALL || procKind !== ALL || procSearch || procFrom || procTo) && (
+              <Button variant="ghost" size="sm" className="h-9" onClick={() => { setProcStatus(ALL); setProcKind(ALL); setProcSearch(""); setProcFrom(""); setProcTo(""); }}>
+                <X className="h-3.5 w-3.5" />Clear
+              </Button>
+            )}
+          </Card>
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-sm">
@@ -321,7 +382,7 @@ export default function AssetsPage() {
                 {procLoading ? (
                   <tr><td colSpan={10} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                 ) : !procurement?.data.length ? (
-                  <tr><td colSpan={10} className="py-16 text-center text-muted-foreground">Nothing has been requested yet.</td></tr>
+                  <tr><td colSpan={10} className="py-16 text-center text-muted-foreground">{Object.keys(procFilters).length || procStatus !== ALL ? "Nothing matches these filters." : "Nothing has been requested yet."}</td></tr>
                 ) : (
                   procurement.data.map((p) => {
                     const dept = p.department && typeof p.department === "object" ? p.department.name : null;
@@ -396,6 +457,7 @@ export default function AssetsPage() {
             </table>
           </div>
         </Card>
+        </div>
       ))}
 
       <AssetDialog open={dialogOpen} onOpenChange={setDialogOpen} asset={selected} />

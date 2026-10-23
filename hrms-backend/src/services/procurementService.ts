@@ -29,6 +29,9 @@ interface ProcurementQuery extends PaginationQuery {
   kind?: string;
   category?: string;
   department?: string;
+  /** Raised on or after / on or before these days (YYYY-MM-DD). */
+  from?: string;
+  to?: string;
 }
 
 /**
@@ -41,6 +44,13 @@ function shape<T extends { reportKey?: string | null }>(doc: T | null) {
   if (!doc) return doc;
   return { ...doc, reportUrl: doc.reportKey ? publicUrl(doc.reportKey) : "" };
 }
+
+/**
+ * Which procurement finance asks for (2026-10-23): its queue (hr_approved, the default — what HR has passed on and
+ * waits on the money decision), or its full record — one status, or all — both kinds, newest first.
+ */
+export const FINANCE_PROCUREMENT_STATUSES = ["hr_approved", "requested", "approved", "rejected", "ordered", "received", "cancelled", "all"] as const;
+export type FinanceProcurementStatus = (typeof FINANCE_PROCUREMENT_STATUSES)[number];
 
 export class ProcurementService {
   /**
@@ -216,22 +226,35 @@ export class ProcurementService {
    * actually head, ignoring any `department` filter they might send: heading
    * a team is not itself the permission to browse every other one.
    */
-  async list(query: ProcurementQuery, restrictToUserId?: string) {
-    const { page, limit, skip } = parsePagination(query, 20, 200);
-
+  /** The list's filter — null when a department head heads nothing, so sees nothing. */
+  private async filterFor(query: ProcurementQuery, restrictToUserId?: string, withStatus = true) {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.search) filter.item = searchRegex(query.search);
-    if (query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
+    if (withStatus && query.status) filter.status = query.status.includes(",") ? { $in: query.status.split(",") } : query.status;
     if (query.kind) filter.kind = query.kind;
     if (query.category) filter.category = query.category;
+    if (query.from || query.to) {
+      const range: Record<string, Date> = {};
+      if (query.from && !Number.isNaN(Date.parse(query.from))) range.$gte = new Date(`${query.from.slice(0, 10)}T00:00:00Z`);
+      if (query.to && !Number.isNaN(Date.parse(query.to))) range.$lt = new Date(new Date(`${query.to.slice(0, 10)}T00:00:00Z`).getTime() + 86_400_000);
+      if (Object.keys(range).length) filter.createdAt = range;
+    }
 
     if (restrictToUserId) {
       const heads = await departmentsHeadedBy(restrictToUserId);
-      if (!heads.length) return { records: [], pagination: buildPagination(0, page, limit) };
+      if (!heads.length) return null;
       filter.department = { $in: heads };
     } else if (query.department) {
       filter.department = query.department;
     }
+    return filter;
+  }
+
+  async list(query: ProcurementQuery, restrictToUserId?: string) {
+    const { page, limit, skip } = parsePagination(query, 20, 200);
+
+    const filter = await this.filterFor(query, restrictToUserId);
+    if (!filter) return { records: [], pagination: buildPagination(0, page, limit) };
 
     const sortable = new Set(["item", "quantity", "estimatedCost", "neededBy", "status", "createdAt"]);
     const sortField = query.sortBy && sortable.has(query.sortBy) ? query.sortBy : "createdAt";
@@ -242,6 +265,28 @@ export class ProcurementService {
       Procurement.countDocuments(filter),
     ]);
     return { records: records.map((r) => shape(r)), pagination: buildPagination(total, page, limit) };
+  }
+
+  /**
+   * How many in each status, and what they are estimated to cost (2026-10-23) — the Procurement tab's totals. Same
+   * filters and narrowing as `list`, but every status, so each total shows whichever status is picked.
+   */
+  async summary(query: ProcurementQuery, restrictToUserId?: string) {
+    const filter = await this.filterFor(query, restrictToUserId, false);
+    if (!filter) return { total: 0, byStatus: [] };
+    const rows = await Procurement.aggregate([
+      { $match: filter },
+      { $group: { _id: { status: "$status", currency: "$currency" }, count: { $sum: 1 }, estimatedCost: { $sum: "$estimatedCost" } } },
+    ]);
+    type Total = { status: string; count: number; costs: { currency: string; amount: number }[] };
+    const byStatus = new Map<string, Total>();
+    for (const r of rows) {
+      const s: Total = byStatus.get(r._id.status) ?? { status: r._id.status, count: 0, costs: [] };
+      s.count += r.count;
+      if (r.estimatedCost) s.costs.push({ currency: r._id.currency || "AED", amount: Math.round(r.estimatedCost * 100) / 100 });
+      byStatus.set(r._id.status, s);
+    }
+    return { total: [...byStatus.values()].reduce((n, s) => n + s.count, 0), byStatus: [...byStatus.values()] };
   }
 
   /** Same narrowing as `list` — a department head asking for one by id gets
@@ -372,11 +417,16 @@ export class ProcurementService {
   // explicitly because there is no logged-in user to infer it from.
 
   /** What is sitting with finance, waiting on the money decision. */
-  async listForFinance(organization: string) {
-    const records = await Procurement.find({ organization, kind: "new", status: "hr_approved" })
-      .populate(POP)
-      .sort({ neededBy: 1, createdAt: 1 })
-      .lean();
+  async listForFinance(organization: string, status: FinanceProcurementStatus = "hr_approved") {
+    if (status === "hr_approved") {
+      const records = await Procurement.find({ organization, kind: "new", status: "hr_approved" })
+        .populate(POP)
+        .sort({ neededBy: 1, createdAt: 1 })
+        .lean();
+      return records.map((r) => shape(r));
+    }
+    const filter = status === "all" ? { organization } : { organization, status };
+    const records = await Procurement.find(filter).populate(POP).sort({ createdAt: -1 }).limit(1000).lean();
     return records.map((r) => shape(r));
   }
 

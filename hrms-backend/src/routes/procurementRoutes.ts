@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  createProcurement, getProcurements, getProcurementById, updateProcurement, deleteProcurement,
+  createProcurement, getProcurements, getProcurementSummary, getProcurementById, updateProcurement, deleteProcurement,
   reviewProcurement, resubmitProcurement, uploadReport,
 } from "../controllers/procurementController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -28,6 +28,7 @@ router.use(authenticate);
 // their own department rather than the route deciding all-or-nothing.
 router.get("/", checkPermissionOrDepartmentHead("procurement", "view"), getProcurements);
 router.post("/", checkPermissionOrDepartmentHead("procurement", "create"), createProcurement);
+router.get("/summary", checkPermissionOrDepartmentHead("procurement", "view"), getProcurementSummary);
 router.get("/:id", checkPermissionOrDepartmentHead("procurement", "view"), getProcurementById);
 router.put("/:id", checkPermissionOrDepartmentHead("procurement", "edit"), updateProcurement);
 router.post("/:id/report", checkPermissionOrDepartmentHead("procurement", "edit"), uploadSingle, uploadReport);

@@ -29,6 +29,15 @@ export const getProcurements = async (req: AuthenticatedRequest, res: Response, 
   }
 };
 
+/** GET /procurement/summary — how many in each status and their estimated cost, with the list's filters (2026-10-23). */
+export const getProcurementSummary = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Procurement summary", await service.summary(req.query as never, restrictionFor(req)));
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getProcurementById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Procurement retrieved", await service.getById(String(req.params.id), restrictionFor(req)));

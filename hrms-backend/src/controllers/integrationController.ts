@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { directoryService, attendanceNow, attendanceDay } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
-import { ProcurementService } from "../services/procurementService.js";
+import { ProcurementService, FINANCE_PROCUREMENT_STATUSES, type FinanceProcurementStatus } from "../services/procurementService.js";
 import { SalaryAdvanceService, FINANCE_ADVANCE_STATUSES, type FinanceAdvanceStatus } from "../services/salaryAdvanceService.js";
 import { OneTimeAdjustmentService, FINANCE_ONE_TIME_STATUSES, type FinanceOneTimeStatus } from "../services/oneTimeAdjustmentService.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
@@ -325,9 +325,15 @@ const procurementService = new ProcurementService();
  * Only `hr_approved` is offered. A request still with HR is not finance's to
  * see, and one already decided is not theirs to decide twice.
  */
+/** ?status= — none: finance's queue (HR-approved, waiting); requested … cancelled | all: finance's full record (2026-10-23). */
 export const listProcurementRequests = asyncRoute(async (req, res) => {
   const organizationId = String(req.query.organizationId);
-  sendSuccess(res, "Procurement requests retrieved", await procurementService.listForFinance(organizationId));
+  const status = String(req.query.status ?? "hr_approved");
+  if (!(FINANCE_PROCUREMENT_STATUSES as readonly string[]).includes(status)) {
+    sendError(res, `status must be one of ${FINANCE_PROCUREMENT_STATUSES.join(", ")}`, 400);
+    return;
+  }
+  sendSuccess(res, "Procurement requests retrieved", await procurementService.listForFinance(organizationId, status as FinanceProcurementStatus));
 });
 
 /** Finance signs it off, naming the purchase order it raised against it. */

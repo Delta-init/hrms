@@ -20,6 +20,19 @@ export const useProcurements = (params?: Record<string, string>, enabled = true)
     enabled,
   });
 
+/** How many in each status and their estimated cost, with the list's filters (2026-10-23). */
+export interface ProcurementSummary {
+  total: number;
+  byStatus: { status: Procurement["status"]; count: number; costs: { currency: string; amount: number }[] }[];
+}
+export const useProcurementSummary = (params?: Record<string, string>, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "summary", params],
+    queryFn: async () => (await api.get<ApiResponse<ProcurementSummary>>("/procurement/summary", { params })).data.data!,
+    enabled,
+    retry: false,
+  });
+
 export const useCreateProcurement = () => {
   const qc = useQueryClient();
   return useMutation({
