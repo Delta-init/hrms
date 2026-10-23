@@ -1433,7 +1433,7 @@ export const PROCUREMENT_STATUS_LABELS: Record<ProcurementStatus, string> = {
 
 export interface Procurement {
   _id: string;
-  /** `existing` is already bought; `new` is a request awaiting approval. */
+  /** `existing` is already bought; `new` is a request awaiting approval. Both are approved by another member first (2026-10-23). */
   kind: ProcurementKind;
   item: string;
   category?: string;
@@ -1455,6 +1455,8 @@ export interface Procurement {
   financeNote?: string;
   purchaseOrderRef?: string;
   rejectedBy?: "hr" | "finance" | null;
+  /** What a bought record becomes once approved (2026-10-23). */
+  boughtStatus?: "ordered" | "received" | null;
   resubmitCount: number;
   notes?: string;
   /** A quote, spec sheet or photo backing the request up. */

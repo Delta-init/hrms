@@ -69,7 +69,8 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
             department: idOf(procurement.department),
             neededBy: toDateInput(procurement.neededBy),
             justification: procurement.justification ?? "",
-            status: procurement.status,
+            // A bought record waiting for approval shows what it will become (2026-10-23).
+            status: procurement.kind === "existing" && procurement.status === "requested" ? procurement.boughtStatus ?? "ordered" : procurement.status,
             notes: procurement.notes ?? "",
           }
         : EMPTY
@@ -139,7 +140,7 @@ export function ProcurementDialog({ open, onOpenChange, procurement }: Props) {
             <p className="text-xs text-muted-foreground">
               {kind === "new"
                 ? "Goes to HR, then to finance. You will be emailed either way."
-                : "A record of something already bought — nobody needs to approve it."}
+                : "A record of something already bought — another member approves it; it doesn't go to finance."}
             </p>
           </div>
 

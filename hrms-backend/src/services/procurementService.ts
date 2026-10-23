@@ -178,22 +178,22 @@ export class ProcurementService {
 
   async create(input: CreateProcurementInput, requestedBy: string) {
     const kind = input.kind ?? "existing";
-    // A request starts by being asked for; a record of something already bought
-    // never enters the approval states at all.
-    const status = kind === "new"
-      ? "requested"
-      : (input.status && !APPROVAL_STATES.includes(input.status as never) ? input.status : "ordered");
+    // Both kinds start waiting for HR (2026-10-23): a request goes on to finance once approved; a record of something
+    // already bought becomes what it was entered as — ordered or received — and never goes to finance.
+    const boughtStatus = kind === "existing" ? (input.status === "received" ? "received" : "ordered") : null;
 
     const record = await Procurement.create({
       ...input,
       kind,
-      status,
+      status: "requested",
+      boughtStatus,
       department: input.department || null,
       organization: getOrgId(),
       requestedBy,
     });
 
-    if (kind === "new") {
+    // Both kinds wait for HR now, so both tell who can approve (once, in this block).
+    {
       // The approvers (and the requester's department head) as before, plus
       // office keeping's people — in-app, and push through notify().
       const [approvers, facilities] = await Promise.all([
@@ -201,9 +201,10 @@ export class ProcurementService {
         this.facilitiesOnly(),
       ]);
       await notify({
-        users: [...approvers, ...facilities],
+        // Not the one who raised it: they can't approve it (2026-10-23).
+        users: [...approvers, ...facilities].filter((id) => String(id) !== String(requestedBy)),
         kind: "approval",
-        title: `${input.item} requested`,
+        title: kind === "existing" ? `${input.item} recorded as bought — to approve` : `${input.item} requested`,
         body: `${input.quantity ?? 1} × ${input.item}`,
         href: "/assets",
         actor: requestedBy,
@@ -212,7 +213,9 @@ export class ProcurementService {
       const raiser = await User.findById(requestedBy).select("name").lean<{ name?: string } | null>();
       sendWhatsAppToUsers(
         await this.facilitiesPeople(requestedBy),
-        `New procurement request: ${input.quantity ?? 1} × ${input.item}, raised by ${raiser?.name ?? "somebody"}.`
+        kind === "existing"
+          ? `Bought item to approve: ${input.quantity ?? 1} × ${input.item}, recorded by ${raiser?.name ?? "somebody"}.`
+          : `New procurement request: ${input.quantity ?? 1} × ${input.item}, raised by ${raiser?.name ?? "somebody"}.`
       ).catch(() => null);
     }
     const created = await Procurement.findById(record._id).populate(POP);
@@ -333,8 +336,22 @@ export class ProcurementService {
         { statusCode: 409 }
       );
     }
-
+    // The approval states are reached by deciding, never by editing (2026-10-23): a record waiting for HR stays
+    // waiting, and nothing is edited into or out of approval. A bought record waiting keeps what it will become.
     const patch: Record<string, unknown> = { ...input };
+    if (input.status !== undefined && input.status !== record.status) {
+      const inApproval = (s: string) => (APPROVAL_STATES as readonly string[]).includes(s);
+      if (inApproval(record.status) || inApproval(input.status)) {
+        if (record.kind === "existing" && record.status === "requested" && (input.status === "ordered" || input.status === "received")) {
+          patch.boughtStatus = input.status;
+          delete patch.status;
+        } else {
+          throw Object.assign(new Error("Its status changes by approving it, not by editing it"), { statusCode: 409 });
+        }
+      }
+    } else if (input.status === record.status) {
+      delete patch.status;
+    }
     if (input.department !== undefined) patch.department = input.department || null;
     // The kind decides which states are legal, so it is not a field an edit
     // may flip — a record halfway through approval cannot become history.
@@ -345,21 +362,25 @@ export class ProcurementService {
     return shape(updated!.toObject());
   }
 
-  /** HR's decision: approve it on to finance, or refuse it here. */
+  /**
+   * HR's decision: a request approved on to finance, or a bought record approved as bought — or either refused here.
+   * Never by the one who raised it (2026-10-23: "another member needs to approve" — nobody, whatever their role).
+   */
   async review(id: string, input: ReviewProcurementInput, reviewerId: string) {
     const record = await Procurement.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
-    if (record.kind !== "new") {
-      throw Object.assign(new Error("Only a new request needs approving"), { statusCode: 400 });
-    }
     if (record.status !== "requested") {
       throw Object.assign(new Error("This request has already been decided"), { statusCode: 400 });
     }
+    if (record.requestedBy && String(record.requestedBy) === String(reviewerId)) {
+      throw Object.assign(new Error("You raised this — another member has to approve or reject it"), { statusCode: 403 });
+    }
 
     const approved = input.decision === "approve";
+    const bought = record.kind === "existing";
     await Procurement.updateOne({ _id: record._id }, {
       $set: {
-        status: approved ? "hr_approved" : "rejected",
+        status: approved ? (bought ? record.boughtStatus || "ordered" : "hr_approved") : "rejected",
         hrReviewedBy: reviewerId,
         hrReviewedAt: new Date(),
         hrNote: input.note ?? "",
@@ -367,7 +388,9 @@ export class ProcurementService {
       },
     });
 
-    const hrHeadline = approved ? "has been approved by HR and sent to finance" : "was not approved by HR";
+    const hrHeadline = approved
+      ? bought ? "has been approved by HR" : "has been approved by HR and sent to finance"
+      : "was not approved by HR";
     await this.tellRequester(record as never, hrHeadline, input.note);
     await this.tellApprovers(record as never, hrHeadline, input.note, reviewerId);
     const reviewed = await Procurement.findById(record._id).populate(POP);

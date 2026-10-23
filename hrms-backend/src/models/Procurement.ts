@@ -27,8 +27,10 @@ const procurementSchema = new Schema<IProcurement>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     /**
-     * `existing` is already bought and needs nobody's permission; `new` is a
-     * request, and the only kind the approval states apply to.
+     * `existing` is already bought; `new` is a request that goes on to finance.
+     * Since 2026-10-23 both are approved first — by an HR member other than the
+     * one who raised it (the user: "another member needs to approve"); a bought
+     * one then stands as bought, it never goes to finance.
      */
     kind: { type: String, enum: ["existing", "new"], default: "existing", index: true },
     item: { type: String, required: [true, "Item is required"], trim: true, maxlength: 160 },
@@ -59,7 +61,8 @@ const procurementSchema = new Schema<IProcurement>(
      * `hr_approved` is the one finance watches for: HR has agreed it is worth
      * buying, and the money question is now somebody else's. `approved` means
      * finance has signed it off and a draft purchase order exists on their
-     * side. An `existing` record skips straight to `ordered` or `received`.
+     * side. An `existing` record waits as `requested` for HR, then becomes
+     * `boughtStatus` — `ordered` or `received` — when approved.
      */
     status: {
       type: String,
@@ -67,6 +70,9 @@ const procurementSchema = new Schema<IProcurement>(
       default: "requested",
       index: true,
     },
+
+    /** What a bought record becomes once HR approves it (2026-10-23): ordered or received. */
+    boughtStatus: { type: String, enum: ["ordered", "received", null], default: null },
 
     // ── Decisions ──
     hrReviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },

@@ -1368,6 +1368,8 @@ export interface IProcurement extends Document {
   financeNote?: string;
   purchaseOrderRef?: string;
   rejectedBy?: "hr" | "finance" | null;
+  /** What a bought record becomes once approved (2026-10-23). */
+  boughtStatus?: "ordered" | "received" | null;
   resubmitCount: number;
   notes?: string;
   /** A quote, spec sheet or photo backing the request up. */

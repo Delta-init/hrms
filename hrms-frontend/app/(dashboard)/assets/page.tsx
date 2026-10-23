@@ -72,6 +72,9 @@ export default function AssetsPage() {
   const canEditProcurement = hasPermission("procurement", "edit") || headsATeam;
   const canDeleteProcurement = hasPermission("procurement", "delete");
   const canApproveProcurement = hasPermission("procurement", "approve");
+  /** Raised by whoever is looking — they can't approve it themselves (2026-10-23). */
+  const raisedByMe = (p: { requestedBy?: { _id: string } | string | null }) =>
+    !!user?._id && (typeof p.requestedBy === "string" ? p.requestedBy : p.requestedBy?._id) === user._id;
 
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
@@ -419,12 +422,16 @@ export default function AssetsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            {/* HR's decision, only while it is actually theirs to make. */}
-                            {canApproveProcurement && p.kind === "new" && p.status === "requested" && (
+                            {/* HR's decision, only while it is actually theirs to make — both kinds (2026-10-23), and never
+                                by the one who raised it: another member approves. */}
+                            {canApproveProcurement && p.status === "requested" && raisedByMe(p) && (
+                              <span className="self-center text-xs text-muted-foreground">Waiting for another member to approve</span>
+                            )}
+                            {canApproveProcurement && p.status === "requested" && !raisedByMe(p) && (
                               <>
                                 <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" disabled={reviewing}
                                   onClick={() => review({ id: p._id, decision: "approve" })}>
-                                  <CheckCircle2 className="h-3.5 w-3.5" />To finance
+                                  <CheckCircle2 className="h-3.5 w-3.5" />{p.kind === "new" ? "To finance" : "Approve"}
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" disabled={reviewing}
                                   onClick={() => review({ id: p._id, decision: "reject" })}>
