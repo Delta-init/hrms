@@ -2,12 +2,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, MapPin, Video, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Loader2, MapPin, Video, AlertTriangle, CheckCircle2, Clock, Copy, Check, Globe, Smartphone } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMeetingBooking, useJoinMeeting } from "@/hooks/useMeetings";
 
-type Step = "asking" | "denied" | "unsupported" | "joining" | "redirecting" | "error";
+type Step = "asking" | "denied" | "unsupported" | "joining" | "redirecting" | "ready" | "error";
 
 /** The link opens this long before the start, and closes at the end — the server holds the same line. */
 const OPENS_BEFORE_MS = 10 * 60_000;
@@ -25,6 +25,13 @@ const nameOf = (v: unknown) => (v && typeof v === "object" ? String((v as { name
  *
  * It opens ten minutes before the start and closes at the end. Opened early,
  * the page waits and asks for location the moment it opens.
+ *
+ * A computer goes straight into the meeting. A phone gets a choice instead:
+ * sent to a Google Meet link, Android hands it to the Meet app — or, with no
+ * app, to the Play Store — and an email opened in Gmail's or WhatsApp's own
+ * browser does the same. So a phone is offered the app, real Chrome (out of
+ * the built-in browser), or the link to copy, with a line on joining in the
+ * browser without the app (Chrome's "Desktop site").
  */
 export default function MeetJoinPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +40,8 @@ export default function MeetJoinPage() {
   const [step, setStep] = useState<Step>("asking");
   const [message, setMessage] = useState("");
   const started = useRef(false);
+  const [link, setLink] = useState("");
+  const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   // Ticks while waiting for the meeting to open, so it opens without a reload.
@@ -55,6 +64,11 @@ export default function MeetJoinPage() {
           { id, latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy },
           {
             onSuccess: (r) => {
+              if (isPhone()) {
+                setLink(r.meetingLink);
+                setStep("ready");
+                return;
+              }
               setStep("redirecting");
               window.location.href = r.meetingLink;
             },
@@ -101,6 +115,40 @@ export default function MeetJoinPage() {
         return <Notice icon={MapPin} text="Checking your location…" spin />;
       case "redirecting":
         return <Notice icon={CheckCircle2} tone="ok" text="Taking you to the meeting…" spin />;
+      case "ready": {
+        const android = /Android/i.test(navigator.userAgent);
+        const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const isMeet = /(^|\.)meet\.google\.com$/i.test(hostOf(link));
+        // Android's way of saying "open this in Chrome, not in an app" — and
+        // out of Gmail's or WhatsApp's built-in browser. Falls back to the link.
+        const inChrome = `intent://${link.replace(/^https?:\/\//i, "")}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(link)};end`;
+        const copy = async () => {
+          try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* the link is shown below to select */ }
+        };
+        return (
+          <div className="space-y-3 text-left">
+            <Notice icon={CheckCircle2} tone="ok" text="You're checked in. Open the meeting:" />
+            <Button asChild className="w-full"><a href={link}><Smartphone className="h-4 w-4" />Open in the {isMeet ? "Meet" : "meeting"} app</a></Button>
+            {android && (
+              <Button asChild variant="outline" className="w-full"><a href={inChrome}><Globe className="h-4 w-4" />Open in Chrome</a></Button>
+            )}
+            <Button variant="outline" className="w-full" onClick={copy}>
+              {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}{copied ? "Link copied" : "Copy link"}
+            </Button>
+            <p className="break-all rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] text-muted-foreground">{link}</p>
+            {isMeet && (
+              <p className="rounded-md border border-border p-3 text-xs leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">No Meet app?</span>{" "}
+                {android
+                  ? <>Tap <strong>Open in Chrome</strong>, then in Chrome&rsquo;s menu <strong>⋮</strong> tick <strong>Desktop site</strong> — Meet then lets you join right in the browser.</>
+                  : ios
+                    ? <>Copy the link and open it in <strong>Safari</strong> — Meet lets you join from the browser there.</>
+                    : <>Open the link in your browser and turn on its <strong>desktop site</strong> option to join without the app.</>}
+              </p>
+            )}
+          </div>
+        );
+      }
       case "denied":
         return (
           <div className="space-y-3">
@@ -140,6 +188,15 @@ export default function MeetJoinPage() {
     </div>
   );
 }
+
+/** A phone or tablet browser — the ones Meet tries to hand to its app. */
+function isPhone() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS reports itself as a Mac
+}
+
+const hostOf = (url: string) => { try { return new URL(url).hostname; } catch { return ""; } };
 
 function Notice({ text, tone, icon: Icon, spin }: { text: string; tone?: "ok" | "error"; icon?: React.ElementType; spin?: boolean }) {
   const I = Icon ?? (tone === "error" ? AlertTriangle : MapPin);
