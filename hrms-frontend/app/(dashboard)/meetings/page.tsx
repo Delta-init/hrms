@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { MonitorPlay, CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck } from "lucide-react";
+import { MonitorPlay, CalendarDays, ChevronLeft, ChevronRight, DoorOpen, Loader2, Plus, Pencil, Trash2, Ban, Video, MapPin, Link2, ClipboardCheck, Star, Check, UserCheck, ListChecks } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,8 @@ import { MeetingDialog } from "@/components/meetings/MeetingDialog";
 import { RoomsDialog } from "@/components/meetings/RoomsDialog";
 import { BoardLinkDialog } from "@/components/meetings/BoardLinkDialog";
 import { ReviewMeetingDialog } from "@/components/meetings/ReviewMeetingDialog";
+import { ReviewMeetingsTab } from "@/components/meetings/ReviewMeetingsTab";
+import { Tabs } from "@/components/shared/Tabs";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useMeetingRooms, useMeetingBookings, useCancelBooking, useDeleteBooking, useSetRecording, useAcknowledgeReview,
@@ -100,6 +102,7 @@ export default function MeetingsPage() {
   const [recording, setRecording] = useState("");
   const { mutate: saveRecording, isPending: savingRecording } = useSetRecording();
   const { mutate: acknowledge, isPending: acknowledging } = useAcknowledgeReview();
+  const [tab, setTab] = useState<"calendar" | "reviews">("calendar");
 
   const days = useMemo(() => {
     if (mode !== "week") return [startOfDay(anchor)];
@@ -115,8 +118,19 @@ export default function MeetingsPage() {
   }, [days, room]);
   const { data: bookings = [], isLoading } = useMeetingBookings(params);
 
-  // The open detail follows the list, so a saved review or recording shows at once.
-  const shown = detail ? bookings.find((b) => b._id === detail._id) ?? detail : null;
+  // The Review meetings tab: a year back and a year ahead, only the ones this
+  // person may see. Fetched when the tab is open.
+  const reviewParams = useMemo(() => {
+    const today = startOfDay(new Date());
+    return {
+      from: addDays(today, -365).toISOString(), to: addDays(today, 366).toISOString(),
+      kind: "review", visibleOnly: "true", includeCancelled: "true",
+    };
+  }, []);
+  const { data: reviews = [], isLoading: reviewsLoading } = useMeetingBookings(reviewParams, tab === "reviews");
+
+  // The open detail follows the lists, so a saved review or recording shows at once.
+  const shown = detail ? bookings.find((b) => b._id === detail._id) ?? reviews.find((b) => b._id === detail._id) ?? detail : null;
   const { mutate: cancel, isPending: cancelling } = useCancelBooking();
   const { mutate: remove, isPending: deleting } = useDeleteBooking();
 
@@ -167,6 +181,29 @@ export default function MeetingsPage() {
         )}
       />
 
+      <div className="mb-4">
+        <Tabs
+          tabs={[
+            { key: "calendar", label: "Room calendar", icon: CalendarDays },
+            { key: "reviews", label: "Review meetings", icon: ListChecks },
+          ]}
+          value={tab}
+          onChange={(k) => setTab(k as "calendar" | "reviews")}
+        />
+      </div>
+
+      {tab === "reviews" ? (
+        <ReviewMeetingsTab
+          reviews={reviews}
+          loading={reviewsLoading}
+          me={String(user?._id ?? "")}
+          isSuperAdmin={user?.role?.roleName === "Super Admin"}
+          onOpen={setDetail}
+          onWrite={setReviewing}
+          onAcknowledge={(id) => acknowledge(id)}
+          acknowledging={acknowledging}
+        />
+      ) : (<>
       <Card className="mb-4 flex flex-wrap items-center gap-3 p-3">
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" className="h-8 w-8"
@@ -236,6 +273,7 @@ export default function MeetingsPage() {
           />
         )}
       </Card>
+      </>)}
 
       <MeetingDialog open={dialogOpen} onOpenChange={setDialogOpen} rooms={rooms} booking={editing} startAt={pickedStart} initialKind={newKind} initialRoom={pickedRoom} />
       <ReviewMeetingDialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)} booking={reviewing} />

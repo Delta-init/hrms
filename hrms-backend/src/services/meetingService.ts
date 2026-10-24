@@ -194,9 +194,11 @@ export class MeetingService {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async listBookings(query: { from?: string; to?: string; room?: string; includeCancelled?: string }, actor?: Actor) {
+  async listBookings(query: { from?: string; to?: string; room?: string; includeCancelled?: string; kind?: string; visibleOnly?: string }, actor?: Actor) {
     const filter: Record<string, unknown> = { ...orgFilter() };
     if (query.room) filter.room = query.room;
+    // The Review meetings tab asks for reviews only.
+    if (query.kind === "review" || query.kind === "meeting") filter.kind = query.kind;
     if (query.includeCancelled !== "true") filter.status = "booked";
 
     // Anything overlapping the window, not merely starting inside it — a
@@ -209,9 +211,12 @@ export class MeetingService {
     }
     const rows = await MeetingBooking.find(filter).populate(POP).sort({ start: 1 }).lean();
     if (!actor) return rows;
-    return Promise.all(rows.map(async (b) =>
+    const shaped = await Promise.all(rows.map(async (b) =>
       b.kind === "review" && !(await canSeeReview(b, actor)) ? masked(b as never) : forViewer(b as never, actor)
     ));
+    // The calendar keeps the masked ones — the slot is taken whoever it is for.
+    // A list of reviews has no use for a row that says only "Review meeting".
+    return query.visibleOnly === "true" ? shaped.filter((b) => !(b as { restricted?: boolean }).restricted) : shaped;
   }
 
   async getBooking(id: string, actor?: Actor) {

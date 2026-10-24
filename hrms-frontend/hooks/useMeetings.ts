@@ -17,10 +17,11 @@ export const useMeetingRooms = (includeInactive = false) =>
       (await api.get<ApiResponse<MeetingRoom[]>>("/meetings/rooms", { params: includeInactive ? { includeInactive: "true" } : undefined })).data.data ?? [],
   });
 
-export const useMeetingBookings = (params: Record<string, string>) =>
+export const useMeetingBookings = (params: Record<string, string>, enabled = true) =>
   useQuery({
     queryKey: [...KEY, "bookings", params],
     queryFn: async () => (await api.get<ApiResponse<MeetingBooking[]>>("/meetings/bookings", { params })).data.data ?? [],
+    enabled,
   });
 
 /** Employees with a login — only fetched when the form is actually open. */
