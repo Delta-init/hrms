@@ -72,6 +72,26 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
       trim: true,
       maxlength: [500, "Review note cannot exceed 500 characters"],
     },
+    /**
+     * Certified Sick Leave: the medical certificate, and when it is due — five
+     * hours from applying. No certificate by then and the request becomes unpaid
+     * leave; with one, the usual approvers decide: approved is paid, rejected is
+     * unpaid. `convertedFrom` keeps what a request was before it became unpaid.
+     */
+    certificate: {
+      type: new Schema({
+        key: { type: String, required: true },
+        fileName: { type: String, trim: true, maxlength: 260 },
+        mimeType: { type: String, trim: true, maxlength: 100 },
+        size: { type: Number, min: 0 },
+        uploadedAt: { type: Date, default: Date.now },
+      }, { _id: false }),
+      default: null,
+    },
+    certificateDueAt: { type: Date, default: null, index: true },
+    certificateReminderAt: { type: Date, default: null },
+    convertedFrom: { type: String, default: null },
+    conversionReason: { type: String, enum: ["no_certificate", "rejected", null], default: null },
     ...workflowStateFields,
   },
   {

@@ -116,6 +116,16 @@ export const withdrawLeave = async (req: AuthenticatedRequest, res: Response, ne
   }
 };
 
+/** The medical certificate for one's own Certified Sick Leave request. */
+export const uploadLeaveCertificate = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) { sendError(res, "No file uploaded", 400); return; }
+    sendSuccess(res, "Medical certificate uploaded", await service.uploadCertificate(req.params.id, req.user!.userId, req.file));
+  } catch (error) {
+    next(error);
+  }
+};
+
 /** Leave types the requester's schedule grants, with what is left this month. */
 export const getLeaveOptions = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {

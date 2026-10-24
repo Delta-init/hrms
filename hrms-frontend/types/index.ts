@@ -373,7 +373,7 @@ export interface LeaveOptions {
   /** True when no schedule policy applies — every type stays available. */
   /** Retained for compatibility; always false — nothing is offered without a policy. */
   unrestricted: boolean;
-  options: Array<{ type: string; label: string; days: number; period: LeavePeriod; paid: boolean; used: number; remaining: number; eligible: boolean; eligibleOn: string | null; eligibleAfterMonths: number }>;
+  options: Array<{ type: string; label: string; days: number; period: LeavePeriod; paid: boolean; used: number; remaining: number; eligible: boolean; eligibleOn: string | null; eligibleAfterMonths: number; unlimited?: boolean }>;
 }
 
 export interface DocumentsResponse {
@@ -637,7 +637,7 @@ export interface Attendance {
 // ─── Leave ──────────────────────────────────────────────────────────────────
 /** Built-in leave slugs. A work schedule may define others of its own. */
 export type BuiltinLeaveType =
-  | "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off";
+  | "annual" | "sick" | "casual" | "unpaid" | "maternity" | "paternity" | "wfh" | "comp_off" | "certified_sick";
 /** Any leave slug — built-in, or one a schedule defines. */
 export type LeaveType = BuiltinLeaveType | (string & {});
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -651,7 +651,11 @@ export const LEAVE_TYPE_LABELS: Record<BuiltinLeaveType, string> = {
   paternity: "Paternity",
   wfh: "Work From Home",
   comp_off: "Comp-Off",
+  certified_sick: "Certified Sick",
 };
+
+/** Sick leave held to a medical certificate — see the leave dialog. */
+export const CERTIFIED_SICK = "certified_sick";
 
 /** Every built-in slug, for pickers that offer the standard set. */
 export const BUILTIN_LEAVE_TYPES = Object.keys(LEAVE_TYPE_LABELS) as BuiltinLeaveType[];
@@ -714,6 +718,13 @@ export interface LeaveRequest extends WorkflowState {
   reviewedBy?: Pick<User, "_id" | "name" | "email"> | string | null;
   reviewedAt?: string | null;
   reviewNote?: string;
+  /** Certified Sick Leave: the medical certificate, its link, and when it is due. */
+  certificate?: { fileName?: string; uploadedAt?: string } | null;
+  certificateUrl?: string | null;
+  certificateDueAt?: string | null;
+  /** Set when a certified sick request became unpaid leave, and why. */
+  convertedFrom?: string | null;
+  conversionReason?: "no_certificate" | "rejected" | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Stethoscope } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -19,7 +19,7 @@ import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeav
 import { useUser } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCompOffBalance, useCompOffBalanceFor } from "@/hooks/useCompOff";
-import { LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
+import { CERTIFIED_SICK, LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
  *  the list display (avoids a silent off-by-one for zones ahead of UTC). */
@@ -60,6 +60,16 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
   // the user sees — for a request nobody edited.
   const selectedUserId = watch("user");
   const startDate = watch("startDate");
+  const type = watch("type");
+  const timeZone = watch("timeZone");
+  // Certified Sick Leave is for today only — the dates are set and held.
+  const certified = !isEditing && type === CERTIFIED_SICK;
+  useEffect(() => {
+    if (!certified) return;
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "Asia/Dubai" }).format(new Date());
+    setValue("startDate", today);
+    setValue("endDate", today);
+  }, [certified, timeZone, setValue]);
 
   // What this person may actually request. Only types a policy grants them are
   // offered, and the remaining balance is shown so the limit is visible before
@@ -165,11 +175,13 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                   </SelectTrigger>
                   <SelectContent>
                     {allowed.map((o) => (
-                      <SelectItem key={o.type} value={o.type} disabled={!o.eligible || o.remaining <= 0}>
+                      <SelectItem key={o.type} value={o.type} disabled={!o.eligible || (!o.unlimited && o.remaining <= 0)}>
                         {o.label}
-                        {o.eligible
-                          ? ` · ${o.remaining}/${o.days} left ${o.period === "month" ? "this month" : "this year"}`
-                          : ` · from ${fmtDay(o.eligibleOn)}`}
+                        {!o.eligible
+                          ? ` · from ${fmtDay(o.eligibleOn)}`
+                          : o.unlimited
+                            ? " · no limit"
+                            : ` · ${o.remaining}/${o.days} left ${o.period === "month" ? "this month" : "this year"}`}
                         {o.paid ? "" : " · unpaid"}
                       </SelectItem>
                     ))}
@@ -208,12 +220,12 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
 
           <div className="space-y-1.5">
             <Label htmlFor="startDate">Start Date *</Label>
-            <Input id="startDate" type="date" {...register("startDate")} />
+            <Input id="startDate" type="date" readOnly={certified} className={certified ? "bg-muted/40" : undefined} {...register("startDate")} />
             {errors.startDate && <p className="text-xs text-destructive">{errors.startDate.message}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="endDate">End Date *</Label>
-            <Input id="endDate" type="date" {...register("endDate")} />
+            <Input id="endDate" type="date" readOnly={certified} className={certified ? "bg-muted/40" : undefined} {...register("endDate")} />
             {errors.endDate && <p className="text-xs text-destructive">{errors.endDate.message}</p>}
           </div>
 
@@ -228,6 +240,17 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               render={({ field }) => <Switch id="halfDay" checked={field.value} onCheckedChange={field.onChange} />}
             />
           </div>
+
+          {certified && (
+            <div className="col-span-2 flex gap-2.5 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs leading-relaxed text-sky-800 dark:text-sky-300">
+              <Stethoscope className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                <strong>Certified Sick Leave</strong> is for today, with no limit on how often. Upload a <strong>medical certificate within 5 hours</strong> of
+                applying (open the request under Leave). With the certificate it goes for approval — <strong>approved is paid leave</strong>, rejected
+                is unpaid. Without it, the day becomes <strong>unpaid leave</strong> automatically.
+              </p>
+            </div>
+          )}
 
           {allowed?.length === 0 && (
             <p className="col-span-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">

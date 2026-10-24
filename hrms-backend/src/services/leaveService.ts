@@ -15,6 +15,24 @@ import { holidayScope, workModeOfUser } from "../utils/holidayScope.js";
 import { notifyReviewed } from "./reviewNotifier.js";
 import { watchersFor } from "./watchers.js";
 import { notify } from "./notificationService.js";
+import { putObject } from "./uploadService.js";
+import { signedFileUrl } from "../utils/fileUrl.js";
+
+/**
+ * Certified Sick Leave — sick leave with no allowance, held to a medical
+ * certificate. Applied for today only; the certificate is due five hours
+ * after applying. None by then and it becomes unpaid leave; with one, the
+ * usual approvers decide — approved is paid, rejected is unpaid.
+ */
+export const CERTIFIED_SICK = "certified_sick";
+export const CERTIFICATE_WINDOW_MS = 5 * 3600_000;
+/** Types with no allowance to run out of. */
+const UNLIMITED = new Set([CERTIFIED_SICK]);
+
+/** A request as the screens read it: the certificate as a short-lived link. */
+function withCertificateLink<T extends { certificate?: { key?: string } | null }>(r: T): T & { certificateUrl?: string | null } {
+  return r?.certificate?.key ? { ...r, certificateUrl: signedFileUrl(r.certificate.key) } : r;
+}
 import { env } from "../config/env.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
@@ -163,6 +181,7 @@ async function assertLeaveAllowed(
     }
   }
 
+  if (UNLIMITED.has(type)) return;
   const { remaining, used } = await remainingFor(policy, userId, startDate, excludeId);
   if (days > remaining) {
     const per = policy.period === "month" ? "this month" : "this year";
@@ -178,6 +197,7 @@ async function assertLeaveAllowed(
 
 const LEAVE_TYPE_LABEL: Record<string, string> = {
   annual: "Annual leave", sick: "Sick leave", casual: "Casual leave", unpaid: "Unpaid leave",
+  [CERTIFIED_SICK]: "Certified sick leave",
   maternity: "Maternity leave", paternity: "Paternity leave", wfh: "Work from home", comp_off: "Comp-off",
 };
 
@@ -235,6 +255,16 @@ export class LeaveService {
       );
     }
 
+    const certified = input.type === CERTIFIED_SICK;
+    if (certified) {
+      // Today only, where they are — the day they are ill, applied for that morning.
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: input.timeZone || "Asia/Dubai" }).format(new Date());
+      const day = (d: Date) => new Date(d).toISOString().slice(0, 10);
+      if (day(input.startDate) !== today || day(input.endDate) !== today) {
+        throw Object.assign(new Error("Certified Sick Leave is for today only — apply on the day you are ill"), { statusCode: 400 });
+      }
+    }
+
     const schedule = await scheduleFor(input.user, user);
     const days = input.halfDay
       ? 0.5
@@ -263,9 +293,26 @@ export class LeaveService {
       days,
       timeZone: input.timeZone,
       reason: input.reason,
-      status: input.status ?? "pending",
+      // A certified request always starts waiting — for its certificate first.
+      status: certified ? "pending" : input.status ?? "pending",
+      ...(certified ? { certificateDueAt: new Date(Date.now() + CERTIFICATE_WINDOW_MS) } : {}),
       ...workflow,
     });
+
+    // Nothing for the approvers to decide until the certificate is in — they
+    // are told when it is uploaded. The employee is told the deadline now.
+    if (certified) {
+      const due = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: input.timeZone || "Asia/Dubai" })
+        .format(new Date(Date.now() + CERTIFICATE_WINDOW_MS));
+      await notify({
+        users: [String(input.user)],
+        kind: "leave",
+        title: `Upload your medical certificate by ${due}`,
+        body: "Certified Sick Leave needs a medical certificate within 5 hours — without it, the day becomes unpaid leave.",
+        href: "/leave",
+      });
+      return withCertificateLink((await LeaveRequest.findById(leave._id).populate("user", "name email designation").lean())!);
+    }
 
     // The head of their department, if they have one. Awaited rather than
     // fired and forgotten so a mail failure cannot outlive the request that
@@ -357,7 +404,7 @@ export class LeaveService {
       LeaveRequest.countDocuments(filter),
     ]);
 
-    return { records, pagination: buildPagination(total, page, limit) };
+    return { records: records.map((r) => withCertificateLink(r as never)), pagination: buildPagination(total, page, limit) };
   }
 
   /** Current user's own leave requests (self-service). */
@@ -368,13 +415,55 @@ export class LeaveService {
   async getById(id: string) {
     const record = await LeaveRequest.findOne(scoped({ _id: id }))
       .populate("user", "name email designation")
-      .populate("reviewedBy", "name email");
+      .populate("reviewedBy", "name email")
+      .lean();
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
-    return record;
+    return withCertificateLink(record as never);
+  }
+
+  /**
+   * The employee's medical certificate for a Certified Sick Leave request —
+   * theirs, still pending, and before the deadline. Replacing it before a
+   * decision is fine. The approvers are told it has arrived.
+   */
+  async uploadCertificate(id: string, userId: string, file: { buffer: Buffer; mimetype: string; originalname: string; size: number }) {
+    const record = await LeaveRequest.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
+    if (String(record.user) !== String(userId)) throw Object.assign(new Error("Only your own request takes your certificate"), { statusCode: 403 });
+    if (record.type !== CERTIFIED_SICK) throw Object.assign(new Error("Only Certified Sick Leave takes a medical certificate"), { statusCode: 400 });
+    if (record.status !== "pending") throw Object.assign(new Error("This request has already been decided"), { statusCode: 400 });
+    if (record.certificateDueAt && record.certificateDueAt.getTime() < Date.now()) {
+      throw Object.assign(new Error("The 5 hours for the certificate have passed"), { statusCode: 400 });
+    }
+    const safe = (file.originalname || "certificate").replace(/[^\w.-]+/g, "_").slice(-120);
+    const key = `${String(getOrgId() ?? "global")}/leave-certificates/${String(record._id)}/${Date.now()}-${safe}`;
+    await putObject(key, file.buffer, file.mimetype);
+    const first = !record.certificate;
+    record.certificate = { key, fileName: file.originalname, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() } as never;
+    await record.save();
+
+    if (first) {
+      const who = await User.findById(record.user).select("name").lean<{ name?: string } | null>();
+      await notify({
+        users: await watchersFor("leave", String(record.user)),
+        kind: "leave",
+        title: `${who?.name ?? "Someone"} — certified sick leave to approve`,
+        body: "Medical certificate uploaded. Approved is paid; rejected becomes unpaid leave.",
+        href: "/approvals",
+        actor: record.user,
+      });
+    }
+    return this.getById(String(record._id));
   }
 
   /** Edit a request's details. Cannot change status — see review(). */
   async update(id: string, input: UpdateLeaveInput) {
+    {
+      const current = await LeaveRequest.findOne(scoped({ _id: id })).select("type").lean<{ type?: string } | null>();
+      if (current?.type === CERTIFIED_SICK || (input as { type?: string }).type === CERTIFIED_SICK) {
+        throw Object.assign(new Error("Certified Sick Leave can't be edited — withdraw it and apply again"), { statusCode: 400 });
+      }
+    }
     const record = await LeaveRequest.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
 
@@ -434,6 +523,10 @@ export class LeaveService {
       throw Object.assign(new Error("This request has already been reviewed"), { statusCode: 400 });
     }
     assertNotSelfReview(record.user, reviewerId);
+    const certified = record.type === CERTIFIED_SICK;
+    if (certified && input.status === "approved" && !record.certificate) {
+      throw Object.assign(new Error("Waiting for the medical certificate — it can be approved once it is uploaded"), { statusCode: 400 });
+    }
 
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
 
@@ -448,6 +541,13 @@ export class LeaveService {
       record.status = input.status;
       record.reviewedBy = reviewerId as never;
       record.reviewedAt = new Date();
+      // Certified sick, refused: still leave, but unpaid.
+      if (certified && input.status === "rejected") {
+        record.status = "approved";
+        record.type = "unpaid";
+        record.convertedFrom = CERTIFIED_SICK;
+        record.conversionReason = "rejected";
+      }
     }
 
     await record.save();
@@ -463,7 +563,10 @@ export class LeaveService {
       ]);
       const day = (d?: Date | null) =>
         d ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(d) : "—";
-      const approved = record.status === "approved";
+      const approved = record.status === "approved" && record.conversionReason !== "rejected";
+      if (record.conversionReason === "rejected") {
+        record.reviewNote = [record.reviewNote, "Certified sick leave not approved — counted as unpaid leave."].filter(Boolean).join(" ");
+      }
       await notifyReviewed({
         userId: record.user,
         subject: "Leave request",
@@ -586,6 +689,8 @@ export async function leaveOptionsFor(userId: string, month?: string) {
       eligible: eligibility.eligible,
       eligibleOn: eligibility.eligibleOn ? eligibility.eligibleOn.toISOString() : null,
       eligibleAfterMonths: p.eligibleAfterMonths,
+      // No allowance to run out of — the form says "no limit" instead of a count.
+      unlimited: UNLIMITED.has(p.type),
     });
   }
 

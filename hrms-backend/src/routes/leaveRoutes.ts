@@ -9,9 +9,11 @@ import {
   reviewLeave,
   deleteLeave,
   withdrawLeave,
+  uploadLeaveCertificate,
   getLeaveOptions,
 } from "../controllers/leaveController.js";
 import { authenticate } from "../middleware/auth.js";
+import { uploadSingle } from "../middleware/upload.js";
 import { checkPermission, checkPermissionOrDepartmentHead, requesterFromRecord } from "../middleware/permissions.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 
@@ -26,6 +28,8 @@ router.get("/mine", getMyLeaves);
 router.get("/options", getLeaveOptions);
 // Withdraw a still-pending request of one's own; ownership is checked in the service.
 router.patch("/:id/withdraw", withdrawLeave);
+// Certified Sick Leave: the requester's own medical certificate (checked in the service).
+router.post("/:id/certificate", uploadSingle, uploadLeaveCertificate);
 
 // Before "/:id", or "pending-count" is read as a request id. Gated on view
 // rather than approve: a badge is a number, and anyone allowed to open the

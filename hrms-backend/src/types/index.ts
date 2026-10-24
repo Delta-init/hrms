@@ -1149,6 +1149,12 @@ export interface ILeaveRequest extends Document {
   workflowTotalSteps?: number | null;
   approvalSteps?: IApprovalStepSnapshot[];
   approvalTrail?: IApprovalTrailEntry[];
+  /** Certified Sick Leave — see the model. */
+  certificate?: { key: string; fileName?: string; mimeType?: string; size?: number; uploadedAt?: Date } | null;
+  certificateDueAt?: Date | null;
+  certificateReminderAt?: Date | null;
+  convertedFrom?: string | null;
+  conversionReason?: "no_certificate" | "rejected" | null;
   createdAt: Date;
   updatedAt: Date;
 }

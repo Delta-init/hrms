@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { LeaveDialog } from "@/components/leave/LeaveDialog";
+import { CertificateStatus, awaitingCertificate } from "@/components/leave/CertificateStatus";
 import { HolidayDialog } from "@/components/leave/HolidayDialog";
 import { LeaveCalendar } from "@/components/leave/LeaveCalendar";
 import { LeaveBalances } from "@/components/leave/LeaveBalances";
@@ -42,8 +43,8 @@ const statusStyles: Record<LeaveStatus, string> = {
 const fmtDate = (iso: string, tz?: string) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: tz }).format(new Date(iso));
 
 // Simple table for Approvals / My tabs (bounded lists).
-function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin, onWithdraw, withdrawing }: {
-  leaves: LeaveRequest[]; loading?: boolean; emptyText: string; canApprove?: boolean;
+function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, reviewerRoleId, isSuperAdmin, onWithdraw, withdrawing, meId }: {
+  leaves: LeaveRequest[]; loading?: boolean; emptyText: string; canApprove?: boolean; meId?: string;
   onReview?: (l: LeaveRequest, a: "approved" | "rejected") => void;
   reviewerRoleId?: string; isSuperAdmin?: boolean;
   onWithdraw?: (l: LeaveRequest) => void; withdrawing?: boolean;
@@ -68,7 +69,7 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, re
               return (
                 <tr key={l._id} className="hover:bg-muted/30">
                   <td className="px-5 py-3.5"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div></td>
-                  <td className="px-5 py-3.5">{leaveTypeLabel(l.type)}</td>
+                  <td className="px-5 py-3.5">{leaveTypeLabel(l.type)}<CertificateStatus leave={l} meId={meId} /></td>
                   <td className="px-5 py-3.5 text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</td>
                   <td className="px-5 py-3.5 font-medium">{l.days}</td>
                   <td className="px-5 py-3.5">
@@ -79,7 +80,7 @@ function SimpleLeaveTable({ leaves, loading, emptyText, canApprove, onReview, re
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
                         {canApprove && l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <>
-                          <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button>
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" disabled={awaitingCertificate(l)} title={awaitingCertificate(l) ? "Waiting for the medical certificate" : undefined} onClick={() => onReview?.(l, "approved")}><Check className="h-3.5 w-3.5" />Approve</Button>
                           <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => onReview?.(l, "rejected")}><X className="h-3.5 w-3.5" />Reject</Button>
                         </>}
                         {onWithdraw && l.status === "pending" && (
@@ -157,7 +158,7 @@ export default function LeavePage() {
       id: "employee", label: "Employee", alwaysVisible: true,
       render: (l) => { const name = l.user && typeof l.user === "object" ? l.user.name : "—"; return <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(name)}</div><span className="font-medium">{name}</span></div>; },
     },
-    { id: "type", label: "Type", sortKey: "type", render: (l) => <>{leaveTypeLabel(l.type)}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}</> },
+    { id: "type", label: "Type", sortKey: "type", render: (l) => <>{leaveTypeLabel(l.type)}{l.halfDay && <span className="ml-1 text-xs text-muted-foreground">(½)</span>}<CertificateStatus leave={l} meId={user?._id} /></> },
     { id: "dates", label: "Dates", sortKey: "startDate", render: (l) => <span className="text-xs text-muted-foreground">{fmtDate(l.startDate, l.timeZone)} → {fmtDate(l.endDate, l.timeZone)}</span> },
     { id: "days", label: "Days", sortKey: "days", render: (l) => <span className="font-medium">{l.days}</span> },
     {
@@ -175,7 +176,7 @@ export default function LeavePage() {
       render: (l) => (
         <div className="flex items-center justify-end gap-1">
           {canApprove && l.status === "pending" && canActOnWorkflowStep(l, reviewerRoleId, isSuperAdmin) && <>
-            <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" onClick={() => setReview({ leave: l, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
+            <Button size="sm" variant="outline" className="h-7 gap-1 text-emerald-600" disabled={awaitingCertificate(l)} title={awaitingCertificate(l) ? "Waiting for the medical certificate" : undefined} onClick={() => setReview({ leave: l, action: "approved" })}><Check className="h-3.5 w-3.5" />Approve</Button>
             <Button size="sm" variant="outline" className="h-7 gap-1 text-red-600" onClick={() => setReview({ leave: l, action: "rejected" })}><X className="h-3.5 w-3.5" />Reject</Button>
           </>}
           {(canEdit || canDelete) && (
@@ -244,7 +245,7 @@ export default function LeavePage() {
 
       {activeTab === "calendar" && <div className="space-y-3"><div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div><Card className="p-5"><LeaveCalendar leaves={calendarLeaves} holidays={holidays} /></Card></div>}
 
-      {activeTab === "approvals" && <div className="space-y-3"><div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div><SimpleLeaveTable leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} /></div>}
+      {activeTab === "approvals" && <div className="space-y-3"><div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div><SimpleLeaveTable meId={user?._id} leaves={pending} emptyText="No pending requests 🎉" canApprove={canApprove} onReview={(l, a) => setReview({ leave: l, action: a })} reviewerRoleId={reviewerRoleId} isSuperAdmin={isSuperAdmin} /></div>}
 
       {activeTab === "apply" && (
         <div className="space-y-4">
@@ -253,7 +254,7 @@ export default function LeavePage() {
             <Button onClick={() => setApplyDialog(true)}><Plus className="h-4 w-4" />Apply</Button>
           </Card>
           {canApprove && <div className="flex flex-wrap items-center gap-2"><Label className="text-xs text-muted-foreground">Employees</Label><EmployeeMultiSelect value={employeeIds} onChange={setEmployeeIds} placeholder="All employees" className="h-9 w-[220px]" /></div>}
-          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">{canApprove ? "Leave Requests" : "My Requests"}</h4><SimpleLeaveTable leaves={canApprove ? reqData?.data ?? [] : mine} loading={canApprove ? reqLoading || isFetching : mineLoading} emptyText={canApprove ? "No leave requests match the selected employees." : "You haven't applied for any leave yet."} onWithdraw={!canApprove ? setWithdrawTarget : undefined} withdrawing={withdrawing} /></div>
+          <div><h4 className="mb-2 text-sm font-semibold text-muted-foreground">{canApprove ? "Leave Requests" : "My Requests"}</h4><SimpleLeaveTable meId={user?._id} leaves={canApprove ? reqData?.data ?? [] : mine} loading={canApprove ? reqLoading || isFetching : mineLoading} emptyText={canApprove ? "No leave requests match the selected employees." : "You haven't applied for any leave yet."} onWithdraw={!canApprove ? setWithdrawTarget : undefined} withdrawing={withdrawing} /></div>
         </div>
       )}
 

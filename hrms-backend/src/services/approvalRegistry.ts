@@ -236,6 +236,10 @@ export const ADAPTERS: Adapter[] = [
         { label: "From", value: day(d.startDate) },
         { label: "To", value: day(d.endDate) },
         { label: "Reason", value: String(d.reason ?? "—") },
+        // Certified sick: whether the certificate it waits on is in yet.
+        ...(d.type === "certified_sick"
+          ? [{ label: "Medical certificate", value: (d as { certificate?: unknown }).certificate ? "Uploaded" : "Not yet — can't be approved until it is" }]
+          : []),
       ],
       chain: null,
       href: "/leave",

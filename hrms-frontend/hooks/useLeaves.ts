@@ -96,6 +96,21 @@ export const usePendingLeaveCount = (enabled = true) =>
   });
 
 /** Self-service — withdraw one's own still-pending request. */
+/** The medical certificate for one's own Certified Sick Leave request. */
+export const useUploadLeaveCertificate = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post<ApiResponse<LeaveRequest>>(`/leaves/${id}/certificate`, form, { headers: { "Content-Type": "multipart/form-data" } });
+      return res.data.data!;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: LEAVE_KEY }); toast.success("Medical certificate uploaded — sent for approval"); },
+    onError: (e) => toast.error(errMsg(e, "Could not upload the certificate")),
+  });
+};
+
 export const useWithdrawLeave = () => {
   const qc = useQueryClient();
   return useMutation({
