@@ -1135,6 +1135,8 @@ export interface SalarySheetImportResult {
   skipped: Array<{ line: number; name: string; reason: string }>;
   /** On this month's payroll but not in the sheet — left alone. */
   missing: Array<{ name: string; code: string }>;
+  /** A SALARY ADVANCE in the sheet with no advance recorded in HRMS behind it. */
+  advancesNotOnRecord?: Array<{ code: string; name: string; amount: number }>;
   counts: { create: number; replace: number; errors: number; warnings: number };
   applied: null | { created: number; replaced: number; failed: Array<{ code: string; name: string; error: string }> };
 }

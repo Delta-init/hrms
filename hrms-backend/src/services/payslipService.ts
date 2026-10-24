@@ -278,7 +278,13 @@ async function undoRecoveries(record: { _id?: unknown; recoveries?: Array<{ kind
   }
 }
 
-export const SHEET_ADVANCE_LABEL = SALARY_ADVANCE_LABEL;
+/**
+ * An advance the sheet deducts with nothing recorded in HRMS to set it
+ * against. Named for where it came from, so nobody goes looking for it under
+ * Advances or one-time payments — and still prefixed "Salary advance", so the
+ * payroll totals and the salary-sheet export count it as one.
+ */
+export const SHEET_ADVANCE_LABEL = `${SALARY_ADVANCE_LABEL} (from salary sheet)`;
 export const SHEET_OTHER_LABEL = "Other deduction";
 const SHEET_LOAN_UNRECORDED = `${LOAN_DEDUCTION_PREFIX} (not on record)`;
 
@@ -358,7 +364,9 @@ export async function buildImportedPayslip(employeeId: string, month: string, sn
   if (advanceLeft > 0) {
     fixed.push({ label: SHEET_ADVANCE_LABEL, amount: advanceLeft });
     if (snap.advance > 0 && (oneTime.deductions.length || loans.some((l) => l.kind === "advance"))) {
-      warnings.push(`Advance ${advanceLeft} more than is owed on record — deducted as a plain line`);
+      warnings.push(`Advance ${advanceLeft} more than is owed on record — deducted as "${SHEET_ADVANCE_LABEL}"`);
+    } else if (snap.advance > 0) {
+      warnings.push(`No advance recorded in HRMS — ${advanceLeft} deducted as "${SHEET_ADVANCE_LABEL}"`);
     }
   }
   if (snap.other > 0) fixed.push({ label: SHEET_OTHER_LABEL, amount: r2(snap.other) });

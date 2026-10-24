@@ -46,6 +46,9 @@ export function ImportSalarySheetDialog({ open, onOpenChange, month }: Props) {
   const [result, setResult] = useState<SalarySheetImportResult | null>(null);
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [showLists, setShowLists] = useState(false);
+  // Advances in the sheet with nothing recorded behind them must be looked at before importing.
+  const [advancesChecked, setAdvancesChecked] = useState(false);
+  useEffect(() => { setAdvancesChecked(false); }, [result]);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -71,6 +74,8 @@ export function ImportSalarySheetDialog({ open, onOpenChange, month }: Props) {
   }, [result, attentionOnly]);
 
   const importable = result ? result.counts.create + result.counts.replace : 0;
+  const unrecorded = result?.advancesNotOnRecord ?? [];
+  const needsCheck = unrecorded.length > 0 && !advancesChecked;
   const done = result?.applied;
 
   return (
@@ -143,6 +148,26 @@ export function ImportSalarySheetDialog({ open, onOpenChange, month }: Props) {
                 Where the system&rsquo;s figure differs from the sheet it is shown struck through underneath. The sheet&rsquo;s figure is what gets imported.
               </p>
 
+              {unrecorded.length > 0 && !result.applied && (
+                <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+                  <p className="flex items-start gap-1.5 font-medium">
+                    <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                    {unrecorded.length} {unrecorded.length === 1 ? "person has" : "people have"} a SALARY ADVANCE in the sheet but no advance recorded in HRMS
+                  </p>
+                  <ul className="grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                    {unrecorded.map((a) => <li key={`${a.code}-${a.name}`} className="tabular-nums">{a.code} {a.name} — {a.amount}</li>)}
+                  </ul>
+                  <p>
+                    They will still be deducted, shown on the payslip as <strong>&ldquo;Salary advance (from salary sheet)&rdquo;</strong> — with nothing under
+                    Advances or one-time payments to explain them. If an advance was really given, record it under Advances first; if not, correct the sheet.
+                  </p>
+                  <label className="flex items-center gap-2 font-medium">
+                    <input type="checkbox" checked={advancesChecked} onChange={(e) => setAdvancesChecked(e.target.checked)} className="h-3.5 w-3.5" />
+                    I&rsquo;ve checked these advances
+                  </label>
+                </div>
+              )}
+
               {(result.skipped.length > 0 || result.missing.length > 0) && (
                 <div className="rounded-lg border border-border p-3 text-xs">
                   <button type="button" onClick={() => setShowLists((v) => !v)} className="inline-flex items-center gap-1 font-medium">
@@ -201,7 +226,8 @@ export function ImportSalarySheetDialog({ open, onOpenChange, month }: Props) {
                 </Button>
               )}
               {result && (
-                <Button type="button" onClick={apply} disabled={isPending || !!result.locked || importable === 0}>
+                <Button type="button" onClick={apply} disabled={isPending || !!result.locked || importable === 0 || needsCheck}
+                  title={needsCheck ? "Check the advances not on record first" : undefined}>
                   {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   Import {importable} payslip{importable === 1 ? "" : "s"}
                 </Button>

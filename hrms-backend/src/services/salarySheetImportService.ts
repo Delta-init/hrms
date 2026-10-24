@@ -76,6 +76,8 @@ export interface ImportRow {
     gross: number; lopDays: number; loan: number; advance: number; lop: number; other: number; net: number;
     status: string | null; imported: boolean;
   } | null;
+  /** How much of the sheet's SALARY ADVANCE has nothing recorded in HRMS behind it. */
+  unrecordedAdvance?: number;
 }
 
 interface ParsedRow { line: number; code: string; name: string; cells: Record<string, unknown> }
@@ -165,6 +167,7 @@ export class SalarySheetImportService {
     const out: ImportRow[] = [];
     for (const p of parsed) {
       const errors: string[] = [];
+      let unrecordedAdvance = 0;
       const warnings: string[] = [];
       const c = p.cells;
       const lopDays = num(c.lopDays, "LOP", errors);
@@ -255,7 +258,12 @@ export class SalarySheetImportService {
             advanceLoans.reduce((a, l) => a + (l.amount - l.amountRepaid), 0) +
             recovered("adjustment")
           );
-          if (advance > owed) warnings.push(owed > 0 ? `SALARY ADVANCE ${advance} is more than the ${owed} on record — the rest is a plain line` : "No advance on record — deducted as a plain line");
+          if (advance > owed) {
+            warnings.push(owed > 0
+              ? `SALARY ADVANCE ${advance} is more than the ${owed} recorded in HRMS — the other ${r2(advance - owed)} is deducted as "Salary advance (from salary sheet)"`
+              : `SALARY ADVANCE ${advance} in the sheet, but no advance is recorded for them in HRMS — it is deducted anyway, as "Salary advance (from salary sheet)"`);
+            unrecordedAdvance = r2(advance - owed);
+          }
         }
       }
 
@@ -269,6 +277,7 @@ export class SalarySheetImportService {
         warnings,
         sheet,
         system,
+        unrecordedAdvance,
       });
     }
 
@@ -284,6 +293,14 @@ export class SalarySheetImportService {
       rows: out,
       skipped,
       missing,
+      /**
+       * Sheet advances with nothing recorded behind them — the case that left a
+       * deduction nobody could trace (October 2026). Shown on their own before
+       * importing, and the screen asks for them to be checked.
+       */
+      advancesNotOnRecord: out
+        .filter((r) => r.action !== "skip" && r.unrecordedAdvance)
+        .map((r) => ({ code: r.code, name: r.name, amount: r.unrecordedAdvance ?? 0 })),
       counts: {
         create: out.filter((r) => r.action === "create").length,
         replace: out.filter((r) => r.action === "replace").length,
