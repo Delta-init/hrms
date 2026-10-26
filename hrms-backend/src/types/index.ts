@@ -140,6 +140,8 @@ export interface IUser extends Document {
   invitedAt?: Date | null;
   mustResetPassword: boolean;
   profileCompleted: boolean;
+  /** When the HRMS guide video was first seen or skipped — see the model. */
+  guideSeenAt?: Date | null;
   /** Stamped at activation, not read live — see the model for why. */
   agreementsRequired: boolean;
   /** Bumped to invalidate every token previously issued to this user. */

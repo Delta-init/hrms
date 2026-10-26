@@ -5,7 +5,7 @@ import {
   setPassword,
   exchange,
   refreshToken,
-  getProfile,
+  getProfile, markGuideSeen,
   changePassword,
   logout,
   getMyProfile,
@@ -39,6 +39,7 @@ router.post("/refresh-token", tokenLimiter, refreshToken);
 // Protected routes
 router.get("/profile", authenticate, getProfile);
 router.get("/me", authenticate, getProfile);
+router.post("/guide-seen", authenticate, markGuideSeen);
 router.put("/change-password", authenticate, changePassword);
 router.post("/logout", authenticate, logout);
 // Self-service onboarding (fills the caller's own employee record).

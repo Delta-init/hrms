@@ -67,6 +67,12 @@ const userSchema = new Schema<IUser>(
       default: false,
     },
     /**
+     * When they first saw (or skipped) the HRMS guide video. Null means the
+     * welcome video opens on their next visit to the dashboard, once
+     * onboarding is done — once only.
+     */
+    guideSeenAt: { type: Date, default: null },
+    /**
      * Whether this particular account is held at the agreements wall.
      *
      * Stamped once, at activation — see `AuthService.setPassword` — rather than

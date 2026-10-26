@@ -3,6 +3,7 @@ import { Header } from "@/components/layout/Header";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { OnboardingGate } from "@/components/layout/OnboardingGate";
+import { GuideWelcome } from "@/components/layout/GuideVideo";
 import { KioskLock } from "@/components/layout/KioskLock";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
@@ -20,6 +21,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
     <RootPortalHistoryBridge />
     <OnboardingGate />
+    <GuideWelcome />
     <KioskLock />
     <PushNavigationListener />
     <div className="flex h-screen w-full overflow-hidden bg-muted/30">

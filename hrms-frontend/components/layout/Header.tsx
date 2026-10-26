@@ -1,5 +1,7 @@
 "use client";
-import { LogOut, User, Menu, ChevronRight } from "lucide-react";
+import { LogOut, User, Menu, ChevronRight, PlayCircle } from "lucide-react";
+import { useState } from "react";
+import { GuideVideoDialog } from "@/components/layout/GuideVideo";
 import { usePathname, useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -25,6 +27,7 @@ export function Header() {
   const { data: me } = useMyEmployeeProfile();
   const logout = useLogout();
   const router = useRouter();
+  const [guideOpen, setGuideOpen] = useState(false);
   const { toggleSidebarCollapsed } = useUiStore();
   const pathname = usePathname();
 
@@ -90,6 +93,10 @@ export function Header() {
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setGuideOpen(true)}>
+              <PlayCircle className="mr-2 h-4 w-4" />
+              HRMS guide
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="cursor-pointer text-destructive focus:text-destructive"
@@ -100,6 +107,7 @@ export function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <GuideVideoDialog open={guideOpen} onClose={() => setGuideOpen(false)} />
       </div>
     </header>
   );

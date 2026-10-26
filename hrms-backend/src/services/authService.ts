@@ -202,6 +202,13 @@ export class AuthService {
     return withHeadFlag(user);
   }
 
+  /** The welcome guide video has been seen (or skipped) — it won't open by itself again. */
+  async markGuideSeen(userId: string) {
+    await User.updateOne({ _id: userId, guideSeenAt: null }, { $set: { guideSeenAt: new Date() } });
+    const user = await User.findById(userId).select("guideSeenAt").lean<{ guideSeenAt?: Date | null } | null>();
+    return { guideSeenAt: user?.guideSeenAt ?? null };
+  }
+
   async changePassword(userId: string, input: ChangePasswordInput) {
     const user = await User.findById(userId).select("+password");
     if (!user) {

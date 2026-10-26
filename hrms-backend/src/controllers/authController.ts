@@ -142,6 +142,14 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response, next:
   }
 };
 
+export const markGuideSeen = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Guide marked as seen", await authService.markGuideSeen(req.user!.userId));
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const changePassword = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = changePasswordSchema.safeParse(req.body);
