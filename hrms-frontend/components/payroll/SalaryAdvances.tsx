@@ -57,10 +57,23 @@ function StatusPill({ r }: { r: SalaryAdvance }) {
   );
 }
 
-/** How it will be taken back, once HR has said. */
-function recovery(r: SalaryAdvance) {
+/** "2026-10" → "October 2026" — the salary month, said as people say it. */
+const monthName = (ym?: string | null, add = 0) => {
+  if (!ym) return "—";
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + add, 1)).toLocaleDateString([], { month: "long", year: "numeric", timeZone: "UTC" });
+};
+
+/** Which salary it comes back out of, once HR has said — kept apart from the dates it was asked and paid. */
+function Recovery({ r }: { r: SalaryAdvance }) {
   if (!r.months || !r.startMonth) return null;
-  return `${money(r.amount / r.months, r.currency)} a month × ${r.months} from ${r.startMonth}`;
+  const months = r.months === 1 ? `${monthName(r.startMonth)} salary` : `${monthName(r.startMonth)} – ${monthName(r.startMonth, r.months - 1)} salaries`;
+  return (
+    <span className="rounded-md border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
+      Deducted from {months}
+      {r.months > 1 ? ` · ${money(r.amount / r.months, r.currency)} a month` : ""}
+    </span>
+  );
 }
 
 /**
@@ -134,11 +147,11 @@ function MyAdvances() {
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill r={r} />
                     <span className="text-sm font-semibold tabular-nums">{money(r.amount, r.currency)}</span>
+                    <Recovery r={r} />
                   </div>
                   <p className="mt-1 text-sm">{r.reason}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     Asked {when(r.createdAt)}{r.neededBy ? ` · needed by ${when(r.neededBy)}` : ""}
-                    {recovery(r) ? ` · ${recovery(r)}` : ""}
                   </p>
                   {(r.hrNote || r.financeNote) && (
                     <p className="mt-0.5 text-xs text-muted-foreground">{[r.hrNote && `HR: ${r.hrNote}`, r.financeNote && `Finance: ${r.financeNote}`].filter(Boolean).join(" · ")}</p>
@@ -248,11 +261,11 @@ function Queue() {
                     <StatusPill r={r} />
                     <span className="text-sm font-semibold">{nameOf(r.employee) || nameOf(r.user) || "—"}</span>
                     <span className="text-sm font-semibold tabular-nums">{money(r.amount, r.currency)}</span>
+                    <Recovery r={r} />
                   </div>
                   <p className="mt-1.5 text-sm">{r.reason}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Asked {when(r.createdAt)}{r.neededBy ? ` · needed by ${when(r.neededBy)}` : ""} · monthly salary {money(r.monthlySalary, r.currency)}
-                    {recovery(r) ? ` · ${recovery(r)}` : ""}
                     {r.status === "approved" && r.paidOn ? ` · paid ${when(r.paidOn)}${r.paymentMethod ? ` by ${r.paymentMethod.replace(/_/g, " ")}` : ""}` : ""}
                     {r.financeRef ? ` · finance ref ${r.financeRef}` : ""}
                   </p>
@@ -293,7 +306,7 @@ function Queue() {
                 </div>
               </div>
               <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                {money(deciding.amount / m, deciding.currency)} a month for {m} month{m === 1 ? "" : "s"}, from {startMonth || "—"}.
+                {money(deciding.amount / m, deciding.currency)} a month for {m} month{m === 1 ? "" : "s"}, starting with the {startMonth ? monthName(startMonth) : "—"} salary.
                 It goes to finance next; nothing is deducted until they have paid it.
               </p>
               <div className="space-y-1.5">
@@ -417,7 +430,7 @@ function RaiseForEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenC
           </div>
           {value > 0 && (
             <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs">
-              {money(value / m, elig?.currency ?? "AED")} a month for {m} month{m === 1 ? "" : "s"}, from {startMonth || "—"}. It goes straight to
+              {money(value / m, elig?.currency ?? "AED")} a month for {m} month{m === 1 ? "" : "s"}, starting with the {startMonth ? monthName(startMonth) : "—"} salary. It goes straight to
               finance — HR&rsquo;s approval is this — and nothing is deducted until finance has paid it.
             </p>
           )}
