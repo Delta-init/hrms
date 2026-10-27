@@ -13,13 +13,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { assetFormSchema, type AssetFormValues } from "@/lib/validations/assetSchema";
-import { useCreateAsset, useUpdateAsset } from "@/hooks/useAssets";
+import { useCreateAsset, useIssueAsset, useUpdateAsset } from "@/hooks/useAssets";
 import { assetCategoryLabel, ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS, type Asset, type AssetCondition } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   asset?: Asset | null;
+  /** Creating one for this person: it is issued to them as soon as it is saved. */
+  issueTo?: { _id: string; name: string } | null;
 }
 
 const EMPTY: AssetFormValues = { name: "", category: "laptop", assetTag: "", serialNumber: "", purchaseDate: "", purchaseCost: undefined, condition: "new", branch: "", location: "", quantity: 1, notes: "" };
@@ -27,11 +29,12 @@ const EMPTY: AssetFormValues = { name: "", category: "laptop", assetTag: "", ser
 /** Picked from the dropdown to type a category nobody has used before. */
 const CUSTOM = "__custom__";
 
-export function AssetDialog({ open, onOpenChange, asset }: Props) {
+export function AssetDialog({ open, onOpenChange, asset, issueTo = null }: Props) {
   const isEditing = !!asset;
   const { mutate: create, isPending: creating } = useCreateAsset();
+  const { mutate: issue, isPending: issuing } = useIssueAsset();
   const { mutate: update, isPending: updating } = useUpdateAsset();
-  const isPending = creating || updating;
+  const isPending = creating || updating || issuing;
 
   // Kept outside the form value so the text box stays open while it is empty.
   const [customCategory, setCustomCategory] = useState(false);
@@ -69,14 +72,22 @@ export function AssetDialog({ open, onOpenChange, asset }: Props) {
       notes: data.notes || undefined,
     };
     if (isEditing) update({ id: asset._id, data: payload }, { onSuccess: () => onOpenChange(false) });
-    else create(payload, { onSuccess: () => onOpenChange(false) });
+    else create(payload, {
+      onSuccess: (created) => {
+        if (!issueTo) { onOpenChange(false); return; }
+        issue(
+          { id: created._id, data: { employee: issueTo._id, condition: data.condition, notes: "" } },
+          { onSettled: () => onOpenChange(false) }
+        );
+      },
+    });
   };
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-lg max-h-[92vh] overflow-y-auto">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>{isEditing ? "Edit Asset" : "New Asset"}</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{isEditing ? "Edit Asset" : issueTo ? `New asset for ${issueTo.name}` : "New Asset"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
@@ -177,7 +188,7 @@ export function AssetDialog({ open, onOpenChange, asset }: Props) {
 
           <ResponsiveDialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}{isEditing ? "Save Changes" : "Add Asset"}</Button>
+            <Button type="submit" disabled={isPending}>{isPending && <Loader2 className="h-4 w-4 animate-spin" />}{isEditing ? "Save Changes" : issueTo ? "Add and issue" : "Add Asset"}</Button>
           </ResponsiveDialogFooter>
         </form>
       </ResponsiveDialogContent>

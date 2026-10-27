@@ -235,7 +235,7 @@ export default function UserDetailPage() {
       {activeTab === "assets" && canViewAssets && (
         empLoading
           ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          : <EmployeeAssets employeeId={employee?._id ?? null} />
+          : <EmployeeAssets employeeId={employee?._id ?? null} employeeName={employee?.name ?? user.name} />
       )}
 
       <EmployeeDialog open={createEmpOpen} onOpenChange={setCreateEmpOpen} defaultName={user.name} defaultUserId={id} />

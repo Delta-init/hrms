@@ -134,6 +134,21 @@ export default function AssetsPage() {
   const { mutate: removeProcurement, isPending: deletingProcurement } = useDeleteProcurement();
   const { mutate: review, isPending: reviewing } = useReviewProcurement();
 
+  /** What can be done to one asset — the same buttons on the table row and the phone card. */
+  const rowActions = (a: Asset, wrap = false) => (
+    <div className={cn("flex items-center gap-1", wrap ? "flex-wrap" : "justify-end")}>
+      <Button size="icon" variant="ghost" className="h-8 w-8" title="History" aria-label="History" onClick={() => setHistoryTarget(a)}><History className="h-4 w-4" /></Button>
+      {canEdit && <Button size="sm" variant="outline" onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-3.5 w-3.5" />Edit</Button>}
+      {canEdit && a.status === "available" && <Button size="sm" variant="outline" onClick={() => setIssueTarget(a)}><Send className="h-3.5 w-3.5" />Issue</Button>}
+      {canEdit && a.status === "assigned" && <Button size="sm" variant="outline" onClick={() => setReturnTarget(a)}><Undo2 className="h-3.5 w-3.5" />Return</Button>}
+      {canEdit && a.status === "maintenance" && <Button size="sm" variant="outline" onClick={() => markAvailable(a._id)} disabled={markingAvailable}><CheckCircle2 className="h-3.5 w-3.5" />Available</Button>}
+      {canEdit && a.status !== "retired" && a.status !== "assigned" && (
+        <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" title="Retire" aria-label="Retire" onClick={() => setRetireTarget(a)}><Archive className="h-4 w-4" /></Button>
+      )}
+      {canDelete && a.status !== "assigned" && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" title="Delete" aria-label="Delete" onClick={() => setDeleteTarget(a)}><Trash2 className="h-4 w-4" /></Button>}
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -234,7 +249,38 @@ export default function AssetsPage() {
             )}
           </Card>
 
-          <Card className="overflow-hidden">
+          {/* Phones: a card per asset, so its buttons are never off the side of a table. */}
+          <div className="space-y-2 md:hidden">
+            {isLoading || isFetching ? (
+              <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            ) : rows.length === 0 ? (
+              <Card className="py-16 text-center text-sm text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</Card>
+            ) : rows.map((a) => {
+              const assignee = assigneeOf(a);
+              return (
+                <Card key={a._id} className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 truncate font-medium">
+                        {a.name}
+                        {(a.quantity ?? 1) > 1 && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">×{a.quantity}</span>}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{a.assetTag} · {assetCategoryLabel(a.category)}{a.serialNumber ? ` · SN ${a.serialNumber}` : ""}</p>
+                    </div>
+                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium", statusStyles[a.status])}>{ASSET_STATUS_LABELS[a.status]}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    <span className={cn("font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</span>
+                    {assignee ? <> · <span className="text-foreground">{assignee.name}</span></> : sheetHolder(a) ? ` · ${sheetHolder(a)} (unmatched)` : ""}
+                    {a.branch || a.location ? ` · ${[a.branch, a.location].filter(Boolean).join(", ")}` : ""}
+                  </p>
+                  {rowActions(a, true)}
+                </Card>
+              );
+            })}
+          </div>
+
+          <Card className="hidden overflow-hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[880px] text-sm">
                 <thead>
@@ -292,17 +338,7 @@ export default function AssetsPage() {
                           <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[a.status])}>{ASSET_STATUS_LABELS[a.status]}</span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="h-8 w-8" title="History" onClick={() => setHistoryTarget(a)}><History className="h-4 w-4" /></Button>
-                            {canEdit && a.status === "available" && <Button size="sm" variant="outline" onClick={() => setIssueTarget(a)}><Send className="h-3.5 w-3.5" />Issue</Button>}
-                            {canEdit && a.status === "assigned" && <Button size="sm" variant="outline" onClick={() => setReturnTarget(a)}><Undo2 className="h-3.5 w-3.5" />Return</Button>}
-                            {canEdit && a.status === "maintenance" && <Button size="sm" variant="outline" onClick={() => markAvailable(a._id)} disabled={markingAvailable}><CheckCircle2 className="h-3.5 w-3.5" />Available</Button>}
-                            {canEdit && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>}
-                            {canEdit && a.status !== "retired" && a.status !== "assigned" && (
-                              <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" title="Retire" onClick={() => setRetireTarget(a)}><Archive className="h-4 w-4" /></Button>
-                            )}
-                            {canDelete && a.status !== "assigned" && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(a)}><Trash2 className="h-4 w-4" /></Button>}
-                          </div>
+                          {rowActions(a)}
                         </td>
                       </tr>
                     );

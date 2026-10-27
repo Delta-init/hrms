@@ -1,8 +1,15 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
-import { Boxes, Loader2, ArrowUpRight, History } from "lucide-react";
+import { Boxes, Loader2, ArrowUpRight, History, Pencil, Undo2, Plus, PackagePlus, PackageSearch } from "lucide-react";
 import { useAssets } from "@/hooks/useAssets";
+import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AssetDialog } from "@/components/assets/AssetDialog";
+import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
+import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { cn } from "@/lib/utils";
 import {
   ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS, ASSET_STATUS_LABELS,
@@ -44,7 +51,16 @@ const conditionTone: Record<AssetCondition, string> = {
  * second one is answered from each asset's history rather than its current
  * assignee.
  */
-export function EmployeeAssets({ employeeId }: { employeeId: string | null }) {
+export function EmployeeAssets({ employeeId, employeeName = "" }: { employeeId: string | null; employeeName?: string }) {
+  // From the profile, too: edit or take back what they hold, and give them more —
+  // from stock, or a new asset issued as it is added. Read-only without assets edit.
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission("assets", "edit");
+  const [editing, setEditing] = useState<Asset | null>(null);
+  const [returning, setReturning] = useState<Asset | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const who = employeeId ? { _id: employeeId, name: employeeName || "this employee" } : null;
   const { data, isLoading } = useAssets(
     employeeId ? { assignedTo: employeeId, limit: "100", sortBy: "name", sortOrder: "asc" } : undefined
   );
@@ -85,18 +101,42 @@ export function EmployeeAssets({ employeeId }: { employeeId: string | null }) {
                 (totalValue > 0 ? ` · ${totalValue.toLocaleString()} at purchase` : "")}
           </p>
         </div>
-        <Link href="/assets" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-          All assets <ArrowUpRight className="h-3 w-3" />
-        </Link>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm"><Plus className="h-3.5 w-3.5" />Add asset</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem className="cursor-pointer" onClick={() => setIssuing(true)}>
+                  <PackageSearch className="mr-2 h-4 w-4" />Issue from available stock
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer" onClick={() => setCreating(true)}>
+                  <PackagePlus className="mr-2 h-4 w-4" />Create a new asset for them
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Link href="/assets" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+            All assets <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
       </div>
 
       {assets.length === 0 ? (
         <Card className="p-12 text-center text-sm text-muted-foreground">
-          Nothing issued. Assets are handed out from the Assets page.
+          {canEdit ? "Nothing issued yet — use Add asset to give them one." : "Nothing issued. Assets are handed out from the Assets page."}
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {assets.map((a) => <AssetCard key={a._id} asset={a} />)}
+          {assets.map((a) => (
+            <AssetCard key={a._id} asset={a} actions={canEdit ? (
+              <div className="mt-3 flex gap-2 border-t border-border pt-3">
+                <Button size="sm" variant="outline" className="h-7 flex-1" onClick={() => setEditing(a)}><Pencil className="h-3.5 w-3.5" />Edit</Button>
+                <Button size="sm" variant="outline" className="h-7 flex-1" onClick={() => setReturning(a)}><Undo2 className="h-3.5 w-3.5" />Return</Button>
+              </div>
+            ) : null} />
+          ))}
         </div>
       )}
 
@@ -118,11 +158,20 @@ export function EmployeeAssets({ employeeId }: { employeeId: string | null }) {
           </div>
         </div>
       )}
+
+      {canEdit && (
+        <>
+          <AssetDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} asset={editing} />
+          <ReturnAssetDialog open={!!returning} onOpenChange={(o) => !o && setReturning(null)} asset={returning} />
+          <IssueAssetDialog open={issuing} onOpenChange={setIssuing} asset={null} employee={who} />
+          <AssetDialog open={creating} onOpenChange={setCreating} asset={null} issueTo={who} />
+        </>
+      )}
     </div>
   );
 }
 
-function AssetCard({ asset: a, past, employeeId }: { asset: Asset; past?: boolean; employeeId?: string }) {
+function AssetCard({ asset: a, past, employeeId, actions }: { asset: Asset; past?: boolean; employeeId?: string; actions?: React.ReactNode }) {
   // On a past asset the current status describes somebody else's situation, so
   // what matters is when this person had it — read off their own history entries.
   const mine = past && employeeId
@@ -176,6 +225,7 @@ function AssetCard({ asset: a, past, employeeId }: { asset: Asset; past?: boolea
       </dl>
 
       {a.notes && <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{a.notes}</p>}
+      {actions}
     </Card>
   );
 }
