@@ -1387,6 +1387,23 @@ export interface IProcurement extends Document {
   updatedAt: Date;
 }
 
+/** Some of a procured item handed out — the ledger's "out" side. */
+export interface IProcurementIssue extends Document {
+  _id: Types.ObjectId;
+  organization?: Types.ObjectId | IOrganization | null;
+  /** The item's name as shown, and the key it is matched on: lower-cased, spaces collapsed. */
+  item: string;
+  itemKey: string;
+  quantity: number;
+  employee?: Types.ObjectId | IEmployee | null;
+  department?: Types.ObjectId | IDepartment | null;
+  date: Date;
+  note?: string;
+  by?: Types.ObjectId | IUser | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IAssetHistoryEntry {
   action: "issued" | "returned" | "sent_to_maintenance" | "retired";
   employee?: Types.ObjectId | IEmployee | null;

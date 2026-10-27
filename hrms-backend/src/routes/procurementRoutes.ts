@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createProcurement, getProcurements, getProcurementSummary, getProcurementById, updateProcurement, deleteProcurement,
-  reviewProcurement, resubmitProcurement, uploadReport,
+  reviewProcurement, resubmitProcurement, uploadReport, getLedger, getLedgerItem, giveOut, removeGiveOut,
 } from "../controllers/procurementController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/permissions.js";
@@ -29,6 +29,11 @@ router.use(authenticate);
 router.get("/", checkPermissionOrDepartmentHead("procurement", "view"), getProcurements);
 router.post("/", checkPermissionOrDepartmentHead("procurement", "create"), createProcurement);
 router.get("/summary", checkPermissionOrDepartmentHead("procurement", "view"), getProcurementSummary);
+// The ledger — HR's view of the shelf, not a department head's; before "/:id" so "ledger" is not taken for an id.
+router.get("/ledger", checkPermission("procurement", "view"), getLedger);
+router.get("/ledger/item", checkPermission("procurement", "view"), getLedgerItem);
+router.post("/ledger/give-out", checkPermission("procurement", "edit"), giveOut);
+router.delete("/ledger/give-out/:id", checkPermission("procurement", "edit"), removeGiveOut);
 router.get("/:id", checkPermissionOrDepartmentHead("procurement", "view"), getProcurementById);
 router.put("/:id", checkPermissionOrDepartmentHead("procurement", "edit"), updateProcurement);
 router.post("/:id/report", checkPermissionOrDepartmentHead("procurement", "edit"), uploadSingle, uploadReport);

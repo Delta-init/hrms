@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip, BookOpen,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,7 @@ import {
 import { useProcurements, useProcurementSummary, useDeleteProcurement, useReviewProcurement } from "@/hooks/useProcurements";
 import { AssetDialog } from "@/components/assets/AssetDialog";
 import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
+import { ProcurementLedger } from "@/components/procurement/ProcurementLedger";
 import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
 import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -111,6 +112,8 @@ export default function AssetsPage() {
     { key: "mine", label: "My Assets", icon: Boxes },
     canView && { key: "all", label: "All Assets", icon: ListChecks },
     canViewProcurement && { key: "procurement", label: "Procurement", icon: ShoppingCart },
+    // HR's view of the shelf — the permission itself, not heading a team.
+    hasPermission("procurement", "view") && { key: "ledger", label: "Ledger", icon: BookOpen },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType }[];
   const activeTab = tabs.some((t) => t.key === tab) ? tab : "mine";
 
@@ -349,6 +352,8 @@ export default function AssetsPage() {
           </Card>
         </div>
       ))}
+
+      {activeTab === "ledger" && <ProcurementLedger canGiveOut={hasPermission("procurement", "edit")} />}
 
       {activeTab === "procurement" && (!canViewProcurement ? (
         <Card className="p-16 text-center text-muted-foreground">You do not have access to procurement.</Card>

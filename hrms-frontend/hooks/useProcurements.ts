@@ -98,3 +98,65 @@ export const useUploadProcurementReport = () => {
     onError: (e) => toast.error(errMsg(e, "Could not upload the report")),
   });
 };
+
+// ── Ledger: received, given out, left ──
+
+/** One item on the shelf — every purchase of it added together. */
+export interface LedgerRow {
+  key: string;
+  item: string;
+  category: string;
+  received: number;
+  onOrder: number;
+  givenOut: number;
+  available: number;
+  lastIn: string | null;
+  lastOut: string | null;
+}
+export interface LedgerEntry {
+  kind: "received" | "on_order" | "given_out";
+  id: string;
+  date: string;
+  quantity: number;
+  /** What was left after this entry — null for an order that has not arrived. */
+  balance: number | null;
+  who?: string;
+  department?: string;
+  note?: string;
+  by?: string;
+  vendor?: string;
+}
+export interface LedgerItem { item: string; key: string; totals: LedgerRow | null; entries: LedgerEntry[] }
+
+export const useProcurementLedger = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "ledger"],
+    queryFn: async () => (await api.get<ApiResponse<LedgerRow[]>>("/procurement/ledger")).data.data ?? [],
+    enabled,
+  });
+
+export const useProcurementLedgerItem = (key: string | null) =>
+  useQuery({
+    queryKey: [...KEY, "ledger", "item", key],
+    queryFn: async () => (await api.get<ApiResponse<LedgerItem>>("/procurement/ledger/item", { params: { key } })).data.data!,
+    enabled: !!key,
+  });
+
+export const useGiveOut = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { item: string; quantity: number; employee?: string; department?: string; date?: string; note?: string }) =>
+      (await api.post<ApiResponse<{ item: string; given: number; available: number }>>("/procurement/ledger/give-out", data)).data.data!,
+    onSuccess: (r) => { invalidate(qc); toast.success(`Given out — ${r.available} ${r.item} left`); },
+    onError: (e) => toast.error(errMsg(e, "Could not give it out")),
+  });
+};
+
+export const useRemoveGiveOut = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/procurement/ledger/give-out/${id}`)).data,
+    onSuccess: () => { invalidate(qc); toast.success("Entry removed — back in stock"); },
+    onError: (e) => toast.error(errMsg(e, "Could not remove the entry")),
+  });
+};

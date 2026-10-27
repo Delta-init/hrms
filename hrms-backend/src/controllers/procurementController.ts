@@ -7,8 +7,9 @@ import { extFromMime } from "../middleware/upload.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { hasPermission } from "../middleware/permissions.js";
 import {
-  createProcurementSchema, updateProcurementSchema, reviewProcurementSchema, resubmitProcurementSchema,
+  createProcurementSchema, updateProcurementSchema, reviewProcurementSchema, resubmitProcurementSchema, giveOutSchema,
 } from "../validations/procurementValidation.js";
+import { procurementLedgerService, itemKey } from "../services/procurementLedgerService.js";
 
 const service = new ProcurementService();
 
@@ -116,4 +117,38 @@ export const deleteProcurement = async (req: AuthenticatedRequest, res: Response
   } catch (error) {
     next(error);
   }
+};
+
+// ── Ledger: what came in, what went out, what is left ──────────────────────
+
+/** GET /procurement/ledger — one row per item. */
+export const getLedger = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Procurement ledger", await procurementLedgerService.summary(typeof req.query.search === "string" ? req.query.search : undefined));
+  } catch (error) { next(error); }
+};
+
+/** GET /procurement/ledger/item?key= — every movement of one item, with the running balance. */
+export const getLedgerItem = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const key = typeof req.query.key === "string" ? itemKey(req.query.key) : "";
+    if (!key) { sendError(res, "Which item?", 400); return; }
+    sendSuccess(res, "Item ledger", await procurementLedgerService.movements(key));
+  } catch (error) { next(error); }
+};
+
+/** POST /procurement/ledger/give-out */
+export const giveOut = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = giveOutSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Given out", await procurementLedgerService.giveOut(parsed.data, req.user!.userId), 201);
+  } catch (error) { next(error); }
+};
+
+/** DELETE /procurement/ledger/give-out/:id — an entry made in error. */
+export const removeGiveOut = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    sendSuccess(res, "Entry removed", await procurementLedgerService.removeGiveOut(String(req.params.id)));
+  } catch (error) { next(error); }
 };

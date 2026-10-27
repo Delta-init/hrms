@@ -56,3 +56,17 @@ export type CreateProcurementInput = z.infer<typeof createProcurementSchema>;
 export type UpdateProcurementInput = z.infer<typeof updateProcurementSchema>;
 export type ReviewProcurementInput = z.infer<typeof reviewProcurementSchema>;
 export type ResubmitProcurementInput = z.infer<typeof resubmitProcurementSchema>;
+
+/** Some of a received item handed out — to a person, a department, or both. */
+export const giveOutSchema = z
+  .object({
+    item: z.string().trim().min(1, "Item is required").max(160),
+    quantity: z.coerce.number().int().min(1, "At least one"),
+    employee: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    note: z.string().max(300).optional().nullable(),
+  })
+  .refine((v) => !!v.employee || !!v.department, { message: "Say who it went to — a person or a department", path: ["employee"] });
+
+export type GiveOutInput = z.infer<typeof giveOutSchema>;
