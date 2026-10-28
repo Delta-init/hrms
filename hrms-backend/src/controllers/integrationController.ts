@@ -69,7 +69,7 @@ const EMAIL = /^\S+@\S+\.\S+$/;
 
 /**
  * GET /integrations/directory/work-hours?emails=a@x,b@y&from=YYYY-MM-DD&to=YYYY-MM-DD[&organizationId=]
- * Each person's work schedule and approved leave in the window — the commission portal's Mentor Calendar shows its
+ * Each person's work schedule and approved leave in the window — the CS Portal's Mentor Calendar shows its
  * mentors' working hours from here. At most 200 people and 62 days a call.
  */
 export const listWorkHours = asyncRoute(async (req, res) => {

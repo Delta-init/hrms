@@ -151,7 +151,7 @@ export class DirectoryService {
 
   /**
    * Working hours for the people with these emails: their schedule's shift and days (the default, said so, when
-   * none is assigned) and their approved leave touching [from, to] (YYYY-MM-DD). For the commission portal's
+   * none is assigned) and their approved leave touching [from, to] (YYYY-MM-DD). For the CS Portal's
    * Mentor Calendar, which knows its mentors by email only — so within `organizationId` when given, else by email
    * wherever they are. Leavers are left out: nobody books time with them.
    */

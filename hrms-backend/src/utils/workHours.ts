@@ -3,7 +3,7 @@ import { DEFAULT_SCHEDULE, DEFAULT_WORK_DAYS, localDayKey } from "./schedule.js"
 /**
  * Somebody's working hours, as another system shows them: their work schedule's shift and days — or, with none
  * assigned, the default every attendance rule falls back on, said so — and their approved leave in a window, as the
- * calendar days it covers in the leave's own time zone. For the commission portal's Mentor Calendar (the signed
+ * calendar days it covers in the leave's own time zone. For the CS Portal's Mentor Calendar (the signed
  * directory, GET /integrations/directory/work-hours).
  */
 

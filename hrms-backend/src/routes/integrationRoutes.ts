@@ -25,7 +25,7 @@ router.get("/ping", ping);
 router.get("/directory/organizations", listOrganizations);
 router.get("/directory/departments", listDepartments);
 router.get("/directory/employees", listEmployees);
-// Working hours and leave, for the commission portal's Mentor Calendar.
+// Working hours and leave, for the CS Portal's Mentor Calendar.
 router.get("/directory/work-hours", listWorkHours);
 // Who is clocked in now, or on leave today — the Sales CRM's live lead split.
 router.get("/directory/attendance-now", listAttendanceNow);
