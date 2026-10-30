@@ -37,6 +37,8 @@ export class SalaryIncrementService {
       scoped({ employee: input.employee, effectiveMonth: { $lt: input.effectiveMonth } })
     ).sort({ effectiveMonth: -1 });
     const previousSalary = prevInc ? prevInc.newSalary : employee.salary ?? 0;
+    const employeeCurrency = (employee.currency || "AED").toUpperCase();
+    const previousCurrency = prevInc?.currency || employeeCurrency;
 
     const doc = await SalaryIncrement.create({
       organization: getOrgId(),
@@ -44,6 +46,8 @@ export class SalaryIncrementService {
       user: employee.user ?? null,
       previousSalary,
       newSalary: input.newSalary,
+      previousCurrency,
+      currency: input.currency ?? employeeCurrency,
       effectiveMonth: input.effectiveMonth,
       reason: input.reason,
       createdBy,

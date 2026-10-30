@@ -9,6 +9,7 @@ import { SalaryIncrementDialog } from "@/components/salary/SalaryIncrementDialog
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import type { SalaryIncrement } from "@/types";
+import { incrementCurrencies, incrementInForce } from "@/lib/salaryIncrement";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtMonth = (m: string) => { const [y, mm] = m.split("-"); return `${MONTHS[Number(mm) - 1]} ${y}`; };
@@ -31,8 +32,13 @@ export function EmployeeIncrements({ employee }: Props) {
   const [selected, setSelected] = useState<SalaryIncrement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SalaryIncrement | null>(null);
 
-  const cur = employee.currency ? employee.currency + " " : "";
-  const money = (n: number) => `${cur}${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const money = (n: number, c = employee.currency) => `${c ? c + " " : ""}${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  // What payroll pays this month — the increment in force, not the base on the
+  // employee record, which no increment ever changes.
+  const inForce = incrementInForce(rows);
+  const current = inForce
+    ? { amount: inForce.newSalary, currency: incrementCurrencies(inForce, employee.currency).next }
+    : { amount: employee.salary ?? 0, currency: employee.currency };
 
   if (isLoading) return <Card className="p-12 text-center text-sm text-muted-foreground">Loading…</Card>;
 
@@ -41,7 +47,7 @@ export function EmployeeIncrements({ employee }: Props) {
       <div className="flex items-center justify-between">
         <div className="text-sm">
           <span className="text-muted-foreground">Current salary </span>
-          <span className="font-semibold">{money(employee.salary ?? 0)}</span>
+          <span className="font-semibold">{money(current.amount, current.currency)}</span>
         </div>
         {canCreate && <Button size="sm" onClick={() => { setSelected(null); setDialogOpen(true); }}><Plus className="h-4 w-4" />New Increment</Button>}
       </div>
@@ -57,11 +63,19 @@ export function EmployeeIncrements({ employee }: Props) {
           {rows.map((i) => {
             const diff = i.newSalary - i.previousSalary;
             const pct = i.previousSalary > 0 ? (diff / i.previousSalary) * 100 : 0;
+            const cur = incrementCurrencies(i, employee.currency);
             return (
               <Card key={i._id} className="flex items-center gap-4 p-4">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600"><TrendingUp className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{money(i.previousSalary)} → {money(i.newSalary)} <span className={cn("ml-1 text-xs font-semibold", diff >= 0 ? "text-emerald-600" : "text-red-500")}>{diff >= 0 ? "+" : ""}{money(diff)}{i.previousSalary > 0 ? ` (${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</span></p>
+                  <p className="text-sm font-medium">
+                    {money(i.previousSalary, cur.prev)} → {money(i.newSalary, cur.next)}{" "}
+                    {cur.changed ? (
+                      <span className="ml-1 text-xs font-semibold text-sky-600">currency change</span>
+                    ) : (
+                      <span className={cn("ml-1 text-xs font-semibold", diff >= 0 ? "text-emerald-600" : "text-red-500")}>{diff >= 0 ? "+" : ""}{money(diff, cur.next)}{i.previousSalary > 0 ? ` (${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</span>
+                    )}
+                  </p>
                   <p className="text-xs text-muted-foreground">Effective {fmtMonth(i.effectiveMonth)}{i.reason ? ` · ${i.reason}` : ""}</p>
                 </div>
                 {canEdit && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setSelected(i); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>}

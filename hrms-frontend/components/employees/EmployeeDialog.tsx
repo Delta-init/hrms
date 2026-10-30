@@ -17,6 +17,10 @@ import { employeeFormSchema, type EmployeeFormValues } from "@/lib/validations/e
 import { useCreateEmployee, useUpdateEmployee, useNextEmployeeCode } from "@/hooks/useEmployees";
 import { useWorkSchedulesSimple } from "@/hooks/useWorkSchedules";
 import { useRolesSimple } from "@/hooks/useRoles";
+import { useAuth } from "@/hooks/useAuth";
+import { useSalaryIncrements } from "@/hooks/useSalaryIncrements";
+import { incrementCurrencies, incrementInForce } from "@/lib/salaryIncrement";
+import type { SalaryIncrement } from "@/types";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, WORK_MODE_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation, type WorkMode } from "@/types";
 
 const NONE = "__none__";
@@ -40,6 +44,16 @@ export function EmployeeDialog({
   open, onOpenChange, employee, defaultName, defaultUserId, defaultReportingTo, defaultReportingToLabel,
 }: Props) {
   const isEditing = !!employee;
+  // Increments change what payroll pays from their month on, but never the
+  // base on this record — so the box below can read 3,000 while payroll pays
+  // 3,500. The salary in force is shown beside it.
+  const { hasPermission } = useAuth();
+  const { data: incData } = useSalaryIncrements(
+    { employee: employee?._id ?? "", limit: "50", sortBy: "effectiveMonth", sortOrder: "desc" },
+    { enabled: open && isEditing && hasPermission("salaryIncrements", "view") }
+  );
+  const increments = (incData?.data ?? []) as SalaryIncrement[];
+  const inForce = incrementInForce(increments);
   // Suggested code for a new employee; the field stays editable.
   const { data: nextCode } = useNextEmployeeCode(open && !isEditing);
   const { data: schedules = [] } = useWorkSchedulesSimple();
@@ -288,6 +302,35 @@ export function EmployeeDialog({
             <Label htmlFor="currency">Currency</Label>
             <Input id="currency" className="uppercase" placeholder="AED" {...register("currency")} />
           </div>
+          {inForce && (() => {
+            const cur = incrementCurrencies(inForce, employee?.currency);
+            const fmt = (n: number, c: string) => `${c} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+            const [y, m] = inForce.effectiveMonth.split("-").map(Number);
+            const from = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+            return (
+              <div className="col-span-2 space-y-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
+                <p>
+                  <span className="text-muted-foreground">Salary in force </span>
+                  <span className="font-semibold">{fmt(inForce.newSalary, cur.next)}</span>
+                  <span className="text-muted-foreground"> — increment from {from}, was {fmt(inForce.previousSalary, cur.prev)}{cur.changed ? " (currency change)" : ""}</span>
+                </p>
+                {[
+                  ["Upcoming", increments.filter((i) => i.effectiveMonth > inForce.effectiveMonth)],
+                  ["Earlier", increments.filter((i) => i.effectiveMonth < inForce.effectiveMonth).slice(0, 3)],
+                ].map(([label, list]) => (list as SalaryIncrement[]).length > 0 && (
+                  <p key={label as string} className="text-xs text-muted-foreground">
+                    {label as string}: {(list as SalaryIncrement[]).map((i) => {
+                      const c = incrementCurrencies(i, employee?.currency);
+                      return `${fmt(i.newSalary, c.next)} from ${i.effectiveMonth}`;
+                    }).join(" · ")}
+                  </p>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  Payroll uses the increment. Changing Monthly Salary above only affects months before the first increment — record a raise under Salary Increments.
+                </p>
+              </div>
+            );
+          })()}
 
           {/* Login provisioning — creating only. Editing an employee goes
               through the dedicated dialog, and an existing login isn't remade. */}

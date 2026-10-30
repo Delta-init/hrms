@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
 import { payslipFormSchema, type PayslipFormValues } from "@/lib/validations/payslipSchema";
-import { useCreatePayslip, useUpdatePayslip, usePayslipSummary, useDeletePayslip } from "@/hooks/usePayslips";
+import { useCreatePayslip, useUpdatePayslip, usePayslipSummary, useDeletePayslip, usePayslip } from "@/hooks/usePayslips";
 import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -144,15 +144,25 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
     (!isEditing || (payslip.status === "draft" && !payslip.imported));
   const lopDays = isEditing ? (payslip.lopDays ?? summary?.lopDays ?? 0) : (summary?.lopDays ?? 0);
 
+  // Editing works from the detail, which marks each line automatic or typed.
+  // Only the typed lines go in the form: the automatic ones are rebuilt by the
+  // payslip on save, and sending them back as typed is what doubled them.
+  const { data: detail } = usePayslip(isEditing && open ? payslip._id : undefined);
+  const imported = isEditing && !!payslip.imported;
+  const typedOf = (lines: { label: string; amount: number }[], flags?: boolean[]) => lines.filter((_, i) => !flags?.[i]);
+  const autoOf = (lines: { label: string; amount: number }[], flags?: boolean[]) => lines.filter((_, i) => !!flags?.[i]);
+
   useEffect(() => {
     if (!open) return;
     if (payslip) {
+      if (!detail) return;
+      const typedEarnings = typedOf(detail.earnings, detail.auto?.earnings);
       reset({
         employee: typeof payslip.employee === "object" ? payslip.employee._id : payslip.employee,
-        month: payslip.month, currency: payslip.currency,
-        earnings: payslip.earnings.length ? payslip.earnings : [{ label: "Basic", amount: 0 }],
-        deductions: payslip.deductions,
-        status: payslip.status, notes: payslip.notes ?? "",
+        month: detail.month, currency: detail.currency,
+        earnings: typedEarnings.length || imported ? typedEarnings : [{ label: "Basic", amount: 0 }],
+        deductions: typedOf(detail.deductions, detail.auto?.deductions),
+        status: detail.status, notes: detail.notes ?? "",
       });
     } else if (preset) {
       reset({
@@ -164,7 +174,7 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
       reset({ employee: "", month: thisMonth(), currency: "AED", earnings: [{ label: "Basic", amount: 0 }], deductions: [], status: "draft" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, payslip]);
+  }, [open, payslip?._id, detail?.updatedAt]);
 
   const watchedEarnings = watch("earnings");
   const watchedDeductions = watch("deductions");
@@ -173,8 +183,12 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   // the payslip is created. Previewing without them showed a net pay lower than
   // the payslip that followed, so they are folded into the totals here — but
   // kept out of the form arrays, because sending them back would double them.
-  const autoEarnings = (!isEditing && summary?.autoEarnings) || [];
-  const autoDeductions = (!isEditing && summary?.autoDeductions) || [];
+  const autoEarnings = isEditing
+    ? (detail ? autoOf(detail.earnings, detail.auto?.earnings) : [])
+    : summary?.autoEarnings ?? [];
+  const autoDeductions = isEditing
+    ? (detail ? autoOf(detail.deductions, detail.auto?.deductions) : [])
+    : summary?.autoDeductions ?? [];
   const autoIn = autoEarnings.reduce((a, l) => a + (Number(l.amount) || 0), 0);
   const autoOut = autoDeductions.reduce((a, l) => a + (Number(l.amount) || 0), 0);
 
@@ -201,7 +215,10 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
   const onSubmit = (data: PayslipFormValues) => {
     const payload = { ...data, notes: data.notes || undefined };
-    if (isEditing) update({ id: payslip._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+    // An imported payslip's figures are the sheet's; sending them back was
+    // refused, so a status or note change on one never saved.
+    if (isEditing && imported) update({ id: payslip._id, data: { status: data.status, notes: payload.notes } }, { onSuccess: () => onOpenChange(false) });
+    else if (isEditing) update({ id: payslip._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
   };
 
@@ -273,7 +290,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
         </div>
       ))}
       {autoRows(auto, name === "earnings" ? "earning" : "deduction")}
-      <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => fa.append({ label: "", amount: 0 })}><Plus className="h-3.5 w-3.5" />{addLabel}</Button>
+      {!imported && (
+        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => fa.append({ label: "", amount: 0 })}><Plus className="h-3.5 w-3.5" />{addLabel}</Button>
+      )}
     </div>
   );
 
@@ -303,12 +322,12 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="month">Month *</Label>
-              <Input id="month" type="month" disabled={locked} {...register("month")} />
+              <Input id="month" type="month" disabled={locked || imported} {...register("month")} />
               {errors.month && <p className="text-xs text-destructive">{errors.month.message}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="currency">Currency</Label>
-              <Input id="currency" className="uppercase" {...register("currency")} />
+              <Input id="currency" className="uppercase" disabled={imported} {...register("currency")} />
             </div>
           </div>
 
@@ -318,6 +337,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
             </Button>
           )}
 
+          {isEditing && !detail ? (
+            <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : (<>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-emerald-600">Earnings</Label>
@@ -328,6 +350,14 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
               {lineRows(deductions, "deductions", "Add deduction", autoDeductions)}
             </div>
           </div>
+          {isEditing && (autoEarnings.length > 0 || autoDeductions.length > 0) && (
+            <p className="-mt-2 text-[11px] text-muted-foreground">
+              {imported
+                ? "These figures are the imported salary sheet's. Correct the sheet and import it again, or move this back to not generated to have it calculated — status and notes can still change here."
+                : "AUTO lines are worked out by the payslip and rebuilt on save: loss of pay with Change below, loans on the Loans page, one-time items in the One-time tab, reimbursements and overtime where they were approved."}
+            </p>
+          )}
+          </>)}
 
           {/* Loss of pay is worked out by the payslip itself, so it is not a row
               above — but it can be changed, here, with a reason. */}

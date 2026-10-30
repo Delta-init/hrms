@@ -1881,6 +1881,9 @@ export interface ISalaryIncrement extends Document {
   user?: Types.ObjectId | IUser | null;
   previousSalary: number;
   newSalary: number;
+  /** Each figure's currency; null on older records, meaning the employee's. */
+  previousCurrency?: string | null;
+  currency?: string | null;
   /** Payout month the raise takes effect (YYYY-MM). */
   effectiveMonth: string;
   reason?: string;

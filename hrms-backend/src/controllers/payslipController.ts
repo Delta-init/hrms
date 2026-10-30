@@ -91,7 +91,7 @@ export const runPayroll = async (req: AuthenticatedRequest, res: Response, next:
 
 export const getPayslipById = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    sendSuccess(res, "Payslip retrieved successfully", await service.getById(req.params.id));
+    sendSuccess(res, "Payslip retrieved successfully", await service.detail(req.params.id));
   } catch (error) { next(error); }
 };
 

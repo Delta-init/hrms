@@ -16,7 +16,7 @@ import {
 } from "./loanService.js";
 import { computeOneTimeAdjustments, markOneTimeApplied, recordAdjustmentRecoveries, reverseAdjustmentRecoveries, releaseOneTimePayments } from "./oneTimeAdjustmentService.js";
 import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
-import { computeReimbursements, markReimbursementsPaid, releaseReimbursements } from "./reimbursementService.js";
+import { computeReimbursements, markReimbursementsPaid, releaseReimbursements, REIMBURSE_PREFIX } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
@@ -70,7 +70,52 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
 export const EARLY_OUT_PENALTY_PREFIX = "Early-Out Penalty";
-const isAttendanceLine = (label: string) => label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX);
+// Early-out penalties are attendance lines too. Leaving them out meant the
+// form's copy was kept on save and a fresh one added beside it.
+const isAttendanceLine = (label: string) =>
+  label.startsWith(LOP_PREFIX) || label.startsWith(PENALTY_PREFIX) || label.startsWith(EARLY_OUT_PENALTY_PREFIX);
+
+type Sources = {
+  oneTime?: { earnings: Line[]; deductions: Line[]; waived: Line[] };
+  reimb?: { earnings: Line[] };
+  ot?: { earnings: Line[] };
+};
+
+/**
+ * Which of a payslip's lines the payslip works out for itself — loss of pay
+ * and penalties, loan and advance instalments, waived items, and the one-time
+ * items, reimbursements and overtime it took — as opposed to lines somebody
+ * typed. By label, because the lines carry nothing else.
+ *
+ * The edit form used to send every line back as if typed. The server then
+ * added the automatic ones again: a one-time deduction or an early-out penalty
+ * appeared twice (Dhinesh, Anfas, Raghav in October 2026), and an edit to a
+ * loan or loss-of-pay figure was silently replaced. Save now drops whatever
+ * this says is automatic and rebuilds it, once.
+ */
+async function autoLines(
+  record: { _id?: unknown; recoveries?: Array<{ kind: string; ref: unknown }> | null },
+  fresh: Sources = {}
+) {
+  const adjIds = (record.recoveries ?? []).filter((r) => r.kind === "adjustment").map((r) => r.ref);
+  const [taken, paid] = await Promise.all([
+    adjIds.length ? OneTimeAdjustment.find({ _id: { $in: adjIds as never[] } }).select("label").lean() : Promise.resolve([]),
+    record._id
+      ? OneTimeAdjustment.find({ payslip: { $in: [record._id, String(record._id)] as never[] }, kind: "payment" }).select("label").lean()
+      : Promise.resolve([]),
+  ]);
+  const deductionLabels = new Set([
+    ...taken.map((a) => a.label),
+    ...(fresh.oneTime?.deductions ?? []).map((l) => l.label),
+    ...(fresh.oneTime?.waived ?? []).map((l) => l.label),
+  ]);
+  const earningLabels = new Set([...paid.map((a) => a.label), ...(fresh.oneTime?.earnings ?? []).map((l) => l.label)]);
+  return {
+    earning: (label: string) => label.startsWith(`${REIMBURSE_PREFIX}:`) || label.startsWith("Overtime (") || earningLabels.has(label),
+    deduction: (label: string) =>
+      isAttendanceLine(label) || isRecoveryLine(label) || label.includes("— waived") || deductionLabels.has(label),
+  };
+}
 
 /** Local calendar day of an instant, as YYYY-MM-DD. */
 function dayKey(date: Date | string, tz: string): string {
@@ -412,14 +457,15 @@ export class PayslipService {
     // Auto-derived lines are recomputed here rather than trusted from the form,
     // so a stale prefill can never double-count.
     const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(input.employee, input.month);
-    const userDeductions = (input.deductions ?? []).filter((d) => !isRecoveryLine(d.label));
     // One-time payments (earnings) and deductions still owed for this month.
     const oneTime = await computeOneTimeAdjustments(input.employee, input.month);
     // Approved expense reimbursements paid out this month (earnings).
     const reimb = await computeReimbursements(input.employee, input.month);
     // Overtime worked, paid out this month (earnings).
     const ot = await computeOvertime(input.employee, input.month);
-    const earnings = [...(input.earnings ?? []), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
+    const auto = await autoLines({}, { oneTime, reimb, ot });
+    const userDeductions = (input.deductions ?? []).filter((d) => !auto.deduction(d.label));
+    const earnings = [...(input.earnings ?? []).filter((e) => !auto.earning(e.label)), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
 
     // Attendance applies itself, like loans and reimbursements do. Any lines the
     // form sent are dropped first so a stale prefill can't double them.
@@ -506,6 +552,24 @@ export class PayslipService {
     return record;
   }
 
+  /**
+   * One payslip with each line marked automatic or typed, for the edit form —
+   * which offers the typed ones as editable and shows the rest as they are.
+   * An imported payslip's lines are all the sheet's.
+   */
+  async detail(id: string) {
+    const record = await this.getById(id);
+    const auto = await autoLines(record as never);
+    const lines = record.toObject() as unknown as { earnings: Line[]; deductions: Line[] };
+    return {
+      ...lines,
+      auto: {
+        earnings: lines.earnings.map((l) => !!record.imported || auto.earning(l.label)),
+        deductions: lines.deductions.map((l) => !!record.imported || auto.deduction(l.label)),
+      },
+    };
+  }
+
   async update(id: string, input: UpdatePayslipInput, actorId: string) {
     const record = await Payslip.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Payslip not found"), { statusCode: 404 });
@@ -533,19 +597,33 @@ export class PayslipService {
     // loan balance drifts from what was actually paid — an edit used to leave the
     // original repayment credited on top of the new one.
     if (input.earnings !== undefined || input.deductions !== undefined) {
+      // What was automatic on the slip as it stood, read before anything it
+      // took is handed back — the payments it took are found by their link.
+      const before = await autoLines(record as never);
       await undoRecoveries(record);
 
       const month = input.month ?? record.month;
       const employeeId = String(record.employee);
-      const earnings = (input.earnings ?? record.earnings) as unknown as Line[];
-      const typed = ((input.deductions ?? record.deductions) as unknown as Line[])
-        .filter((d) => !isRecoveryLine(d.label) && !isAttendanceLine(d.label));
 
-      const att = await this.summary(employeeId, month);
+      // Everything automatic is worked out afresh, exactly as generating does,
+      // and only the lines somebody typed are kept from the form.
+      const [att, oneTime, reimb, ot, loans] = await Promise.all([
+        this.summary(employeeId, month),
+        computeOneTimeAdjustments(employeeId, month),
+        computeReimbursements(employeeId, month),
+        computeOvertime(employeeId, month),
+        computeLoanDeductions(employeeId, month),
+      ]);
+      const now = await autoLines({}, { oneTime, reimb, ot });
+      const isAutoEarning = (l: string) => before.earning(l) || now.earning(l);
+      const isAutoDeduction = (l: string) => before.deduction(l) || now.deduction(l);
+
+      const typedEarnings = ((input.earnings ?? record.earnings) as unknown as Line[]).filter((e) => !isAutoEarning(e.label));
+      const earnings = [...typedEarnings, ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
+      const typed = ((input.deductions ?? record.deductions) as unknown as Line[]).filter((d) => !isAutoDeduction(d.label));
       const manual = [...typed, ...attendanceDeductions(att, att.salary, att.proratedGross)];
 
-      const { lines: loanLines, repayments, waived: loanWaived } = await computeLoanDeductions(employeeId, month);
-      const oneTime = await computeOneTimeAdjustments(employeeId, month);
+      const { lines: loanLines, repayments, waived: loanWaived } = loans;
       const alloc = allocateRecoveries(earnings, manual, oneTime.deductions, loanLines, repayments);
 
       record.earnings = earnings as never;
@@ -556,6 +634,11 @@ export class PayslipService {
       record.recoveries = alloc.recoveries as never;
       record.deferred = alloc.deferred;
       await applyRecoveries(alloc, String(record._id));
+      // Re-attached, as generating attaches them — handed back above, they
+      // would otherwise have been paid again by next month's payslip.
+      if (oneTime.ids.length) await markOneTimeApplied(oneTime.ids, String(record._id));
+      if (reimb.ids.length) await markReimbursementsPaid(reimb.ids, String(record._id));
+      if (ot.ids.length) await markOvertimeApplied(ot.ids, String(record._id));
     }
     if (input.workingDays !== undefined) record.workingDays = input.workingDays;
     if (input.paidDays !== undefined) record.paidDays = input.paidDays;
@@ -1132,6 +1215,11 @@ export class PayslipService {
         lopDays: slip ? (slip.lopDays ?? s.lopDays) : s.lopDays,
         attendanceLopDays: s.attendanceLopDays,
         lopOverride: s.lopOverride,
+        // Past working days with no punch, leave or holiday — flagged on the
+        // row whatever the payslip says, imported ones included, so a month
+        // nobody recorded is seen before it is issued rather than after.
+        unmarkedDays: Math.max(0, (s.unrecordedDays ?? 0) - (s.unrecordedFutureDays ?? 0)),
+        unmarkedCharged: !!s.unrecordedDaysUnpaid,
         // Reported so the row can say what the lost days are out of. A bare
         // count gave no clue whether it was calendar days or working ones.
         workingDays: slip ? (slip.workingDays || s.workingDays) : s.workingDays,

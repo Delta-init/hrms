@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
 import type { SalaryIncrement } from "@/types";
+import { incrementCurrencies } from "@/lib/salaryIncrement";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtMonth = (m: string) => { const [y, mm] = m.split("-"); return `${MONTHS[Number(mm) - 1]} ${y}`; };
@@ -58,10 +59,12 @@ export default function SalaryIncrementsPage() {
         );
       },
     },
-    { id: "previous", label: "Previous", align: "right", render: (i) => <span className="tabular-nums text-muted-foreground">{money(i.previousSalary, empOf(i)?.currency)}</span> },
-    { id: "new", label: "New salary", align: "right", sortKey: "newSalary", render: (i) => <span className="font-medium tabular-nums">{money(i.newSalary, empOf(i)?.currency)}</span> },
+    { id: "previous", label: "Previous", align: "right", render: (i) => <span className="tabular-nums text-muted-foreground">{money(i.previousSalary, incrementCurrencies(i, empOf(i)?.currency).prev)}</span> },
+    { id: "new", label: "New salary", align: "right", sortKey: "newSalary", render: (i) => <span className="font-medium tabular-nums">{money(i.newSalary, incrementCurrencies(i, empOf(i)?.currency).next)}</span> },
     {
       id: "change", label: "Change", align: "right", render: (i) => {
+        const cur = incrementCurrencies(i, empOf(i)?.currency);
+        if (cur.changed) return <span className="text-xs font-medium text-sky-600">Currency change · {cur.prev} → {cur.next}</span>;
         const diff = i.newSalary - i.previousSalary;
         const pct = i.previousSalary > 0 ? (diff / i.previousSalary) * 100 : 0;
         return <span className={cn("font-semibold tabular-nums", diff >= 0 ? "text-emerald-600" : "text-red-500")}>{diff >= 0 ? "+" : ""}{money(diff, empOf(i)?.currency)}{i.previousSalary > 0 ? ` (${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</span>;

@@ -1047,6 +1047,8 @@ export interface Payslip {
   status: PayslipStatus;
   /** Set when the figures came from an imported salary sheet. */
   imported?: { at?: string } | null;
+  /** From the detail endpoint: which lines the payslip works out itself, parallel to the arrays. */
+  auto?: { earnings: boolean[]; deductions: boolean[] };
   issuedBy?: { _id: string; name: string } | string | null;
   issuedAt?: string | null;
   paidAt?: string | null;
@@ -1148,6 +1150,9 @@ export interface PayrollRunRow {
   importedAt?: string | null;
   attendanceLopDays?: number;
   lopOverride?: LopOverride | null;
+  /** Past working days with nothing recorded, and whether payroll charges them. */
+  unmarkedDays?: number;
+  unmarkedCharged?: boolean;
 }
 export interface PayrollRun {
   month: string;
@@ -1587,7 +1592,8 @@ export interface SalaryBreakup {
 export interface AttendanceCalendarDay {
   /** The attendance record behind this day, when one was recorded. */
   attendanceId?: string;
-  status: AttendanceStatus;
+  /** "not_marked": a past working day with nothing on it, where payroll pays such days. */
+  status: AttendanceStatus | "not_marked";
   workedMinutes?: number;
   checkIn?: string | null;
   checkOut?: string | null;
@@ -2263,6 +2269,9 @@ export interface SalaryIncrement {
   employee?: { _id: string; name: string; employeeCode?: string; currency?: string; salary?: number } | string | null;
   previousSalary: number;
   newSalary: number;
+  /** Each figure's currency; absent on older records, meaning the employee's. */
+  previousCurrency?: string | null;
+  currency?: string | null;
   effectiveMonth: string;
   reason?: string;
   createdBy?: { _id: string; name: string } | string | null;

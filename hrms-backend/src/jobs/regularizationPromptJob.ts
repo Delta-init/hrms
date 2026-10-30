@@ -89,7 +89,9 @@ export async function flaggedDaysThisMonth(userId: string, orgId: unknown, now =
     const checkIn = day.checkIn ? at(new Date(day.checkIn)) : null;
     const checkOut = day.checkOut ? at(new Date(day.checkOut)) : null;
 
-    if (day.status === "absent") { out.push({ date, kind: "not_marked", checkIn, checkOut }); continue; }
+    // A blank past day is "not_marked" where payroll pays it and "absent"
+    // where it charges it — prompted either way.
+    if (day.status === "absent" || day.status === "not_marked") { out.push({ date, kind: "not_marked", checkIn, checkOut }); continue; }
     if (day.status === "half_day") out.push({ date, kind: "half_day", checkIn, checkOut });
     else if (day.status === "late") out.push({ date, kind: "late", checkIn, checkOut });
 

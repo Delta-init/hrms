@@ -94,7 +94,7 @@ export function PayrollRun() {
   // was a lot to draw on every keystroke of the search. Select-all and the
   // bulk actions still reach every row the filters match, not just this page.
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(25);
+  const [limit, setLimit] = useState(10);
   useEffect(() => { setPage(1); }, [month, needle, filter, limit]);
   const totalPages = Math.max(1, Math.ceil(shown.length / limit));
   const current = Math.min(page, totalPages);
@@ -395,7 +395,22 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">{getInitials(r.employee.name)}</div>
-          <div className="min-w-0"><p className="truncate font-medium">{r.employee.name}</p><p className="truncate text-xs text-muted-foreground">{r.employee.employeeCode}</p></div>
+          <div className="min-w-0">
+            <p className="truncate font-medium">{r.employee.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{r.employee.employeeCode}</p>
+            {/* Days with no punch, leave or holiday. Shown on every row, the
+                imported ones too — a sheet's "no loss of pay" is only as good
+                as the attendance it was written against. */}
+            {!!r.unmarkedDays && (
+              <span
+                title={`${r.unmarkedDays} past working day${r.unmarkedDays === 1 ? "" : "s"} with no attendance, leave or holiday. ` +
+                  (r.unmarkedCharged ? "Charged as loss of pay." : "Paid in full, not charged — check the person was really in.")}
+                className="mt-0.5 inline-block rounded border border-orange-500/30 bg-orange-500/10 px-1 py-px text-[10px] font-medium text-orange-700 dark:text-orange-400"
+              >
+                {r.unmarkedDays} day{r.unmarkedDays === 1 ? "" : "s"} not marked
+              </span>
+            )}
+          </div>
         </div>
       </td>
       <td className="px-4 py-3 text-right tabular-nums">

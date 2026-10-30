@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmployeeSelect } from "@/components/pickers";
 import { useEmployee } from "@/hooks/useEmployees";
 import { salaryIncrementFormSchema, type SalaryIncrementFormValues } from "@/lib/validations/salaryIncrementSchema";
-import { useCreateSalaryIncrement, useUpdateSalaryIncrement } from "@/hooks/useSalaryIncrements";
+import { useCreateSalaryIncrement, useUpdateSalaryIncrement, useSalaryIncrements } from "@/hooks/useSalaryIncrements";
+import { incrementCurrencies, incrementInForce } from "@/lib/salaryIncrement";
 import { cn } from "@/lib/utils";
 import type { SalaryIncrement } from "@/types";
 
@@ -38,15 +39,15 @@ export function SalaryIncrementDialog({ open, onOpenChange, increment, employee:
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<SalaryIncrementFormValues>({
     resolver: zodResolver(salaryIncrementFormSchema),
-    defaultValues: { employee: locked?._id ?? "", newSalary: 0, effectiveMonth: thisMonth(), reason: "" },
+    defaultValues: { employee: locked?._id ?? "", newSalary: 0, effectiveMonth: thisMonth(), reason: "", currency: "" },
   });
 
   useEffect(() => {
     if (!open) return;
     if (increment) {
-      reset({ employee: idOf(increment.employee), newSalary: increment.newSalary, effectiveMonth: increment.effectiveMonth, reason: increment.reason ?? "" });
+      reset({ employee: idOf(increment.employee), newSalary: increment.newSalary, effectiveMonth: increment.effectiveMonth, reason: increment.reason ?? "", currency: increment.currency ?? "" });
     } else {
-      reset({ employee: locked?._id ?? "", newSalary: 0, effectiveMonth: thisMonth(), reason: "" });
+      reset({ employee: locked?._id ?? "", newSalary: 0, effectiveMonth: thisMonth(), reason: "", currency: "" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, increment, locked?._id]);
@@ -56,19 +57,33 @@ export function SalaryIncrementDialog({ open, onOpenChange, increment, employee:
   // fetched by id rather than looked up in the visible list.
   const { data: pickedEmployee } = useEmployee(selectedId || undefined);
   const newSalary = Number(watch("newSalary")) || 0;
+  // The salary in force now, not the base on the employee record — an earlier
+  // increment may already have moved it.
+  const { data: history } = useSalaryIncrements(
+    { employee: selectedId || "", limit: "50", sortBy: "effectiveMonth", sortOrder: "desc" },
+    { enabled: !!selectedId && !isEditing }
+  );
 
   const { current, currency } = useMemo(() => {
-    if (locked) return { current: locked.salary ?? 0, currency: locked.currency ?? "AED" };
-    if (isEditing) return { current: increment!.previousSalary, currency: (typeof increment!.employee === "object" ? increment!.employee?.currency : "") || "AED" };
-    return { current: pickedEmployee?.salary ?? 0, currency: pickedEmployee?.currency ?? "AED" };
-  }, [locked, isEditing, increment, pickedEmployee]);
+    const base = locked ?? pickedEmployee;
+    if (isEditing) {
+      const empCur = (typeof increment!.employee === "object" ? increment!.employee?.currency : "") || "AED";
+      return { current: increment!.previousSalary, currency: incrementCurrencies(increment!, empCur).prev };
+    }
+    const inForce = incrementInForce((history?.data ?? []) as SalaryIncrement[]);
+    if (inForce) return { current: inForce.newSalary, currency: incrementCurrencies(inForce, base?.currency).next };
+    return { current: base?.salary ?? 0, currency: base?.currency ?? "AED" };
+  }, [locked, isEditing, increment, pickedEmployee, history]);
 
+  const typedCurrency = (watch("currency") || "").trim().toUpperCase();
+  const newCurrency = /^[A-Z]{3}$/.test(typedCurrency) ? typedCurrency : currency;
+  const transfer = newCurrency !== currency;
   const diff = newSalary - current;
   const pct = current > 0 ? (diff / current) * 100 : 0;
-  const money = (n: number) => `${currency} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const money = (n: number, c = currency) => `${c} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
   const onSubmit = (data: SalaryIncrementFormValues) => {
-    const payload = { ...data, reason: data.reason || undefined };
+    const payload = { ...data, reason: data.reason || undefined, currency: data.currency || undefined };
     if (isEditing) update({ id: increment._id, data: payload }, { onSuccess: () => onOpenChange(false) });
     else create(payload, { onSuccess: () => onOpenChange(false) });
   };
@@ -110,14 +125,25 @@ export function SalaryIncrementDialog({ open, onOpenChange, increment, employee:
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="incCurrency">New salary currency</Label>
+            <Input id="incCurrency" className="uppercase" placeholder={currency} maxLength={3} {...register("currency")} />
+            <p className="text-[11px] text-muted-foreground">Leave as {currency} unless the salary moves to another currency — a transfer from India to Dubai, say.</p>
+            {errors.currency && <p className="text-xs text-destructive">{errors.currency.message}</p>}
+          </div>
+
           {/* Before → after preview */}
           <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 p-3 text-sm">
             <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Current</p><p className="font-medium">{money(current)}</p></div>
             <TrendingUp className={cn("h-5 w-5", diff >= 0 ? "text-emerald-600" : "text-red-500")} />
-            <div className="text-right"><p className="text-[11px] uppercase tracking-wide text-muted-foreground">New</p><p className="font-medium">{money(newSalary)}</p></div>
+            <div className="text-right"><p className="text-[11px] uppercase tracking-wide text-muted-foreground">New</p><p className="font-medium">{money(newSalary, newCurrency)}</p></div>
             <div className="text-right">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Change</p>
-              <p className={cn("font-semibold", diff >= 0 ? "text-emerald-600" : "text-red-500")}>{diff >= 0 ? "+" : ""}{money(diff)} {current > 0 ? `(${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</p>
+              {transfer ? (
+                <p className="font-semibold text-sky-600">Currency change</p>
+              ) : (
+                <p className={cn("font-semibold", diff >= 0 ? "text-emerald-600" : "text-red-500")}>{diff >= 0 ? "+" : ""}{money(diff)} {current > 0 ? `(${diff >= 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</p>
+              )}
             </div>
           </div>
 

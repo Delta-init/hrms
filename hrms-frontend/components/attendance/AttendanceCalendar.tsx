@@ -23,12 +23,17 @@ const fmtWorked = (min?: number) => { const m = min ?? 0; return m > 0 ? `${Math
 const fmtTime = (iso?: string | null, tz?: string | null) =>
   iso ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: tz || undefined }).format(new Date(iso)) : "—";
 
-const STATUS: Record<AttendanceStatus, { label: string; cell: string; letter: string }> = {
+type CalendarStatus = AttendanceStatus | "not_marked";
+
+const STATUS: Record<CalendarStatus, { label: string; cell: string; letter: string }> = {
   present: { label: "Present", cell: "bg-emerald-500 text-white", letter: "P" },
   late: { label: "Late", cell: "bg-amber-500 text-white", letter: "L" },
   half_day: { label: "Half day", cell: "bg-orange-400 text-white", letter: "½" },
   early_out: { label: "Early out", cell: "bg-yellow-500 text-white", letter: "EO" },
   absent: { label: "Absent", cell: "bg-red-500 text-white", letter: "A" },
+  // Nothing recorded, and not charged — payroll pays these days, so they are
+  // not drawn as absences. Where payroll does charge them they come as absent.
+  not_marked: { label: "Not marked", cell: "bg-orange-100 text-orange-700 ring-1 ring-inset ring-orange-300 dark:bg-orange-500/15 dark:text-orange-300", letter: "NM" },
   on_leave: { label: "On leave", cell: "bg-sky-500 text-white", letter: "LV" },
   holiday: { label: "Holiday", cell: "bg-violet-500 text-white", letter: "H" },
   weekend: { label: "Weekend", cell: "bg-muted text-muted-foreground", letter: "O" },
@@ -148,7 +153,7 @@ export function AttendanceCalendar() {
 function Legend() {
   return (
     <div className="flex flex-wrap gap-3 px-1 text-xs text-muted-foreground">
-      {(Object.keys(STATUS) as AttendanceStatus[]).map((s) => (
+      {(Object.keys(STATUS) as CalendarStatus[]).map((s) => (
         <span key={s} className="flex items-center gap-1.5"><span className={cn("flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold", STATUS[s].cell)}>{STATUS[s].letter}</span>{STATUS[s].label}</span>
       ))}
       <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400 ring-1 ring-black/10" />Correction pending</span>
@@ -192,9 +197,10 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, s
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat label="Present" value={s.present ?? 0} />
           <Stat label="Absent" value={s.absent ?? 0} tone="text-red-500" />
+          <Stat label="Not marked" value={s.not_marked ?? 0} tone="text-orange-600" />
           <Stat label="On leave" value={s.on_leave ?? 0} tone="text-sky-600" />
           <Stat label="Avg work" value={fmtWorked(s.avgWorkedMinutes)} />
         </div>
@@ -293,6 +299,12 @@ function DayDetails({ day, date, employeeId, employeeName, canManage }: { day: A
               a day with a real punch already on it is never touched. */}
           <p className="text-[10px] text-muted-foreground">Setting &quot;Present&quot; on a day with no punch fills it from the employee&apos;s shift.</p>
         </div>
+      )}
+      {day.status === "not_marked" && (
+        <p className="mb-3 rounded-lg bg-orange-500/10 px-3 py-2 text-xs text-orange-700 dark:text-orange-300">
+          Nothing recorded for this day — no punch, leave or holiday. Payroll pays it as not marked rather than charging it;
+          set a status if the person was in fact absent.
+        </p>
       )}
       <div className="space-y-2.5 text-sm">
         <Row k="Check in" v={fmtTime(day.checkIn, day.timeZone)} />

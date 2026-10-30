@@ -19,6 +19,7 @@ import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } fro
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination, searchRegex } from "../utils/query.js";
 import { Types } from "mongoose";
+import { getAttendancePenaltyPolicy } from "./attendancePenaltyService.js";
 
 /**
  * The one device flag a day carries.
@@ -1155,6 +1156,11 @@ export class AttendanceService {
     // Loaded once for the whole month rather than per employee — a calendar
     // walks everybody, and a query each would turn one page into dozens.
     const policyIndex = await leavePolicyIndex();
+    // A past working day with nothing on it is absent only where payroll
+    // charges it. Elsewhere payroll pays it as "not marked", and the calendar
+    // painting it red "A" while the payslip took nothing for it (Mohammed
+    // midhlaj, 1–20 October 2026) made one of the two look wrong.
+    const { unrecordedDaysUnpaid } = await getAttendancePenaltyPolicy();
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = Array.isArray(employeeId) ? { $in: employeeId } : employeeId;
@@ -1283,7 +1289,7 @@ export class AttendanceService {
         return !h.workMode || h.workMode === mode;
       })?.name;
 
-    const countable = new Set(["present", "late", "half_day", "absent", "on_leave", "holiday", "weekend", "wfh"]);
+    const countable = new Set(["present", "late", "half_day", "absent", "not_marked", "on_leave", "holiday", "weekend", "wfh"]);
     const employeesOut = employees.map((e) => {
       const uid = (e.user as { _id?: unknown } | null)?._id ? String((e.user as { _id: unknown })._id) : "";
       // Static fallback for employees with no roster assignment covering a given day.
@@ -1311,7 +1317,7 @@ export class AttendanceService {
 
       const window = windows.get(String(e._id)) ?? { from: null, to: null };
       const days: Record<string, DayEntry> = {};
-      const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
+      const summary: Record<string, number> = { present: 0, late: 0, half_day: 0, absent: 0, not_marked: 0, on_leave: 0, holiday: 0, weekend: 0, wfh: 0, avgWorkedMinutes: 0 };
       let workedTotal = 0, workedDays = 0;
 
       for (let d = 1; d <= daysInMonth; d++) {
@@ -1329,7 +1335,7 @@ export class AttendanceService {
         else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
         else if (holidayNameFor(empWorkMode, key, scheduleId)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key, scheduleId) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
-        else if (key < todayKey) entry = { status: "absent" };
+        else if (key < todayKey) entry = { status: unrecordedDaysUnpaid ? "absent" : "not_marked" };
         else entry = null;
         if (!entry) continue;
         // Attached whatever the day's status says, so leave stays visible even
