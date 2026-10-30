@@ -1153,6 +1153,8 @@ export interface PayrollRunRow {
   /** Past working days with nothing recorded, and whether payroll charges them. */
   unmarkedDays?: number;
   unmarkedCharged?: boolean;
+  /** Left out of this month on purpose: no salary, nothing deducted. */
+  muted?: { reason: string; by: string | null; at: string } | null;
 }
 export interface PayrollRun {
   month: string;

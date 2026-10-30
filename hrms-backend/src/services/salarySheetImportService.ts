@@ -197,6 +197,8 @@ export class SalarySheetImportService {
       if (!emp) errors.push(`No employee with number ${p.code}`);
       const sys = emp ? runByEmp.get(String(emp._id)) : undefined;
       const slip = emp ? slipByEmp.get(String(emp._id)) : undefined;
+      // Left out of this month on purpose — the sheet does not override that.
+      if (sys?.muted) errors.push("Muted for this month — unmute them on the Payroll Run first");
       // Off the payroll list — marked as left with no last working day, most
       // often. The sheet paying them is the decision; it is imported and said.
       if (emp && !sys) {

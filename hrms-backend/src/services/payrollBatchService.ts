@@ -6,6 +6,7 @@ import { scoped, getOrgId } from "../utils/orgContext.js";
 import type { PayrollBatchStatus } from "../types/index.js";
 import { stillHere } from "../utils/employeeStatus.js";
 import { totalsByCurrency, type CurrencyTotals } from "../utils/payrollTotals.js";
+import { PayrollMute } from "../models/PayrollMute.js";
 
 /**
  * The month's payroll as a unit, and the lock that stops HR editing it once
@@ -209,10 +210,15 @@ export class PayrollBatchService {
 
     // Somebody on the roster who never got a payslip is more often an oversight
     // than a decision, so it is said out loud rather than left to be noticed.
-    const active = await Employee.countDocuments(scoped({ status: stillHere() }));
-    if (active > slips.length) {
-      warnings.push(`${active - slips.length} active employee(s) have no payslip for this month.`);
+    // Muted people have no payslip on purpose — said, but not as a gap.
+    const [active, muted] = await Promise.all([
+      Employee.countDocuments(scoped({ status: stillHere() })),
+      PayrollMute.countDocuments(scoped({ month })),
+    ]);
+    if (active - muted > slips.length) {
+      warnings.push(`${active - muted - slips.length} active employee(s) have no payslip for this month.`);
     }
+    if (muted) warnings.push(`${muted} employee(s) are muted for this month — no salary and nothing deducted.`);
 
     /**
      * One row per currency, never one sum.

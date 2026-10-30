@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { PayslipService } from "../services/payslipService.js";
 import { SalarySheetImportService } from "../services/salarySheetImportService.js";
-import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema, lopOverrideSchema } from "../validations/payslipValidation.js";
+import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema, lopOverrideSchema, payrollMuteSchema } from "../validations/payslipValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new PayslipService();
@@ -62,6 +62,24 @@ export const setLopOverride = async (req: AuthenticatedRequest, res: Response, n
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     const summary = await service.setLopOverride(parsed.data, req.user!.userId);
     sendSuccess(res, parsed.data.days === null ? "Loss of pay back to attendance" : "Loss of pay updated", summary);
+  } catch (error) { next(error); }
+};
+
+/** POST /payslips/mute — no salary and nothing deducted for this person this month. */
+export const mutePayroll = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = payrollMuteSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Muted for the month", await service.mute(parsed.data, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+/** POST /payslips/unmute */
+export const unmutePayroll = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = payrollMuteSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Unmuted", await service.unmute(parsed.data));
   } catch (error) { next(error); }
 };
 

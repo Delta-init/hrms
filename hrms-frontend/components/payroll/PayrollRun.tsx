@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload, Search } from "lucide-react";
+import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload, Search, BellOff, Bell } from "lucide-react";
 import { ImportSalarySheetDialog } from "@/components/payroll/ImportSalarySheetDialog";
 import { toast } from "@/lib/toast";
 import { downloadSalarySheet } from "@/lib/salarySheet";
-import { usePayrollRun, useGeneratePayroll, usePayslip, useBulkPayslipStatus, useBulkDeletePayslips } from "@/hooks/usePayslips";
+import { usePayrollRun, useGeneratePayroll, usePayslip, useBulkPayslipStatus, useBulkDeletePayslips, useMutePayroll, useUnmutePayroll } from "@/hooks/usePayslips";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,11 @@ import { Pagination } from "@/components/shared/Pagination";
 import { PayrollChecklistDialog } from "@/components/payroll/PayrollChecklistDialog";
 import { LopOverrideDialog, type LopTarget } from "@/components/payroll/LopOverrideDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
+  ResponsiveDialogTitle, ResponsiveDialogDescription, ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
@@ -33,15 +38,17 @@ const statusStyles: Record<PayslipStatus, string> = {
 const curMonth = () => new Date().toISOString().slice(0, 7);
 
 /** The status chips over the run: every row, or one state — "pending" being not generated yet. */
-type RunFilter = "all" | "pending" | PayslipStatus;
+type RunFilter = "all" | "pending" | "muted" | PayslipStatus;
 const RUN_FILTERS: { key: RunFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "pending", label: "Not generated" },
   { key: "draft", label: PAYSLIP_STATUS_LABELS.draft },
   { key: "issued", label: PAYSLIP_STATUS_LABELS.issued },
   { key: "paid", label: PAYSLIP_STATUS_LABELS.paid },
+  { key: "muted", label: "Muted" },
 ];
-const matchesFilter = (r: PayrollRunRow, f: RunFilter) => f === "all" || (f === "pending" ? r.status === null : r.status === f);
+const matchesFilter = (r: PayrollRunRow, f: RunFilter) =>
+  f === "all" || (f === "muted" ? !!r.muted : f === "pending" ? r.status === null && !r.muted : r.status === f);
 const money = (n: number, c: string) => `${c} ${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function PayrollRun() {
@@ -75,7 +82,10 @@ export function PayrollRun() {
   const { data: editPayslip } = usePayslip(editId ?? undefined);
 
   const rows = data?.rows ?? [];
-  const pending = rows.filter((r) => r.status === null).length;
+  // Muted rows are neither pending nor paid — nothing is coming for them.
+  const pending = rows.filter((r) => r.status === null && !r.muted).length;
+  const [muteRow, setMuteRow] = useState<PayrollRunRow | null>(null);
+  const { mutate: unmute, isPending: unmuting } = useUnmutePayroll();
 
   // Search and status narrow what is shown — and what select-all and the bulk
   // actions reach — but never the month's totals or the salary sheet, which
@@ -122,6 +132,7 @@ export function PayrollRun() {
   const netByCurrency = (() => {
     const by = new Map<string, { currency: string; net: number; people: number }>();
     for (const r of rows) {
+      if (r.muted) continue;
       const c = (r.currency || batch?.currency || "AED").toUpperCase();
       const t = by.get(c) ?? { currency: c, net: 0, people: 0 };
       t.net += r.netPay;
@@ -143,7 +154,8 @@ export function PayrollRun() {
   const downloadSheet = async () => {
     setDownloading(true);
     try {
-      await downloadSalarySheet(month, rows, pending > 0);
+      // The sheet accounts pays from: nobody muted is on it.
+      await downloadSalarySheet(month, rows.filter((r) => !r.muted), pending > 0);
     } catch {
       toast.error("The salary sheet could not be created — try again");
     } finally {
@@ -323,6 +335,9 @@ export function PayrollRun() {
                   onAdd={() => setCreateRow(r)}
                   onEdit={() => r.payslipId && setEditId(r.payslipId)}
                   onRevert={() => { if (r.payslipId) { setSelected(new Set([r.payslipId])); setRevertOpen(true); } }}
+                  onMute={() => setMuteRow(r)}
+                  onUnmute={() => unmute({ employee: r.employee._id, month })}
+                  unmuting={unmuting}
                   onEditLop={() => setLopTarget({
                     employee: r.employee, month, days: r.lopDays, attendanceDays: r.attendanceLopDays ?? r.lopDays,
                     override: r.lopOverride, maxDays: r.workingDays,
@@ -361,6 +376,7 @@ export function PayrollRun() {
       />
 
       <LopOverrideDialog target={lopTarget} onClose={() => setLopTarget(null)} />
+      <MuteDialog row={muteRow} month={month} onClose={() => setMuteRow(null)} />
 
       <ImportSalarySheetDialog open={importOpen} onOpenChange={setImportOpen} month={month} />
 
@@ -375,10 +391,70 @@ export function PayrollRun() {
   );
 }
 
-function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, onEdit, onRevert, onEditLop }: {
+/** Mute a row — a click, a reason if there is one, and they are out of the month. */
+function MuteDialog({ row, month, onClose }: { row: PayrollRunRow | null; month: string; onClose: () => void }) {
+  const { mutate: mute, isPending } = useMutePayroll();
+  const [reason, setReason] = useState("");
+  const [shown, setShown] = useState<PayrollRunRow | null>(null);
+  useEffect(() => { if (row) { setShown(row); setReason(""); } }, [row]);
+  const [y, m] = month.split("-").map(Number);
+  const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  return (
+    <ResponsiveDialog open={!!row} onOpenChange={(o) => !o && onClose()}>
+      <ResponsiveDialogContent desktopClassName="max-w-sm">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Mute for {monthName}</ResponsiveDialogTitle>
+          {shown && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">{shown.employee.name}</ResponsiveDialogDescription>}
+        </ResponsiveDialogHeader>
+        <div className="space-y-3 px-4 text-sm sm:px-0">
+          <p className="text-muted-foreground">
+            No salary and nothing deducted this month. Loans run a month longer, one-time deductions wait for the next payslip,
+            and payments due this month move to next month.{shown?.status === "draft" ? " Their draft payslip is removed." : ""}
+          </p>
+          <Textarea rows={2} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional) — e.g. unpaid long leave, salary held" />
+        </div>
+        <ResponsiveDialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!row || isPending} onClick={() => row && mute({ employee: row.employee._id, month, reason: reason.trim() || undefined }, { onSuccess: onClose })}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellOff className="h-4 w-4" />}Mute
+          </Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+  );
+}
+
+function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, onEdit, onRevert, onEditLop, onMute, onUnmute, unmuting }: {
   r: PayrollRunRow; canEdit: boolean; canGenerate: boolean; canDelete: boolean;
   selected: boolean; onToggle: () => void; onAdd: () => void; onEdit: () => void; onRevert: () => void; onEditLop: () => void;
+  onMute: () => void; onUnmute: () => void; unmuting: boolean;
 }) {
+  if (r.muted) {
+    return (
+      <tr className="border-b border-border/60 bg-muted/20 text-muted-foreground last:border-0">
+        <td className="px-4 py-3"><Checkbox checked={false} disabled aria-label={`${r.employee.name} is muted`} /></td>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-[11px] font-bold">{getInitials(r.employee.name)}</div>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{r.employee.name}</p>
+              <p className="truncate text-xs">{r.employee.employeeCode}</p>
+            </div>
+          </div>
+        </td>
+        <td colSpan={6} className="px-4 py-3 text-xs">
+          No salary and nothing deducted this month{r.muted.reason ? ` — ${r.muted.reason}` : ""}
+          {r.muted.by && <span className="text-muted-foreground/80"> · muted by {r.muted.by}</span>}
+        </td>
+        <td className="px-4 py-3">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium"><BellOff className="h-3 w-3" />Muted</span>
+        </td>
+        <td className="px-4 py-3 text-right">
+          {canEdit && <Button variant="outline" size="sm" disabled={unmuting} onClick={onUnmute}><Bell className="h-3.5 w-3.5" />Unmute</Button>}
+        </td>
+      </tr>
+    );
+  }
   // Not generated or still a draft, and not an imported sheet's figures — the
   // same rule the server holds.
   const lopEditable = canEdit && (r.status === null || r.status === "draft") && !r.importedAt;
@@ -489,6 +565,11 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
         {r.status ? (
           <div className="flex items-center justify-end gap-1">
             {canEdit && <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="h-3.5 w-3.5" />Edit</Button>}
+            {canEdit && r.status === "draft" && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Mute this month — no salary, nothing deducted" aria-label={`Mute ${r.employee.name}`} onClick={onMute}>
+                <BellOff className="h-4 w-4" />
+              </Button>
+            )}
             {/* Deleting the payslip is what puts the row back to "not
                 generated" — there is no fourth status to move it to. */}
             {canDelete && (
@@ -498,7 +579,14 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
             )}
           </div>
         ) : (
-          canGenerate && <Button variant="outline" size="sm" onClick={onAdd}><Plus className="h-3.5 w-3.5" />Add</Button>
+          <div className="flex items-center justify-end gap-1">
+            {canGenerate && <Button variant="outline" size="sm" onClick={onAdd}><Plus className="h-3.5 w-3.5" />Add</Button>}
+            {canEdit && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Mute this month — no salary, nothing deducted" aria-label={`Mute ${r.employee.name}`} onClick={onMute}>
+                <BellOff className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         )}
       </td>
     </tr>

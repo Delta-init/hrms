@@ -5,6 +5,9 @@ import { Holiday } from "../models/Holiday.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import type { CreatePayslipInput, UpdatePayslipInput, LopOverrideInput } from "../validations/payslipValidation.js";
 import { PayrollLopOverride } from "../models/PayrollLopOverride.js";
+import { PayrollMute } from "../models/PayrollMute.js";
+import { Reimbursement } from "../models/Reimbursement.js";
+import { Overtime } from "../models/Overtime.js";
 import type { PaginationQuery, IEmployee, IPayslipImport } from "../types/index.js";
 import { Loan } from "../models/Loan.js";
 import { buildPagination } from "../utils/response.js";
@@ -31,6 +34,19 @@ import { mapInOrder } from "../utils/concurrency.js";
 
 /** How many employees the payroll screens work out at once — see mapInOrder. */
 const PAYROLL_CONCURRENCY = 8;
+
+const nextMonthOf = (month: string) => {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+};
+
+/** Who is muted for `month` — left out of its payroll on purpose — by employee id. */
+async function mutesFor(month: string) {
+  const rows = await PayrollMute.find(scoped({ month }))
+    .populate({ path: "by", select: "name" })
+    .lean<Array<{ employee: unknown; reason?: string; by?: { name?: string } | null; createdAt: Date }>>();
+  return new Map(rows.map((r) => [String(r.employee), { reason: r.reason ?? "", by: r.by?.name ?? null, at: r.createdAt }]));
+}
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -453,6 +469,9 @@ export class PayslipService {
 
     const existing = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
     if (existing) throw Object.assign(new Error("A payslip already exists for this employee and month"), { statusCode: 409 });
+    if (await PayrollMute.exists(scoped({ employee: input.employee, month: input.month }))) {
+      throw Object.assign(new Error(`${emp.name} is muted for ${input.month} — no salary and no deductions. Unmute them first.`), { statusCode: 409 });
+    }
 
     // Auto-derived lines are recomputed here rather than trusted from the form,
     // so a stale prefill can never double-count.
@@ -1105,6 +1124,7 @@ export class PayslipService {
     // of what was paid, and the row has to show that rather than a fresh guess.
     const existing = await Payslip.find(scoped({ month }));
     const existMap = new Map(existing.map((p) => [String(p.employee), p]));
+    const muted = await mutesFor(month);
 
     // What each existing payslip actually paid as a one-time payment. Read back
     // from the adjustments it consumed, because by now they are marked applied
@@ -1126,6 +1146,20 @@ export class PayslipService {
 
     const round = (n: number) => Math.round(n * 100) / 100;
     const rows = await mapInOrder(employees, PAYROLL_CONCURRENCY, async (emp) => {
+      // Muted: nothing paid, nothing taken, nothing to work out.
+      const mute = muted.get(String(emp._id));
+      if (mute && !existMap.has(String(emp._id))) {
+        return {
+          employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, joiningDate: emp.joiningDate ?? null },
+          currency: emp.currency ?? "AED",
+          monthlySalary: emp.salary ?? 0,
+          structureName: null, structureDeductions: [], lopDays: 0, attendanceLopDays: 0, lopOverride: null,
+          unmarkedDays: 0, unmarkedCharged: false, workingDays: 0, latePenaltyDays: 0, lopPerDay: 0,
+          oneTimePayments: 0, oneTimeDeductions: 0, salary: 0, earnings: [], lopAmount: 0, latePenaltyAmount: 0,
+          loanTotal: 0, advanceTotal: 0, reimbursements: 0, overtime: 0, totalDeductions: 0, netPay: 0,
+          payslipId: null, status: null, importedAt: null, muted: mute,
+        };
+      }
       const src: Parameters<PayslipService["summary"]>[2] = {};
       const s = await this.summary(String(emp._id), month, src);
       // Two different numbers, and the row needs both. `base` is the
@@ -1231,6 +1265,7 @@ export class PayslipService {
         payslipId: slip ? String(slip._id) : null,
         status: slip?.status ?? null, // null → not generated yet
         importedAt: slip?.imported?.at ?? null,
+        muted: null,
       };
     });
     return { month, rows };
@@ -1251,7 +1286,9 @@ export class PayslipService {
     const round = (n: number) => Math.round(n * 100) / 100;
 
     let tGross = 0, tDed = 0, tNet = 0;
-    const rows = await mapInOrder(employees, PAYROLL_CONCURRENCY, async (emp) => {
+    const muted = await mutesFor(month);
+    const paid = employees.filter((e) => !muted.has(String(e._id)));
+    const rows = await mapInOrder(paid, PAYROLL_CONCURRENCY, async (emp) => {
       const src: Parameters<PayslipService["summary"]>[2] = {};
       const s = await this.summary(String(emp._id), month, src);
       const oneTime = src.oneTime!;
@@ -1333,6 +1370,70 @@ export class PayslipService {
     return this.summary(input.employee, input.month);
   }
 
+  /**
+   * Leave somebody out of a month's payroll: no salary and nothing deducted.
+   *
+   * A draft for the month is removed first, as "back to not generated" does,
+   * so whatever it had collected is handed back. An issued or paid one is
+   * refused — somebody has seen it. Payments due that month (one-time
+   * payments, approved claims, overtime) move to the next month rather than
+   * wait on a payslip that is not coming; one-time deductions and loans need
+   * nothing, since deductions carry and loans now run a month longer.
+   */
+  async mute(input: { employee: string; month: string; reason?: string | null }, actorId: string) {
+    await assertMonthEditable(input.month, "payroll");
+    const emp = await Employee.findOne(scoped({ _id: input.employee })).select("name").lean<{ name?: string } | null>();
+    if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    if (await PayrollMute.exists(scoped({ employee: input.employee, month: input.month }))) {
+      throw Object.assign(new Error(`${emp.name} is already muted for ${input.month}`), { statusCode: 409 });
+    }
+    const slip = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
+    if (slip && slip.status !== "draft") {
+      throw Object.assign(new Error(`${emp.name}'s payslip for ${input.month} is already ${slip.status} — move it back to draft first`), { statusCode: 409 });
+    }
+    if (slip) await this.remove(String(slip._id));
+
+    const next = nextMonthOf(input.month);
+    const [oneTime, claims, ot] = await Promise.all([
+      OneTimeAdjustment.find(scoped({ employee: input.employee, kind: "payment", month: input.month, applied: false, payVia: { $ne: "finance" } })).select("_id").lean(),
+      Reimbursement.find(scoped({ employee: input.employee, month: input.month, status: "approved" })).select("_id").lean(),
+      Overtime.find(scoped({ employee: input.employee, month: input.month, applied: false })).select("_id").lean(),
+    ]);
+    const ids = (rows: Array<{ _id: unknown }>) => rows.map((r) => r._id);
+    await Promise.all([
+      oneTime.length ? OneTimeAdjustment.updateMany({ _id: { $in: ids(oneTime) } }, { $set: { month: next } }) : null,
+      claims.length ? Reimbursement.updateMany({ _id: { $in: ids(claims) } }, { $set: { month: next } }) : null,
+      ot.length ? Overtime.updateMany({ _id: { $in: ids(ot) } }, { $set: { month: next } }) : null,
+    ]);
+    await PayrollMute.create({
+      organization: getOrgId(),
+      employee: input.employee,
+      month: input.month,
+      reason: (input.reason ?? "").trim(),
+      by: actorId,
+      moved: { oneTime: ids(oneTime), reimbursements: ids(claims), overtime: ids(ot) },
+    });
+    return { muted: true, removedDraft: !!slip, moved: { oneTime: oneTime.length, reimbursements: claims.length, overtime: ot.length }, to: next };
+  }
+
+  /** Put them back: the payments muting moved come back too, where nothing has paid them since. */
+  async unmute(input: { employee: string; month: string }) {
+    await assertMonthEditable(input.month, "payroll");
+    const mute = await PayrollMute.findOne(scoped({ employee: input.employee, month: input.month }));
+    if (!mute) throw Object.assign(new Error("Not muted for this month"), { statusCode: 404 });
+    const next = nextMonthOf(input.month);
+    await Promise.all([
+      mute.moved.oneTime.length
+        ? OneTimeAdjustment.updateMany({ _id: { $in: mute.moved.oneTime }, month: next, applied: false }, { $set: { month: input.month } }) : null,
+      mute.moved.reimbursements.length
+        ? Reimbursement.updateMany({ _id: { $in: mute.moved.reimbursements }, month: next, status: "approved" }, { $set: { month: input.month } }) : null,
+      mute.moved.overtime.length
+        ? Overtime.updateMany({ _id: { $in: mute.moved.overtime }, month: next, applied: false }, { $set: { month: input.month } }) : null,
+    ]);
+    await PayrollMute.deleteOne({ _id: mute._id });
+    return { muted: false };
+  }
+
   /** Bulk-create draft payslips for every active employee lacking one this month. */
   async runGenerate(month: string, issuerId: string) {
     await assertMonthEditable(month, "payslips");
@@ -1341,7 +1442,8 @@ export class PayslipService {
     const existSet = new Set(existing.map((p) => String(p.employee)));
 
     let created = 0;
-    const todo = employees.filter((e) => !existSet.has(String(e._id)));
+    const muted = await mutesFor(month);
+    const todo = employees.filter((e) => !existSet.has(String(e._id)) && !muted.has(String(e._id)));
     const skipped = employees.length - todo.length;
     // A few at a time, like the preview. Each payslip touches only its own
     // employee's loans, adjustments and claims, so they do not contend.

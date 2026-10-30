@@ -65,3 +65,10 @@ export const lopOverrideSchema = z
   .refine((v) => v.days === null || (v.reason ?? "").trim().length >= 3, { message: "Say why it differs from attendance", path: ["reason"] });
 
 export type LopOverrideInput = z.infer<typeof lopOverrideSchema>;
+
+/** Leave somebody out of a month's payroll — or, unmuting, put them back. */
+export const payrollMuteSchema = z.object({
+  employee: z.string().min(1),
+  month: z.string().regex(/^\d{4}-\d{2}$/, "Month is YYYY-MM"),
+  reason: z.string().trim().max(300).optional().nullable(),
+});

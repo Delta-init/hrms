@@ -168,3 +168,26 @@ export const useSetLopOverride = () => {
     onError: (e) => toast.error(errMsg(e, "Could not change loss of pay")),
   });
 };
+
+/** Leave somebody out of a month — no salary, nothing deducted — or put them back. */
+export const useMutePayroll = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { employee: string; month: string; reason?: string }) =>
+      (await api.post<ApiResponse<{ removedDraft: boolean; moved: { oneTime: number; reimbursements: number; overtime: number }; to: string }>>("/payslips/mute", data)).data.data!,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      const moved = r.moved.oneTime + r.moved.reimbursements + r.moved.overtime;
+      toast.success(`Muted${r.removedDraft ? " — the draft was removed" : ""}${moved ? ` · ${moved} payment${moved === 1 ? "" : "s"} moved to ${r.to}` : ""}`);
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not mute")),
+  });
+};
+export const useUnmutePayroll = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { employee: string; month: string }) => (await api.post("/payslips/unmute", data)).data,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Unmuted — back on this month's payroll"); },
+    onError: (e) => toast.error(errMsg(e, "Could not unmute")),
+  });
+};

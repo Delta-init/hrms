@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createPayslip, getPayslips, getMyPayslips, getPayslipSummary,
   getPayrollRun, getSalaryRegister, runPayroll, getPayslipById, updatePayslip, deletePayslip,
-  bulkUpdatePayslipStatus, bulkDeletePayslips, importSalarySheet, setLopOverride,
+  bulkUpdatePayslipStatus, bulkDeletePayslips, importSalarySheet, setLopOverride, mutePayroll, unmutePayroll,
 } from "../controllers/payslipController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -28,6 +28,8 @@ router.patch("/bulk/status", checkPermission("payroll", "edit"), bulkUpdatePaysl
 router.post("/bulk/delete", checkPermission("payroll", "delete"), bulkDeletePayslips);
 // Before "/:id", or "lop-override" would be read as a payslip id.
 router.put("/lop-override", checkPermission("payroll", "edit"), setLopOverride);
+router.post("/mute", checkPermission("payroll", "edit"), mutePayroll);
+router.post("/unmute", checkPermission("payroll", "edit"), unmutePayroll);
 router.get("/:id", checkPermission("payroll", "view"), getPayslipById);
 router.put("/:id", checkPermission("payroll", "edit"), updatePayslip);
 router.delete("/:id", checkPermission("payroll", "delete"), deletePayslip);
