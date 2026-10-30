@@ -34,6 +34,8 @@ export interface SalaryBreakup {
   gross: number;
   /** Name of the structure in force, or null when falling back to plain salary. */
   structureName: string | null;
+  /** The increment in force's currency, where it carries one — a transfer changes it from that month on. */
+  currency?: string | null;
 }
 
 /** Compute a component's monetary value given the employee's Basic. */
@@ -66,6 +68,7 @@ export async function resolveSalaryBreakup(
 
   const incrementWins = !!increment && (!assignment || increment.effectiveMonth >= assignment.effectiveMonth);
   const basic = incrementWins ? increment!.newSalary : assignment?.basicAmount ?? increment?.newSalary ?? baseSalary;
+  const currency = (increment?.currency as string | null | undefined) ?? null;
 
   if (!assignment || !assignment.structure) {
     return {
@@ -73,6 +76,7 @@ export async function resolveSalaryBreakup(
       deductions: [],
       gross: round(basic),
       structureName: null,
+      currency,
     };
   }
 
@@ -84,7 +88,7 @@ export async function resolveSalaryBreakup(
     else deductions.push({ label: c.name, amount });
   }
   const gross = round(earnings.reduce((a, e) => a + e.amount, 0));
-  return { earnings, deductions, gross, structureName: assignment.structure.name };
+  return { earnings, deductions, gross, structureName: assignment.structure.name, currency };
 }
 
 export class SalaryStructureService {

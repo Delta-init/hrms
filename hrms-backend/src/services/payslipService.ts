@@ -918,7 +918,9 @@ export class PayslipService {
       /** 1 unless they joined or left mid-month. Reported so the form can say so. */
       employedShare,
       employment,
-      currency: emp.currency ?? "AED", loanDeductions,
+      // The month's own currency: an increment can move someone from INR to
+      // AED, and a payslip before that month must stay in the old one.
+      currency: breakup.currency || emp.currency || "AED", loanDeductions,
       // Read-only: the payslip re-derives all of these, so sending them back
       // with the form would count them twice.
       autoEarnings: [...oneTime.earnings, ...reimb.earnings, ...ot.earnings],

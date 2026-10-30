@@ -167,6 +167,12 @@ export const updateEmployeeSchema = z.object({
   mobileLoginAllowed: z.boolean().optional(),
   attendanceExempt: z.boolean().optional(),
   salary: z.coerce.number().min(0).optional(),
+  /**
+   * The month a changed salary takes effect — it becomes an increment, since
+   * payroll reads increments and an edit to the base alone did nothing once
+   * one existed. Defaults to this month, or the next if this one is with accounts.
+   */
+  salaryEffectiveMonth: z.string().regex(/^\d{4}-\d{2}$/, "Effective month is YYYY-MM").optional(),
   currency: z.string().max(6).optional(),
   ...profileFields,
 });

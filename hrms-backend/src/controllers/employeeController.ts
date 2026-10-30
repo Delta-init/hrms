@@ -68,7 +68,7 @@ export const updateEmployee = async (req: AuthenticatedRequest, res: Response, n
   try {
     const parsed = updateEmployeeSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
-    const record = await service.update(req.params.id, parsed.data);
+    const record = await service.update(req.params.id, parsed.data, req.user!.userId);
     sendSuccess(res, "Employee updated successfully", record);
   } catch (error) { next(error); }
 };

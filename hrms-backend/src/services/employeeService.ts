@@ -16,6 +16,8 @@ import { searchRegex, parsePagination } from "../utils/query.js";
 import { publicUrl } from "../config/r2.js";
 import { randomBytes } from "node:crypto";
 import { stillHere, hasLeftFilter, hasLeft } from "../utils/employeeStatus.js";
+import { SalaryIncrement } from "../models/SalaryIncrement.js";
+import { isMonthEditable } from "./payrollBatchService.js";
 
 interface EmployeeQuery extends PaginationQuery {
   excludeTerminated?: string;
@@ -335,9 +337,20 @@ export class EmployeeService {
     return record;
   }
 
-  async update(id: string, input: UpdateEmployeeInput) {
+  async update(id: string, inputWithMonth: UpdateEmployeeInput, actorId?: string) {
     const record = await Employee.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    const { salaryEffectiveMonth, ...input } = inputWithMonth;
+    const salaryChange = await this.salaryChangeFor(record, input, salaryEffectiveMonth);
+    // Once somebody has increments, their salary moves only through them: the
+    // record is set to whatever is in force this month after the save, never
+    // straight from the form — a change dated later would otherwise have put
+    // this month's payslip in next month's salary and currency.
+    const byIncrements = !!(await SalaryIncrement.exists(scoped({ employee: record._id })));
+    if (byIncrements) {
+      delete input.salary;
+      delete input.currency;
+    }
 
     if (input.employeeCode && input.employeeCode.toUpperCase() !== record.employeeCode) {
       const dupe = await Employee.findOne(scoped({ employeeCode: input.employeeCode.trim().toUpperCase(), _id: { $ne: id } }));
@@ -356,10 +369,106 @@ export class EmployeeService {
     // instead of leaving the record permanently unsavable.
     if ((record.location as unknown as string) === "") record.location = undefined;
     await record.save();
+    if (salaryChange) await this.recordSalaryChange(record, salaryChange, actorId);
+    if (byIncrements) await this.syncSalaryToIncrements(record);
     await mirrorScheduleToLogin(record, input.workSchedule !== undefined);
     // Set to resigned or terminated by hand: the login goes with them.
     if (input.status !== undefined) await closeLoginIfLeft(record._id);
     return Employee.findById(id).populate(POP);
+  }
+
+  /**
+   * A salary edit that payroll would not see, worked out before the record changes.
+   *
+   * Payroll pays the latest increment, not the base on this record, so once an
+   * employee had one, changing Monthly Salary here did nothing — Lallu's record
+   * said 3,000 while payroll paid an old 2,500. When the salary or its currency
+   * differs from what payroll uses in the effective month, the edit becomes an
+   * increment from that month. Nobody with no increment needs one: for them the
+   * base is what payroll reads.
+   */
+  private async salaryChangeFor(
+    record: { _id: unknown; salary?: number | null; currency?: string | null },
+    input: { salary?: number; currency?: string },
+    requestedMonth?: string
+  ) {
+    if (input.salary === undefined && input.currency === undefined) return null;
+    const hasIncrements = await SalaryIncrement.exists(scoped({ employee: record._id }));
+    if (!hasIncrements) return null;
+
+    let month = requestedMonth;
+    if (!month) {
+      const now = new Date().toISOString().slice(0, 7);
+      const [y, m] = now.split("-").map(Number);
+      month = (await isMonthEditable(now)) ? now : new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+    } else if (!(await isMonthEditable(month))) {
+      throw Object.assign(new Error(`${month} has already gone to accounts — pick a later month for the new salary`), { statusCode: 409 });
+    }
+
+    const inForce = await SalaryIncrement.findOne(scoped({ employee: record._id, effectiveMonth: { $lte: month } })).sort({ effectiveMonth: -1 }).lean();
+    const baseCurrency = (record.currency || "AED").toUpperCase();
+    const current = {
+      salary: inForce ? inForce.newSalary : record.salary ?? 0,
+      currency: ((inForce?.currency as string | null | undefined) || baseCurrency).toUpperCase(),
+    };
+    const next = {
+      salary: input.salary ?? current.salary,
+      currency: (input.currency || current.currency).toUpperCase(),
+    };
+    if (next.salary === current.salary && next.currency === current.currency) return null;
+    // What it was just before the month — read now, before the record is
+    // overwritten, since with no earlier increment that is the old base.
+    const before = await SalaryIncrement.findOne(scoped({ employee: record._id, effectiveMonth: { $lt: month } })).sort({ effectiveMonth: -1 }).lean();
+    const previous = {
+      salary: before ? before.newSalary : record.salary ?? 0,
+      currency: ((before?.currency as string | null | undefined) || baseCurrency).toUpperCase(),
+    };
+    return { month, next, previous };
+  }
+
+  /** The record's salary and currency, set to the increment in force this month. */
+  private async syncSalaryToIncrements(record: { _id: unknown; salary?: number | null; currency?: string | null; save: () => Promise<unknown> }) {
+    const inForce = await SalaryIncrement.findOne(scoped({ employee: record._id, effectiveMonth: { $lte: new Date().toISOString().slice(0, 7) } }))
+      .sort({ effectiveMonth: -1 }).lean();
+    if (!inForce) return;
+    const currency = ((inForce.currency as string | null | undefined) || record.currency || "AED").toUpperCase();
+    if (record.salary === inForce.newSalary && record.currency === currency) return;
+    record.salary = inForce.newSalary;
+    record.currency = currency;
+    await record.save();
+  }
+
+  /** The increment for a salary edit — one per month: a second edit in the same month replaces the first. */
+  private async recordSalaryChange(
+    record: { _id: unknown; user?: unknown },
+    change: { month: string; next: { salary: number; currency: string }; previous: { salary: number; currency: string } },
+    actorId?: string
+  ) {
+    // Increments older than currencies on them read as the record's currency.
+    // A currency change is about to make that wrong, so they keep the old one.
+    if (change.next.currency !== change.previous.currency) {
+      await SalaryIncrement.updateMany(scoped({ employee: record._id, effectiveMonth: { $lt: change.month }, currency: null }), { $set: { currency: change.previous.currency } });
+      await SalaryIncrement.updateMany(scoped({ employee: record._id, effectiveMonth: { $lt: change.month }, previousCurrency: null }), { $set: { previousCurrency: change.previous.currency } });
+    }
+    const same = await SalaryIncrement.findOne(scoped({ employee: record._id, effectiveMonth: change.month }));
+    if (same) {
+      same.newSalary = change.next.salary;
+      same.currency = change.next.currency;
+      await same.save();
+      return;
+    }
+    await SalaryIncrement.create({
+      organization: getOrgId(),
+      employee: record._id,
+      user: record.user ?? null,
+      previousSalary: change.previous.salary,
+      previousCurrency: change.previous.currency,
+      newSalary: change.next.salary,
+      currency: change.next.currency,
+      effectiveMonth: change.month,
+      reason: "Changed on the employee record",
+      createdBy: actorId ?? null,
+    });
   }
 
   /** Self-service — the caller edits their own personal-information sections only. */

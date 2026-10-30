@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, KeyRound } from "lucide-react";
@@ -20,6 +20,7 @@ import { useRolesSimple } from "@/hooks/useRoles";
 import { useAuth } from "@/hooks/useAuth";
 import { useSalaryIncrements } from "@/hooks/useSalaryIncrements";
 import { incrementCurrencies, incrementInForce } from "@/lib/salaryIncrement";
+import { usePayrollBatch } from "@/hooks/usePayrollBatch";
 import type { SalaryIncrement } from "@/types";
 import { EMPLOYMENT_TYPE_LABELS, EMPLOYEE_STATUS_LABELS, LOCATION_LABELS, WORK_MODE_LABELS, type Employee, type EmploymentType, type EmployeeStatus, type EmployeeLocation, type WorkMode } from "@/types";
 
@@ -54,6 +55,15 @@ export function EmployeeDialog({
   );
   const increments = (incData?.data ?? []) as SalaryIncrement[];
   const inForce = incrementInForce(increments);
+  // What payroll pays now. The salary box shows this, not the old base, and a
+  // change to it becomes an increment from the month picked below — editing
+  // the base alone did nothing once an increment existed.
+  const paid = inForce
+    ? { salary: inForce.newSalary, currency: incrementCurrencies(inForce, employee?.currency).next }
+    : { salary: employee?.salary ?? 0, currency: (employee?.currency ?? "AED").toUpperCase() };
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const { data: thisBatch } = usePayrollBatch(open && isEditing && increments.length ? thisMonth : "");
+  const [salaryFrom, setSalaryFrom] = useState(thisMonth);
   // Suggested code for a new employee; the field stays editable.
   const { data: nextCode } = useNextEmployeeCode(open && !isEditing);
   const { data: schedules = [] } = useWorkSchedulesSimple();
@@ -74,6 +84,24 @@ export function EmployeeDialog({
 
   // Watched so the login fields can be hidden when the switch is off.
   const createLoginOn = useWatch({ control, name: "createLogin" });
+  const salaryNow = useWatch({ control, name: "salary" });
+  const currencyNow = useWatch({ control, name: "currency" });
+  // The box starts at what payroll pays, once the increments are in — but
+  // only if nobody has typed in it yet.
+  useEffect(() => {
+    if (!open || !isEditing || !inForce) return;
+    if (Number(getValues("salary")) === (employee?.salary ?? 0)) setValue("salary", paid.salary);
+    if ((getValues("currency") || "").toUpperCase() === (employee?.currency ?? "AED").toUpperCase()) setValue("currency", paid.currency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEditing, inForce?._id]);
+  // This month, unless its payroll has already gone to accounts.
+  useEffect(() => {
+    if (!open) return;
+    const [y, m] = thisMonth.split("-").map(Number);
+    setSalaryFrom(thisBatch && !thisBatch.editable ? new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7) : thisMonth);
+  }, [open, thisBatch, thisMonth]);
+  const salaryChanged = isEditing && increments.length > 0 &&
+    (Number(salaryNow) !== paid.salary || (currencyNow || "").toUpperCase() !== paid.currency);
   const employeeEmail = useWatch({ control, name: "email" });
 
   useEffect(() => {
@@ -114,6 +142,8 @@ export function EmployeeDialog({
 
   const onSubmit = (data: EmployeeFormValues) => {
     const { createLogin, loginEmail, loginRole, ...employeeFields } = data;
+    const salaryEdited = isEditing && increments.length > 0 &&
+      (Number(data.salary) !== paid.salary || (data.currency || "").toUpperCase() !== paid.currency);
     const payload: Record<string, unknown> = {
       ...employeeFields,
       department: data.department || null,
@@ -123,6 +153,7 @@ export function EmployeeDialog({
       email: data.email || undefined,
     };
     if (isEditing) {
+      if (salaryEdited) payload.salaryEffectiveMonth = salaryFrom;
       update({ id: employee._id, data: payload }, { onSuccess: () => onOpenChange(false) });
       return;
     }
@@ -302,6 +333,18 @@ export function EmployeeDialog({
             <Label htmlFor="currency">Currency</Label>
             <Input id="currency" className="uppercase" placeholder="AED" {...register("currency")} />
           </div>
+          {salaryChanged && (
+            <div className="col-span-2 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">New salary takes effect from</p>
+                <p className="text-xs text-muted-foreground">
+                  Saving adds an increment {paid.currency} {paid.salary.toLocaleString()} → {(currencyNow || paid.currency).toUpperCase()} {Number(salaryNow || 0).toLocaleString()}.
+                  Drafts already made for that month keep their figures until recalculated.
+                </p>
+              </div>
+              <Input type="month" value={salaryFrom} min={thisMonth} onChange={(e) => setSalaryFrom(e.target.value)} className="h-9 w-[160px]" />
+            </div>
+          )}
           {inForce && (() => {
             const cur = incrementCurrencies(inForce, employee?.currency);
             const fmt = (n: number, c: string) => `${c} ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -326,7 +369,7 @@ export function EmployeeDialog({
                   </p>
                 ))}
                 <p className="text-xs text-muted-foreground">
-                  Payroll uses the increment. Changing Monthly Salary above only affects months before the first increment — record a raise under Salary Increments.
+                  Payroll uses the increment. Change Monthly Salary above and saving adds a new increment from the month you pick.
                 </p>
               </div>
             );
