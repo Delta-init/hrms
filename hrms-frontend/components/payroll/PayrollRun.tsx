@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload } from "lucide-react";
+import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload, Search } from "lucide-react";
 import { ImportSalarySheetDialog } from "@/components/payroll/ImportSalarySheetDialog";
 import { toast } from "@/lib/toast";
 import { downloadSalarySheet } from "@/lib/salarySheet";
@@ -29,6 +29,17 @@ const statusStyles: Record<PayslipStatus, string> = {
   paid: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
 };
 const curMonth = () => new Date().toISOString().slice(0, 7);
+
+/** The status chips over the run: every row, or one state — "pending" being not generated yet. */
+type RunFilter = "all" | "pending" | PayslipStatus;
+const RUN_FILTERS: { key: RunFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Not generated" },
+  { key: "draft", label: PAYSLIP_STATUS_LABELS.draft },
+  { key: "issued", label: PAYSLIP_STATUS_LABELS.issued },
+  { key: "paid", label: PAYSLIP_STATUS_LABELS.paid },
+];
+const matchesFilter = (r: PayrollRunRow, f: RunFilter) => f === "all" || (f === "pending" ? r.status === null : r.status === f);
 const money = (n: number, c: string) => `${c} ${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function PayrollRun() {
@@ -63,9 +74,23 @@ export function PayrollRun() {
   const rows = data?.rows ?? [];
   const pending = rows.filter((r) => r.status === null).length;
 
+  // Search and status narrow what is shown — and what select-all and the bulk
+  // actions reach — but never the month's totals or the salary sheet, which
+  // accounts must always get whole.
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<RunFilter>("all");
+  const needle = search.trim().toLowerCase();
+  const searched = needle
+    ? rows.filter((r) => r.employee.name.toLowerCase().includes(needle) || (r.employee.employeeCode ?? "").toLowerCase().includes(needle))
+    : rows;
+  const shown = searched.filter((r) => matchesFilter(r, filter));
+  const countFor = (f: RunFilter) => searched.filter((r) => matchesFilter(r, f)).length;
+  const clearFilters = () => { setSearch(""); setFilter("all"); };
+
   // Only generated rows can be selected — there is nothing to act on until a
-  // payslip exists. Keyed by payslip id, so the set survives a refetch.
-  const selectableIds = rows.map((r) => r.payslipId).filter(Boolean) as string[];
+  // payslip exists. Keyed by payslip id, so the set survives a refetch; a row
+  // filtered out of view drops out of the selection's reach with it.
+  const selectableIds = shown.map((r) => r.payslipId).filter(Boolean) as string[];
   const selectedIds = selectableIds.filter((id) => selected.has(id));
   const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length;
   const toggleOne = (id: string) =>
@@ -145,6 +170,22 @@ export function PayrollRun() {
         </div>
       </Card>
 
+      <Card className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+        <div className="relative sm:w-72">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or employee code…" className="h-9 pl-9" />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {RUN_FILTERS.map((f) => (
+            <button key={f.key} type="button" onClick={() => setFilter(f.key)}
+              className={cn("rounded-full border px-3 py-1 text-sm font-medium transition",
+                filter === f.key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted/50")}>
+              {f.label} <span className="tabular-nums opacity-80">{countFor(f.key)}</span>
+            </button>
+          ))}
+        </div>
+      </Card>
+
       {selectedIds.length > 0 && (
         <Card className="flex flex-wrap items-center gap-2 border-primary/30 bg-primary/5 p-3">
           <span className="text-sm font-medium">{selectedIds.length} selected</span>
@@ -208,7 +249,12 @@ export function PayrollRun() {
                 <tr><td colSpan={10} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={10} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
-              ) : rows.map((r) => (
+              ) : shown.length === 0 ? (
+                <tr><td colSpan={10} className="py-16 text-center text-muted-foreground">
+                  <Search className="mx-auto mb-2 h-7 w-7" />No one matches.
+                  <div className="mt-3"><Button variant="outline" size="sm" onClick={clearFilters}><X className="h-3.5 w-3.5" />Clear filters</Button></div>
+                </td></tr>
+              ) : shown.map((r) => (
                 <Row
                   key={r.employee._id}
                   r={r}
