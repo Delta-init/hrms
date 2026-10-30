@@ -112,8 +112,30 @@ export function PayrollRun() {
   const clearSelection = () => setSelected(new Set());
   const applyStatus = (status: HrSettablePayslipStatus) =>
     bulkStatus({ ids: selectedIds, status }, { onSuccess: clearSelection });
-  const totalNet = rows.reduce((a, r) => a + r.netPay, 0);
-  const currency = rows[0]?.currency ?? "AED";
+  /**
+   * Net pay, one total per currency.
+   *
+   * This was every row's net added as a bare number and labelled with the first
+   * row's currency, so rupee salaries were counted as dirhams. Led by the
+   * month's headline currency so it matches the banner above, then by headcount.
+   */
+  const netByCurrency = (() => {
+    const by = new Map<string, { currency: string; net: number; people: number }>();
+    for (const r of rows) {
+      const c = (r.currency || batch?.currency || "AED").toUpperCase();
+      const t = by.get(c) ?? { currency: c, net: 0, people: 0 };
+      t.net += r.netPay;
+      t.people += 1;
+      by.set(c, t);
+    }
+    const lead = batch?.currency;
+    return Array.from(by.values()).sort(
+      (a, b) =>
+        (a.currency === lead ? 0 : 1) - (b.currency === lead ? 0 : 1) ||
+        b.people - a.people ||
+        a.currency.localeCompare(b.currency)
+    );
+  })();
 
   const [downloading, setDownloading] = useState(false);
   // Any row still ungenerated makes it a preview — its figures can move until
@@ -167,7 +189,21 @@ export function PayrollRun() {
           </div>
           <div className="text-sm">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Total net pay</p>
-            <p className="font-semibold tabular-nums text-primary">{isLoading ? "…" : money(totalNet, currency)}</p>
+            {isLoading ? (
+              <p className="font-semibold tabular-nums text-primary">…</p>
+            ) : netByCurrency.length === 0 ? (
+              <p className="font-semibold tabular-nums text-primary">{money(0, batch?.currency ?? "AED")}</p>
+            ) : (
+              // The headline currency large, any others beneath it — never summed.
+              <>
+                <p className="font-semibold tabular-nums text-primary">{money(netByCurrency[0]!.net, netByCurrency[0]!.currency)}</p>
+                {netByCurrency.slice(1).map((t) => (
+                  <p key={t.currency} className="text-xs font-medium tabular-nums text-muted-foreground">
+                    + {money(t.net, t.currency)} <span className="font-normal">· {t.people} {t.people === 1 ? "person" : "people"}</span>
+                  </p>
+                ))}
+              </>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -1,9 +1,11 @@
 import { PayrollBatch } from "../models/PayrollBatch.js";
 import { Payslip } from "../models/Payslip.js";
 import { Employee } from "../models/Employee.js";
+import { Organization } from "../models/Organization.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 import type { PayrollBatchStatus } from "../types/index.js";
 import { stillHere } from "../utils/employeeStatus.js";
+import { totalsByCurrency, type CurrencyTotals } from "../utils/payrollTotals.js";
 
 /**
  * The month's payroll as a unit, and the lock that stops HR editing it once
@@ -46,16 +48,35 @@ function monthStart(month: string): Date {
   return new Date(Date.UTC(y!, m! - 1, 1));
 }
 
+/**
+ * The organisation's own currency, if it has said what it is.
+ *
+ * It decides which currency a month's single headline figure is in. Null when
+ * unset, in which case the largest group of payslips decides instead — see
+ * `totalsByCurrency`.
+ */
+async function orgCurrency(): Promise<string | null> {
+  const orgId = getOrgId();
+  if (!orgId) return null;
+  const org = await Organization.findById(orgId)
+    .select("settings.currency")
+    .lean<{ settings?: { currency?: string } } | null>();
+  return org?.settings?.currency?.trim().toUpperCase() || null;
+}
+
 export interface BatchView {
   month: string;
   status: PayrollBatchStatus;
   exists: boolean;
   editable: boolean;
+  /** The headline currency: what `employeeCount` and the three totals are in. */
   currency: string;
   employeeCount: number;
   grossTotal: number;
   deductionTotal: number;
   netTotal: number;
+  /** Every currency in the month, the headline first. Sum these for the full headcount. */
+  byCurrency: CurrencyTotals[];
   submittedAt: string | null;
   approvedAt: string | null;
   paidAt: string | null;
@@ -76,16 +97,52 @@ export class PayrollBatchService {
   async describe(month: string): Promise<BatchView> {
     const batch = await PayrollBatch.findOne(scoped({ month })).lean();
     const status: PayrollBatchStatus = batch?.status ?? "draft";
+    const editable = EDITABLE.includes(status);
+
+    /**
+     * Which figures to show.
+     *
+     * While HR can still change payslips the stored ones are stale by
+     * definition — they are whatever the last submission recorded, and a month
+     * that was submitted and recalled kept them — so an editable month is read
+     * live. Once it is with accounts the snapshot is the point: it is what they
+     * were handed, and it has to stay legible after a later correction.
+     */
+    let byCurrency: CurrencyTotals[];
+    if (editable) {
+      const [slips, preferred] = await Promise.all([
+        Payslip.find(scoped({ month })).select("currency grossPay totalDeductions netPay").lean(),
+        orgCurrency(),
+      ]);
+      byCurrency = totalsByCurrency(slips, batch?.currency ?? preferred ?? "AED", preferred);
+    } else if (batch?.byCurrency?.length) {
+      byCurrency = batch.byCurrency.map((r) => ({
+        currency: r.currency, employeeCount: r.employeeCount, grossTotal: r.grossTotal,
+        deductionTotal: r.deductionTotal, netTotal: r.netTotal,
+      }));
+    } else if (batch) {
+      // Submitted before there was a breakdown: all that exists is the old single
+      // figure, so that is what is shown, under the currency it was recorded in.
+      byCurrency = [{
+        currency: batch.currency ?? "AED", employeeCount: batch.employeeCount ?? 0,
+        grossTotal: batch.grossTotal ?? 0, deductionTotal: batch.deductionTotal ?? 0, netTotal: batch.netTotal ?? 0,
+      }];
+    } else {
+      byCurrency = [];
+    }
+    const head = byCurrency[0];
+
     return {
       month,
       status,
       exists: Boolean(batch),
-      editable: EDITABLE.includes(status),
-      currency: batch?.currency ?? "AED",
-      employeeCount: batch?.employeeCount ?? 0,
-      grossTotal: batch?.grossTotal ?? 0,
-      deductionTotal: batch?.deductionTotal ?? 0,
-      netTotal: batch?.netTotal ?? 0,
+      editable,
+      currency: head?.currency ?? batch?.currency ?? "AED",
+      employeeCount: head?.employeeCount ?? 0,
+      grossTotal: head?.grossTotal ?? 0,
+      deductionTotal: head?.deductionTotal ?? 0,
+      netTotal: head?.netTotal ?? 0,
+      byCurrency,
       submittedAt: batch?.submittedAt ? new Date(batch.submittedAt).toISOString() : null,
       approvedAt: batch?.approvedAt ? new Date(batch.approvedAt).toISOString() : null,
       paidAt: batch?.paidAt ? new Date(batch.paidAt).toISOString() : null,
@@ -109,9 +166,10 @@ export class PayrollBatchService {
    * would be worse than paying the other fifty-nine.
    */
   async preflight(month: string) {
-    const [batch, slips] = await Promise.all([
+    const [batch, slips, preferredCurrency] = await Promise.all([
       this.describe(month),
-      Payslip.find(scoped({ month })).select("employee status netPay grossPay totalDeductions").lean(),
+      Payslip.find(scoped({ month })).select("employee status netPay grossPay totalDeductions currency").lean(),
+      orgCurrency(),
     ]);
 
     const blockers: string[] = [];
@@ -156,15 +214,19 @@ export class PayrollBatchService {
       warnings.push(`${active - slips.length} active employee(s) have no payslip for this month.`);
     }
 
-    const totals = slips.reduce(
-      (a, s) => ({
-        gross: a.gross + (s.grossPay ?? 0),
-        deductions: a.deductions + (s.totalDeductions ?? 0),
-        net: a.net + (s.netPay ?? 0),
-      }),
-      { gross: 0, deductions: 0, net: 0 }
-    );
-    const r2 = (n: number) => Math.round(n * 100) / 100;
+    /**
+     * One row per currency, never one sum.
+     *
+     * This used to add every payslip's net as a bare number — 81 in dirhams and
+     * 22 in rupees — and the dialog printed the result under the batch's one
+     * currency, so rupees were presented as dirhams and the figure that was
+     * stored, and shown to accounts, was out by the whole rupee payroll. The
+     * headline fields are the leading currency's alone; the rest is in
+     * `byCurrency`. What is stored on submit comes from here, so the dialog HR
+     * confirms and the record accounts reads cannot disagree.
+     */
+    const byCurrency = totalsByCurrency(slips, batch.currency, preferredCurrency);
+    const head = byCurrency[0];
 
     return {
       month,
@@ -173,10 +235,12 @@ export class PayrollBatchService {
       blockers,
       warnings,
       totals: {
-        employeeCount: slips.length,
-        grossTotal: r2(totals.gross),
-        deductionTotal: r2(totals.deductions),
-        netTotal: r2(totals.net),
+        currency: head?.currency ?? batch.currency,
+        employeeCount: head?.employeeCount ?? 0,
+        grossTotal: head?.grossTotal ?? 0,
+        deductionTotal: head?.deductionTotal ?? 0,
+        netTotal: head?.netTotal ?? 0,
+        byCurrency,
       },
     };
   }
@@ -204,7 +268,11 @@ export class PayrollBatchService {
     const from: PayrollBatchStatus = existing?.status ?? "draft";
     this.assertTransition(from, "submitted");
 
-    const currency = (await Payslip.findOne(scoped({ month })).select("currency").lean())?.currency ?? "AED";
+    // The batch's currency is the headline one `preflight` already worked out.
+    // It used to be the currency of whichever payslip the database returned
+    // first — AED only because of the order, in a month with twenty-two rupee
+    // payslips in it.
+    const { currency, employeeCount, grossTotal, deductionTotal, netTotal, byCurrency } = pre.totals;
 
     const batch = await PayrollBatch.findOneAndUpdate(
       scoped({ month }),
@@ -220,7 +288,10 @@ export class PayrollBatchService {
           // rejected to whoever reads it next.
           returnedAt: null,
           returnReason: "",
-          ...pre.totals,
+          // Named, not spread: the four figures are the headline currency's
+          // alone, and a spread would quietly start storing whatever else
+          // `totals` grows.
+          employeeCount, grossTotal, deductionTotal, netTotal, byCurrency,
         },
         $push: { history: { from, to: "submitted", at: new Date(), by: userId, actor: "hr" } },
       },

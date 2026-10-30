@@ -909,11 +909,23 @@ export interface IPayrollBatch extends Document {
   monthDate: Date;
   currency: string;
   status: PayrollBatchStatus;
-  /** Totals as they stood when HR submitted — what finance was handed. */
+  /**
+   * Totals as they stood when HR submitted — what finance was handed.
+   *
+   * The headline `currency`'s alone; the other currencies are in `byCurrency`.
+   * Older batches hold the old all-currencies sum and no breakdown.
+   */
   employeeCount: number;
   grossTotal: number;
   deductionTotal: number;
   netTotal: number;
+  byCurrency: Array<{
+    currency: string;
+    employeeCount: number;
+    grossTotal: number;
+    deductionTotal: number;
+    netTotal: number;
+  }>;
   submittedBy?: Types.ObjectId | IUser | null;
   submittedAt?: Date | null;
   approvedAt?: Date | null;

@@ -45,10 +45,33 @@ const payrollBatchSchema = new Schema<IPayrollBatch>(
 
     // A snapshot taken at submit, not a live total. What finance was handed has
     // to stay legible even after a later phase adds figures of its own.
+    //
+    // These four are the headline `currency`'s alone. A month can hold salaries
+    // in dirhams and in rupees, and adding them as one number printed the sum
+    // under whichever currency headed the batch — so they count and add only the
+    // payslips in that currency, and the rest is in `byCurrency` below. Batches
+    // submitted before that existed carry the old mixed figure and no breakdown;
+    // they are history and are left as they were.
     employeeCount: { type: Number, default: 0, min: 0 },
     grossTotal: { type: Number, default: 0 },
     deductionTotal: { type: Number, default: 0 },
     netTotal: { type: Number, default: 0 },
+    /** The same figures, one row per currency, the headline currency first. */
+    byCurrency: {
+      type: [
+        new Schema(
+          {
+            currency: { type: String, required: true, uppercase: true, trim: true, maxlength: 6 },
+            employeeCount: { type: Number, default: 0, min: 0 },
+            grossTotal: { type: Number, default: 0 },
+            deductionTotal: { type: Number, default: 0 },
+            netTotal: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
 
     submittedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     submittedAt: { type: Date, default: null },

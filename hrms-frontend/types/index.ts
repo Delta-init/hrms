@@ -965,16 +965,34 @@ export const PAYROLL_BATCH_LABELS: Record<PayrollBatchStatus, string> = {
   returned: "Sent back by accounts",
 };
 
-export interface PayrollBatch {
-  month: string;
-  status: PayrollBatchStatus;
-  exists: boolean;
-  editable: boolean;
+/**
+ * One currency's share of a payroll month.
+ *
+ * A month can pay some people in dirhams and others in rupees, and the two are
+ * never added together — that sum was printed as AED and was out by the whole
+ * rupee payroll. A total is a list of these instead.
+ */
+export interface PayrollCurrencyTotals {
   currency: string;
   employeeCount: number;
   grossTotal: number;
   deductionTotal: number;
   netTotal: number;
+}
+
+export interface PayrollBatch {
+  month: string;
+  status: PayrollBatchStatus;
+  exists: boolean;
+  editable: boolean;
+  /** The headline currency — what `employeeCount` and the three totals are in. */
+  currency: string;
+  employeeCount: number;
+  grossTotal: number;
+  deductionTotal: number;
+  netTotal: number;
+  /** Every currency in the month, the headline first. Absent from an older server. */
+  byCurrency?: PayrollCurrencyTotals[];
   submittedAt: string | null;
   approvedAt: string | null;
   paidAt: string | null;
@@ -992,7 +1010,15 @@ export interface PayrollPreflight {
   blockers: string[];
   /** Things worth knowing that do not stop the handover. */
   warnings: string[];
-  totals: { employeeCount: number; grossTotal: number; deductionTotal: number; netTotal: number };
+  /** The headline currency's figures, and `byCurrency` for every currency in the month. */
+  totals: {
+    currency?: string;
+    employeeCount: number;
+    grossTotal: number;
+    deductionTotal: number;
+    netTotal: number;
+    byCurrency?: PayrollCurrencyTotals[];
+  };
 }
 export const PAYSLIP_STATUS_LABELS: Record<PayslipStatus, string> = { draft: "Draft", issued: "Issued", paid: "Paid" };
 

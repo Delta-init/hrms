@@ -10,7 +10,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { usePayrollBatch, usePayrollPreflight, useSubmitPayroll, useRecallPayroll } from "@/hooks/usePayrollBatch";
-import { PAYROLL_BATCH_LABELS, type PayrollBatchStatus } from "@/types";
+import { PAYROLL_BATCH_LABELS, type PayrollBatchStatus, type PayrollCurrencyTotals } from "@/types";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<PayrollBatchStatus, string> = {
@@ -25,6 +25,27 @@ const TONE: Record<PayrollBatchStatus, string> = {
 
 const money = (n: number, c: string) =>
   `${c} ${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * A month's totals, one per currency.
+ *
+ * Falls back to the single headline figure when the server predates the
+ * breakdown, so a frontend deployed ahead of its backend shows what it always
+ * did rather than nothing.
+ */
+const currencyRows = (
+  t: { currency?: string; employeeCount: number; grossTotal: number; deductionTotal: number; netTotal: number; byCurrency?: PayrollCurrencyTotals[] },
+  fallbackCurrency: string
+): PayrollCurrencyTotals[] =>
+  t.byCurrency?.length
+    ? t.byCurrency
+    : t.employeeCount > 0
+      ? [{ currency: t.currency ?? fallbackCurrency, employeeCount: t.employeeCount, grossTotal: t.grossTotal, deductionTotal: t.deductionTotal, netTotal: t.netTotal }]
+      : [];
+
+/** "AED 344,824.88 + INR 627,633.33" — each currency on its own, never one sum. */
+const eachCurrency = (rows: PayrollCurrencyTotals[]) => rows.map((r) => money(r.netTotal, r.currency)).join(" + ");
+const peopleIn = (rows: PayrollCurrencyTotals[]) => rows.reduce((n, r) => n + r.employeeCount, 0);
 
 /**
  * Where this month stands between HR and accounts, and the one button that
@@ -48,6 +69,8 @@ export function PayrollHandover({ month, canSubmit }: { month: string; canSubmit
 
   const locked = !batch.editable;
   const canRecall = batch.status === "submitted";
+  const bannerRows = currencyRows(batch, batch.currency);
+  const confirmRows = preflight.data ? currencyRows(preflight.data.totals, batch.currency) : [];
 
   return (
     <>
@@ -67,9 +90,11 @@ export function PayrollHandover({ month, canSubmit }: { month: string; canSubmit
           {batch.status === "returned" && (batch.returnReason || "Accounts sent this back for a correction. Payslips are editable again.")}
         </p>
 
-        {batch.exists && batch.employeeCount > 0 && (
+        {/* Live while the month is still HR's, the submitted snapshot after —
+            the server decides which. Each currency is totalled on its own. */}
+        {bannerRows.length > 0 && (
           <span className="text-xs font-medium opacity-90">
-            {batch.employeeCount} people · {money(batch.netTotal, batch.currency)} net
+            {peopleIn(bannerRows)} people · {eachCurrency(bannerRows)} net
           </span>
         )}
 
@@ -110,14 +135,31 @@ export function PayrollHandover({ month, canSubmit }: { month: string; canSubmit
                 <div className="rounded-lg border border-border bg-muted/40 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">People</span>
-                    <span className="font-medium tabular-nums">{preflight.data.totals.employeeCount}</span>
+                    <span className="font-medium tabular-nums">{peopleIn(confirmRows)}</span>
                   </div>
-                  <div className="mt-1 flex items-center justify-between">
+                  {/* One line per currency. These were added into one figure and
+                      shown as AED — rupees presented as dirhams, on the screen
+                      somebody confirms before the month is locked. */}
+                  <div className="mt-1 flex items-start justify-between gap-4">
                     <span className="text-muted-foreground">Net to pay</span>
-                    <span className="font-semibold tabular-nums">
-                      {money(preflight.data.totals.netTotal, batch.currency)}
-                    </span>
+                    <div className="text-right">
+                      {confirmRows.map((r) => (
+                        <div key={r.currency} className="font-semibold tabular-nums">
+                          {money(r.netTotal, r.currency)}
+                          {confirmRows.length > 1 && (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              · {r.employeeCount} {r.employeeCount === 1 ? "person" : "people"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                  {confirmRows.length > 1 && (
+                    <p className="mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                      Paid in {confirmRows.length} currencies. Each is totalled on its own — they are not added together.
+                    </p>
+                  )}
                 </div>
 
                 {preflight.data.blockers.map((b) => (

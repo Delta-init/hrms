@@ -3,6 +3,7 @@ import { Payslip } from "../models/Payslip.js";
 import { Employee } from "../models/Employee.js";
 import { Department } from "../models/Department.js";
 import type { PayrollBatchStatus } from "../types/index.js";
+import { totalsByCurrency } from "../utils/payrollTotals.js";
 
 /**
  * What the accounts system is allowed to see of a month's payroll, and how it
@@ -83,10 +84,17 @@ export class PayrollHandoverService {
       month: b.month,
       status: b.status,
       currency: b.currency,
+      // The headline currency's alone — see PayrollBatch. Anything printing
+      // these as "N people · CUR amount" is now telling the truth for the
+      // people it counts; the rest of the month is in `byCurrency`.
       employeeCount: b.employeeCount,
       grossTotal: b.grossTotal,
       deductionTotal: b.deductionTotal,
       netTotal: b.netTotal,
+      byCurrency: (b.byCurrency ?? []).map((r) => ({
+        currency: r.currency, employeeCount: r.employeeCount, grossTotal: r.grossTotal,
+        deductionTotal: r.deductionTotal, netTotal: r.netTotal,
+      })),
       submittedAt: b.submittedAt ? new Date(b.submittedAt).toISOString() : null,
       financeRunId: b.financeRunId ?? "",
     }));
@@ -157,6 +165,16 @@ export class PayrollHandoverService {
     });
 
     const r2 = (n: number) => Math.round(n * 100) / 100;
+    /**
+     * Every line added up, across currencies, exactly as before.
+     *
+     * Deliberately NOT per-currency, and not to be "fixed" in isolation. This is
+     * the figure finance reconciles its own line sums against, and it adds the
+     * same lines the same way — so the two agree, and they would stop agreeing
+     * the moment one side changed: finance would refuse to import the month.
+     * It is an integrity check on the lines, not an amount of money. The amounts
+     * are `totalsByCurrency` below, which finance can adopt when it is ready.
+     */
     const totals = lines.reduce(
       (a, l) => ({
         gross: r2(a.gross + l.grossPay),
@@ -181,6 +199,8 @@ export class PayrollHandoverService {
         netTotal: totals.net,
         unpayable: lines.filter((l) => !l.payable).length,
       },
+      /** The same lines as real amounts: one row per currency, the headline first. */
+      totalsByCurrency: totalsByCurrency(lines, batch.currency, batch.currency),
       /**
        * The totals HR snapshotted at submit. Sent alongside the recomputed ones
        * so finance can refuse an import where the two disagree, rather than
@@ -191,6 +211,10 @@ export class PayrollHandoverService {
         grossTotal: batch.grossTotal,
         deductionTotal: batch.deductionTotal,
         netTotal: batch.netTotal,
+        byCurrency: (batch.byCurrency ?? []).map((r) => ({
+          currency: r.currency, employeeCount: r.employeeCount, grossTotal: r.grossTotal,
+          deductionTotal: r.deductionTotal, netTotal: r.netTotal,
+        })),
       },
     };
   }
