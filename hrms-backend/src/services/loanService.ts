@@ -107,7 +107,7 @@ interface Repayment {
   amount: number;
 }
 
-/** Instalments that should have been collected by the end of `month`, inclusive. */
+/** Months from the loan's first instalment to `month`, inclusive — 0 before it starts. */
 function instalmentsDueBy(disbursedDate: Date | undefined | null, month: string): number {
   if (!disbursedDate) return 0;
   const d = new Date(disbursedDate);
@@ -116,13 +116,17 @@ function instalmentsDueBy(disbursedDate: Date | undefined | null, month: string)
 }
 
 /**
- * What an employee's active loans should recover in `month`.
+ * What an employee's active loans should recover in `month`: one instalment,
+ * or what is left when that is less.
  *
- * The figure is the whole schedule to date minus what has actually been repaid,
- * not a flat instalment — so a month that could only collect part of one (a
- * salary too small to cover it, unpaid leave) is made up automatically the next
- * time there is room, with no arrears field to keep in step. Still capped at
- * the outstanding balance, and the caller caps it again at what the payslip can
+ * Never the months before it as well. It used to be the whole schedule to date
+ * minus what had been repaid, so a missed month was made up the next — but a
+ * month is "missed" just as much when its payroll was run outside HRMS, and the
+ * visa loans dated 3 September all took two instalments from October's salary
+ * (one dated July would have taken all four). The user: "only take that month
+ * only". A month that collects nothing, or too little, now moves the end of the
+ * loan back instead of doubling the next payslip. Still capped at the
+ * outstanding balance, and the caller caps it again at what the payslip can
  * actually afford.
  */
 export async function computeLoanDeductions(
@@ -150,24 +154,20 @@ export async function computeLoanDeductions(
     const elapsed = instalmentsDueBy(loan.disbursedDate, month);
     if (elapsed <= 0) continue;
     const schedule = loan.monthlyDeduction || loan.amount;
-    // At or past the configured instalment count, the scheduled amount is the
-    // whole remaining principal — not `schedule * elapsed` — so an
-    // amount that doesn't divide evenly (e.g. 1000 over 3 months, 333.33 each)
-    // closes exactly on schedule instead of leaving a stray extra month to
-    // collect the last cent.
-    const dueToDate = elapsed >= loan.installments ? loan.amount : Math.min(loan.amount, round2(schedule * elapsed));
-    const want = Math.min(round2(dueToDate - loan.amountRepaid), outstanding);
+    // The last instalment takes the remainder, so an amount that does not
+    // divide evenly (1000 over 3 months, 333.33 each) closes on schedule
+    // rather than leaving a stray month to collect the last cent.
+    const want = outstanding - schedule < 1 ? outstanding : round2(schedule);
     if (want <= 0) continue;
 
     const label = loan.kind === "advance"
       ? SALARY_ADVANCE_LABEL
       : `${LOAN_DEDUCTION_PREFIX}${loan.purpose ? ` (${loan.purpose})` : ""}`;
 
-    // Waived: nothing is collected, and no repayment is recorded — the shortfall
-    // is caught up automatically the next month there is room, exactly as a
-    // month whose pay could not cover the full instalment already is. A zero-
-    // amount line still appears, so the payslip explains the absence rather
-    // than leaving a collected instalment quietly missing.
+    // Waived: nothing is collected, and no repayment is recorded — the loan
+    // simply runs a month longer, as it does when pay could not cover the
+    // instalment. A zero-amount line still appears, so the payslip explains
+    // the absence rather than leaving a collected instalment quietly missing.
     if (waivedLoanIds.has(String(loan._id))) {
       waived.push({ label: `${label} — waived (approved request)`, amount: 0 });
       continue;

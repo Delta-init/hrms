@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Play, CalendarDays, Plus, Pencil, Undo2, X, Check, FileSpreadsheet, Upload, Search } from "lucide-react";
 import { ImportSalarySheetDialog } from "@/components/payroll/ImportSalarySheetDialog";
 import { toast } from "@/lib/toast";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PayslipDialog } from "@/components/payroll/PayslipDialog";
+import { Pagination } from "@/components/shared/Pagination";
 import { PayrollChecklistDialog } from "@/components/payroll/PayrollChecklistDialog";
 import { LopOverrideDialog, type LopTarget } from "@/components/payroll/LopOverrideDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -89,6 +90,16 @@ export function PayrollRun() {
   const countFor = (f: RunFilter) => searched.filter((r) => matchesFilter(r, f)).length;
   const clearFilters = () => { setSearch(""); setFilter("all"); };
 
+  // A page at a time: a hundred rows of figures, each with its own buttons,
+  // was a lot to draw on every keystroke of the search. Select-all and the
+  // bulk actions still reach every row the filters match, not just this page.
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  useEffect(() => { setPage(1); }, [month, needle, filter, limit]);
+  const totalPages = Math.max(1, Math.ceil(shown.length / limit));
+  const current = Math.min(page, totalPages);
+  const pageRows = shown.slice((current - 1) * limit, current * limit);
+
   // Only generated rows can be selected — there is nothing to act on until a
   // payslip exists. Keyed by payslip id, so the set survives a refetch; a row
   // filtered out of view drops out of the selection's reach with it.
@@ -148,15 +159,19 @@ export function PayrollRun() {
           </div>
           <div className="text-sm">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Employees</p>
-            <p className="font-semibold">{rows.length} · <span className="text-amber-600">{pending} pending</span></p>
+            <p className="font-semibold">
+              {isLoading ? "…" : <>{rows.length} · <span className="text-amber-600">{pending} pending</span></>}
+              {/* A background refresh keeps the figures on screen; only the first load waits. */}
+              {isFetching && !isLoading && <Loader2 className="ml-2 inline h-3.5 w-3.5 animate-spin text-muted-foreground" aria-label="Refreshing" />}
+            </p>
           </div>
           <div className="text-sm">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Total net pay</p>
-            <p className="font-semibold tabular-nums text-primary">{money(totalNet, currency)}</p>
+            <p className="font-semibold tabular-nums text-primary">{isLoading ? "…" : money(totalNet, currency)}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={downloadSheet} disabled={!rows.length || isFetching || downloading}>
+          <Button variant="outline" onClick={downloadSheet} disabled={!rows.length || isLoading || downloading}>
             {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
             Download salary sheet
           </Button>
@@ -191,7 +206,10 @@ export function PayrollRun() {
 
       {selectedIds.length > 0 && (
         <Card className="flex flex-wrap items-center gap-2 border-primary/30 bg-primary/5 p-3">
-          <span className="text-sm font-medium">{selectedIds.length} selected</span>
+          <span className="text-sm font-medium">
+            {selectedIds.length} selected
+            {totalPages > 1 && <span className="font-normal text-muted-foreground"> · across all pages</span>}
+          </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {canEdit && (
               <DropdownMenu>
@@ -248,7 +266,7 @@ export function PayrollRun() {
               </tr>
             </thead>
             <tbody>
-              {isLoading || isFetching ? (
+              {isLoading ? (
                 <tr><td colSpan={10} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={10} className="py-16 text-center text-muted-foreground"><CalendarDays className="mx-auto mb-2 h-7 w-7" />No active employees for this month.</td></tr>
@@ -257,7 +275,7 @@ export function PayrollRun() {
                   <Search className="mx-auto mb-2 h-7 w-7" />No one matches.
                   <div className="mt-3"><Button variant="outline" size="sm" onClick={clearFilters}><X className="h-3.5 w-3.5" />Clear filters</Button></div>
                 </td></tr>
-              ) : shown.map((r) => (
+              ) : pageRows.map((r) => (
                 <Row
                   key={r.employee._id}
                   r={r}
@@ -278,6 +296,12 @@ export function PayrollRun() {
             </tbody>
           </table>
         </div>
+        {shown.length > 0 && (
+          <Pagination
+            pagination={{ total: shown.length, page: current, limit, totalPages, hasNextPage: current < totalPages, hasPrevPage: current > 1 }}
+            page={current} limit={limit} onPageChange={setPage} onLimitChange={setLimit} label="employees"
+          />
+        )}
       </Card>
 
       <PayslipDialog

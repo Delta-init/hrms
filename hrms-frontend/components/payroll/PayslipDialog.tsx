@@ -293,6 +293,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                   value={field.value}
                   onChange={field.onChange}
                   disabled={isEditing || !!locked}
+                  // The picker loads one page of names, so a person not on it
+                  // showed as a blank "Select employee" while editing.
+                  selectedLabel={(typeof payslip?.employee === "object" ? payslip.employee.name : undefined) ?? preset?.employeeName}
                   placeholder="Select employee"
                 />
               )} />

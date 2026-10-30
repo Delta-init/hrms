@@ -27,6 +27,10 @@ import { holidayScope, workModeOfUser, scheduleIdOfUser } from "../utils/holiday
 import { employmentWindowFor, employmentWindows, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
 import { stillHere, hasLeftFilter } from "../utils/employeeStatus.js";
+import { mapInOrder } from "../utils/concurrency.js";
+
+/** How many employees the payroll screens work out at once — see mapInOrder. */
+const PAYROLL_CONCURRENCY = 8;
 
 interface PayslipQuery extends PaginationQuery {
   employee?: string;
@@ -717,7 +721,20 @@ export class PayslipService {
   }
 
   /** Attendance/leave summary for a month — used to prefill LOP + a Basic line. */
-  async summary(employeeId: string, month: string) {
+  /**
+   * `sources`, when passed, is handed the one-time, reimbursement and overtime
+   * figures this already reads — the run preview and the register need them
+   * too, and asking again tripled those queries for every employee.
+   */
+  async summary(
+    employeeId: string,
+    month: string,
+    sources?: {
+      oneTime?: Awaited<ReturnType<typeof computeOneTimeAdjustments>>;
+      reimb?: Awaited<ReturnType<typeof computeReimbursements>>;
+      ot?: Awaited<ReturnType<typeof computeOvertime>>;
+    }
+  ) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
       .populate({ path: "workSchedule", select: "timeZone workDays" })
@@ -778,6 +795,7 @@ export class PayslipService {
       computeOvertime(employeeId, month),
       computeOneTimeAdjustments(employeeId, month),
     ]);
+    if (sources) Object.assign(sources, { reimb, ot, oneTime });
 
     const base = {
       present: 0, late: 0, half: 0, absent: 0, earlyOut: 0, unpaidLeaveDays: 0, lopDays: 0,
@@ -1024,9 +1042,9 @@ export class PayslipService {
     }
 
     const round = (n: number) => Math.round(n * 100) / 100;
-    const rows = [];
-    for (const emp of employees) {
-      const s = await this.summary(String(emp._id), month);
+    const rows = await mapInOrder(employees, PAYROLL_CONCURRENCY, async (emp) => {
+      const src: Parameters<PayslipService["summary"]>[2] = {};
+      const s = await this.summary(String(emp._id), month, src);
       // Two different numbers, and the row needs both. `base` is the
       // contractual monthly gross, which prices a day off. `payable` is what
       // this month actually owes — the same figure cut to a joiner's or
@@ -1047,13 +1065,11 @@ export class PayslipService {
       const loanTotal = round((s.loanDeductions ?? []).filter((l) => !isAdvance(l)).reduce((a, l) => a + l.amount, 0));
       const advanceTotal = round((s.loanDeductions ?? []).filter(isAdvance).reduce((a, l) => a + l.amount, 0));
       const structureDeductions = round((s.structureDeductions ?? []).reduce((a, l) => a + l.amount, 0));
-      const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
+      const oneTime = src.oneTime!;
       const oneTimePayments = round(oneTime.earnings.reduce((a, l) => a + l.amount, 0));
       const oneTimeDeductions = round(oneTime.deductions.reduce((a, l) => a + l.amount, 0));
-      const reimb = await computeReimbursements(String(emp._id), month);
-      const reimbursements = round(reimb.earnings.reduce((a, l) => a + l.amount, 0));
-      const ot = await computeOvertime(String(emp._id), month);
-      const overtime = round(ot.earnings.reduce((a, l) => a + l.amount, 0));
+      const reimbursements = round(src.reimb!.earnings.reduce((a, l) => a + l.amount, 0));
+      const overtime = round(src.ot!.earnings.reduce((a, l) => a + l.amount, 0));
       const totalDeductions = round(lopAmount + latePenaltyAmount + loanTotal + advanceTotal + structureDeductions + oneTimeDeductions);
       const slip = existMap.get(String(emp._id));
 
@@ -1105,7 +1121,7 @@ export class PayslipService {
             netPay: round(payable + oneTimePayments + reimbursements + overtime - totalDeductions),
           };
 
-      rows.push({
+      return {
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, joiningDate: emp.joiningDate ?? null },
         currency: s.currency,
         // The full monthly figure, before any cut for a part month — the
@@ -1127,8 +1143,8 @@ export class PayslipService {
         payslipId: slip ? String(slip._id) : null,
         status: slip?.status ?? null, // null → not generated yet
         importedAt: slip?.imported?.at ?? null,
-      });
-    }
+      };
+    });
     return { month, rows };
   }
 
@@ -1146,13 +1162,13 @@ export class PayslipService {
       .lean();
     const round = (n: number) => Math.round(n * 100) / 100;
 
-    const rows = [];
     let tGross = 0, tDed = 0, tNet = 0;
-    for (const emp of employees) {
-      const s = await this.summary(String(emp._id), month);
-      const oneTime = await computeOneTimeAdjustments(String(emp._id), month);
-      const reimb = await computeReimbursements(String(emp._id), month);
-      const ot = await computeOvertime(String(emp._id), month);
+    const rows = await mapInOrder(employees, PAYROLL_CONCURRENCY, async (emp) => {
+      const src: Parameters<PayslipService["summary"]>[2] = {};
+      const s = await this.summary(String(emp._id), month, src);
+      const oneTime = src.oneTime!;
+      const reimb = src.reimb!;
+      const ot = src.ot!;
 
       const earnings = [...(s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }]), ...oneTime.earnings, ...reimb.earnings, ...ot.earnings];
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
@@ -1166,7 +1182,7 @@ export class PayslipService {
       tGross += gross; tDed += totalDeductions; tNet += net;
 
       const bank = (emp as { bank?: { ibanIfsc?: string; bankName?: string; nameInBank?: string; bankAccountNumber?: string } }).bank;
-      rows.push({
+      return {
         employee: { _id: emp._id, name: emp.name, employeeCode: emp.employeeCode, designation: emp.designation },
         currency: s.currency,
         bank: {
@@ -1181,8 +1197,8 @@ export class PayslipService {
         gross,
         totalDeductions,
         net,
-      });
-    }
+      };
+    });
     return {
       month,
       currency: rows[0]?.currency ?? "AED",
@@ -1191,7 +1207,6 @@ export class PayslipService {
     };
   }
 
-  /** Bulk-create draft payslips for every active employee lacking one this month. */
   /**
    * Set — or, with null days, clear — HR's loss-of-pay figure for one person's
    * month. Only while the payslip is not generated or still a draft: an issued
@@ -1230,6 +1245,7 @@ export class PayslipService {
     return this.summary(input.employee, input.month);
   }
 
+  /** Bulk-create draft payslips for every active employee lacking one this month. */
   async runGenerate(month: string, issuerId: string) {
     await assertMonthEditable(month, "payslips");
     const employees = await Employee.find(scoped(await payrollRosterFilter(month))).select("_id salary");
@@ -1237,9 +1253,11 @@ export class PayslipService {
     const existSet = new Set(existing.map((p) => String(p.employee)));
 
     let created = 0;
-    let skipped = 0;
-    for (const emp of employees) {
-      if (existSet.has(String(emp._id))) { skipped++; continue; }
+    const todo = employees.filter((e) => !existSet.has(String(e._id)));
+    const skipped = employees.length - todo.length;
+    // A few at a time, like the preview. Each payslip touches only its own
+    // employee's loans, adjustments and claims, so they do not contend.
+    await mapInOrder(todo, 4, async (emp) => {
       const s = await this.summary(String(emp._id), month);
       // Earnings from the salary structure (Basic + allowances), else a single Basic.
       const earnings = s.earnings ?? [{ label: "Basic", amount: s.salary || 0 }];
@@ -1249,7 +1267,7 @@ export class PayslipService {
       const deductions: { label: string; amount: number }[] = [...(s.structureDeductions ?? [])];
       await this.create({ employee: String(emp._id), month, currency: s.currency, earnings, deductions, status: "draft" } as never, issuerId);
       created++;
-    }
+    });
     return { month, created, skipped, total: employees.length };
   }
 }
