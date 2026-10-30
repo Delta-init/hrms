@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createPayslip, getPayslips, getMyPayslips, getPayslipSummary,
   getPayrollRun, getSalaryRegister, runPayroll, getPayslipById, updatePayslip, deletePayslip,
-  bulkUpdatePayslipStatus, bulkDeletePayslips, importSalarySheet,
+  bulkUpdatePayslipStatus, bulkDeletePayslips, importSalarySheet, setLopOverride,
 } from "../controllers/payslipController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -26,6 +26,8 @@ router.post("/", checkPermission("payroll", "create"), createPayslip);
 // Ahead of "/:id" so these paths are not swallowed as an identifier.
 router.patch("/bulk/status", checkPermission("payroll", "edit"), bulkUpdatePayslipStatus);
 router.post("/bulk/delete", checkPermission("payroll", "delete"), bulkDeletePayslips);
+// Before "/:id", or "lop-override" would be read as a payslip id.
+router.put("/lop-override", checkPermission("payroll", "edit"), setLopOverride);
 router.get("/:id", checkPermission("payroll", "view"), getPayslipById);
 router.put("/:id", checkPermission("payroll", "edit"), updatePayslip);
 router.delete("/:id", checkPermission("payroll", "delete"), deletePayslip);

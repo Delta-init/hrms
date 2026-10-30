@@ -1017,6 +1017,8 @@ export interface Payslip {
   paidDays?: number;
   lopDays?: number;
   status: PayslipStatus;
+  /** Set when the figures came from an imported salary sheet. */
+  imported?: { at?: string } | null;
   issuedBy?: { _id: string; name: string } | string | null;
   issuedAt?: string | null;
   paidAt?: string | null;
@@ -1060,6 +1062,17 @@ export interface PayslipSummary {
   employment?: { from: string | null; to: string | null };
   /** Days of salary this month is worth for them — 30, or their share of it. */
   salaryDays?: number;
+  /** What attendance alone came to, and HR's own figure when one was set. */
+  attendanceLopDays?: number;
+  lopOverride?: LopOverride | null;
+}
+
+/** HR's loss-of-pay days for one person's month, in place of attendance's. */
+export interface LopOverride {
+  days: number;
+  reason: string;
+  by: string | null;
+  at: string;
 }
 
 // ─── Monthly payroll run ─────────────────────────────────────────────────────
@@ -1105,6 +1118,8 @@ export interface PayrollRunRow {
   status: PayslipStatus | null;
   /** When the payslip's figures came from an imported salary sheet. */
   importedAt?: string | null;
+  attendanceLopDays?: number;
+  lopOverride?: LopOverride | null;
 }
 export interface PayrollRun {
   month: string;

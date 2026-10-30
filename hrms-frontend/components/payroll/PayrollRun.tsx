@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PayslipDialog } from "@/components/payroll/PayslipDialog";
 import { PayrollChecklistDialog } from "@/components/payroll/PayrollChecklistDialog";
+import { LopOverrideDialog, type LopTarget } from "@/components/payroll/LopOverrideDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -69,6 +70,7 @@ export function PayrollRun() {
   const [revertOpen, setRevertOpen] = useState(false);
   const [createRow, setCreateRow] = useState<PayrollRunRow | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [lopTarget, setLopTarget] = useState<LopTarget | null>(null);
   const { data: editPayslip } = usePayslip(editId ?? undefined);
 
   const rows = data?.rows ?? [];
@@ -119,6 +121,7 @@ export function PayrollRun() {
   const preset = createRow
     ? {
         employeeId: createRow.employee._id,
+        employeeName: createRow.employee.name,
         month,
         currency: createRow.currency,
         earnings: createRow.earnings?.length ? createRow.earnings : [{ label: "Basic", amount: createRow.salary }],
@@ -266,6 +269,10 @@ export function PayrollRun() {
                   onAdd={() => setCreateRow(r)}
                   onEdit={() => r.payslipId && setEditId(r.payslipId)}
                   onRevert={() => { if (r.payslipId) { setSelected(new Set([r.payslipId])); setRevertOpen(true); } }}
+                  onEditLop={() => setLopTarget({
+                    employee: r.employee, month, days: r.lopDays, attendanceDays: r.attendanceLopDays ?? r.lopDays,
+                    override: r.lopOverride, maxDays: r.workingDays,
+                  })}
                 />
               ))}
             </tbody>
@@ -293,6 +300,8 @@ export function PayrollRun() {
         onConfirm={() => bulkDelete(selectedIds, { onSuccess: () => { clearSelection(); setRevertOpen(false); } })}
       />
 
+      <LopOverrideDialog target={lopTarget} onClose={() => setLopTarget(null)} />
+
       <ImportSalarySheetDialog open={importOpen} onOpenChange={setImportOpen} month={month} />
 
       <PayrollChecklistDialog
@@ -306,10 +315,13 @@ export function PayrollRun() {
   );
 }
 
-function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, onEdit, onRevert }: {
+function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, onEdit, onRevert, onEditLop }: {
   r: PayrollRunRow; canEdit: boolean; canGenerate: boolean; canDelete: boolean;
-  selected: boolean; onToggle: () => void; onAdd: () => void; onEdit: () => void; onRevert: () => void;
+  selected: boolean; onToggle: () => void; onAdd: () => void; onEdit: () => void; onRevert: () => void; onEditLop: () => void;
 }) {
+  // Not generated or still a draft, and not an imported sheet's figures — the
+  // same rule the server holds.
+  const lopEditable = canEdit && (r.status === null || r.status === "draft") && !r.importedAt;
   return (
     <tr className={cn("border-b border-border/60 last:border-0 hover:bg-muted/30", selected && "bg-primary/5")}>
       <td className="px-4 py-3">
@@ -352,6 +364,24 @@ function Row({ r, canEdit, canGenerate, canDelete, selected, onToggle, onAdd, on
         )}
         {r.latePenaltyAmount > 0 && <div title="Late-arrival penalty">-{money(r.latePenaltyAmount, r.currency)}<span className="ml-1 text-[11px] text-muted-foreground">({r.latePenaltyDays}d late)</span></div>}
         {r.lopAmount === 0 && r.latePenaltyAmount === 0 && <span className="text-muted-foreground">—</span>}
+        {(r.lopOverride || lopEditable) && (
+          <div className="mt-0.5 flex items-center justify-end gap-1">
+            {r.lopOverride && (
+              <span
+                title={`Attendance says ${r.attendanceLopDays ?? 0} day(s). ${r.lopOverride.reason}${r.lopOverride.by ? ` — ${r.lopOverride.by}` : ""}`}
+                className="rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[10px] font-medium text-amber-700 dark:text-amber-400"
+              >
+                {r.lopAmount === 0 ? "0 days · " : ""}edited
+              </span>
+            )}
+            {lopEditable && (
+              <button type="button" onClick={onEditLop} title="Change loss of pay" aria-label={`Change loss of pay for ${r.employee.name}`}
+                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                <Pencil className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 text-right tabular-nums text-red-500">
         {r.loanTotal > 0 && <div>-{money(r.loanTotal, r.currency)}</div>}

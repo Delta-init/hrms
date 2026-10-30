@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Trash2, Wand2, Undo2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Wand2, Undo2, Pencil } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -18,6 +18,7 @@ import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { LopOverrideDialog, type LopTarget } from "@/components/payroll/LopOverrideDialog";
 import type { Payslip, PayslipSummary } from "@/types";
 
 interface Preset {
@@ -26,6 +27,7 @@ interface Preset {
   currency?: string;
   earnings: { label: string; amount: number }[];
   deductions: { label: string; amount: number }[];
+  employeeName?: string;
 }
 interface Props {
   open: boolean;
@@ -133,7 +135,14 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
 
   const employee = watch("employee");
   const month = watch("month");
-  const { data: summary } = usePayslipSummary(!isEditing ? employee : undefined, !isEditing ? month : undefined);
+  // Fetched when editing too, for the loss-of-pay line — everything else it
+  // feeds is still for a new payslip only, and says so with !isEditing.
+  const { data: summary } = usePayslipSummary(employee || undefined, month || undefined);
+  const [lopTarget, setLopTarget] = useState<LopTarget | null>(null);
+  // Same rule as the server: a draft or a payslip not yet made, and not an imported sheet's.
+  const lopEditable = hasPermission("payroll", "edit") && !!summary && !!employee &&
+    (!isEditing || (payslip.status === "draft" && !payslip.imported));
+  const lopDays = isEditing ? (payslip.lopDays ?? summary?.lopDays ?? 0) : (summary?.lopDays ?? 0);
 
   useEffect(() => {
     if (!open) return;
@@ -317,6 +326,34 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
             </div>
           </div>
 
+          {/* Loss of pay is worked out by the payslip itself, so it is not a row
+              above — but it can be changed, here, with a reason. */}
+          {summary && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <span className="text-muted-foreground">Loss of pay </span>
+                <span className="font-semibold tabular-nums">{lopDays} day{lopDays === 1 ? "" : "s"}</span>
+                {summary.lopOverride ? (
+                  <span className="ml-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-px text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                    edited · attendance says {summary.attendanceLopDays ?? 0}
+                  </span>
+                ) : (
+                  <span className="ml-1.5 text-xs text-muted-foreground">from attendance</span>
+                )}
+                {summary.lopOverride?.reason && <p className="truncate text-xs text-muted-foreground">{summary.lopOverride.reason}</p>}
+              </div>
+              {lopEditable && (
+                <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5" onClick={() => setLopTarget({
+                  employee: { _id: employee, name: (typeof payslip?.employee === "object" ? payslip.employee.name : preset?.employeeName) ?? "This employee" },
+                  month, days: lopDays, attendanceDays: summary.attendanceLopDays ?? summary.lopDays,
+                  override: summary.lopOverride, maxDays: summary.workingDays,
+                })}>
+                  <Pencil className="h-3 w-3" />Change
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Totals */}
           <div className="rounded-xl border border-border bg-muted/30 p-4">
             {!isEditing && summary && (
@@ -425,6 +462,10 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           onConfirm={() => payslip && remove(payslip._id, { onSuccess: () => { setRevertOpen(false); onOpenChange(false); } })}
         />
       </ResponsiveDialogContent>
+      {/* A draft is recalculated by the change, so its form would be stale —
+          it closes, and the list shows the new figures. A new payslip's
+          preview simply refetches. */}
+      <LopOverrideDialog target={lopTarget} onClose={() => setLopTarget(null)} onSaved={isEditing ? () => onOpenChange(false) : undefined} />
     </ResponsiveDialog>
   );
 }

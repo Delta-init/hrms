@@ -53,3 +53,15 @@ export type BulkPayslipStatusInput = z.infer<typeof bulkPayslipStatusSchema>;
 
 export type CreatePayslipInput = z.infer<typeof createPayslipSchema>;
 export type UpdatePayslipInput = z.infer<typeof updatePayslipSchema>;
+
+/** HR's loss-of-pay days for one person's month — or null to go back to attendance. */
+export const lopOverrideSchema = z
+  .object({
+    employee: z.string().min(1),
+    month: z.string().regex(/^\d{4}-\d{2}$/, "Month is YYYY-MM"),
+    days: z.coerce.number().min(0).max(31).multipleOf(0.5, "Whole or half days").nullable(),
+    reason: z.string().trim().max(300).optional().nullable(),
+  })
+  .refine((v) => v.days === null || (v.reason ?? "").trim().length >= 3, { message: "Say why it differs from attendance", path: ["reason"] });
+
+export type LopOverrideInput = z.infer<typeof lopOverrideSchema>;

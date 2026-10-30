@@ -157,3 +157,14 @@ export const useBulkDeletePayslips = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to revert payslips")),
   });
 };
+
+/** Set HR's loss-of-pay days for one person's month — or null to go back to attendance. */
+export const useSetLopOverride = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { employee: string; month: string; days: number | null; reason?: string }) =>
+      (await api.put<ApiResponse<PayslipSummary>>("/payslips/lop-override", data)).data,
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message); },
+    onError: (e) => toast.error(errMsg(e, "Could not change loss of pay")),
+  });
+};

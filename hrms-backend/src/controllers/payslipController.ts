@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { PayslipService } from "../services/payslipService.js";
 import { SalarySheetImportService } from "../services/salarySheetImportService.js";
-import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema } from "../validations/payslipValidation.js";
+import { createPayslipSchema, updatePayslipSchema, bulkPayslipSchema, bulkPayslipStatusSchema, lopOverrideSchema } from "../validations/payslipValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new PayslipService();
@@ -52,6 +52,16 @@ export const getPayslipSummary = async (req: AuthenticatedRequest, res: Response
     if (!employee || !/^\d{4}-\d{2}$/.test(month)) { sendError(res, "employee and month (YYYY-MM) are required", 400); return; }
     const summary = await service.summary(employee, month);
     sendSuccess(res, "Summary", summary);
+  } catch (error) { next(error); }
+};
+
+/** PUT /payslips/lop-override — HR's loss-of-pay days for one person's month; null days goes back to attendance. */
+export const setLopOverride = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = lopOverrideSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const summary = await service.setLopOverride(parsed.data, req.user!.userId);
+    sendSuccess(res, parsed.data.days === null ? "Loss of pay back to attendance" : "Loss of pay updated", summary);
   } catch (error) { next(error); }
 };
 

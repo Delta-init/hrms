@@ -3,7 +3,8 @@ import { Employee } from "../models/Employee.js";
 import { Attendance } from "../models/Attendance.js";
 import { Holiday } from "../models/Holiday.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
-import type { CreatePayslipInput, UpdatePayslipInput } from "../validations/payslipValidation.js";
+import type { CreatePayslipInput, UpdatePayslipInput, LopOverrideInput } from "../validations/payslipValidation.js";
+import { PayrollLopOverride } from "../models/PayrollLopOverride.js";
 import type { PaginationQuery, IEmployee, IPayslipImport } from "../types/index.js";
 import { Loan } from "../models/Loan.js";
 import { buildPagination } from "../utils/response.js";
@@ -781,6 +782,9 @@ export class PayslipService {
     const base = {
       present: 0, late: 0, half: 0, absent: 0, earlyOut: 0, unpaidLeaveDays: 0, lopDays: 0,
       latePenaltyDays: 0, earlyOutPenaltyDays: 0,
+      /** What attendance alone came to — kept beside lopDays when HR has set its own figure. */
+      attendanceLopDays: 0,
+      lopOverride: null as null | { days: number; reason: string; by: string | null; at: Date },
       /** Approved leave falling on working days — paid, and holidays likewise. */
       paidLeaveDays: 0, holidayDays: 0,
       /** A half-day leave's other half, where nothing was worked against it either. */
@@ -952,6 +956,19 @@ export class PayslipService {
       base.earlyOutPenaltyDays = 0;
     }
 
+    // HR's own figure for the month, where one was set — after everything
+    // above, exemption included, because it is a decision about this month in
+    // particular. Every payroll path reads attendance through here, so the run
+    // row, the generate dialog, a draft edit and a recalculation all follow it.
+    base.attendanceLopDays = base.lopDays;
+    const override = await PayrollLopOverride.findOne(scoped({ employee: employeeId, month }))
+      .populate({ path: "by", select: "name" })
+      .lean<{ days: number; reason: string; by?: { name?: string } | null; updatedAt: Date } | null>();
+    if (override) {
+      base.lopDays = override.days;
+      base.lopOverride = { days: override.days, reason: override.reason, by: override.by?.name ?? null, at: override.updatedAt };
+    }
+
     // Counted against the thirty days the salary buys, not against the working
     // days alone. Rest days and holidays are paid — nothing ever docks them —
     // so leaving them out of the count made it disagree with the money beside
@@ -1097,6 +1114,8 @@ export class PayslipService {
         structureName: s.structureName ?? null,
         structureDeductions: s.structureDeductions ?? [],
         lopDays: slip ? (slip.lopDays ?? s.lopDays) : s.lopDays,
+        attendanceLopDays: s.attendanceLopDays,
+        lopOverride: s.lopOverride,
         // Reported so the row can say what the lost days are out of. A bare
         // count gave no clue whether it was calendar days or working ones.
         workingDays: slip ? (slip.workingDays || s.workingDays) : s.workingDays,
@@ -1173,6 +1192,44 @@ export class PayslipService {
   }
 
   /** Bulk-create draft payslips for every active employee lacking one this month. */
+  /**
+   * Set — or, with null days, clear — HR's loss-of-pay figure for one person's
+   * month. Only while the payslip is not generated or still a draft: an issued
+   * one has been seen by the employee, and an imported one carries the sheet's
+   * figures. A draft is recalculated on the spot, keeping its hand-typed lines.
+   */
+  async setLopOverride(input: LopOverrideInput, actorId: string) {
+    await assertMonthEditable(input.month, "loss of pay");
+    const emp = await Employee.exists(scoped({ _id: input.employee }));
+    if (!emp) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+
+    const slip = await Payslip.findOne(scoped({ employee: input.employee, month: input.month }));
+    if (slip?.imported) {
+      throw Object.assign(new Error("This payslip was imported from a salary sheet — its loss of pay is the sheet's. Correct the sheet, or move it back to not generated first"), { statusCode: 400 });
+    }
+    if (slip && slip.status !== "draft") {
+      throw Object.assign(new Error(`This payslip is already ${slip.status} — move it back to draft before changing loss of pay`), { statusCode: 409 });
+    }
+
+    if (input.days === null) {
+      await PayrollLopOverride.deleteOne(scoped({ employee: input.employee, month: input.month }));
+    } else {
+      await PayrollLopOverride.findOneAndUpdate(
+        scoped({ employee: input.employee, month: input.month }),
+        { $set: { days: input.days, reason: (input.reason ?? "").trim(), by: actorId }, $setOnInsert: { organization: getOrgId() } },
+        { upsert: true, runValidators: true }
+      );
+    }
+
+    // Through update() rather than recompute(): the same derivation, but the
+    // draft's own typed deductions are kept rather than rebuilt from the structure.
+    if (slip) {
+      const deductions = (slip.deductions as unknown as Line[]).map((l) => ({ label: l.label, amount: l.amount }));
+      await this.update(String(slip._id), { deductions } as never, actorId);
+    }
+    return this.summary(input.employee, input.month);
+  }
+
   async runGenerate(month: string, issuerId: string) {
     await assertMonthEditable(month, "payslips");
     const employees = await Employee.find(scoped(await payrollRosterFilter(month))).select("_id salary");
