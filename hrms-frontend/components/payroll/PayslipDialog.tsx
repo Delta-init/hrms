@@ -323,14 +323,33 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
         {tab === "attendance" && employee && month && (
           <div className="space-y-3 px-4 pb-4 sm:px-0 sm:pb-0">
             {summary && (
-              <p className="rounded-lg border border-border px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Loss of pay on this payslip </span>
-                <span className="font-semibold tabular-nums">{lopDays} day{lopDays === 1 ? "" : "s"}</span>
-                <span className="ml-1.5 text-xs text-muted-foreground">
-                  {summary.lopOverride ? `edited · attendance says ${summary.attendanceLopDays ?? 0}` : "from attendance"}
-                  {imported ? " · this payslip's figures are the imported sheet's" : ""}
-                </span>
-              </p>
+              <div className="space-y-1 rounded-lg border border-border px-3 py-2 text-sm">
+                <p>
+                  <span className="text-muted-foreground">Loss of pay on this payslip </span>
+                  <span className="font-semibold tabular-nums">{lopDays} day{lopDays === 1 ? "" : "s"}</span>
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    {summary.lopOverride ? `edited · attendance says ${summary.attendanceLopDays ?? 0}` : "from attendance"}
+                    {imported ? " · this payslip's figures are the imported sheet's" : ""}
+                  </span>
+                </p>
+                {/* Attendance changed here since the draft was made — the draft
+                    takes it on Save, which rebuilds loss of pay. */}
+                {isEditing && !imported && payslip.status === "draft" && (summary.lopDays ?? 0) !== lopDays && (
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                    Attendance now comes to {summary.lopDays} day{summary.lopDays === 1 ? "" : "s"} — Save on the Payslip tab to apply it.
+                  </p>
+                )}
+                {hasPermission("attendance", "edit") && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Changes to days here are saved to attendance straight away.{" "}
+                    {!isEditing
+                      ? "This payslip's figures follow them."
+                      : imported || payslip.status !== "draft"
+                        ? `This payslip keeps its figures — it is ${imported ? "from the salary sheet" : payslip.status}.`
+                        : "The draft takes them on Save."}
+                  </p>
+                )}
+              </div>
             )}
             <EmployeeMonthCalendar employeeId={employee} month={month} />
           </div>

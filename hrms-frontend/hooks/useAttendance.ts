@@ -100,7 +100,8 @@ export const useBulkSetAttendanceStatus = () => {
       const res = await api.patch<ApiResponse<{ matched: number; modified: number }>>("/attendance/bulk-status", { ids, status });
       return res.data;
     },
-    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    // Payroll figures too: the payslip popup edits attendance and shows loss of pay beside it.
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["payslips"] }); toast.success(res.message ?? "Attendance updated"); },
     onError: (e) => toast.error(errMsg(e, "Could not update those records")),
   });
 };
@@ -123,7 +124,8 @@ export const useSetDayStatus = () => {
       );
       return res.data;
     },
-    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    // Payroll figures too: the payslip popup edits attendance and shows loss of pay beside it.
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["payslips"] }); toast.success(res.message ?? "Attendance updated"); },
     onError: (e) => toast.error(errMsg(e, "Could not set that status")),
   });
 };
@@ -143,7 +145,8 @@ export const useSetDaysStatus = () => {
       );
       return res.data;
     },
-    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); toast.success(res.message ?? "Attendance updated"); },
+    // Payroll figures too: the payslip popup edits attendance and shows loss of pay beside it.
+    onSuccess: (res) => { qc.invalidateQueries({ queryKey: KEY }); qc.invalidateQueries({ queryKey: ["payslips"] }); toast.success(res.message ?? "Attendance updated"); },
     onError: (e) => toast.error(errMsg(e, "Could not set that status")),
   });
 };

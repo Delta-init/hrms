@@ -442,18 +442,32 @@ function AllView({ data, month, canManage, selecting, selection }: { data?: { da
 }
 
 /**
- * One person's month, read-only — the Attendance tab of the payslip popup, so
- * the days behind a payslip can be checked without leaving it. The same grid
- * as the Attendance page, with nothing to change.
+ * One person's month — the Attendance tab of the payslip popup, so the days
+ * behind a payslip can be checked, and corrected, without leaving it. The same
+ * grid as the Attendance page and the same editing for whoever may edit
+ * attendance: set a day's status, or pick several and set them at once.
  */
 export function EmployeeMonthCalendar({ employeeId, month }: { employeeId: string; month: string }) {
+  const { hasPermission } = useAuth();
+  const canManage = hasPermission("attendance", "edit");
   const { data, isLoading } = useAttendanceCalendar(month, employeeId);
   const selection = useCellSelection();
+  const [selecting, setSelecting] = useState(false);
+  useEffect(() => { setSelecting(false); selection.clear(); }, [employeeId, month]); // eslint-disable-line react-hooks/exhaustive-deps
   const [y, mm] = month.split("-").map(Number);
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   return (
     <div className="space-y-3">
-      <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected canManage={false} selecting={false} selection={selection} compact />
+      {canManage && (
+        <div className="flex justify-end">
+          <Button type="button" variant={selecting ? "default" : "outline"} size="sm" className="h-8"
+            onClick={() => { setSelecting((v) => !v); selection.clear(); }}>
+            <MousePointerClick className="h-4 w-4" />{selecting ? "Done selecting" : "Select days"}
+          </Button>
+        </div>
+      )}
+      {canManage && selecting && <SelectionBar selected={selection.selected} onClear={selection.clear} />}
+      <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected canManage={canManage} selecting={canManage && selecting} selection={selection} compact />
       <Legend />
     </div>
   );
