@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Stethoscope } from "lucide-react";
@@ -15,11 +15,11 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserSelect } from "@/components/pickers";
 import { leaveFormSchema, type LeaveFormValues } from "@/lib/validations/leaveSchema";
-import { useCreateLeave, useUpdateLeave, useLeaveOptions } from "@/hooks/useLeaves";
+import { useCreateLeave, useUpdateLeave, useLeaveOptions, useSetLeaveStatus } from "@/hooks/useLeaves";
 import { useUser } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCompOffBalance, useCompOffBalanceFor } from "@/hooks/useCompOff";
-import { CERTIFIED_SICK, LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveType } from "@/types";
+import { CERTIFIED_SICK, LEAVE_TYPE_LABELS, TIME_ZONES, type LeaveRequest, type LeaveStatus, type LeaveType } from "@/types";
 
 /** ISO → YYYY-MM-DD in the record's own timezone, so the edit prefill matches
  *  the list display (avoids a silent off-by-one for zones ahead of UTC). */
@@ -43,8 +43,20 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
   const isEditing = !!leave;
   const selfMode = !!lockToUserId && !isEditing;
   const { mutate: create, isPending: creating } = useCreateLeave();
-  const { mutate: update, isPending: updating } = useUpdateLeave();
-  const isPending = creating || updating;
+  const { mutateAsync: update, isPending: updating } = useUpdateLeave();
+  const { mutateAsync: setStatus, isPending: settingStatus } = useSetLeaveStatus();
+  const isPending = creating || updating || settingStatus;
+
+  // HR's hand on the status — leave.approve, and never on one's own request.
+  const { user: me, hasPermission } = useAuth();
+  const leaveUserId = leave ? (typeof leave.user === "object" ? leave.user._id : leave.user) : "";
+  const canSetStatus = isEditing && hasPermission("leave", "approve") && leaveUserId !== me?._id;
+  const [status, setStatusValue] = useState<LeaveStatus>("pending");
+  const [statusNote, setStatusNote] = useState("");
+  useEffect(() => { if (open && leave) { setStatusValue(leave.status); setStatusNote(""); } }, [open, leave]);
+  const statusChanged = !!leave && status !== leave.status;
+  // Certified Sick Leave's dates and type are its own — only its status moves.
+  const detailsLocked = isEditing && leave?.type === CERTIFIED_SICK;
 
   const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<LeaveFormValues>({
     resolver: zodResolver(leaveFormSchema),
@@ -130,7 +142,13 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
       reason: data.reason || undefined,
     };
     if (isEditing) {
-      update({ id: leave._id, data: payload }, { onSuccess: () => onOpenChange(false) });
+      (async () => {
+        try {
+          if (!detailsLocked) await update({ id: leave._id, data: payload });
+          if (statusChanged) await setStatus({ id: leave._id, status, note: statusNote.trim() });
+          onOpenChange(false);
+        } catch { /* the hooks toast the reason */ }
+      })();
     } else {
       create({ ...payload, user: lockToUserId ?? data.user }, { onSuccess: () => onOpenChange(false) });
     }
@@ -155,6 +173,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
                     value={field.value}
                     onChange={field.onChange}
                     disabled={isEditing}
+                    selectedLabel={leave && typeof leave.user === "object" ? leave.user.name : undefined}
                     placeholder="Select employee"
                   />
                 )}
@@ -169,7 +188,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               name="type"
               control={control}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={field.value} onValueChange={field.onChange} disabled={detailsLocked}>
                   <SelectTrigger>
                     <SelectValue placeholder={optionsLoading ? "Loading…" : "Select leave type"} />
                   </SelectTrigger>
@@ -208,7 +227,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
               name="timeZone"
               control={control}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={field.value} onValueChange={field.onChange} disabled={detailsLocked}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {TIME_ZONES.map((tz) => <SelectItem key={tz} value={tz}>{tz}</SelectItem>)}
@@ -220,12 +239,12 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
 
           <div className="space-y-1.5">
             <Label htmlFor="startDate">Start Date *</Label>
-            <Input id="startDate" type="date" readOnly={certified} className={certified ? "bg-muted/40" : undefined} {...register("startDate")} />
+            <Input id="startDate" type="date" readOnly={certified || detailsLocked} className={certified || detailsLocked ? "bg-muted/40" : undefined} {...register("startDate")} />
             {errors.startDate && <p className="text-xs text-destructive">{errors.startDate.message}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="endDate">End Date *</Label>
-            <Input id="endDate" type="date" readOnly={certified} className={certified ? "bg-muted/40" : undefined} {...register("endDate")} />
+            <Input id="endDate" type="date" readOnly={certified || detailsLocked} className={certified || detailsLocked ? "bg-muted/40" : undefined} {...register("endDate")} />
             {errors.endDate && <p className="text-xs text-destructive">{errors.endDate.message}</p>}
           </div>
 
@@ -237,7 +256,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
             <Controller
               name="halfDay"
               control={control}
-              render={({ field }) => <Switch id="halfDay" checked={field.value} onCheckedChange={field.onChange} />}
+              render={({ field }) => <Switch id="halfDay" checked={field.value} onCheckedChange={field.onChange} disabled={detailsLocked} />}
             />
           </div>
 
@@ -261,12 +280,59 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
 
           <div className="col-span-2 space-y-1.5">
             <Label htmlFor="reason">Reason</Label>
-            <Textarea id="reason" placeholder="Optional reason" rows={2} {...register("reason")} />
+            <Textarea id="reason" placeholder="Optional reason" rows={2} readOnly={detailsLocked} {...register("reason")} />
           </div>
+
+          {detailsLocked && (
+            <p className="col-span-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+              Certified Sick Leave keeps the day and type it was applied with — only its status can be changed here.
+            </p>
+          )}
+
+          {canSetStatus && leave && (
+            <div className="col-span-2 space-y-2 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(v) => setStatusValue(v as LeaveStatus)}>
+                  <SelectTrigger className="h-9 w-[160px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(["pending", "approved", "rejected", "cancelled"] as LeaveStatus[]).map((s) => (
+                      <SelectItem key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {statusChanged && (
+                <>
+                  <Textarea rows={2} maxLength={500} value={statusNote} onChange={(e) => setStatusNote(e.target.value)}
+                    placeholder={`Why it is moving from ${leave.status} to ${status} — the employee sees this`} />
+                  <p className="text-[11px] text-muted-foreground">
+                    {status === "approved" && leave.type === CERTIFIED_SICK && !leave.certificate
+                      ? "There is no medical certificate on this request, so it can't be approved as Certified Sick Leave."
+                      : status === "rejected" && leave.type === CERTIFIED_SICK
+                        ? "Refusing Certified Sick Leave makes the day unpaid leave."
+                        : "The employee is told in the app. A payslip already generated for the month needs recalculating."}
+                  </p>
+                </>
+              )}
+              {!!leave.statusHistory?.length && (
+                <ul className="space-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                  {leave.statusHistory.map((h, i) => (
+                    <li key={i}>
+                      <span className="font-medium text-foreground">{h.from} → {h.to}</span>
+                      {" · "}{typeof h.by === "object" && h.by ? h.by.name : "HR"}{" · "}
+                      {new Date(h.at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                      {h.note ? ` — ${h.note}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <ResponsiveDialogFooter className="col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || (statusChanged && statusNote.trim().length < 3)}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               {isEditing ? "Save Changes" : "Create Request"}
             </Button>

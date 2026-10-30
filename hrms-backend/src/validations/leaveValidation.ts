@@ -31,6 +31,13 @@ export const reviewLeaveSchema = z.object({
   reviewNote: z.string().max(500).optional().nullable(),
 });
 
+/** HR setting a request's status by hand — any status, always with a note. */
+export const setLeaveStatusSchema = z.object({
+  status: z.enum(["pending", "approved", "rejected", "cancelled"]),
+  note: z.string().trim().min(3, "Say why the status is changing").max(500),
+});
+
 export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
+export type SetLeaveStatusInput = z.infer<typeof setLeaveStatusSchema>;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
 export type ReviewLeaveInput = z.infer<typeof reviewLeaveSchema>;

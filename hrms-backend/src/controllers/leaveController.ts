@@ -1,7 +1,7 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { LeaveService, leaveOptionsFor } from "../services/leaveService.js";
-import { createLeaveSchema, updateLeaveSchema, reviewLeaveSchema } from "../validations/leaveValidation.js";
+import { createLeaveSchema, updateLeaveSchema, reviewLeaveSchema, setLeaveStatusSchema } from "../validations/leaveValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new LeaveService();
@@ -80,6 +80,15 @@ export const updateLeave = async (req: AuthenticatedRequest, res: Response, next
   } catch (error) {
     next(error);
   }
+};
+
+/** PATCH /leaves/:id/status — HR setting the status by hand, with a note. */
+export const setLeaveStatus = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = setLeaveStatusSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Leave status changed", await service.setStatus(req.params.id, parsed.data, req.user!.userId));
+  } catch (error) { next(error); }
 };
 
 export const reviewLeave = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {

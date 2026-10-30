@@ -7,6 +7,7 @@ import {
   getLeaveById,
   updateLeave,
   reviewLeave,
+  setLeaveStatus,
   deleteLeave,
   withdrawLeave,
   uploadLeaveCertificate,
@@ -49,6 +50,9 @@ router.patch(
   ),
   reviewLeave
 );
+// Setting the status by hand, after the fact — HR's approve permission, never a
+// department head's standing, since it can undo a decision the workflow made.
+router.patch("/:id/status", checkPermission("leave", "approve"), setLeaveStatus);
 router.put("/:id", checkPermission("leave", "edit"), updateLeave);
 router.delete("/:id", checkPermission("leave", "delete"), deleteLeave);
 

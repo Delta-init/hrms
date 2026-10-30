@@ -3,7 +3,8 @@ import { Employee } from "../models/Employee.js";
 import { hasLeftFilter } from "../utils/employeeStatus.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
-import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput } from "../validations/leaveValidation.js";
+import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput, SetLeaveStatusInput } from "../validations/leaveValidation.js";
+import { assertMonthEditable } from "./payrollBatchService.js";
 import type { PaginationQuery, LeaveType } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { DEFAULT_WORK_DAYS } from "../utils/schedule.js";
@@ -397,6 +398,7 @@ export class LeaveService {
       LeaveRequest.find(filter)
         .populate("user", "name email designation")
         .populate("reviewedBy", "name email")
+        .populate("statusHistory.by", "name")
         .sort({ [sortField]: sortDir })
         .skip(skip)
         .limit(limit)
@@ -614,6 +616,80 @@ export class LeaveService {
     return LeaveRequest.findById(id)
       .populate("user", "name email designation")
       .populate("reviewedBy", "name email");
+  }
+
+  /**
+   * HR changing a request's status by hand — any status to any other, with a
+   * note. Separate from review(), which only settles a pending request through
+   * its workflow; this is the correction afterwards (a cancellation made in
+   * error, an approval that should not stand). Gated on `leave.approve` by the
+   * route, never on heading a department, and never on one's own leave.
+   *
+   * Approving holds to what approving always does: no overlap with another
+   * live request, within the balance, and Certified Sick only with its
+   * certificate. Refusing Certified Sick still makes it unpaid leave.
+   */
+  async setStatus(id: string, input: SetLeaveStatusInput, actorId: string) {
+    const record = await LeaveRequest.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Leave request not found"), { statusCode: 404 });
+    assertNotSelfReview(record.user, actorId);
+    const from = record.status;
+    const to = input.status;
+    if (from === to && !(to === "rejected" && record.type === CERTIFIED_SICK)) {
+      throw Object.assign(new Error(`This request is already ${to}`), { statusCode: 400 });
+    }
+
+    // A month already with accounts has been paid on these figures.
+    const monthOf = (d: Date) => new Date(d).toISOString().slice(0, 7);
+    for (const m of new Set([monthOf(record.startDate), monthOf(record.endDate)])) await assertMonthEditable(m, "this leave");
+
+    const certified = record.type === CERTIFIED_SICK;
+    if (to === "approved" || to === "pending") {
+      const clash = await LeaveRequest.findOne(scoped({
+        _id: { $ne: record._id }, user: record.user, status: { $in: ["pending", "approved"] },
+        startDate: { $lte: record.endDate }, endDate: { $gte: record.startDate },
+      })).select("_id").lean();
+      if (clash) throw Object.assign(new Error("Another live request covers these dates — cancel that one first"), { statusCode: 409 });
+    }
+    if (to === "approved") {
+      if (certified && !record.certificate) {
+        throw Object.assign(new Error("No medical certificate on this request — it can't be approved as Certified Sick Leave"), { statusCode: 400 });
+      }
+      const owner = await User.findOne(scoped({ _id: record.user })).populate("workSchedule", "workDays name");
+      await assertLeaveAllowed(record.user, (await scheduleFor(record.user, owner ?? undefined))?.name, record.type, record.startDate, record.days, id);
+    }
+
+    record.status = to;
+    if (certified && to === "rejected") {
+      record.status = "approved";
+      record.type = "unpaid";
+      record.convertedFrom = CERTIFIED_SICK;
+      record.conversionReason = "rejected";
+    }
+    if (to === "approved" || to === "rejected") {
+      record.reviewedBy = actorId as never;
+      record.reviewedAt = new Date();
+    }
+    record.statusHistory = [...(record.statusHistory ?? []), { from, to: record.status === "approved" && to === "rejected" ? "unpaid" : to, by: actorId as never, note: input.note, at: new Date() }];
+    await record.save();
+
+    const day = (d: Date) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(d);
+    const span = +record.startDate === +record.endDate ? day(record.startDate) : `${day(record.startDate)} – ${day(record.endDate)}`;
+    const said = record.conversionReason === "rejected" && to === "rejected" ? "not approved — counted as unpaid leave" : to;
+    await notify({
+      users: [String(record.user)],
+      actor: actorId,
+      kind: "leave",
+      tone: to === "approved" ? "positive" : to === "pending" ? "neutral" : "negative",
+      title: `Your ${span} leave is now ${said}`,
+      body: `HR changed it from ${from}. ${input.note}`,
+      href: "/leave",
+    });
+
+    return LeaveRequest.findById(id)
+      .populate("user", "name email designation")
+      .populate("reviewedBy", "name email")
+      .populate("statusHistory.by", "name");
   }
 
   async remove(id: string) {

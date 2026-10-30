@@ -1157,6 +1157,8 @@ export interface ILeaveRequest extends Document {
   certificateReminderAt?: Date | null;
   convertedFrom?: string | null;
   conversionReason?: "no_certificate" | "rejected" | null;
+  /** HR's hand changes of status — see the model. */
+  statusHistory?: Array<{ from: string; to: string; by: Types.ObjectId; note?: string; at: Date }>;
   createdAt: Date;
   updatedAt: Date;
 }

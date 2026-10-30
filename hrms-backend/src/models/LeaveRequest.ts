@@ -92,6 +92,21 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
     certificateReminderAt: { type: Date, default: null },
     convertedFrom: { type: String, default: null },
     conversionReason: { type: String, enum: ["no_certificate", "rejected", null], default: null },
+    /**
+     * HR changing the status by hand, after the fact — reopening a cancelled
+     * request, cancelling an approved one. Each with who, when and why, because
+     * the approval trail only records the decisions the workflow made.
+     */
+    statusHistory: {
+      type: [new Schema({
+        from: { type: String, required: true },
+        to: { type: String, required: true },
+        by: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        note: { type: String, trim: true, maxlength: 500 },
+        at: { type: Date, required: true },
+      }, { _id: false })],
+      default: [],
+    },
     ...workflowStateFields,
   },
   {

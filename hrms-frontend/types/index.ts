@@ -725,6 +725,8 @@ export interface LeaveRequest extends WorkflowState {
   /** Set when a certified sick request became unpaid leave, and why. */
   convertedFrom?: string | null;
   conversionReason?: "no_certificate" | "rejected" | null;
+  /** HR's hand changes of status, oldest first. */
+  statusHistory?: Array<{ from: string; to: string; by?: { _id: string; name: string } | string | null; note?: string; at: string }>;
   createdAt: string;
   updatedAt: string;
 }

@@ -182,3 +182,14 @@ export const useLeaveOptions = (userId?: string, month?: string) =>
       })).data.data!,
     enabled: userId !== "",
   });
+
+/** HR setting a request's status by hand — any status, with a note. */
+export const useSetLeaveStatus = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, note }: { id: string; status: LeaveRequest["status"]; note: string }) =>
+      (await api.patch<ApiResponse<LeaveRequest>>(`/leaves/${id}/status`, { status, note })).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: LEAVE_KEY }); toast.success("Leave status changed"); },
+    onError: (e) => toast.error(errMsg(e, "Could not change the status")),
+  });
+};
