@@ -168,7 +168,7 @@ type Selection = ReturnType<typeof useCellSelection>;
 /** Selected cells look selected on any colour: an outline, not a fill. */
 const selectedRing = "ring-2 ring-primary ring-offset-1 ring-offset-background";
 
-function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, selecting, selection }: { data?: { daysInMonth: number; employees: CalendarEmployee[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean; canManage: boolean; selecting: boolean; selection: Selection }) {
+function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, selecting, selection, compact = false }: { data?: { daysInMonth: number; employees: CalendarEmployee[] }; y: number; monthIndex: number; month: string; employeeSelected: boolean; canManage: boolean; selecting: boolean; selection: Selection; /** Stacked, with shorter days — for a popup rather than the page. */ compact?: boolean }) {
   const emp = data?.employees?.[0];
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => { setSelected(null); }, [month, emp?.employee.name]);
@@ -195,9 +195,9 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, s
   const sel = selected ? days[selected] : null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="space-y-4 lg:col-span-2">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+    <div className={cn("grid gap-4", !compact && "lg:grid-cols-3")}>
+      <div className={cn("space-y-4", !compact && "lg:col-span-2")}>
+        <div className={cn("grid gap-3", compact ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-5")}>
           <Stat label="Present" value={s.present ?? 0} />
           <Stat label="Absent" value={s.absent ?? 0} tone="text-red-500" />
           <Stat label="Not marked" value={s.not_marked ?? 0} tone="text-orange-600" />
@@ -220,7 +220,7 @@ function SingleView({ data, y, monthIndex, month, employeeSelected, canManage, s
                     if (selecting) selection.toggle(emp.employee._id, key, e.shiftKey, rowDates);
                     else setSelected(key);
                   }}
-                  className={cn("relative flex aspect-square flex-col items-center justify-center rounded-md text-xs font-medium transition", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", !selecting && selected === key && "ring-2 ring-primary", picked && selectedRing)}>
+                  className={cn("relative flex flex-col items-center justify-center rounded-md text-xs font-medium transition", compact ? "h-11" : "aspect-square", st ? st.cell : "bg-muted/40 text-muted-foreground", day && "cursor-pointer hover:ring-2 hover:ring-primary/40", !selecting && selected === key && "ring-2 ring-primary", picked && selectedRing)}>
                   <span>{d}</span>
                   {st && <span className="text-[9px] font-bold opacity-90">{st.letter}</span>}
                   {/* A correction on this day: amber while it waits, white once
@@ -438,6 +438,24 @@ function AllView({ data, month, canManage, selecting, selection }: { data?: { da
         </ResponsiveDialogContent>
       </ResponsiveDialog>
     </Card>
+  );
+}
+
+/**
+ * One person's month, read-only — the Attendance tab of the payslip popup, so
+ * the days behind a payslip can be checked without leaving it. The same grid
+ * as the Attendance page, with nothing to change.
+ */
+export function EmployeeMonthCalendar({ employeeId, month }: { employeeId: string; month: string }) {
+  const { data, isLoading } = useAttendanceCalendar(month, employeeId);
+  const selection = useCellSelection();
+  const [y, mm] = month.split("-").map(Number);
+  if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  return (
+    <div className="space-y-3">
+      <SingleView data={data} y={y} monthIndex={mm - 1} month={month} employeeSelected canManage={false} selecting={false} selection={selection} compact />
+      <Legend />
+    </div>
   );
 }
 

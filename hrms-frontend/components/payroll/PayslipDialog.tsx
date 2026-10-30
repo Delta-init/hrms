@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useForm, Controller, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus, Trash2, Wand2, Undo2, Pencil } from "lucide-react";
+import { Loader2, Plus, Trash2, Wand2, Undo2, Pencil, FileText, CalendarDays } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -19,6 +19,8 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { LopOverrideDialog, type LopTarget } from "@/components/payroll/LopOverrideDialog";
+import { Tabs } from "@/components/shared/Tabs";
+import { EmployeeMonthCalendar } from "@/components/attendance/AttendanceCalendar";
 import type { Payslip, PayslipSummary } from "@/types";
 
 interface Preset {
@@ -139,6 +141,10 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
   // feeds is still for a new payslip only, and says so with !isEditing.
   const { data: summary } = usePayslipSummary(employee || undefined, month || undefined);
   const [lopTarget, setLopTarget] = useState<LopTarget | null>(null);
+  // The days behind the figures, a tab away — the form stays mounted, so
+  // nothing typed is lost by looking.
+  const [tab, setTab] = useState("payslip");
+  useEffect(() => { if (open) setTab("payslip"); }, [open]);
   // Same rule as the server: a draft or a payslip not yet made, and not an imported sheet's.
   const lopEditable = hasPermission("payroll", "edit") && !!summary && !!employee &&
     (!isEditing || (payslip.status === "draft" && !payslip.imported));
@@ -303,7 +309,34 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
           <ResponsiveDialogTitle>{isEditing ? "Edit Payslip" : "Generate Payslip"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 px-4 sm:px-0">
+        {employee && month && (
+          <div className="px-4 sm:px-0">
+            <Tabs
+              layoutId="payslip-dialog-tab"
+              value={tab}
+              onChange={setTab}
+              tabs={[{ key: "payslip", label: "Payslip", icon: FileText }, { key: "attendance", label: "Attendance", icon: CalendarDays }]}
+            />
+          </div>
+        )}
+
+        {tab === "attendance" && employee && month && (
+          <div className="space-y-3 px-4 pb-4 sm:px-0 sm:pb-0">
+            {summary && (
+              <p className="rounded-lg border border-border px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Loss of pay on this payslip </span>
+                <span className="font-semibold tabular-nums">{lopDays} day{lopDays === 1 ? "" : "s"}</span>
+                <span className="ml-1.5 text-xs text-muted-foreground">
+                  {summary.lopOverride ? `edited · attendance says ${summary.attendanceLopDays ?? 0}` : "from attendance"}
+                  {imported ? " · this payslip's figures are the imported sheet's" : ""}
+                </span>
+              </p>
+            )}
+            <EmployeeMonthCalendar employeeId={employee} month={month} />
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit(onSubmit)} className={cn("space-y-5 px-4 sm:px-0", tab !== "payslip" && "hidden")}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 space-y-1.5">
               <Label>Employee *</Label>
