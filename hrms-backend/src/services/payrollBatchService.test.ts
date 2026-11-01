@@ -22,6 +22,12 @@ const allows = (from: PayrollBatchStatus, to: PayrollBatchStatus) => {
 };
 
 describe("payroll batch state machine", () => {
+  it("lets finance undo an approval while nothing is paid — never once money has moved", () => {
+    expect(allows("approved", "in_finance")).toBe(true);
+    expect(allows("partially_paid", "in_finance")).toBe(false);
+    expect(allows("paid", "in_finance")).toBe(false);
+  });
+
   it("walks the happy path from draft to paid", () => {
     expect(allows("draft", "submitted")).toBe(true);
     expect(allows("submitted", "in_finance")).toBe(true);

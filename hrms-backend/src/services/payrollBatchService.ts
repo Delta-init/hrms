@@ -33,7 +33,9 @@ const TRANSITIONS: Record<PayrollBatchStatus, PayrollBatchStatus[]> = {
   // Recall is only possible while finance has not picked it up yet.
   submitted: ["in_finance", "draft", "returned"],
   in_finance: ["approved", "returned"],
-  approved: ["partially_paid", "paid", "returned"],
+  // Back to accounts (2026-11-01: "approved by mistake — one step back"): only while nothing is paid, and only finance
+  // asks (its Undo approval); the payslips stay locked, as they are while accounts have the month.
+  approved: ["partially_paid", "paid", "returned", "in_finance"],
   partially_paid: ["partially_paid", "paid"],
   // Terminal for now. Reversing a payment is a later phase and needs finance to
   // drive it, because the money moved on their side.
@@ -360,6 +362,7 @@ export class PayrollBatchService {
     const from = batch.status;
     batch.status = to;
     if (to === "approved") batch.approvedAt = new Date();
+    if (from === "approved" && to === "in_finance") batch.approvedAt = null as never;
     if (to === "paid") batch.paidAt = new Date();
     if (to === "returned") {
       batch.returnedAt = new Date();

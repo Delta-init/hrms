@@ -250,6 +250,26 @@ export const approveHandoverBatch = asyncRoute(async (req, res) => {
   sendSuccess(res, `${month} approved for payment`, batch);
 });
 
+/**
+ * Finance undoing its approval (2026-11-01: a month approved by mistake) — the month goes back to accounts, not to HR:
+ * nothing about it changes, and finance can approve it again. Refused once any of it is paid (the state machine).
+ */
+export const unapproveHandoverBatch = asyncRoute(async (req, res) => {
+  const month = requireMonth(req, res);
+  if (!month) return;
+  const current = await payrollBatchService.describe(month);
+  // Idempotent: a month already back with accounts is the answer it already had.
+  if (current.status === "in_finance") {
+    sendSuccess(res, `${month} is with accounts`, current);
+    return;
+  }
+  const batch = await payrollBatchService.transition(month, "in_finance", {
+    actor: "finance",
+    note: req.body?.reason ? String(req.body.reason).slice(0, 300) : "Approval undone in finance",
+  });
+  sendSuccess(res, `${month} is back with accounts`, batch);
+});
+
 export const returnHandoverBatch = asyncRoute(async (req, res) => {
   const month = requireMonth(req, res);
   if (!month) return;

@@ -4,7 +4,7 @@ import {
   listOrganizations, listDepartments, listEmployees, listWorkHours, listAttendanceNow, listAttendanceDay, ping,
   listHandoverBatches, getHandoverBatch, claimHandoverBatch,
   listFinanceAdjustments, applyFinanceAdjustments, removeFinanceAdjustment,
-  approveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
+  approveHandoverBatch, unapproveHandoverBatch, returnHandoverBatch, recordPayment, reversePayment,
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
   listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
   listOneTimePayments, markOneTimePaymentPaid, rejectOneTimePayment,
@@ -48,6 +48,7 @@ router.delete("/payroll/batches/:month/adjustments/:externalId", serviceOrgScope
 // Sign-off, payment, and the way back. A payment is the only path by which a
 // payslip becomes paid — nothing on the HR side can set it.
 router.post("/payroll/batches/:month/approve", serviceOrgScope, approveHandoverBatch);
+router.post("/payroll/batches/:month/unapprove", serviceOrgScope, unapproveHandoverBatch);
 router.post("/payroll/batches/:month/return", serviceOrgScope, returnHandoverBatch);
 router.post("/payroll/batches/:month/payments", serviceOrgScope, recordPayment);
 router.post("/payroll/batches/:month/payments/:paymentId/reverse", serviceOrgScope, reversePayment);
