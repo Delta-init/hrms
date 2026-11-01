@@ -4,6 +4,7 @@ import { Employee } from "../models/Employee.js";
 import { Department } from "../models/Department.js";
 import type { PayrollBatchStatus } from "../types/index.js";
 import { totalsByCurrency } from "../utils/payrollTotals.js";
+import { resolveSalaryBreakup } from "./salaryStructureService.js";
 
 /**
  * What the accounts system is allowed to see of a month's payroll, and how it
@@ -53,6 +54,13 @@ export interface HandoverLine {
   netPay: number;
   earnings: Array<{ label: string; amount: number }>;
   deductions: Array<{ label: string; amount: number }>;
+  /**
+   * The contract salary in force for the month (`monthly`, the base a day off is priced on) and how much of it this
+   * payslip's earnings pay (`paid`: less for a part month, a sheet's own figure for an imported payslip). One-time
+   * payments, reimbursements and overtime aren't salary and aren't in `paid`. Finance puts a salesperson on their CRM
+   * salary slab from these (2026-11-01); nothing here knows about slabs.
+   */
+  salary: { monthly: number; paid: number };
   status: string;
   paidAt: string | null;
   bank: { iban: string; accountNumber: string; bankName: string; nameInBank: string };
@@ -67,6 +75,15 @@ export interface HandoverLine {
    * being guessed from two empty strings at the other end.
    */
   employeeMissing: boolean;
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** A payslip's salary: the earnings named as the breakup's lines (Basic and the structure's allowances). */
+function salaryOf(earnings: Array<{ label: string; amount: number }>, breakup: { earnings: Array<{ label: string }>; gross: number } | undefined) {
+  if (!breakup) return { monthly: 0, paid: 0 };
+  const names = new Set(["Basic", ...breakup.earnings.map((l) => l.label)]);
+  return { monthly: r2(breakup.gross), paid: r2(earnings.filter((l) => names.has(l.label)).reduce((t, l) => t + (l.amount ?? 0), 0)) };
 }
 
 export class PayrollHandoverService {
@@ -123,9 +140,12 @@ export class PayrollHandoverService {
       .lean();
 
     const employees = await Employee.find({ _id: { $in: slips.map((s) => s.employee) } })
-      .select("employeeCode name department designation bank")
+      .select("employeeCode name department designation bank salary")
       .lean();
     const empById = new Map(employees.map((e) => [String(e._id), e]));
+    // Each person's salary lines for the month — which of a payslip's earnings are salary, and the monthly figure.
+    const breakups = new Map(await Promise.all(employees.map(async (e) =>
+      [String(e._id), await resolveSalaryBreakup(String(e._id), month, (e as { salary?: number }).salary ?? 0)] as const)));
 
     const deptIds = [...new Set(employees.map((e) => e.department).filter(Boolean))];
     const depts = await Department.find({ _id: { $in: deptIds } }).select("name").lean();
@@ -154,6 +174,7 @@ export class PayrollHandoverService {
         netPay: s.netPay ?? 0,
         earnings: (s.earnings ?? []).map((l) => ({ label: l.label, amount: l.amount })),
         deductions: (s.deductions ?? []).map((l) => ({ label: l.label, amount: l.amount })),
+        salary: salaryOf((s.earnings ?? []).map((l) => ({ label: l.label, amount: l.amount })), breakups.get(String(s.employee))),
         status: s.status,
         paidAt: s.paidAt ? new Date(s.paidAt).toISOString() : null,
         bank: { iban, accountNumber, bankName: bank?.bankName ?? "", nameInBank: bank?.nameInBank ?? "" },
@@ -164,7 +185,6 @@ export class PayrollHandoverService {
       };
     });
 
-    const r2 = (n: number) => Math.round(n * 100) / 100;
     /**
      * Every line added up, across currencies, exactly as before.
      *

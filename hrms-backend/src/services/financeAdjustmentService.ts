@@ -180,6 +180,12 @@ export class FinanceAdjustmentService {
     const employeeId = String(row.employee);
     const slip = await Payslip.findOne(scoped({ month, employee: employeeId })).select("_id").lean();
     await OneTimeAdjustment.deleteOne({ _id: row._id });
+    // Its line comes off the payslip first. A payslip worked out from attendance keeps every earning it can't trace to
+    // a source as one HR typed by hand, and with the row gone this one can't be traced — its money stayed on the payslip
+    // (2026-11-01). Another item with the same label is still a source, so the rebuild puts that one back.
+    if (slip && row.kind === "payment") {
+      await Payslip.updateOne({ _id: slip._id }, { $pull: { earnings: { label: row.label } } });
+    }
 
     // The payslip is rebuilt after the row is gone, so the allocator never sees
     // it. Deleting without rebuilding would leave its money in the payslip with
