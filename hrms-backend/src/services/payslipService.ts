@@ -1,4 +1,5 @@
 import { Payslip } from "../models/Payslip.js";
+import { slabSalaryFor, sheetOnSlab } from "./crmSlabSalaryLookup.js";
 import { Employee } from "../models/Employee.js";
 import { Attendance } from "../models/Attendance.js";
 import { Holiday } from "../models/Holiday.js";
@@ -382,12 +383,24 @@ export async function buildImportedPayslip(employeeId: string, month: string, sn
     computeOvertime(employeeId, month),
   ]);
 
+  // A salesperson on the CRM salary slabs (2026-11-01): the sheet's Basic and loss of pay become the slab salary's —
+  // cut for a part month as the sheet's Basic was, a day off priced off the slab salary.
+  let basicPay = snap.basic, lopPay = snap.lop;
+  const slab = await slabSalaryFor(employeeId, month);
+  if (slab) {
+    const emp = await Employee.findOne(scoped({ _id: employeeId })).select("salary").lean();
+    const contract = (await resolveSalaryBreakup(employeeId, month, emp?.salary ?? 0, { ignoreSlab: true })).gross;
+    const onSlab = sheetOnSlab({ slab: slab.salary, contract, sheetBasic: snap.basic, lopDays: snap.lopDays, sheetLop: snap.lop });
+    basicPay = onSlab.basic;
+    lopPay = onSlab.lop;
+  }
+
   const earnings: Line[] = [];
-  if (snap.basic > 0) earnings.push({ label: "Basic", amount: r2(snap.basic) });
+  if (basicPay > 0) earnings.push({ label: "Basic", amount: r2(basicPay) });
   earnings.push(...oneTime.earnings, ...reimb.earnings, ...ot.earnings);
 
   const fixed: Line[] = [];
-  if (snap.lop > 0) fixed.push({ label: `${LOP_PREFIX} (${snap.lopDays}d)`, amount: r2(snap.lop) });
+  if (lopPay > 0) fixed.push({ label: `${LOP_PREFIX} (${snap.lopDays}d)`, amount: r2(lopPay) });
 
   // LOAN pays down loans; SALARY ADVANCE pays down advances first (they are
   // loans too, of kind "advance") and then one-time deductions.

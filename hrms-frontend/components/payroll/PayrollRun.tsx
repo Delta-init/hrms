@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getInitials, cn } from "@/lib/utils";
 import { PayrollHandover } from "@/components/payroll/PayrollHandover";
+import { SlabSalaries } from "@/components/payroll/SlabSalaries";
 import { usePayrollBatch } from "@/hooks/usePayrollBatch";
 import {
   PAYSLIP_STATUS_LABELS, HR_SETTABLE_PAYSLIP_STATUSES,
@@ -184,6 +185,9 @@ export function PayrollRun() {
       {/* Where the month stands with accounts. Above the figures, because it
           decides whether any of them can still be changed. */}
       <PayrollHandover month={month} canSubmit={canHandOver} />
+
+      {/* Salespeople's salary from their CRM slab (2026-11-01). */}
+      <SlabSalaries month={month} canRefresh={canEdit} />
 
       <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-4">

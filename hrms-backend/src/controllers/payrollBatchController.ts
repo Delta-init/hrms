@@ -2,6 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { payrollBatchService as service } from "../services/payrollBatchService.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { listSlabSalaries, refreshSlabSalaries } from "../services/crmSlabSalaryService.js";
 
 const MONTH = /^\d{4}-\d{2}$/;
 
@@ -53,4 +54,25 @@ export const recallPayroll = async (req: AuthenticatedRequest, res: Response, ne
     const result = await service.recall(m, req.user!.userId);
     sendSuccess(res, result.message, result.batch);
   } catch (error) { next(error); }
+};
+
+/* The CRM salary slabs for the month (2026-11-01): what is kept, and HR's refresh from Root. */
+export const getSlabSalaries = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const m = month(req, res);
+    if (!m) return;
+    sendSuccess(res, "Salary slabs", await listSlabSalaries(m));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const refreshSlabs = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const m = month(req, res);
+    if (!m) return;
+    sendSuccess(res, "Salary slabs refreshed", await refreshSlabSalaries(m, String(req.user!.userId)));
+  } catch (error) {
+    next(error);
+  }
 };
