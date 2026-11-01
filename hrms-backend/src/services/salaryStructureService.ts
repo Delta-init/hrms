@@ -1,5 +1,4 @@
 import { SalaryStructure } from "../models/SalaryStructure.js";
-import { slabSalaryFor } from "./crmSlabSalaryLookup.js";
 import { SalaryStructureAssignment } from "../models/SalaryStructureAssignment.js";
 import { SalaryIncrement } from "../models/SalaryIncrement.js";
 import { Employee } from "../models/Employee.js";
@@ -58,23 +57,8 @@ function componentAmount(c: ISalaryComponent, basic: number): number {
 export async function resolveSalaryBreakup(
   employeeId: string,
   month: string,
-  baseSalary: number,
-  opts: { ignoreSlab?: boolean } = {}
+  baseSalary: number
 ): Promise<SalaryBreakup> {
-  // A salesperson's salary for the month is the CRM salary slab's (the user, 2026-11-01), when one was refreshed in:
-  // the whole salary, one Basic line — loss of pay and penalties are priced off it like any salary.
-  if (!opts.ignoreSlab) {
-    const slab = await slabSalaryFor(employeeId, month);
-    if (slab) {
-      return {
-        earnings: [{ label: "Basic", amount: round(slab.salary) }],
-        deductions: [],
-        gross: round(slab.salary),
-        structureName: `Salary slab · ${slab.crmName || slab.crm} · ${slab.level}`,
-        currency: null,
-      };
-    }
-  }
   const [assignment, increment] = await Promise.all([
     SalaryStructureAssignment.findOne(scoped({ employee: employeeId, effectiveMonth: { $lte: month } }))
       .sort({ effectiveMonth: -1 })

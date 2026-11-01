@@ -23,9 +23,6 @@ const envSchema = z.object({
      different risk, different credential. Unset means those endpoints are off
      rather than open. Must match the portal's HRMS_SSO_SECRET. */
   ROOT_ERP_SECRET: z.string().default(""),
-  /* Root's API, for asking it each salesperson's salary on the CRM salary slabs (2026-11-01) — sent with
-     ROOT_ERP_SECRET, which Root knows as HRMS_SSO_SECRET. Unset: the refresh says so; payslips are as before. */
-  ROOT_ERP_API_URL: z.string().default(""),
   // Signs impersonation tickets. Optional for backward compatibility; when
   // unset it derives from JWT_SECRET, which is why that now has a real floor.
   // Empty is treated as unset so a blank line in .env doesn't fail the length
