@@ -70,3 +70,9 @@ export const giveOutSchema = z
   .refine((v) => !!v.employee || !!v.department, { message: "Say who it went to — a person or a department", path: ["employee"] });
 
 export type GiveOutInput = z.infer<typeof giveOutSchema>;
+
+/** Taking delivery of something approved or ordered — how many actually arrived. */
+export const receiveProcurementSchema = z.object({
+  quantity: z.coerce.number().int().min(1, "At least one").optional(),
+});
+export type ReceiveProcurementInput = z.infer<typeof receiveProcurementSchema>;

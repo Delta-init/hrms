@@ -7,7 +7,7 @@ import { extFromMime } from "../middleware/upload.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { hasPermission } from "../middleware/permissions.js";
 import {
-  createProcurementSchema, updateProcurementSchema, reviewProcurementSchema, resubmitProcurementSchema, giveOutSchema,
+  createProcurementSchema, updateProcurementSchema, reviewProcurementSchema, resubmitProcurementSchema, giveOutSchema, receiveProcurementSchema,
 } from "../validations/procurementValidation.js";
 import { procurementLedgerService, itemKey } from "../services/procurementLedgerService.js";
 
@@ -117,6 +117,15 @@ export const deleteProcurement = async (req: AuthenticatedRequest, res: Response
   } catch (error) {
     next(error);
   }
+};
+
+/** PATCH /procurement/:id/receive — it has arrived; how many. */
+export const receiveProcurement = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = receiveProcurementSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Marked received", await service.markReceived(String(req.params.id), parsed.data, req.user!.userId));
+  } catch (error) { next(error); }
 };
 
 // ── Ledger: what came in, what went out, what is left ──────────────────────

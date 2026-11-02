@@ -17,7 +17,9 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
  */
 export const itemKey = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
 
-const STOCK_STATES = ["ordered", "received"];
+// Approved by finance is on its way too — bought, or being bought, and not on
+// the shelf until somebody marks it received.
+const STOCK_STATES = ["approved", "ordered", "received"];
 
 /** The org scope for an aggregate, which — unlike find — does not cast a string id. */
 const orgMatch = () => {
@@ -28,15 +30,18 @@ const orgMatch = () => {
 type Bought = {
   _id: unknown; item: string; category?: string; quantity: number; status: string; kind: string;
   vendor?: string; createdAt: Date; updatedAt: Date; department?: { name?: string } | null;
+  receivedAt?: Date | null; receivedQuantity?: number | null;
 };
 
-/** When it came in: a bought record is entered as it arrives; a request is marked received later. */
-const arrivedAt = (p: Bought) => (p.kind === "new" ? p.updatedAt : p.createdAt);
+/** When it came in: marked received on a date, else entered as it arrived, else last touched. */
+const arrivedAt = (p: Bought) => p.receivedAt ?? (p.kind === "new" ? p.updatedAt : p.createdAt);
+/** How many: what arrived, where somebody counted it, else what was bought. */
+const countOf = (p: Bought) => (p.status === "received" ? p.receivedQuantity ?? p.quantity : p.quantity);
 
 export class ProcurementLedgerService {
   private async bought(key?: string) {
     const rows = await Procurement.find({ ...orgFilter(), status: { $in: STOCK_STATES } })
-      .select("item category quantity status kind vendor createdAt updatedAt department")
+      .select("item category quantity status kind vendor createdAt updatedAt department receivedAt receivedQuantity")
       .populate({ path: "department", select: "name" })
       .sort({ createdAt: 1 })
       .lean<Bought[]>();
@@ -53,11 +58,11 @@ export class ProcurementLedgerService {
       row.item = p.item.trim();
       if (p.category) row.category = p.category;
       if (p.status === "received") {
-        row.received += p.quantity;
+        row.received += countOf(p);
         const at = arrivedAt(p);
         if (!row.lastIn || at > row.lastIn) row.lastIn = at;
       } else {
-        row.onOrder += p.quantity;
+        row.onOrder += countOf(p);
       }
       items.set(key, row);
     }
@@ -97,7 +102,7 @@ export class ProcurementLedgerService {
     const entries: Entry[] = [
       ...bought.map((p): Entry => ({
         kind: p.status === "received" ? "received" : "on_order",
-        date: arrivedAt(p), quantity: p.quantity, balance: null, id: String(p._id),
+        date: arrivedAt(p), quantity: countOf(p), balance: null, id: String(p._id),
         vendor: p.vendor || undefined, department: p.department?.name,
       })),
       ...issues.map((i): Entry => {

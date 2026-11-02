@@ -63,6 +63,17 @@ export const useReviewProcurement = () => {
   });
 };
 
+/** It has arrived — approved or ordered, now received and on the Ledger. */
+export const useReceiveProcurement = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, quantity }: { id: string; quantity?: number }) =>
+      (await api.patch<ApiResponse<Procurement>>(`/procurement/${id}/receive`, { quantity })).data.data!,
+    onSuccess: (p) => { invalidate(qc); toast.success(`${p.item} received — it is on the Ledger`); },
+    onError: (e) => toast.error(errMsg(e, "Could not mark it received")),
+  });
+};
+
 /** Revise a refused request and send it round again. */
 export const useResubmitProcurement = () => {
   const qc = useQueryClient();

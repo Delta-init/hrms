@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createProcurement, getProcurements, getProcurementSummary, getProcurementById, updateProcurement, deleteProcurement,
-  reviewProcurement, resubmitProcurement, uploadReport, getLedger, getLedgerItem, giveOut, removeGiveOut,
+  reviewProcurement, resubmitProcurement, uploadReport, getLedger, getLedgerItem, giveOut, removeGiveOut, receiveProcurement,
 } from "../controllers/procurementController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission, checkPermissionOrDepartmentHead } from "../middleware/permissions.js";
@@ -39,6 +39,8 @@ router.put("/:id", checkPermissionOrDepartmentHead("procurement", "edit"), updat
 router.post("/:id/report", checkPermissionOrDepartmentHead("procurement", "edit"), uploadSingle, uploadReport);
 // HR's decision, and the way back for a request that was refused.
 router.patch("/:id/review", checkPermission("procurement", "approve"), reviewProcurement);
+// Taking delivery — HR's or facilities', on the permission rather than on heading a team.
+router.patch("/:id/receive", checkPermission("procurement", "edit"), receiveProcurement);
 router.patch("/:id/resubmit", checkPermissionOrDepartmentHead("procurement", "edit"), resubmitProcurement);
 router.delete("/:id", checkPermission("procurement", "delete"), deleteProcurement);
 

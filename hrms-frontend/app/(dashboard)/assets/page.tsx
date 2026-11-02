@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip, BookOpen,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip, BookOpen, PackageCheck,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +19,7 @@ import { useProcurements, useProcurementSummary, useDeleteProcurement, useReview
 import { AssetDialog } from "@/components/assets/AssetDialog";
 import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
 import { ProcurementLedger } from "@/components/procurement/ProcurementLedger";
+import { ReceiveProcurementDialog } from "@/components/procurement/ReceiveProcurementDialog";
 import { IssueAssetDialog } from "@/components/assets/IssueAssetDialog";
 import { ReturnAssetDialog } from "@/components/assets/ReturnAssetDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -106,6 +107,9 @@ export default function AssetsPage() {
   const [procDialogOpen, setProcDialogOpen] = useState(false);
   const [selectedProc, setSelectedProc] = useState<Procurement | null>(null);
   const [procDeleteTarget, setProcDeleteTarget] = useState<Procurement | null>(null);
+  // Taking delivery is on the permission, not on heading a team — as the API holds it.
+  const canReceive = hasPermission("procurement", "edit");
+  const [receiveTarget, setReceiveTarget] = useState<Procurement | null>(null);
 
   const [tab, setTab] = useState("mine");
   const tabs = [
@@ -480,6 +484,12 @@ export default function AssetsPage() {
                                 </Button>
                               </>
                             )}
+                            {/* The way out of "approved": until it is received it is not on the Ledger. */}
+                            {canReceive && (p.status === "approved" || p.status === "ordered") && (
+                              <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => setReceiveTarget(p)}>
+                                <PackageCheck className="h-3.5 w-3.5" />Received
+                              </Button>
+                            )}
                             {canEditProcurement && p.status === "rejected" && (
                               <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => { setSelectedProc(p); setProcDialogOpen(true); }}>
                                 <Undo2 className="h-3.5 w-3.5" />Revise
@@ -540,6 +550,7 @@ export default function AssetsPage() {
       </ResponsiveDialog>
 
       <ProcurementDialog open={procDialogOpen} onOpenChange={setProcDialogOpen} procurement={selectedProc} />
+      <ReceiveProcurementDialog procurement={receiveTarget} onClose={() => setReceiveTarget(null)} />
       <ConfirmDialog
         open={!!procDeleteTarget} onOpenChange={(o) => !o && setProcDeleteTarget(null)}
         title="Delete procurement" description="This request will be permanently removed." isPending={deletingProcurement}

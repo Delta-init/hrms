@@ -1,7 +1,7 @@
 import { Procurement } from "../models/Procurement.js";
 import { User } from "../models/User.js";
 import type {
-  CreateProcurementInput, UpdateProcurementInput, ReviewProcurementInput, ResubmitProcurementInput,
+  CreateProcurementInput, UpdateProcurementInput, ReviewProcurementInput, ResubmitProcurementInput, ReceiveProcurementInput,
 } from "../validations/procurementValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -424,6 +424,27 @@ export class ProcurementService {
     });
     const resubmitted = await Procurement.findById(record._id).populate(POP);
     return shape(resubmitted!.toObject());
+  }
+
+  /**
+   * It has arrived: approved by finance, or ordered, and now on the shelf. The
+   * one way out of "approved" — before, a finance-approved request could go no
+   * further and never counted as stock. Forward only; nothing goes back into
+   * approval from here.
+   */
+  async markReceived(id: string, input: ReceiveProcurementInput, actorId: string) {
+    const record = await Procurement.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Procurement not found"), { statusCode: 404 });
+    if (record.status !== "approved" && record.status !== "ordered") {
+      throw Object.assign(new Error(record.status === "received"
+        ? "This is already marked received"
+        : "Only something approved by finance, or ordered, can be marked received"), { statusCode: 409 });
+    }
+    const quantity = input.quantity ?? record.quantity;
+    await Procurement.updateOne({ _id: record._id }, {
+      $set: { status: "received", receivedAt: new Date(), receivedQuantity: quantity, receivedBy: actorId },
+    });
+    return shape((await Procurement.findById(record._id).populate(POP))!.toObject());
   }
 
   async remove(id: string) {

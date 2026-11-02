@@ -74,6 +74,16 @@ const procurementSchema = new Schema<IProcurement>(
     /** What a bought record becomes once HR approves it (2026-10-23): ordered or received. */
     boughtStatus: { type: String, enum: ["ordered", "received", null], default: null },
 
+    /**
+     * When it arrived, how many, and who took it in. A request finance has
+     * approved used to stop at "approved" for good — nothing could move it on,
+     * so it never reached the ledger. Marking it received does; the count is
+     * what arrived, which is not always what was asked for.
+     */
+    receivedAt: { type: Date, default: null },
+    receivedQuantity: { type: Number, min: 0, default: null },
+    receivedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+
     // ── Decisions ──
     hrReviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     hrReviewedAt: { type: Date, default: null },

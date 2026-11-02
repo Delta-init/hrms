@@ -1392,6 +1392,10 @@ export interface IProcurement extends Document {
   rejectedBy?: "hr" | "finance" | null;
   /** What a bought record becomes once approved (2026-10-23). */
   boughtStatus?: "ordered" | "received" | null;
+  /** When it arrived, how many, and who took it in. */
+  receivedAt?: Date | null;
+  receivedQuantity?: number | null;
+  receivedBy?: Types.ObjectId | IUser | null;
   resubmitCount: number;
   notes?: string;
   /** A quote, spec sheet or photo backing the request up. */

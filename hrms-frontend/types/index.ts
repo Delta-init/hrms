@@ -1520,6 +1520,9 @@ export interface Procurement {
   rejectedBy?: "hr" | "finance" | null;
   /** What a bought record becomes once approved (2026-10-23). */
   boughtStatus?: "ordered" | "received" | null;
+  /** When it arrived, and how many — set by Mark received. */
+  receivedAt?: string | null;
+  receivedQuantity?: number | null;
   resubmitCount: number;
   notes?: string;
   /** A quote, spec sheet or photo backing the request up. */
