@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RotateCw } from "lucide-react";
+import Script from "next/script";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5055/api/v1";
 const REFRESH_MS = 30_000;
@@ -10,6 +11,13 @@ const SOON_MS = 15 * 60_000;
 const ROTATIONS = [0, 90, 180, 270] as const;
 type Rotation = (typeof ROTATIONS)[number];
 const ROTATION_KEY = "meeting-board-rotation";
+/*
+ * The office TVs' photos and videos (2026-11-02) come from the Root portal: its overlay plays the ones a root admin
+ * chose for this board, then the board for its minute, and again — turned the way the board is. Nothing chosen, or
+ * Root unreachable: the board as before. next.config.js lets the page load it (script-src, connect-src) and the files
+ * from R2 (img-src, media-src).
+ */
+const ROOT_API = (process.env.NEXT_PUBLIC_ROOT_API_URL ?? "https://root-api-sales-crm.deltainstitutions.com").replace(/\/+$/, "");
 
 /** ?rotate=90 in the link, else what this screen last chose, else upright. */
 function initialRotation(): Rotation {
@@ -106,6 +114,9 @@ export default function MeetingBoardPage() {
     window.addEventListener("resize", size);
     return () => window.removeEventListener("resize", size);
   }, []);
+
+  // Root's photos turn with the board.
+  useEffect(() => { document.documentElement.setAttribute("data-tv-rotate", String(rotation)); }, [rotation]);
 
   const rotate = useCallback(() => {
     setRotation((r) => {
@@ -383,6 +394,7 @@ export default function MeetingBoardPage() {
       >
         <RotateCw className="h-4 w-4" />Rotate · {rotation}°
       </button>
+      <Script src={`${ROOT_API}/api/v1/public/tv/overlay.js?screen=hrms-board`} strategy="afterInteractive" />
     </div>
   );
 }

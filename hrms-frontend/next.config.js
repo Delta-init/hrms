@@ -34,6 +34,20 @@ const apiOrigin = (() => {
  * Read at build time: these headers are static, so there is nothing to read
  * per request.
  */
+/*
+ * The office TVs' photos and videos (2026-11-02): the pod board (/board) loads Root's overlay script, asks Root for
+ * its list, and plays the files from Root's R2 bucket. Those two places are allowed for exactly that — scripts and
+ * requests from Root's API, images and videos from R2.
+ */
+const rootTvOrigin = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_ROOT_API_URL || "https://root-api-sales-crm.deltainstitutions.com").origin;
+  } catch {
+    return "";
+  }
+})();
+const tvMediaHost = "https://*.r2.cloudflarestorage.com";
+
 const portalOrigins = (() => {
   /*
    * A list, comma separated, because a deployment usually needs more than one:
@@ -74,25 +88,25 @@ const portalOrigins = (() => {
  */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${rootTvOrigin ? ` ${rootTvOrigin}` : ""}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   // Photos and documents come from the API's signed /files route, so this can
   // name that origin instead of trusting every https host on the internet —
   // which is what it took to load them straight off a public bucket.
-  `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""} ${tvMediaHost}`,
   // The induction video is served from the same signed /files route as the
   // photos above, and without this it falls back to default-src 'self' — which
   // is not the API's origin, so the player was refused the file and showed a
   // black rectangle. Opening the same URL in a tab of its own always worked,
   // because there was no page policy to answer to.
-  `media-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  `media-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""} ${tvMediaHost}`,
   // The agreements are read inside the onboarding page rather than in a tab
   // somebody never comes back from, which means framing a PDF served by the
   // API. Without this it falls back to default-src 'self' and the frame is
   // refused, exactly as the video was.
   `frame-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "font-src 'self' data:",
-  `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
+  `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${rootTvOrigin ? ` ${rootTvOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
