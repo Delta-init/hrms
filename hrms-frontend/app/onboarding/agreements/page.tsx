@@ -12,7 +12,7 @@ import { FaceEnrollmentPanel } from "@/components/face/FaceEnrollmentPanel";
 import {
   useMyAgreements, useStartInduction, useInductionHeartbeat, useSignAgreements,
 } from "@/hooks/useAgreements";
-import { AGREEMENT_KIND_LABELS, type AgreementKind } from "@/types";
+import { AGREEMENT_KIND_LABELS, type AgreementKind, type InductionProgress } from "@/types";
 import { cn } from "@/lib/utils";
 
 /** How often the player tells the server where it is. */
@@ -31,7 +31,8 @@ export default function AgreementsPage() {
   const { mutate: submit, isPending: signing } = useSignAgreements();
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [percent, setPercent] = useState(0);
+  /** The server's latest word on how much has been watched — never this browser's. */
+  const [progress, setProgress] = useState<InductionProgress | null>(null);
   const [videoDone, setVideoDone] = useState(false);
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   // The transport's own state. Held here rather than read off the element on
@@ -50,9 +51,9 @@ export default function AgreementsPage() {
    * The furthest they have legitimately got to.
    *
    * Rewinding is allowed and re-watching earns nothing, so this only ever
-   * climbs. It starts at whatever the server says was reached in an earlier
-   * sitting, which is what makes going back possible on a fresh visit rather
-   * than only within one.
+   * climbs. It starts at the furthest point the server says was reached in an
+   * earlier sitting — not where the playhead last was, which a rewind moves
+   * back — so skipping ahead to it works on a fresh visit, not only within one.
    */
   const furthest = useRef(0);
   const [signature, setSignature] = useState<string | null>(null);
@@ -60,7 +61,12 @@ export default function AgreementsPage() {
 
   useEffect(() => { startInduction(); }, [startInduction]);
   useEffect(() => {
-    if (data?.videoCompleted) { setVideoDone(true); setPercent(100); }
+    if (!induction?.progress) return;
+    setProgress(induction.progress);
+    if (induction.progress.completed) setVideoDone(true);
+  }, [induction]);
+  useEffect(() => {
+    if (data?.videoCompleted) setVideoDone(true);
     /**
      * Seeded once, not kept full.
      *
@@ -113,7 +119,7 @@ export default function AgreementsPage() {
       const el = videoRef.current;
       if (!el || el.paused || el.ended) return;
       beat(el.currentTime, {
-        onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
+        onSuccess: (p) => { setProgress(p); if (p.completed) setVideoDone(true); },
       });
     }, BEAT_MS);
     return () => clearInterval(id);
@@ -231,6 +237,9 @@ export default function AgreementsPage() {
     );
   }
 
+  const percent = videoDone ? 100 : progress?.percent ?? 0;
+  /** Reached the end with too much missed on the way — where to go back to. */
+  const missedFrom = !videoDone && progress?.reachedEnd ? progress.resumeAt : null;
   const allOpened = data.documents.every((d) => opened[d.kind]);
   const canSign = videoDone && allOpened && !!signature && typedName.trim().length > 1;
 
@@ -284,11 +293,12 @@ export default function AgreementsPage() {
                 onLoadedMetadata={(e) => {
                   const el = e.currentTarget;
                   setTotal(el.duration);
-                  // Pick up where they left off. The position comes from the
-                  // server rather than this browser, so it follows them to
+                  // Pick up where they left off — the furthest point, or the
+                  // first part they missed before it. Both come from the
+                  // server rather than this browser, so they follow them to
                   // another machine and cannot be edited into a shortcut.
-                  const resume = induction.progress?.lastPosition ?? 0;
-                  furthest.current = Math.max(furthest.current, resume);
+                  const resume = induction.progress?.resumeAt ?? 0;
+                  furthest.current = Math.max(furthest.current, induction.progress?.furthest ?? 0, resume);
                   if (resume > 1 && resume < el.duration - 1) {
                     el.currentTime = resume;
                     setElapsed(resume);
@@ -301,7 +311,7 @@ export default function AgreementsPage() {
                   if (!videoDone && el.currentTime > furthest.current + 2) el.currentTime = furthest.current;
                 }}
                 onEnded={() => beat(videoRef.current?.duration ?? 0, {
-                  onSuccess: (p) => { setPercent(p.percent); if (p.completed) setVideoDone(true); },
+                  onSuccess: (p) => { setProgress(p); if (p.completed) setVideoDone(true); },
                 })}
                 className="w-full"
               />
@@ -370,11 +380,28 @@ export default function AgreementsPage() {
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {videoDone
-                ? "Watched in full — thank you."
-                : `${percent}% credited. This bar counts time actually watched, so it lags the player a little and only moves while it is playing.`}
-            </p>
+            {/* The bar is how much of it has been seen, so it can only be full at
+                the end — and when it is not done there, they are told where the
+                missing part is rather than left at a full bar and a locked step. */}
+            {missedFrom !== null ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {percent}% watched — part of it was missed on the way to the end.{" "}
+                <button
+                  type="button"
+                  onClick={() => { seekTo(total ? missedFrom / total : 0); void videoRef.current?.play(); }}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Play from {clock(missedFrom)}
+                </button>{" "}
+                to finish.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {videoDone
+                  ? "Watched in full — thank you."
+                  : `${percent}% watched. Play it through to the end to finish — each part counts once, and the bar moves only while it plays.`}
+              </p>
+            )}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">Loading the video…</p>

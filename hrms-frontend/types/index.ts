@@ -2969,12 +2969,19 @@ export const AGREEMENT_KIND_LABELS: Record<AgreementKind, string> = {
 
 export interface InductionProgress {
   duration: number;
+  /** Seconds of the video seen, each part counted once. */
   watchedSeconds: number;
   lastPosition: number;
+  /** The furthest point played to — how far the player lets them skip ahead. */
+  furthest: number;
+  /** Where the player opens: the first part they missed, or else the furthest point. */
+  resumeAt: number;
+  /** The end has been reached, but too much before it was missed to count. */
+  reachedEnd: boolean;
   completed: boolean;
   completedAt: string | null;
   skipAttempts: number;
-  /** Credited progress, not playhead — scrubbing moves the playhead and not this. */
+  /** How much of the video has been seen, each part once — neither scrubbing nor re-watching moves it. */
   percent: number;
 }
 

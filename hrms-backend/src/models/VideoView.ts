@@ -12,8 +12,8 @@ import mongoose, { Schema } from "mongoose";
  * A heartbeat that breaks the rule is counted rather than rejected outright:
  * a laggy connection or a paused tab produces the odd bad beat, and refusing
  * the whole session over one would fail honest people. What it cannot do is
- * accumulate credit, because `watchedSeconds` only ever grows by what the
- * clock allows.
+ * accumulate credit, because a beat only ever adds what the clock allows — and
+ * playing a part again adds nothing at all.
  */
 const videoViewSchema = new Schema(
   {
@@ -24,7 +24,13 @@ const videoViewSchema = new Schema(
     /** Where the playhead was at the last accepted heartbeat. */
     lastPosition: { type: Number, default: 0, min: 0 },
     lastBeatAt: { type: Date, default: null },
-    /** Credited watch time. Grows by min(position advance, wall-clock elapsed). */
+    /**
+     * The stretches of the video actually played, merged. Watching a part
+     * twice covers it once, and where the last stretch ends is how far they
+     * have got. Empty on views from before these were kept — see `spansOf`.
+     */
+    spans: { type: [{ from: { type: Number, required: true }, to: { type: Number, required: true }, _id: false }], default: [] },
+    /** Seconds covered by `spans`, each counted once — what the signed copy cites. */
     watchedSeconds: { type: Number, default: 0, min: 0 },
     /** Beats whose position outran the clock — a scrub, or a very confused tab. */
     skipAttempts: { type: Number, default: 0 },
