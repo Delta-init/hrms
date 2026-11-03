@@ -106,6 +106,7 @@ export class PayrollPaymentService {
       reference: input.reference ?? "",
       method: input.method ?? "",
       payslipCount: toPay.length,
+      payslipIds: toPay,
       amount: input.lines.reduce((a, l) => a + (l.amount || 0), 0),
       recordedAt: new Date(),
     } as never);
@@ -155,9 +156,15 @@ export class PayrollPaymentService {
     if (index === -1) throw err(`No payment ${paymentId} on ${month}`, 404);
 
     const payment = batch.payments[index]!;
-    // Only the slips this payment settled, found by the timestamp it stamped
-    // on them: another payment on the same month must not be undone with it.
-    const affected = await Payslip.find(scoped({ month, status: "paid", paidAt: payment.paidOn }))
+    // Only the slips this payment settled: another payment on the same month
+    // must not be undone with it. Those it named since 2026-11-03 — finance
+    // pays a month in several payments, often on one day, and the paid date
+    // alone took every payslip paid that day back to issued. Older payments
+    // are found by the date they stamped, as before.
+    const named = (payment as { payslipIds?: unknown[] }).payslipIds;
+    const affected = await Payslip.find(
+      scoped(named ? { month, status: "paid", _id: { $in: named } } : { month, status: "paid", paidAt: payment.paidOn })
+    )
       .select("_id")
       .lean();
 

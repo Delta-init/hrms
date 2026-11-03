@@ -100,6 +100,9 @@ const payrollBatchSchema = new Schema<IPayrollBatch>(
             reference: { type: String, trim: true, default: "" },
             method: { type: String, trim: true, default: "" },
             payslipCount: { type: Number, default: 0 },
+            // The payslips this payment marked paid, so reversing it undoes exactly those (2026-11-03). Absent on
+            // payments from before: they are found by their paid date, as they always were.
+            payslipIds: { type: [Schema.Types.ObjectId], default: undefined },
             amount: { type: Number, default: 0 },
             recordedAt: { type: Date, default: Date.now },
           },
