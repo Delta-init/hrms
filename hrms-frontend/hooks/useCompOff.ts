@@ -74,3 +74,57 @@ export const useRevokeCompOff = () => {
     onError: (e) => toast.error(errMsg(e, "Failed to revoke credit")),
   });
 };
+
+/** Asking for a day back — pending until HR approves it. */
+export const useRequestCompOff = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { date: string; amount: number; reason: string }) =>
+      (await api.post<ApiResponse<CompOffCredit>>("/comp-off/mine/requests", data)).data.data!,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: MY_BALANCE_KEY });
+      qc.invalidateQueries({ queryKey: CREDITS_KEY });
+      toast.success("Comp-off requested — HR will review it");
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to request comp-off")),
+  });
+};
+
+const reviewed = (qc: ReturnType<typeof useQueryClient>) => {
+  qc.invalidateQueries({ queryKey: CREDITS_KEY });
+  qc.invalidateQueries({ queryKey: MY_BALANCE_KEY });
+  qc.invalidateQueries({ queryKey: ["comp-off-suggestions"] });
+};
+
+export const useApproveCompOff = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; amount?: number; note?: string }) =>
+      (await api.post<ApiResponse<CompOffCredit>>(`/comp-off/credits/${id}/approve`, data)).data.data!,
+    onSuccess: () => { reviewed(qc); toast.success("Comp-off approved"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to approve comp-off")),
+  });
+};
+
+export const useApproveManyCompOff = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) =>
+      (await api.post<ApiResponse<{ approved: number; skipped: number }>>("/comp-off/credits/approve", { ids })).data.data!,
+    onSuccess: (r) => {
+      reviewed(qc);
+      toast.success(`${r.approved} approved${r.skipped ? ` · ${r.skipped} skipped (your own, or already decided)` : ""}`);
+    },
+    onError: (e) => toast.error(errMsg(e, "Failed to approve comp-off")),
+  });
+};
+
+export const useRejectCompOff = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, note }: { id: string; note: string }) =>
+      (await api.post<ApiResponse<CompOffCredit>>(`/comp-off/credits/${id}/reject`, { note })).data.data!,
+    onSuccess: () => { reviewed(qc); toast.success("Comp-off rejected"); },
+    onError: (e) => toast.error(errMsg(e, "Failed to reject comp-off")),
+  });
+};

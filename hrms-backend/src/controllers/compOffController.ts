@@ -1,7 +1,9 @@
 import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { CompOffService } from "../services/compOffService.js";
-import { grantCompOffSchema } from "../validations/compOffValidation.js";
+import {
+  grantCompOffSchema, requestCompOffSchema, approveCompOffSchema, rejectCompOffSchema, approveManyCompOffSchema,
+} from "../validations/compOffValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
 const service = new CompOffService();
@@ -39,4 +41,36 @@ export const getMyCompOffCredits = async (req: AuthenticatedRequest, res: Respon
 
 export const getCompOffBalanceFor = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try { sendSuccess(res, "Balance retrieved", await service.balanceFor(req.params.userId)); } catch (error) { next(error); }
+};
+
+export const requestCompOff = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = requestCompOffSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Comp-off requested", await service.request(req.user!.userId, parsed.data), 201);
+  } catch (error) { next(error); }
+};
+
+export const approveCompOff = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = approveCompOffSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Comp-off approved", await service.approve(req.params.id, parsed.data, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+export const approveManyCompOff = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = approveManyCompOffSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Comp-off approved", await service.approveMany(parsed.data.ids, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+export const rejectCompOff = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = rejectCompOffSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Comp-off rejected", await service.reject(req.params.id, parsed.data.note, req.user!.userId));
+  } catch (error) { next(error); }
 };

@@ -2376,8 +2376,13 @@ export interface CompOffCredit {
   date: string;
   amount: number;
   reason?: string;
-  status: "available" | "revoked";
+  /** pending until HR approves; only "available" counts toward the balance. */
+  status: "pending" | "available" | "rejected" | "revoked";
+  source?: "attendance" | "employee" | "hr" | null;
   createdBy?: { _id: string; name: string } | string | null;
+  reviewedBy?: { _id: string; name: string } | string | null;
+  reviewedAt?: string | null;
+  reviewNote?: string;
   createdAt: string;
   updatedAt: string;
 }

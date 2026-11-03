@@ -1,19 +1,69 @@
-import { DEFAULT_WORK_DAYS, DEFAULT_SCHEDULE, localDayKey } from "../utils/schedule.js";
+import { DEFAULT_WORK_DAYS, DEFAULT_SCHEDULE, localDayKey, zonedTimeToUtc } from "../utils/schedule.js";
 import { CompOffCredit } from "../models/CompOffCredit.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { Employee } from "../models/Employee.js";
 import { Attendance } from "../models/Attendance.js";
 import { Holiday } from "../models/Holiday.js";
+import { User } from "../models/User.js";
 import { resolveWorkScheduleForUser } from "./workScheduleService.js";
-import type { GrantCompOffInput } from "../validations/compOffValidation.js";
+import { assertNotSelfReview } from "./approvalWorkflowService.js";
+import { notify } from "./notificationService.js";
+import { watchersFor } from "./watchers.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
+import type { GrantCompOffInput, RequestCompOffInput, ApproveCompOffInput } from "../validations/compOffValidation.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
+import type { ICompOffCredit } from "../types/index.js";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
 const CREDIT_POP = [
   { path: "employee", select: "name employeeCode designation" },
   { path: "createdBy", select: "name" },
+  { path: "reviewedBy", select: "name" },
 ];
+
+/** The day worked — see the ledger's fmtDate: local midnight, read back as its own day wherever the server runs. */
+const fmtDay = (d: Date) =>
+  new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Math.round(new Date(d).getTime() / 86_400_000) * 86_400_000));
+const daysLabel = (n: number) => `${n} comp-off day${n === 1 ? "" : "s"}`;
+
+/**
+ * Tell the person their day back is theirs — in the app and by mail.
+ *
+ * The mail is fired, not awaited: approving a long list in one go should not
+ * wait on a mail server once per person, and a mail that fails takes nothing
+ * back from a credit already approved.
+ */
+async function tellApproved(credit: Pick<ICompOffCredit, "user" | "date" | "amount" | "organization">, actor: string) {
+  if (!credit.user) return;
+  const day = fmtDay(credit.date);
+  const has = credit.amount === 1 ? "has" : "have";
+  await notify({
+    users: [String(credit.user)],
+    kind: "leave",
+    tone: "positive",
+    title: `${daysLabel(credit.amount)} approved`,
+    body: `For working ${day} — added to your comp-off balance.`,
+    href: "/leave",
+    actor,
+  });
+  const user = await User.findById(credit.user).select("email").lean<{ email?: string } | null>();
+  if (!user?.email) return;
+  sendMail({
+    to: user.email,
+    organization: credit.organization,
+    subject: `You've been credited ${daysLabel(credit.amount)}`,
+    text: `You worked on ${day}, so ${daysLabel(credit.amount)} ${has} been added to your balance.\n\nView it: ${env.CLIENT_URL}/leave`,
+    html:
+      `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:auto">` +
+      `<h2 style="color:#4f46e5;margin-bottom:4px">A day back</h2>` +
+      `<p style="color:#555">You worked on <strong>${day}</strong>, so <strong>${daysLabel(credit.amount)}</strong> ${has} been added to your balance.</p>` +
+      `<p><a href="${env.CLIENT_URL}/leave" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">View my balance</a></p>` +
+      `</div>`,
+  }).catch(() => false);
+}
 
 /**
  * Available comp-off balance for a user: sum of available credits minus days
@@ -46,6 +96,7 @@ export class CompOffService {
     const employee = await Employee.findOne(scoped({ _id: input.employee }));
     if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
 
+    // HR adding it is HR deciding it — approved as it is made.
     const doc = await CompOffCredit.create({
       organization: getOrgId(),
       employee: employee._id,
@@ -53,9 +104,134 @@ export class CompOffService {
       date: input.date,
       amount: input.amount,
       reason: input.reason,
+      status: "available",
+      source: "hr",
       createdBy,
+      reviewedBy: createdBy,
+      reviewedAt: new Date(),
     });
     return CompOffCredit.findById(doc._id).populate(CREDIT_POP);
+  }
+
+  /**
+   * An employee asking for a day back — for a weekend or holiday they worked
+   * that attendance did not pick up. Pending until HR decides; it counts
+   * toward nothing before then.
+   */
+  async request(userId: string, input: RequestCompOffInput) {
+    const employee = await Employee.findOne(scoped({ user: userId })).select("_id name").lean<{ _id: unknown; name?: string } | null>();
+    if (!employee) throw Object.assign(new Error("No employee record for your account"), { statusCode: 404 });
+
+    // The day as the person reads it where they work, so it lines up with the
+    // day attendance would have raised, and with "today" for them.
+    const ws = await resolveWorkScheduleForUser(userId, input.date);
+    const tz = (ws as { timeZone?: string } | null)?.timeZone || DEFAULT_SCHEDULE.timeZone;
+    const key = input.date.toISOString().slice(0, 10);
+    if (key > localDayKey(new Date(), tz)) {
+      throw Object.assign(new Error("That day has not happened yet"), { statusCode: 400 });
+    }
+
+    const around = (n: number) => new Date(input.date.getTime() + n * 86_400_000);
+    const sameWeek = await CompOffCredit.find(scoped({
+      user: userId, status: { $in: ["pending", "available"] }, date: { $gte: around(-2), $lt: around(3) },
+    })).select("date status").lean();
+    const clash = sameWeek.find((c) => localDayKey(c.date, tz) === key);
+    if (clash) {
+      throw Object.assign(
+        new Error(clash.status === "pending" ? "There is already a request for that day" : "That day has already been credited"),
+        { statusCode: 409 }
+      );
+    }
+
+    const doc = await CompOffCredit.create({
+      organization: getOrgId(),
+      employee: employee._id,
+      user: userId,
+      date: zonedTimeToUtc(key, "00:00", tz),
+      amount: input.amount,
+      reason: input.reason,
+      status: "pending",
+      source: "employee",
+      createdBy: userId,
+    });
+
+    await notify({
+      users: await watchersFor("leave", userId),
+      kind: "leave",
+      title: `${employee.name ?? "Someone"} asked for ${daysLabel(input.amount)}`,
+      body: `For working ${fmtDay(doc.date)} · ${input.reason}`,
+      href: "/leave",
+      actor: userId,
+    });
+    return CompOffCredit.findById(doc._id).populate(CREDIT_POP);
+  }
+
+  /** HR saying yes — optionally to a different amount than was asked for. */
+  async approve(id: string, input: ApproveCompOffInput, reviewerId: string) {
+    const record = await CompOffCredit.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Comp-off request not found"), { statusCode: 404 });
+    if (record.status !== "pending") {
+      throw Object.assign(new Error("Only a pending request can be approved"), { statusCode: 400 });
+    }
+    assertNotSelfReview(record.user, reviewerId);
+
+    record.status = "available";
+    if (input.amount !== undefined) record.amount = input.amount;
+    record.reviewedBy = reviewerId as unknown as ICompOffCredit["reviewedBy"];
+    record.reviewedAt = new Date();
+    record.reviewNote = input.note ?? "";
+    await record.save();
+
+    await tellApproved(record, reviewerId);
+    return CompOffCredit.findById(id).populate(CREDIT_POP);
+  }
+
+  /**
+   * Several at once, each as asked. One that is not pending any more, or is
+   * the reviewer's own, is skipped and counted rather than failing the rest.
+   */
+  async approveMany(ids: string[], reviewerId: string) {
+    const records = await CompOffCredit.find(scoped({ _id: { $in: ids }, status: "pending" }));
+    let approved = 0;
+    let skipped = ids.length - records.length;
+    for (const record of records) {
+      if (String(record.user) === String(reviewerId)) { skipped++; continue; }
+      const done = await CompOffCredit.updateOne(
+        { _id: record._id, status: "pending" },
+        { $set: { status: "available", reviewedBy: reviewerId, reviewedAt: new Date(), reviewNote: "" } }
+      );
+      if (!done.modifiedCount) { skipped++; continue; }
+      approved++;
+      await tellApproved(record, reviewerId);
+    }
+    return { approved, skipped };
+  }
+
+  /** HR saying no — with a reason, which the person is shown. */
+  async reject(id: string, note: string, reviewerId: string) {
+    const record = await CompOffCredit.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Comp-off request not found"), { statusCode: 404 });
+    if (record.status !== "pending") {
+      throw Object.assign(new Error("Only a pending request can be rejected"), { statusCode: 400 });
+    }
+    assertNotSelfReview(record.user, reviewerId);
+
+    record.status = "rejected";
+    record.reviewedBy = reviewerId as unknown as ICompOffCredit["reviewedBy"];
+    record.reviewedAt = new Date();
+    record.reviewNote = note;
+    await record.save();
+
+    await notify({
+      users: [String(record.user)],
+      kind: "leave",
+      tone: "negative",
+      title: "Comp-off request not approved",
+      body: `For ${fmtDay(record.date)} — ${note}`,
+      href: "/leave",
+      actor: reviewerId,
+    });
+    return CompOffCredit.findById(id).populate(CREDIT_POP);
   }
 
   async list(query: { employee?: string; status?: string }) {
@@ -89,13 +265,14 @@ export class CompOffService {
    * exists even without every field populated.
    */
   async myCredits(userId: string) {
-    return CompOffCredit.find(scoped({ user: userId })).sort({ date: -1 });
+    return CompOffCredit.find(scoped({ user: userId })).populate({ path: "reviewedBy", select: "name" }).sort({ date: -1 });
   }
 
   /**
    * Attendance in the last `days` where the employee actually worked
    * (present/late/half_day with worked minutes) on a day that was a weekend
-   * or declared holiday for their schedule — and has no credit yet.
+   * or declared holiday for their schedule — and has no credit yet. A request
+   * of any status counts as one, so a rejected day is not raised again.
    */
   async suggestions(days = 60): Promise<Suggestion[]> {
     const end = new Date();

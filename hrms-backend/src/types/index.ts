@@ -1949,9 +1949,14 @@ export interface ICompOffCredit extends Document {
   /** Days of comp-off earned (e.g. 0.5 or 1). */
   amount: number;
   reason?: string;
-  status: "available" | "revoked";
+  /** pending until HR approves; only "available" counts toward the balance. */
+  status: "pending" | "available" | "rejected" | "revoked";
+  source?: "attendance" | "employee" | "hr" | null;
   sourceAttendance?: Types.ObjectId | IAttendance | null;
   createdBy?: Types.ObjectId | IUser | null;
+  reviewedBy?: Types.ObjectId | IUser | null;
+  reviewedAt?: Date | null;
+  reviewNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,27 +1,28 @@
 import cron from "node-cron";
 import { cronSetting } from "../utils/cronSetting.js";
 import { Organization } from "../models/Organization.js";
-import { User } from "../models/User.js";
 import { CompOffCredit } from "../models/CompOffCredit.js";
 import { CompOffService } from "../services/compOffService.js";
+import { notify } from "../services/notificationService.js";
+import { watchersFor } from "../services/watchers.js";
 import { runWithOrg } from "../utils/orgContext.js";
-import { sendMail } from "../utils/mailer.js";
 import { env } from "../config/env.js";
 
 /**
- * A day back, credited the same run it was earned rather than left for HR to
- * notice and grant by hand.
+ * A day back, raised the same run it was earned rather than left for HR to
+ * notice — but as a request HR approves, not a credit. Until it is approved
+ * it counts toward nobody's balance.
  *
  * `CompOffService.suggestions()` already does the finding — anyone who
- * worked a holiday or weekend with no credit yet for that day. This is only
- * the other half: turning each one straight into a credit and telling the
- * person it happened. Idempotent by construction, since a day already
- * credited drops out of `suggestions()` on its own — a missed run or a
- * re-run both catch up safely rather than crediting twice.
+ * worked a holiday or weekend with nothing on record for that day yet. This
+ * is only the other half: turning each one into a pending request and
+ * telling HR there is something to look at. Idempotent by construction,
+ * since a day with a request of any status drops out of `suggestions()` on
+ * its own — a missed run or a re-run both catch up safely, and a day HR
+ * rejected is not raised again.
  *
  * Half a day under four hours worked, a full day at four or more — the
- * organisation's own call, made once here rather than left to whoever
- * happens to be granting it that week.
+ * organisation's own call, made once here; HR can change it on approval.
  */
 const FULL_DAY_AFTER_MINUTES = 240;
 
@@ -39,71 +40,66 @@ function withOrg<T>(store: Parameters<typeof runWithOrg>[0], fn: () => Promise<T
  * One organisation's share of the work.
  *
  * Exported on its own so this can be pointed at a single, known org and
- * checked — the only safe way to verify the credit amount and the mail
- * without either mailing real staff or running the loop below, which is
- * deliberately org-context-free and has no way to limit itself to one.
+ * checked without running the loop below, which is deliberately
+ * org-context-free and has no way to limit itself to one.
  */
-export async function creditSuggestionsFor(orgId: string): Promise<{ credited: number; emails: number }> {
-  const suggestions = await withOrg({ orgId, isSuperAdmin: false }, () => service.suggestions());
-  let credited = 0, emails = 0;
+export async function requestSuggestionsFor(orgId: string): Promise<{ requested: number }> {
+  return withOrg({ orgId, isSuperAdmin: false }, async () => {
+    const suggestions = await service.suggestions();
+    let requested = 0;
 
-  for (const s of suggestions) {
-    const amount = s.workedMinutes >= FULL_DAY_AFTER_MINUTES ? 1 : 0.5;
-    const reasonLabel = s.reason === "holiday" ? "a holiday" : "a weekend";
+    for (const s of suggestions) {
+      const amount = s.workedMinutes >= FULL_DAY_AFTER_MINUTES ? 1 : 0.5;
+      const reasonLabel = s.reason === "holiday" ? "a holiday" : "a weekend";
+      const hours = Math.round((s.workedMinutes / 60) * 10) / 10;
 
-    await CompOffCredit.create({
-      organization: orgId,
-      employee: s.employee._id,
-      user: s.user,
-      date: s.date,
-      amount,
-      reason: `Worked ${reasonLabel} — credited automatically`,
-      createdBy: null,
-    });
-    credited++;
+      await CompOffCredit.create({
+        organization: orgId,
+        employee: s.employee._id,
+        user: s.user,
+        date: s.date,
+        amount,
+        reason: `Worked ${reasonLabel} (${hours}h) — from attendance`,
+        status: "pending",
+        source: "attendance",
+        createdBy: null,
+      });
+      requested++;
+    }
 
-    const user = await User.findById(s.user).select("name email").lean<{ name?: string; email?: string } | null>();
-    if (!user?.email) continue;
-    const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(s.date));
-    const has = amount === 1 ? "has" : "have";
-    const ok = await sendMail({
-      to: user.email,
-      organization: orgId,
-      subject: `You've been credited ${amount} comp-off day${amount === 1 ? "" : "s"}`,
-      text: `You worked ${reasonLabel} on ${day}, so ${amount} comp-off day${amount === 1 ? "" : "s"} ${has} been added to your balance.\n\nView it: ${env.CLIENT_URL}/leave`,
-      html:
-        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:auto">` +
-        `<h2 style="color:#4f46e5;margin-bottom:4px">A day back</h2>` +
-        `<p style="color:#555">You worked ${reasonLabel} on <strong>${day}</strong>, so <strong>${amount} comp-off day${amount === 1 ? "" : "s"}</strong> ${has} been added to your balance.</p>` +
-        `<p><a href="${env.CLIENT_URL}/leave" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">View my balance</a></p>` +
-        `</div>`,
-    });
-    if (ok) emails++;
-  }
-
-  return { credited, emails };
+    // One note for the night, not one per person — HR reads the list itself.
+    if (requested) {
+      await notify({
+        users: await watchersFor("leave"),
+        kind: "leave",
+        title: `${requested} comp-off request${requested === 1 ? "" : "s"} to review`,
+        body: "Weekend or holiday work from attendance — approve them under Leave → Comp-Off.",
+        href: "/leave",
+        organization: orgId,
+      });
+    }
+    return { requested };
+  });
 }
 
-export async function runCompOffAutoCredit(): Promise<{ credited: number; emails: number }> {
+export async function runCompOffAutoRequest(): Promise<{ requested: number }> {
   const orgs = await Organization.find({ status: "active" }).select("_id").lean();
-  let credited = 0, emails = 0;
+  let requested = 0;
 
   for (const org of orgs) {
-    const result = await creditSuggestionsFor(String(org._id));
-    credited += result.credited;
-    emails += result.emails;
+    requested += (await requestSuggestionsFor(String(org._id))).requested;
   }
 
-  if (!credited) console.log("🗓️  comp-off auto-credit: nothing to credit.");
-  else console.log(`🗓️  comp-off auto-credit: ${credited} credit(s), ${emails} email(s).`);
-  return { credited, emails };
+  if (!requested) console.log("🗓️  comp-off requests: nothing new.");
+  else console.log(`🗓️  comp-off requests: ${requested} raised for HR.`);
+  return { requested };
 }
 
 export function startCompOffAutoCreditCron() {
   const expr = cronSetting("COMP_OFF_AUTO_CREDIT_CRON", env.COMP_OFF_AUTO_CREDIT_CRON);
   if (!expr) return;
   cron.schedule(expr, () => {
-    runCompOffAutoCredit().catch((e) => console.error("🗓️  comp-off auto-credit failed:", e));
+    runCompOffAutoRequest().catch((e) => console.error("🗓️  comp-off requests failed:", e));
   });
-  console.log(`🗓️  comp-off auto-credit cron scheduled: "${expr}"`);
+  console.log(`🗓️  comp-off request cron scheduled: "${expr}"`);
 }
