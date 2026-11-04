@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { WalletService, type KioskMonth } from "./walletService.js";
 import { Attendance } from "../models/Attendance.js";
 import { Kiosk } from "../models/Kiosk.js";
 import { User } from "../models/User.js";
@@ -33,13 +34,28 @@ export interface PunchDay {
 }
 
 export type PunchOutcome =
-  | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number; day?: PunchDay }
-  | { status: "cooldown"; user: { id: string; name: string }; at: Date; message?: string; day?: PunchDay }
+  | { status: "punched"; direction: "in" | "out"; user: { id: string; name: string }; at: Date; score: number; lateMinutes: number; day?: PunchDay; month?: KioskMonth | null }
+  | { status: "cooldown"; user: { id: string; name: string }; at: Date; message?: string; day?: PunchDay; month?: KioskMonth | null }
   | { status: "not_recognised"; reason: RecognizeReason; hint: string }
   | { status: "not_live"; reason: LivenessReason; hint: string }
   // `user` is optional because a refusal can also come from before anyone was
   // identified — a deactivated account, a record this device can't read.
   | { status: "refused"; message: string; user?: { id: string; name: string }; day?: PunchDay };
+
+const wallets = new WalletService();
+/** Longest the kiosk waits for this month's deductions before answering without them. */
+const MONTH_WAIT_MS = 2500;
+
+/**
+ * This month's deductions for the person at the camera (2026-11-04) — shown with the check-in so a lost day is seen
+ * while it can still be raised. Best effort: a slow or failed read answers without it rather than hold the punch.
+ */
+async function monthOf(userId: string): Promise<KioskMonth | null> {
+  return Promise.race([
+    wallets.kioskMonth(userId),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), MONTH_WAIT_MS)),
+  ]);
+}
 
 /**
  * What the kiosk should say for each way recognition can come up short. These
@@ -164,6 +180,7 @@ export class FacePunchService {
         user: { id: userId, name: user.name },
         at: previous,
         day: await this.dayFor(userId),
+        month: await monthOf(userId),
       };
     }
 
@@ -189,6 +206,7 @@ export class FacePunchService {
           at: open.checkIn,
           message: `Checked in a moment ago. You can check out in ${mins} minute${mins === 1 ? "" : "s"}.`,
           day: await this.dayFor(userId),
+          month: await monthOf(userId),
         };
       }
     }
@@ -229,6 +247,7 @@ export class FacePunchService {
       score: result.best.score,
       lateMinutes: record!.lateMinutes ?? 0,
       day: this.dayOf(record),
+      month: await monthOf(userId),
     };
   }
 

@@ -2469,6 +2469,18 @@ export interface KioskPunchResult {
   hint?: string;
   message?: string;
   day?: KioskPunchDay;
+  /** This month's deductions, after a check-in or check-out (2026-11-04). Absent when there are none to read. */
+  month?: KioskMonth | null;
+}
+
+export interface KioskMonth {
+  month: string;
+  currency: string;
+  deductions: Array<{ date: string; reason: string; days: number; amount: number }>;
+  adjustments: Array<{ reason: string; amount: number }>;
+  totalDays: number;
+  totalAmount: number;
+  unpaidLeaveDays: number;
 }
 
 // ─── Documents overview ──────────────────────────────────────────────────────

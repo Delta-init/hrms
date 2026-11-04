@@ -15,6 +15,7 @@ import { RegularizationPromptDialog } from "@/components/dashboard/Regularizatio
 import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistoryChart";
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
+import { WalletCard } from "@/components/wallet/WalletCard";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,6 +48,8 @@ export default function DashboardPage() {
             is worth knowing about before the day starts, not at the moment the
             button is pressed. */}
         <LocationCard />
+        {/* First in the row: this month's pay as it stands (2026-11-04). */}
+        <WalletCard />
         <HrDashboard />
       </div>
     );
@@ -106,6 +109,9 @@ function EmployeeDashboard() {
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Hi, {firstName} 👋</h1>
           <p className="mt-1 max-w-md text-sm text-white/70">Clock in for the day and keep track of your attendance & leave.</p>
         </motion.div>
+
+        {/* First in the row: this month's pay as it stands (2026-11-04). */}
+        <WalletCard />
 
         {/* Stats */}
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-4 sm:grid-cols-4">

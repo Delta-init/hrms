@@ -13,12 +13,15 @@ import { cn } from "@/lib/utils";
 import {
   ATTENDANCE_STATUS_LABELS,
   type AttendanceStatus,
+  type KioskMonth,
   type KioskPunchDay,
   type KioskPunchResult,
 } from "@/types";
 
 /** How long a result stays on screen before the kiosk resets for the next person. */
 const RESULT_MS = 5000;
+/** Longer when the month's deductions are listed under it — a list takes a moment to read. */
+const RESULT_WITH_DEDUCTIONS_MS = 8000;
 /** How long a kiosk runs before refreshing itself. */
 const RELOAD_EVERY_MS = 5 * 60_000;
 /** How often the reload checks whether the kiosk is free to be interrupted. */
@@ -357,7 +360,8 @@ function CheckInScreen({
 
   useEffect(() => {
     if (!result) return;
-    const timer = setTimeout(() => setResult(null), RESULT_MS);
+    const listed = (result.month?.deductions.length ?? 0) + (result.month?.adjustments.length ?? 0) > 0;
+    const timer = setTimeout(() => setResult(null), listed ? RESULT_WITH_DEDUCTIONS_MS : RESULT_MS);
     return () => clearTimeout(timer);
   }, [result]);
 
@@ -606,6 +610,53 @@ function DayStrip({ day }: { day: KioskPunchDay }) {
   );
 }
 
+const kioskMoney = (n: number, c: string) =>
+  `${c} ${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const kioskDay = (key: string) =>
+  new Date(`${key}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+/**
+ * This month's deductions, under the check-in (2026-11-04): each day, why, how much — and how many days were unpaid
+ * leave. Nothing at all when nothing came off; it goes with the result.
+ */
+function MonthDeductions({ month }: { month: KioskMonth }) {
+  const rows = month.deductions;
+  if (!rows.length && !month.adjustments.length) {
+    return <p className="text-sm text-emerald-400">No deductions this month.</p>;
+  }
+  const shown = rows.slice(-5);
+  return (
+    <div className="mt-2 w-full max-w-md rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-left">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-semibold text-red-300">Deducted this month</p>
+        <p className="text-lg font-semibold tabular-nums text-red-300">−{kioskMoney(month.totalAmount, month.currency)}</p>
+      </div>
+      <p className="text-xs text-neutral-400">
+        {month.totalDays} day{month.totalDays === 1 ? "" : "s"} of pay
+        {month.unpaidLeaveDays ? ` · ${month.unpaidLeaveDays} day${month.unpaidLeaveDays === 1 ? "" : "s"} unpaid leave` : ""}
+      </p>
+      <div className="mt-2 space-y-1.5">
+        {rows.length > shown.length && <p className="text-xs text-neutral-500">…and {rows.length - shown.length} earlier</p>}
+        {shown.map((d, i) => (
+          <div key={i} className="flex items-start justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <p className="font-medium text-neutral-200">{kioskDay(d.date)}</p>
+              <p className="text-xs text-neutral-400">{d.reason}</p>
+            </div>
+            <p className="shrink-0 tabular-nums text-red-300">−{kioskMoney(d.amount, month.currency)}</p>
+          </div>
+        ))}
+        {month.adjustments.map((a, i) => (
+          <div key={`a${i}`} className="flex items-start justify-between gap-3 text-sm">
+            <p className="min-w-0 text-xs text-neutral-400">{a.reason}</p>
+            <p className="shrink-0 tabular-nums text-red-300">{a.amount > 0 ? "−" : "+"}{kioskMoney(a.amount, month.currency)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Result({ result }: { result: KioskPunchResult }) {
   if (result.status === "punched") {
     const isIn = result.direction === "in";
@@ -633,6 +684,7 @@ function Result({ result }: { result: KioskPunchResult }) {
         {isIn && (
           <p className="text-sm text-neutral-400">Checking out is held for ten minutes.</p>
         )}
+        {result.month && <MonthDeductions month={result.month} />}
       </div>
     );
   }
@@ -652,6 +704,7 @@ function Result({ result }: { result: KioskPunchResult }) {
           {result.message ?? "That's already recorded. You're all set."}
         </p>
         {result.day && <DayStrip day={result.day} />}
+        {result.month && <MonthDeductions month={result.month} />}
       </div>
     );
   }

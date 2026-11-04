@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { WalletService } from "../services/walletService.js";
 import { directoryService, attendanceNow, attendanceDay } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService, FINANCE_PROCUREMENT_STATUSES, type FinanceProcurementStatus } from "../services/procurementService.js";
@@ -483,4 +484,21 @@ export const rejectHiringRequisition = asyncRoute(async (req, res) => {
     by: text(req.body?.by),
   });
   sendSuccess(res, "Hiring requisition rejected", record);
+});
+
+const wallets = new WalletService();
+
+/**
+ * GET /integrations/wallet?email=&month=[&organizationId=] — somebody's wallet for another portal's My Wallet page and
+ * dashboard card (2026-11-04: "the wallet on every portal"), found by the email they sign in there with. The same
+ * figures HRMS's own wallet page shows. Read-only; month defaults to this one in Dubai.
+ */
+export const getWalletByEmail = asyncRoute(async (req, res) => {
+  const email = String(req.query.email ?? "").trim().toLowerCase();
+  if (!EMAIL.test(email)) { sendError(res, "email is required", 400); return; }
+  const month = String(req.query.month ?? "") || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date()).slice(0, 7);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) { sendError(res, "month must be YYYY-MM", 400); return; }
+  const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
+  if (organizationId && !/^[a-f0-9]{24}$/i.test(organizationId)) { sendError(res, "organizationId is not a valid id", 400); return; }
+  sendSuccess(res, "Wallet", await wallets.forEmail(email, month, organizationId));
 });

@@ -10,7 +10,9 @@ import { LOAN_DEDUCTION_PREFIX, SALARY_ADVANCE_LABEL } from "./loanService.js";
 import { REIMBURSE_PREFIX } from "./reimbursementService.js";
 import { financePost } from "./financeClient.js";
 import { dayValue } from "../utils/payMonth.js";
-import { scoped } from "../utils/orgContext.js";
+import { scoped, runWithOrg } from "../utils/orgContext.js";
+import { User } from "../models/User.js";
+import { hasLeft } from "../utils/employeeStatus.js";
 
 /*
  * The wallet (the user, 2026-11-04): one person's month as money in and money out — a day of salary credited for
@@ -82,6 +84,19 @@ export interface WalletCommission {
   inBalance: boolean;
 }
 
+/** What the kiosk shows after a face check-in: this month's deductions, and nothing else. */
+export interface KioskMonth {
+  month: string;
+  currency: string;
+  /** Each time something came off: the day, why, the days of pay and the amount. */
+  deductions: Array<{ date: string; reason: string; days: number; amount: number }>;
+  /** Month-level lines — HR's own loss-of-pay figure, say. Positive takes more off. */
+  adjustments: Array<{ reason: string; amount: number }>;
+  totalDays: number;
+  totalAmount: number;
+  unpaidLeaveDays: number;
+}
+
 export type WalletStatus = "in_progress" | "awaiting_payroll" | "payslip" | "part_paid" | "paid" | "paused";
 
 const METHOD: Record<string, string> = { bank_transfer: "Bank transfer", cash: "Cash", cheque: "Cheque", card: "Card", online: "Online" };
@@ -99,7 +114,58 @@ export class WalletService {
     return this.forEmployee(String(emp._id), month);
   }
 
-  async forEmployee(employeeId: string, month: string) {
+  /**
+   * Somebody's wallet asked for by another portal (2026-11-04: "the wallet on every portal"), which knows the person
+   * only by the email they sign in with. Found across organizations — a portal serves people from several — and then
+   * read inside that person's own, as every org-scoped query here expects. Their work email first, else their login's;
+   * someone still employed before a leaver who once had the same address.
+   */
+  async forEmail(email: string, month: string, organizationId?: string) {
+    const address = email.trim().toLowerCase();
+    const inOrg = organizationId ? { organization: organizationId } : {};
+    const byLogin = await User.find({ email: address, ...inOrg }).select("_id").lean();
+    const candidates = await Employee.find({
+      $or: [{ email: address }, ...(byLogin.length ? [{ user: { $in: byLogin.map((u) => u._id) } }] : [])],
+      ...inOrg,
+    }).select("_id organization status").lean<Array<{ _id: unknown; organization?: unknown; status?: string }>>();
+    const pick = candidates.find((c) => !hasLeft(c.status)) ?? candidates[0];
+    if (!pick) throw err("No HRMS employee has this email.", 404);
+    return new Promise<Awaited<ReturnType<WalletService["forEmployee"]>>>((resolve, reject) => {
+      runWithOrg({ orgId: pick.organization ? String(pick.organization) : null, isSuperAdmin: false }, () => {
+        this.forEmployee(String(pick._id), month).then(resolve, reject);
+      });
+    });
+  }
+
+  /**
+   * This month's deductions, for the kiosk screen after a face check-in (2026-11-04: "show the deductions only, why,
+   * how much, and the unpaid leave days"). Only what HRMS knows — finance is not asked from a kiosk, and a slow answer
+   * must never hold the door. Null when there is no employee record, or anything goes wrong.
+   */
+  async kioskMonth(userId: string): Promise<KioskMonth | null> {
+    try {
+      const emp = await Employee.findOne(scoped({ user: userId })).select("_id").lean();
+      if (!emp) return null;
+      const month = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date()).slice(0, 7);
+      const w = await this.forEmployee(String(emp._id), month, { finance: false });
+      const counted = w.days.filter((d) => d.counted);
+      const deductions = counted.flatMap((d) => d.deductions.map((x) => ({ date: d.date, reason: x.reason, days: x.days, amount: x.amount })));
+      const adjustments = w.reconcile.map((r) => ({ reason: r.reason, amount: r.amount }));
+      return {
+        month,
+        currency: w.currency,
+        deductions,
+        adjustments,
+        totalDays: Math.round(deductions.reduce((s, x) => s + x.days, 0) * 100) / 100,
+        totalAmount: sum([...deductions.map((x) => x.amount), ...adjustments.map((a) => a.amount)]),
+        unpaidLeaveDays: counted.filter((d) => d.kind === "unpaid_leave" && d.deductions.length).length,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async forEmployee(employeeId: string, month: string, opts: { finance?: boolean } = {}) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
       .select("name employeeCode designation email user currency")
       .populate({ path: "user", select: "email" })
@@ -150,10 +216,12 @@ export class WalletService {
     const emails = [...new Set([emp.email, emp.user?.email].map((e) => String(e ?? "").trim().toLowerCase()).filter(Boolean))];
     let fin: FinanceWallet | null = null;
     let financeError: string | null = null;
-    try {
-      fin = await financePost<FinanceWallet>("/hrms/wallet", { employeeId: String(emp._id), emails, month });
-    } catch (e) {
-      financeError = (e as Error).message;
+    if (opts.finance !== false) {
+      try {
+        fin = await financePost<FinanceWallet>("/hrms/wallet", { employeeId: String(emp._id), emails, month });
+      } catch (e) {
+        financeError = (e as Error).message;
+      }
     }
     const financeSource = new Map<string, string>();
     for (const p of fin?.payroll ?? []) for (const a of p.adjustments) financeSource.set(a.label, a.source);
