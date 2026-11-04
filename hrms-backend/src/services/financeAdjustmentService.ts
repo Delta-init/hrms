@@ -10,10 +10,11 @@ import { getOrgId, scoped } from "../utils/orgContext.js";
  * handed over.
  *
  * This is the one door through which a locked month may still change, and it is
- * narrow on purpose: only while the month is `in_finance`, only for employees
- * who already have a payslip in it, and only through items that carry an
- * accounts-side id so the same request arriving twice cannot pay somebody
- * twice.
+ * narrow on purpose: only while the month is `in_finance` — or, since
+ * 2026-11-04, approved or partly paid, for a payslip not paid yet (the user:
+ * "edit this payroll after the approve also") — only for employees who already
+ * have a payslip in it, and only through items that carry an accounts-side id so
+ * the same request arriving twice cannot pay somebody twice.
  *
  * The reason it exists at all is that the payslip an employee downloads has to
  * match the money that leaves the bank. Accounts could keep their additions on
@@ -59,11 +60,18 @@ export interface AdjustmentOutcome {
   deferred: number;
 }
 
+/**
+ * Where accounts may still change a month: while they have it, and after they approved it until it is paid — then
+ * only on a payslip not paid yet (the user, 2026-11-04). A paid payslip is what the bank sent; changing it would make
+ * it say something else.
+ */
+const OPEN_TO_FINANCE = ["in_finance", "approved", "partially_paid"];
+
 /** The month must be open to accounts, and only accounts, before anything moves. */
 async function requireInFinance(month: string) {
   const batch = await PayrollBatch.findOne(scoped({ month }));
   if (!batch) throw err(`No payroll has been submitted for ${month}`, 404);
-  if (batch.status !== "in_finance") {
+  if (!OPEN_TO_FINANCE.includes(batch.status)) {
     throw err(
       batch.status === "submitted"
         ? `${month} has not been imported yet. Claim it before adding anything.`
@@ -72,6 +80,13 @@ async function requireInFinance(month: string) {
     );
   }
   return batch;
+}
+
+/** After approval, a paid payslip stays as it was paid. */
+function requireUnpaid(slip: { status?: string } | null | undefined, who: string, month: string) {
+  if (slip?.status === "paid") {
+    throw err(`${who}'s payslip for ${month} is already paid and can no longer be adjusted. Reverse the payment first.`, 409);
+  }
 }
 
 export class FinanceAdjustmentService {
@@ -97,8 +112,9 @@ export class FinanceAdjustmentService {
     const employees = await Employee.find(scoped({ _id: { $in: employeeIds } })).select("user").lean();
     const empById = new Map(employees.map((e) => [String(e._id), e]));
 
-    const slips = await Payslip.find(scoped({ month, employee: { $in: employeeIds } })).select("employee").lean();
+    const slips = await Payslip.find(scoped({ month, employee: { $in: employeeIds } })).select("employee status").lean();
     const slipByEmployee = new Map(slips.map((s) => [String(s.employee), String(s._id)]));
+    const slipStatus = new Map(slips.map((s) => [String(s.employee), String(s.status ?? "")]));
 
     for (const item of items) {
       if (!empById.has(item.employeeId)) throw err(`Employee ${item.employeeId} is not in this organization`, 404);
@@ -107,6 +123,7 @@ export class FinanceAdjustmentService {
         // handover is a person finance never saw when they took the month.
         throw err(`${item.employeeId} has no payslip for ${month}`, 409);
       }
+      requireUnpaid({ status: slipStatus.get(item.employeeId) }, item.employeeId, month);
       if (!(item.amount > 0)) throw err(`"${item.label}" must be a positive amount`, 400);
     }
 
@@ -178,7 +195,8 @@ export class FinanceAdjustmentService {
     if (row.month !== month) throw err(`That adjustment belongs to ${row.month}`, 409);
 
     const employeeId = String(row.employee);
-    const slip = await Payslip.findOne(scoped({ month, employee: employeeId })).select("_id").lean();
+    const slip = await Payslip.findOne(scoped({ month, employee: employeeId })).select("_id status").lean();
+    requireUnpaid(slip, employeeId, month);
     await OneTimeAdjustment.deleteOne({ _id: row._id });
     // Its line comes off the payslip first. A payslip worked out from attendance keeps every earning it can't trace to
     // a source as one HR typed by hand, and with the row gone this one can't be traced — its money stayed on the payslip
