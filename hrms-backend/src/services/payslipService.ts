@@ -25,7 +25,7 @@ import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { STANDARD_MONTH_DAYS, dayValue, dailyRate } from "../utils/payMonth.js";
-import { policiesForUser } from "./leavePolicyResolver.js";
+import { policiesForUser, leaveLabel } from "./leavePolicyResolver.js";
 import { holidayScope, workModeOfUser, scheduleIdOfUser } from "../utils/holidayScope.js";
 import { employmentWindowFor, employmentWindows, employedOn, employedFraction, type EmploymentWindow } from "./employmentWindow.js";
 import { parsePagination } from "../utils/query.js";
@@ -86,6 +86,35 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export const LOP_PREFIX = "Loss of Pay";
 export const PENALTY_PREFIX = "Late Penalty";
 export const EARLY_OUT_PENALTY_PREFIX = "Early-Out Penalty";
+
+/**
+ * How summary() read each day of a month, handed out for the wallet (2026-11-04) so its day-by-day view is the
+ * payslip's own reading of attendance, never a second copy of these rules. Day keys are YYYY-MM-DD in `tz`.
+ */
+export interface SummaryTrace {
+  tz: string;
+  start: Date;
+  end: Date;
+  /** Today in `tz`. A day is not missed until it is over. */
+  today: string;
+  /** The schedule's working days inside the employment window. */
+  working: Set<string>;
+  holidays: Set<string>;
+  /** Paid leave, the day → the leave's name. Half-day leave included. */
+  paidLeave: Map<string, string>;
+  /** Unpaid leave, the day → the leave's name. */
+  unpaidLeave: Map<string, string>;
+  /** Marked absent and not on unpaid leave. */
+  absent: Set<string>;
+  half: Set<string>;
+  /** Half-day paid leave with nothing worked against the other half. */
+  halfLeaveNoAttendance: Set<string>;
+  /** Working days with no attendance, leave or holiday. */
+  unrecorded: string[];
+  policy: Awaited<ReturnType<typeof getAttendancePenaltyPolicy>>;
+  /** Attendance costs them nothing (employee setting). */
+  exempt: boolean;
+}
 // Early-out penalties are attendance lines too. Leaving them out meant the
 // form's copy was kept on save and a fresh one added beside it.
 const isAttendanceLine = (label: string) =>
@@ -835,7 +864,9 @@ export class PayslipService {
       oneTime?: Awaited<ReturnType<typeof computeOneTimeAdjustments>>;
       reimb?: Awaited<ReturnType<typeof computeReimbursements>>;
       ot?: Awaited<ReturnType<typeof computeOvertime>>;
-    }
+    },
+    /** Handed how each day was read, for the wallet — see SummaryTrace. Changes no figure. */
+    trace?: Partial<SummaryTrace>
   ) {
     const emp = await Employee.findOne(scoped({ _id: employeeId }))
       .populate({ path: "user", select: "workSchedule", populate: { path: "workSchedule", select: "timeZone workDays" } })
@@ -989,8 +1020,15 @@ export class PayslipService {
     const otherHalfUncovered = (k: string, halfDay?: boolean) => !!halfDay && !attendedKeys.has(k) && !lopFull.has(k);
 
     const unpaidLeave = unpaid.filter((l) => isUnpaidLeave(l.type));
+    // Which leave each day was, for the trace. Read nowhere else.
+    const leaveName = new Map(policies.map((p) => [p.type, p.label]));
+    const unpaidLeaveOn = new Map<string, string>();
+    const paidLeaveOn = new Map<string, string>();
     for (const l of unpaidLeave) {
-      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) lopFull.add(k);
+      for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) {
+        lopFull.add(k);
+        unpaidLeaveOn.set(k, leaveLabel(l.type, leaveName.get(l.type)));
+      }
     }
     base.unpaidLeaveDays = unpaidLeave.reduce((s, l) => s + (l.days || 0), 0);
 
@@ -1003,6 +1041,7 @@ export class PayslipService {
       for (const k of dayRange(l.startDate, l.endDate, start, end, tz)) {
         if (otherHalfUncovered(k, l.halfDay)) halfLeaveNoAttendance.add(k);
         else paidLeaveDays.add(k);
+        paidLeaveOn.set(k, leaveLabel(l.type, leaveName.get(l.type)));
       }
     }
     const holidayDays = new Set(holidays.map((h) => dayKey(h.date, tz)));
@@ -1076,6 +1115,22 @@ export class PayslipService {
       base.lopDays = 0;
       base.latePenaltyDays = 0;
       base.earlyOutPenaltyDays = 0;
+    }
+
+    if (trace) {
+      Object.assign(trace, {
+        tz, start, end, today,
+        working: workingSet,
+        holidays: holidayDays,
+        paidLeave: paidLeaveOn,
+        unpaidLeave: unpaidLeaveOn,
+        absent: new Set([...lopFull].filter((k) => !unpaidLeaveOn.has(k))),
+        half: halfSet,
+        halfLeaveNoAttendance,
+        unrecorded: unrecordedKeys,
+        policy: penaltyPolicy,
+        exempt: !!emp.attendanceExempt,
+      } satisfies SummaryTrace);
     }
 
     // HR's own figure for the month, where one was set — after everything

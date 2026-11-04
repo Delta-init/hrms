@@ -167,6 +167,12 @@ Or set an absolute interpreter path in `hrms-backend/ecosystem.config.cjs`
   `/api/v1/integrations/hiring/requisitions`. Unset (the default) keeps HR's
   approval final. Deploy this backend and the finance side first, then set it
   to `on` and `pm2 startOrReload ecosystem.config.cjs --update-env`.
+- `FINANCE_API_URL`, `FINANCE_CLIENT_ID`, `FINANCE_INTEGRATION_SECRET` (backend
+  `.env`): what My Wallet uses to ask finance what it has paid somebody and
+  where their commission stands (`POST /api/v1/integrations/hrms/wallet`). The
+  pair is finance's `INBOUND_CLIENT_ID` / `INBOUND_INTEGRATION_SECRET`. Deploy
+  the finance API first; until these are set the wallet shows HRMS's own
+  figures and says finance isn't connected.
 - `.env` is gitignored, and the deploy uses `git reset --hard` (which does **not**
   touch untracked files), so your VPS secrets are never overwritten.
 - Password SSH auth is used per request. For better security you can later swap

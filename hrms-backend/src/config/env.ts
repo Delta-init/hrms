@@ -189,6 +189,15 @@ const envSchema = z.object({
    * HR's approval final, as it always was. Only the exact value "on" counts.
    */
   HIRING_FINANCE_STEP: z.string().default(""),
+  /**
+   * Where the finance API lives, and the pair HRMS signs with when it asks finance something — only the wallet page
+   * (2026-11-04): what payroll has paid somebody, and their commission. The same pair finance accepts from its other
+   * callers (its INBOUND_CLIENT_ID / INBOUND_INTEGRATION_SECRET). Unset, the wallet shows HRMS's own figures and says
+   * finance isn't connected.
+   */
+  FINANCE_API_URL: z.string().default(""),
+  FINANCE_CLIENT_ID: z.string().default(""),
+  FINANCE_INTEGRATION_SECRET: z.string().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);

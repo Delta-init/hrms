@@ -17,6 +17,7 @@ import {
   CalendarClock,
   MonitorSmartphone,
   Wallet,
+  WalletCards,
   Clock,
   ClipboardCheck,
   LogOut,
@@ -98,6 +99,8 @@ export const navItems: {
   // Always reachable: the Payroll page shows admins the full "Payslips" tab
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
+  // Everyone's own: salary a day at a time, deductions with their reasons, commission and what finance paid.
+  { href: "/wallet", label: "My Wallet", icon: WalletCards, permModule: null },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   /**
    * Registering a tablet, rotating its pairing token, deactivating it — all
