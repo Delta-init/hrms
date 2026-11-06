@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useRef } from "react";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { InterviewResults } from "@/components/hiring/InterviewResults";
 import { getInitials, cn } from "@/lib/utils";
 import {
   STAGE_LABELS, INTERVIEW_MODE_LABELS, INTERVIEW_STATUS_LABELS,
@@ -179,6 +180,13 @@ export default function CandidateDetailPage() {
                   <p className="mt-1 text-xs text-muted-foreground">Reason: {a.rejectionReason}</p>
                 )}
                 <InterviewList interviews={a.interviews ?? []} />
+                {/* Each panellist's submitted sheet for this role — marks per question, and their verdict. */}
+                {(a.interviews ?? []).some((iv) => iv.status !== "cancelled") && (
+                  <div className="mt-3 border-t border-border pt-3">
+                    <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">Interview marks</p>
+                    <InterviewResults requisitionId={idOf(a.requisition)} applicationId={a._id} compact />
+                  </div>
+                )}
               </div>
             ))}
           </div>

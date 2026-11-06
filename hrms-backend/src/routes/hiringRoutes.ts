@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createRequisition, getRequisitions, getRequisitionById,
   updateRequisition, reviewRequisition, deleteRequisition, withdrawRequisition, getHiringWorkflowState, uploadJd, getReplaceable,
+  setRequisitionQuestions,
 } from "../controllers/jobRequisitionController.js";
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
@@ -11,6 +12,7 @@ import {
 import {
   scheduleInterview, getInterviews, getInterviewById, updateInterview,
   cancelInterview, deleteInterview, getConflicts, submitFeedback, deleteFeedback,
+  getMyInterviews, getMySheet, saveMySheet, getInterviewResults,
 } from "../controllers/interviewController.js";
 import { getHirePrefill, hireApplicant, unlinkHire } from "../controllers/hireController.js";
 import {
@@ -38,6 +40,10 @@ router.post("/requisitions", checkPermissionOrDepartmentHead("hiring", "create")
 router.get("/requisitions/replaceable", checkPermissionOrDepartmentHead("hiring", "create"), getReplaceable);
 router.get("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "view"), getRequisitionById);
 router.put("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "edit"), updateRequisition);
+// The interview questions stay editable after approval. The route admits
+// anyone who can read requisitions; the service lets through only the one who
+// raised it and whoever holds hiring edit.
+router.put("/requisitions/:id/questions", checkPermissionOrDepartmentHead("hiring", "view"), setRequisitionQuestions);
 // Approving is its own permission, and the workflow narrows it further to the
 // role holding the current step.
 router.patch("/requisitions/:id/review", checkPermission("hiring", "approve"), reviewRequisition);
@@ -65,8 +71,15 @@ router.patch("/applications/:id", checkPermission("hiring", "edit"), moveApplica
 router.delete("/applications/:id", checkPermission("hiring", "delete"), deleteApplication);
 // Heads read their own requisitions' pipeline, trimmed — see getPipeline.
 router.get("/requisitions/:id/pipeline", checkPermissionOrDepartmentHead("hiring", "view"), getPipeline);
+router.get("/requisitions/:id/interview-results", checkPermissionOrDepartmentHead("hiring", "view"), getInterviewResults);
 
 // ── Interviews ───────────────────────────────────────────────────────────────
+// The marking sheets. No hiring permission: being on the interview's panel is
+// what lets someone in, and the service checks exactly that.
+router.get("/my-interviews", getMyInterviews);
+router.get("/my-interviews/:id", getMySheet);
+router.put("/my-interviews/:id", saveMySheet);
+
 router.get("/interviews/conflicts", checkPermission("hiring", "view"), getConflicts);
 router.get("/interviews", checkPermission("hiring", "view"), getInterviews);
 router.post("/interviews", checkPermission("hiring", "create"), scheduleInterview);

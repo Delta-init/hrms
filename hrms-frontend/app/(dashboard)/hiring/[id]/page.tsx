@@ -5,9 +5,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Plus, FileText, Loader2, XCircle, ChevronRight, Users, AlertTriangle,
   CalendarPlus, CalendarCheck, Video, MapPin, UserPlus, Phone, Link2, ExternalLink,
-  Pencil, Check, X, KanbanSquare, FileSignature, Mail,
+  Pencil, Check, X, KanbanSquare, FileSignature, Mail, ClipboardCheck, ListChecks,
 } from "lucide-react";
-import { useRequisitions } from "@/hooks/useHiring";
+import { useRequisitions, useRequisition } from "@/hooks/useHiring";
 import { usePipeline, useCandidates, useApplyCandidate, useMoveApplication } from "@/hooks/useCandidates";
 import { useInterviews, useUpdateInterview } from "@/hooks/useInterviews";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +20,8 @@ import { PipelineBoard } from "@/components/hiring/PipelineBoard";
 import { SendOfferDialog } from "@/components/hiring/SendOfferDialog";
 import { OfferMailsDialog } from "@/components/hiring/OfferMailsDialog";
 import { OfferTemplatesDialog } from "@/components/hiring/OfferTemplatesDialog";
+import { InterviewQuestionsDialog } from "@/components/hiring/InterviewQuestionsDialog";
+import { InterviewResults } from "@/components/hiring/InterviewResults";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,7 +78,18 @@ export default function RequisitionDetailPage() {
   const { data: pipeline, isLoading } = usePipeline(requisitionId);
   const { mutate: move, isPending: moving } = useMoveApplication();
 
-  const [tab, setTab] = useState<"pipeline" | "meetings">("pipeline");
+  // The questions with their expected answers come from the single-requisition
+  // response; a list row only counts them.
+  const { data: full } = useRequisition(requisitionId);
+  const questions = full?.interviewQuestions ?? [];
+  const questionCount = full ? questions.length : requisition?.interviewQuestionCount ?? 0;
+  const raisedByMe = !!user && (typeof requisition?.raisedBy === "object" ? requisition.raisedBy?._id : requisition?.raisedBy) === user._id;
+  const questionsOpenToChange = !!requisition && !["rejected", "cancelled", "filled"].includes(requisition.status);
+  const canManageQuestions = questionsOpenToChange && (canEdit || raisedByMe);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
+
+  const [tab, setTab] = useState<"pipeline" | "meetings" | "marks">("pipeline");
   const [addOpen, setAddOpen] = useState(false);
   const [scheduling, setScheduling] = useState<Application | null>(null);
   const [hiring, setHiring] = useState<Application | null>(null);
@@ -241,6 +254,45 @@ export default function RequisitionDetailPage() {
               {requisition.jdText && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{requisition.jdText}</p>}
             </div>
           )}
+          {/* What every interview round asks. Without them the panel has
+              nothing to mark against, so their absence is said, not hidden. */}
+          <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Interview questions</p>
+              {questionCount > 0 && (
+                <button type="button" onClick={() => setShowQuestions((s) => !s)}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                  <ListChecks className="h-3.5 w-3.5" />
+                  {questionCount} question{questionCount === 1 ? "" : "s"} · {questions.reduce((n, q) => n + q.maxMarks, 0) || "—"} marks
+                  {showQuestions ? " · hide" : " · show"}
+                </button>
+              )}
+              {canManageQuestions && (
+                <Button size="sm" variant={questionCount ? "outline" : "default"} className="ml-auto h-7" onClick={() => setQuestionsOpen(true)}>
+                  {questionCount ? <><Pencil className="h-3.5 w-3.5" />Edit questions</> : <><Plus className="h-3.5 w-3.5" />Add interview questions</>}
+                </Button>
+              )}
+            </div>
+            {questionCount === 0 && (
+              <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                None yet — interviewers will have no questions to ask or mark{canManageQuestions ? "." : ". The person who raised it, or HR, can add them."}
+              </p>
+            )}
+            {showQuestions && questions.length > 0 && (
+              <ol className="mt-2 space-y-2">
+                {questions.map((q, i) => (
+                  <li key={q._id ?? i} className="rounded-lg bg-muted/30 p-2.5 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium">{i + 1}. {q.question}</p>
+                      <span className="shrink-0 text-xs text-muted-foreground">{q.maxMarks} marks</span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground"><span className="font-medium">Expected:</span> {q.expectedAnswer}</p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         </div>
       )}
 
@@ -248,12 +300,15 @@ export default function RequisitionDetailPage() {
         tabs={[
           { key: "pipeline", label: "Pipeline", icon: KanbanSquare },
           { key: "meetings", label: "Meetings", icon: CalendarCheck },
+          { key: "marks", label: "Interview marks", icon: ClipboardCheck },
         ]}
         value={tab}
-        onChange={(k) => setTab(k as "pipeline" | "meetings")}
+        onChange={(k) => setTab(k as "pipeline" | "meetings" | "marks")}
       />
 
-      {tab === "pipeline" ? (
+      {tab === "marks" ? (
+        <InterviewResults requisitionId={requisitionId} />
+      ) : tab === "pipeline" ? (
         isLoading ? (
           <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : (
@@ -287,6 +342,15 @@ export default function RequisitionDetailPage() {
       )}
 
       <AddToPipeline open={addOpen} onOpenChange={setAddOpen} requisitionId={requisitionId} />
+
+      {canManageQuestions && (
+        <InterviewQuestionsDialog
+          open={questionsOpen}
+          onOpenChange={setQuestionsOpen}
+          requisitionId={requisitionId}
+          title={requisition?.title}
+        />
+      )}
 
       {hiring && (
         <HireDialog
@@ -356,6 +420,7 @@ export default function RequisitionDetailPage() {
           applicationId={scheduling._id}
           candidateName={asCandidate(scheduling.candidate)?.name}
           nextRound={(scheduling.interviews ?? []).filter((i) => i.status !== "cancelled").length + 1}
+          questionCount={questionCount}
         />
       )}
 

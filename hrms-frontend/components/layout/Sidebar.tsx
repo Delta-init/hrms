@@ -39,7 +39,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
-  ShieldCheck, GraduationCap, DatabaseBackup,
+  ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
+import { useMyInterviews } from "@/hooks/useInterviews";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { useMyDepartments } from "@/hooks/useDepartments";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
@@ -71,6 +72,8 @@ export const navItems: {
   superAdminOnly?: boolean;
   /** Drawn only when the server says this person has approvals to review. */
   approvalsOnly?: boolean;
+  /** Drawn only for someone on at least one interview panel. */
+  panelOnly?: boolean;
   /** Also drawn for someone who heads a department, even without the permission. */
   orHeadsADepartment?: boolean;
   /**
@@ -116,6 +119,7 @@ export const navItems: {
   // Heads see their own departments' requisitions and raise new ones; the
   // page and the server scope everything else away.
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring", orHeadsADepartment: true },
+  { href: "/my-interviews", label: "My Interviews", icon: ClipboardPen, permModule: null, panelOnly: true },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/agreements", label: "Signed Agreements", icon: FileSignature, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
@@ -166,6 +170,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // sidebar can tell a head from an ordinary employee without needing the
   // `departments` permission to ask the question. Empty for almost everyone.
   const { data: myDepartments = [] } = useMyDepartments();
+  // Interviewers are mostly not hiring staff, so this is asked of everybody
+  // too. Empty for almost everyone, and the link stays hidden.
+  const { data: myInterviews = [] } = useMyInterviews(!isKioskOnly);
   /** What waits behind each link, for the badge. Absent means no badge. */
   // The approvals summary already counts every queue that waits on this
   // person, by module — so each section's link carries its own share of it.
@@ -174,6 +181,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/leave": pendingLeave,
     "/regularization": pendingReg,
     "/approvals": approvals?.total ?? 0,
+    // Sheets not yet submitted for interviews that have happened or are today.
+    "/my-interviews": myInterviews.filter((iv) =>
+      iv.sheet?.status !== "submitted" && iv.status !== "no_show" && new Date(iv.scheduledAt).getTime() < Date.now() + 86_400_000).length,
     "/hiring": mod("hiring") + mod("offer"),
     "/reimbursements": mod("reimbursement"),
     "/resignations": mod("resignation"),
@@ -185,7 +195,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         const hasBasePermission = permModule !== null && hasPermission(permModule, permAction ?? "view");
         // A third of the menu is deliberately ungated — everyone can raise a
@@ -197,6 +207,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
             ? isSuperAdmin
             : approvalsOnly
               ? !!approvals?.canAccess
+              : panelOnly
+                ? myInterviews.length > 0
               : orHeadsADepartment
                 ? hasBasePermission || myDepartments.length > 0
                 : permModule === null ? true : hasBasePermission;

@@ -41,6 +41,22 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
     jdKey: { type: String, trim: true },
     jdFileName: { type: String, trim: true, maxlength: 200 },
 
+    // What the panel asks, written by whoever needs the role filled — they know
+    // what a good answer sounds like; the panel may not. Every round asks all of
+    // them, each marked out of its own maximum. Kept editable after approval
+    // (see setQuestions), since none of it is what the approvers signed off on;
+    // a marked sheet keeps its own copy, so a later edit never rewrites a mark.
+    interviewQuestions: {
+      type: [{
+        question: { type: String, required: true, trim: true, maxlength: 1000 },
+        expectedAnswer: { type: String, required: true, trim: true, maxlength: 4000 },
+        maxMarks: { type: Number, required: true, min: 1, max: 100 },
+      }],
+      default: [],
+    },
+    questionsUpdatedAt: { type: Date, default: null },
+    questionsUpdatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+
     raisedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: {
       type: String,

@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import {
-  createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema, withdrawRequisitionSchema,
+  createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema, withdrawRequisitionSchema, setQuestionsSchema,
 } from "../validations/jobRequisitionValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
@@ -46,6 +46,20 @@ export const updateRequisition = async (req: AuthenticatedRequest, res: Response
     const parsed = updateRequisitionSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     sendSuccess(res, "Requisition updated", await service.update(req.params.id, parsed.data, headOnly(req, "edit"), req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+/** The interview questions, replaced as a set — by the raiser or HR, before or after approval. */
+export const setRequisitionQuestions = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = setQuestionsSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.setQuestions(req.params.id, parsed.data.interviewQuestions, {
+      userId: req.user!.userId,
+      canEdit: hasPermission(req.user?.role, "hiring", "edit"),
+      forHead: !!headOnly(req, "view"),
+    });
+    sendSuccess(res, "Interview questions saved", record);
   } catch (error) { next(error); }
 };
 

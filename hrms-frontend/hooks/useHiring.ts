@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, HiringWorkflowState, JobRequisition, RequisitionStatus } from "@/types";
+import type { ApiResponse, HiringWorkflowState, InterviewQuestion, InterviewResult, JobRequisition, RequisitionStatus } from "@/types";
 
 const KEY = ["hiring"] as const;
 
@@ -17,6 +17,36 @@ export const useRequisitions = (params?: Record<string, string>) =>
       const res = await api.get<ApiResponse<JobRequisition[]>>("/hiring/requisitions", { params });
       return { data: res.data.data ?? [], pagination: res.data.pagination };
     },
+  });
+
+/** One requisition in full — with its interview questions, which a list row only counts. */
+export const useRequisition = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "requisition", id],
+    queryFn: async () => (await api.get<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}`)).data.data!,
+    enabled: !!id,
+  });
+
+/** Replace a requisition's interview questions — before or after approval. */
+export const useSetRequisitionQuestions = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, interviewQuestions }: { id: string; interviewQuestions: InterviewQuestion[] }) =>
+      (await api.put<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}/questions`, { interviewQuestions })).data.data!,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Interview questions saved"); },
+    onError: (e) => toast.error(errMsg(e, "Could not save the interview questions")),
+  });
+};
+
+/** Every submitted interview sheet on a role — or one candidate's — best-marked first. */
+export const useInterviewResults = (requisitionId?: string, applicationId?: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "interview-results", requisitionId, applicationId],
+    queryFn: async () =>
+      (await api.get<ApiResponse<InterviewResult[]>>(`/hiring/requisitions/${requisitionId}/interview-results`, {
+        params: applicationId ? { application: applicationId } : undefined,
+      })).data.data ?? [],
+    enabled: !!requisitionId && enabled,
   });
 
 /** Whether a chain is configured. Without one the Finance gate does not exist. */

@@ -2606,6 +2606,16 @@ export const REQUISITION_STATUS_LABELS: Record<RequisitionStatus, string> = {
   on_hold: "On hold", filled: "Filled", cancelled: "Cancelled",
 };
 
+/** One question for the interview panel, as the requester wrote it. */
+export interface InterviewQuestion {
+  /** Absent on one not saved yet. */
+  _id?: string;
+  question: string;
+  /** What a good answer covers — for the panel's eyes only. */
+  expectedAnswer: string;
+  maxMarks: number;
+}
+
 export interface JobRequisition {
   _id: string;
   type: RequisitionType;
@@ -2627,6 +2637,10 @@ export interface JobRequisition {
   /** Typed in directly. Independent of the attachment — a role can carry both. */
   jdText?: string;
   jdFileName?: string;
+  /** On the single-requisition response; a list row carries only the count. */
+  interviewQuestions?: InterviewQuestion[];
+  interviewQuestionCount?: number;
+  questionsUpdatedAt?: string | null;
   jdUrl?: string;
   raisedBy?: { _id: string; name: string; email?: string } | string | null;
   status: RequisitionStatus;
@@ -2818,10 +2832,83 @@ export interface InterviewFeedback {
   _id: string;
   interview: string;
   panellist: { _id: string; name: string; email?: string } | string;
-  recommendation: Recommendation;
+  recommendation: Recommendation | null;
   scores?: { skill: string; rating: number }[];
   notes?: string;
-  submittedAt: string;
+  submittedAt: string | null;
+}
+
+/** One answer on a sheet, with the question copied as it was asked. */
+export interface SheetAnswer {
+  questionId: string;
+  question: string;
+  expectedAnswer: string;
+  maxMarks: number;
+  /** What the candidate said, in the panellist's words. */
+  response: string;
+  marks: number | null;
+}
+
+/** A panellist's marking sheet. A draft is seen by nobody else. */
+export interface InterviewSheet {
+  _id: string;
+  status: "draft" | "submitted";
+  recommendation: Recommendation | null;
+  notes: string;
+  answers: SheetAnswer[];
+  totalMarks: number | null;
+  maxTotal: number | null;
+  percent: number | null;
+  submittedAt: string | null;
+  updatedAt: string | null;
+}
+
+/** An interview on the "My interviews" list. */
+export interface MyInterview {
+  _id: string;
+  round: number;
+  title?: string;
+  mode: InterviewMode;
+  scheduledAt: string;
+  durationMinutes: number;
+  timeZone: string;
+  status: InterviewStatus;
+  meetingLink?: string;
+  location?: string;
+  candidate: { name: string };
+  role: { title: string };
+  questionCount: number;
+  sheet: InterviewSheet | null;
+}
+
+/** Everything the marking sheet page needs. */
+export interface InterviewSheetPage {
+  interview: {
+    _id: string; round: number; title?: string; mode: InterviewMode; scheduledAt: string;
+    durationMinutes: number; timeZone: string; location?: string; meetingLink?: string;
+    status: InterviewStatus; panel: Array<{ _id: string; name: string }>;
+  };
+  candidate: { name: string; resumeUrl: string; resumeFileName: string };
+  role: { _id: string | null; title: string };
+  questions: Array<Required<InterviewQuestion>>;
+  sheet: InterviewSheet | null;
+  /** Why it can no longer change, or null. */
+  locked: string | null;
+}
+
+/** One candidate's submitted sheets on a role, best-marked first. */
+export interface InterviewResult {
+  application: { _id: string; stage: ApplicationStage; status: ApplicationStatus };
+  candidate: { _id: string | null; name: string };
+  interviews: Array<{
+    _id: string; round: number; title?: string; scheduledAt: string; status: InterviewStatus;
+    sheets: Array<InterviewSheet & { panellist: { _id: string | null; name: string } }>;
+    /** Panellists who have not submitted yet. */
+    waitingOn: string[];
+  }>;
+  sheetCount: number;
+  averagePercent: number | null;
+  recommendations: Partial<Record<Recommendation, number>>;
 }
 
 /** Who on the panel is already booked. Advisory — the form warns, not refuses. */

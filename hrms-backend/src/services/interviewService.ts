@@ -10,8 +10,11 @@ import { parsePagination } from "../utils/query.js";
 import { sendMail } from "../utils/mailer.js";
 import { inviteAttachment } from "../utils/calendarInvite.js";
 import { env } from "../config/env.js";
+import { notify } from "./notificationService.js";
+import { publicUrl } from "./uploadService.js";
+import { answersFor, badMarks, sheetTotals, unanswered, type SheetQuestion } from "../utils/interviewMarks.js";
 import type {
-  ScheduleInterviewInput, UpdateInterviewInput, FeedbackInput,
+  ScheduleInterviewInput, UpdateInterviewInput, FeedbackInput, SheetInput,
 } from "../validations/interviewValidation.js";
 
 /**
@@ -43,6 +46,43 @@ const POP = [
     ],
   },
 ];
+
+/**
+ * Why a sheet can no longer change, or null while it still can.
+ *
+ * The marks are what an offer is decided on, so they freeze once one is in
+ * motion — a mark revised after the offer would rewrite the reason for it.
+ */
+function lockedBecause(app: {
+  movedToEmployee?: unknown; offer?: { sentAt?: Date | null } | null; offerApproval?: { status?: string } | null;
+} | null): string | null {
+  if (!app) return null;
+  if (app.movedToEmployee) return "The candidate has been hired";
+  if (app.offer?.sentAt) return "An offer has been sent to the candidate";
+  if (app.offerApproval?.status === "pending" || app.offerApproval?.status === "approved") return "An offer has been requested for the candidate";
+  return null;
+}
+
+type SheetDoc = {
+  _id: unknown; status?: string; recommendation?: string | null; notes?: string;
+  answers?: Array<{ questionId: unknown; question: string; expectedAnswer: string; maxMarks: number; response: string; marks: number | null }>;
+  totalMarks?: number | null; maxTotal?: number | null; submittedAt?: Date | null; updatedAt?: Date;
+  panellist?: unknown;
+};
+
+/** A sheet as the pages read it. A row from before drafts existed was submitted. */
+const shapeSheet = (s: SheetDoc) => ({
+  _id: s._id,
+  status: s.status === "draft" ? "draft" : "submitted",
+  recommendation: s.recommendation ?? null,
+  notes: s.notes ?? "",
+  answers: (s.answers ?? []).map((a) => ({ ...a, questionId: String(a.questionId) })),
+  totalMarks: s.totalMarks ?? null,
+  maxTotal: s.maxTotal ?? null,
+  percent: s.maxTotal ? Math.round(((s.totalMarks ?? 0) / s.maxTotal) * 100) : null,
+  submittedAt: s.submittedAt ?? null,
+  updatedAt: s.updatedAt ?? null,
+});
 
 const MODE_LABELS: Record<string, string> = { in_person: "In person", video: "Video call", phone: "Phone" };
 
@@ -185,7 +225,27 @@ export class InterviewService {
     }
 
     await this.notify(String(doc._id));
+    await this.tellPanel(String(doc._id), panel, by);
     return Interview.findById(doc._id).populate(POP);
+  }
+
+  /**
+   * Tell panellists in-app that they have a sheet to fill in. Not in the
+   * emailed invite: that one goes to the candidate as well.
+   */
+  private async tellPanel(interviewId: string, users: string[], actor: string) {
+    if (!users.length) return;
+    const doc = await Interview.findById(interviewId).populate(POP).lean();
+    if (!doc) return;
+    const app = doc.application as unknown as { candidate?: { name?: string }; requisition?: { title?: string } };
+    await notify({
+      users,
+      kind: "reminder",
+      title: `Interview: ${app?.candidate?.name ?? "a candidate"} — ${app?.requisition?.title ?? "a role"}`,
+      body: `Round ${doc.round}, ${fmt(new Date(doc.scheduledAt), doc.timeZone)}. Your interview sheet has the questions to ask and where to mark the answers.`,
+      href: `/my-interviews/${interviewId}`,
+      actor,
+    });
   }
 
   async list(query: PaginationQuery & { application?: string; requisition?: string; from?: string; to?: string; panellist?: string }) {
@@ -219,17 +279,20 @@ export class InterviewService {
   async getById(id: string) {
     const record = await Interview.findOne(scoped({ _id: id })).populate(POP).lean();
     if (!record) throw new InterviewError("Interview not found", 404);
-    const feedback = await InterviewFeedback.find(scoped({ interview: id }))
+    // A draft is the panellist's own until they submit it.
+    const feedback = await InterviewFeedback.find(scoped({ interview: id, status: { $ne: "draft" } }))
       .populate({ path: "panellist", select: "name email" })
       .sort({ submittedAt: 1 })
       .lean();
     return { ...record, feedback };
   }
 
-  async update(id: string, input: UpdateInterviewInput) {
+  async update(id: string, input: UpdateInterviewInput, by?: string) {
     const record = await Interview.findOne(scoped({ _id: id }));
     if (!record) throw new InterviewError("Interview not found", 404);
     if (record.status === "cancelled") throw new InterviewError("This interview was cancelled");
+    const before = new Set(record.panel.map(String));
+    const joined = (input.panel ?? []).filter((p) => !before.has(String(p)));
 
     // Only a change to the appointment itself is worth re-sending; adding a
     // recording link afterwards should not ping five calendars.
@@ -245,6 +308,7 @@ export class InterviewService {
     await record.save();
 
     if (rescheduled) await this.notify(id);
+    await this.tellPanel(id, joined, by ?? "");
     return Interview.findById(id).populate(POP);
   }
 
@@ -270,16 +334,24 @@ export class InterviewService {
 
   /** Record, or revise, one panellist's verdict. */
   async submitFeedback(interviewId: string, input: FeedbackInput, panellist: string) {
-    const interview = await Interview.findOne(scoped({ _id: interviewId })).select("panel status").lean();
+    const interview = await Interview.findOne(scoped({ _id: interviewId })).select("panel status application").lean();
     if (!interview) throw new InterviewError("Interview not found", 404);
     if (interview.status === "cancelled") throw new InterviewError("This interview was cancelled");
 
     const onPanel = (interview.panel ?? []).some((p) => String(p) === panellist);
     if (!onPanel) throw new InterviewError("Only the panel can leave feedback on this interview", 403);
 
+    // A verdict without the marks would skip the role's questions entirely.
+    const app = await Application.findOne(scoped({ _id: (interview as { application?: unknown }).application }))
+      .populate<{ requisition: { interviewQuestions?: unknown[] } | null }>({ path: "requisition", select: "interviewQuestions" })
+      .select("requisition").lean();
+    if (app?.requisition?.interviewQuestions?.length) {
+      throw new InterviewError("This role has interview questions — fill in the interview sheet under My Interviews");
+    }
+
     const doc = await InterviewFeedback.findOneAndUpdate(
       scoped({ interview: interviewId, panellist }),
-      { $set: { ...input, submittedAt: new Date() }, $setOnInsert: { organization: getOrgId(), interview: interviewId, panellist } },
+      { $set: { ...input, status: "submitted", submittedAt: new Date() }, $setOnInsert: { organization: getOrgId(), interview: interviewId, panellist } },
       { new: true, upsert: true }
     ).populate({ path: "panellist", select: "name email" });
 
@@ -290,6 +362,198 @@ export class InterviewService {
     const record = await InterviewFeedback.findOneAndDelete(scoped({ _id: id, panellist }));
     if (!record) throw new InterviewError("Feedback not found, or it is not yours to remove", 404);
     return { message: "Feedback removed" };
+  }
+
+  // ── The panellist's sheet ──────────────────────────────────────────────────
+  // Reached by being on the panel, not by holding a hiring permission: the
+  // people who interview are mostly not the people who run hiring.
+
+  /** The interview with what its sheet needs, refused to anybody not on its panel. */
+  private async forPanellist(interviewId: string, userId: string) {
+    const interview = await Interview.findOne(scoped({ _id: interviewId }))
+      .populate({ path: "panel", select: "name" })
+      .populate({
+        path: "application",
+        select: "candidate requisition offerApproval offer movedToEmployee",
+        populate: [
+          { path: "candidate", select: "name resumeKey resumeFileName" },
+          { path: "requisition", select: "title interviewQuestions" },
+        ],
+      })
+      .lean();
+    if (!interview) throw new InterviewError("Interview not found", 404);
+    const panel = (interview.panel ?? []) as unknown as Array<{ _id: unknown; name?: string }>;
+    if (!panel.some((p) => String(p._id) === String(userId))) {
+      throw new InterviewError("Only the interview panel can open this sheet", 403);
+    }
+    const app = interview.application as unknown as {
+      _id: unknown; movedToEmployee?: unknown; offer?: { sentAt?: Date | null }; offerApproval?: { status?: string };
+      candidate?: { _id: unknown; name?: string; resumeKey?: string; resumeFileName?: string } | null;
+      requisition?: { _id: unknown; title?: string; interviewQuestions?: SheetQuestion[] } | null;
+    } | null;
+    const locked = interview.status === "cancelled" ? "This interview was cancelled"
+      : interview.status === "no_show" ? "The candidate did not attend"
+      : lockedBecause(app);
+    return { interview, panel, app, questions: app?.requisition?.interviewQuestions ?? [], locked };
+  }
+
+  /** The interviews this person sits on, with how far their own sheet has got. */
+  async myInterviews(userId: string) {
+    const rows = await Interview.find(scoped({ panel: userId, status: { $ne: "cancelled" } }))
+      .select("application round title mode scheduledAt durationMinutes timeZone status meetingLink location")
+      .populate({
+        path: "application",
+        select: "candidate requisition",
+        populate: [{ path: "candidate", select: "name" }, { path: "requisition", select: "title interviewQuestions" }],
+      })
+      .sort({ scheduledAt: -1 })
+      .limit(200)
+      .lean();
+    const sheets = await InterviewFeedback.find(scoped({ panellist: userId, interview: { $in: rows.map((r) => r._id) } })).lean();
+    return rows.map((iv) => {
+      const app = iv.application as unknown as { candidate?: { name?: string }; requisition?: { title?: string; interviewQuestions?: unknown[] } } | null;
+      const mine = sheets.find((s) => String(s.interview) === String(iv._id));
+      return {
+        _id: iv._id, round: iv.round, title: iv.title, mode: iv.mode, scheduledAt: iv.scheduledAt,
+        durationMinutes: iv.durationMinutes, timeZone: iv.timeZone, status: iv.status,
+        meetingLink: iv.meetingLink, location: iv.location,
+        candidate: { name: app?.candidate?.name ?? "—" },
+        role: { title: app?.requisition?.title ?? "—" },
+        questionCount: app?.requisition?.interviewQuestions?.length ?? 0,
+        sheet: mine ? shapeSheet(mine as unknown as SheetDoc) : null,
+      };
+    });
+  }
+
+  /** One panellist's sheet: the interview, the role's questions with their expected answers, and what they have entered. */
+  async sheetFor(interviewId: string, userId: string) {
+    const { interview, panel, app, questions, locked } = await this.forPanellist(interviewId, userId);
+    const mine = await InterviewFeedback.findOne(scoped({ interview: interviewId, panellist: userId })).lean();
+    return {
+      interview: {
+        _id: interview._id, round: interview.round, title: interview.title, mode: interview.mode,
+        scheduledAt: interview.scheduledAt, durationMinutes: interview.durationMinutes, timeZone: interview.timeZone,
+        location: interview.location, meetingLink: interview.meetingLink, status: interview.status,
+        panel: panel.map((p) => ({ _id: p._id, name: p.name ?? "" })),
+      },
+      candidate: {
+        name: app?.candidate?.name ?? "—",
+        // The panel interviewing them may read their CV; the link is signed and short-lived.
+        resumeUrl: app?.candidate?.resumeKey ? publicUrl(app.candidate.resumeKey) : "",
+        resumeFileName: app?.candidate?.resumeFileName ?? "",
+      },
+      role: { _id: app?.requisition?._id ?? null, title: app?.requisition?.title ?? "—" },
+      questions: questions.map((q) => ({ _id: String(q._id), question: q.question, expectedAnswer: q.expectedAnswer, maxMarks: q.maxMarks })),
+      sheet: mine ? shapeSheet(mine as unknown as SheetDoc) : null,
+      locked,
+    };
+  }
+
+  /**
+   * Save the sheet as a draft, or submit it.
+   *
+   * A draft takes anything in range, so nothing typed during the interview is
+   * lost. Submitting needs what the candidate said and the marks for every
+   * question, and an overall recommendation. Once submitted it changes only by
+   * submitting again — saving it back to a draft would quietly take a verdict
+   * out of the results HR is reading.
+   */
+  async saveSheet(interviewId: string, userId: string, input: SheetInput) {
+    const { questions, locked } = await this.forPanellist(interviewId, userId);
+    if (locked) throw new InterviewError(`${locked}, so this sheet can no longer change`);
+
+    const answers = answersFor(questions, input.answers);
+    const bad = badMarks(answers);
+    if (bad.length) throw new InterviewError(bad[0]);
+
+    const existing = await InterviewFeedback.findOne(scoped({ interview: interviewId, panellist: userId })).select("status").lean();
+    if (!input.submit && existing && existing.status !== "draft") {
+      throw new InterviewError("This sheet is already submitted — submit it again to change it", 409);
+    }
+    if (input.submit) {
+      const missing = unanswered(answers);
+      if (missing.length) {
+        throw new InterviewError(
+          `Fill in what the candidate said and the marks for question${missing.length === 1 ? "" : "s"} ${missing.join(", ")} before submitting`
+        );
+      }
+      if (!input.recommendation) throw new InterviewError("Give your overall recommendation before submitting");
+    }
+
+    const { totalMarks, maxTotal } = sheetTotals(answers);
+    await InterviewFeedback.findOneAndUpdate(
+      scoped({ interview: interviewId, panellist: userId }),
+      {
+        $set: {
+          answers,
+          recommendation: input.recommendation ?? null,
+          notes: input.notes ?? "",
+          totalMarks,
+          maxTotal,
+          status: input.submit ? "submitted" : "draft",
+          submittedAt: input.submit ? new Date() : null,
+        },
+        $setOnInsert: { organization: getOrgId(), interview: interviewId, panellist: userId },
+      },
+      { upsert: true, new: true, runValidators: true }
+    );
+    return this.sheetFor(interviewId, userId);
+  }
+
+  /**
+   * Every submitted sheet against a role's candidates — or one candidate's —
+   * with who on each panel has yet to submit. Drafts stay their writer's.
+   */
+  async resultsFor(requisitionId: string, applicationId?: string) {
+    const apps = await Application.find(scoped({ requisition: requisitionId, ...(applicationId ? { _id: applicationId } : {}) }))
+      .select("candidate stage status")
+      .populate({ path: "candidate", select: "name" })
+      .lean();
+    const interviews = await Interview.find(scoped({ application: { $in: apps.map((a) => a._id) }, status: { $ne: "cancelled" } }))
+      .select("application round title scheduledAt status panel")
+      .populate({ path: "panel", select: "name" })
+      .sort({ scheduledAt: 1 })
+      .lean();
+    const sheets = await InterviewFeedback.find(scoped({ interview: { $in: interviews.map((i) => i._id) }, status: { $ne: "draft" } }))
+      .populate({ path: "panellist", select: "name" })
+      .sort({ submittedAt: 1 })
+      .lean();
+
+    const rows = apps.map((app) => {
+      const ivs = interviews
+        .filter((iv) => String(iv.application) === String(app._id))
+        .map((iv) => {
+          const panel = (iv.panel ?? []) as unknown as Array<{ _id: unknown; name?: string }>;
+          const done = sheets
+            .filter((s) => String(s.interview) === String(iv._id))
+            .map((s) => {
+              const p = s.panellist as unknown as { _id: unknown; name?: string } | null;
+              return { ...shapeSheet(s as unknown as SheetDoc), panellist: { _id: p?._id ?? null, name: p?.name ?? "—" } };
+            });
+          const submittedBy = new Set(done.map((s) => String(s.panellist._id)));
+          return {
+            _id: iv._id, round: iv.round, title: iv.title, scheduledAt: iv.scheduledAt, status: iv.status,
+            sheets: done,
+            waitingOn: iv.status === "no_show" ? [] : panel.filter((p) => !submittedBy.has(String(p._id))).map((p) => p.name ?? "—"),
+          };
+        });
+      const all = ivs.flatMap((iv) => iv.sheets);
+      const scored = all.filter((s) => s.percent != null);
+      const candidate = app.candidate as unknown as { _id: unknown; name?: string } | null;
+      return {
+        application: { _id: app._id, stage: app.stage, status: app.status },
+        candidate: { _id: candidate?._id ?? null, name: candidate?.name ?? "—" },
+        interviews: ivs,
+        sheetCount: all.length,
+        averagePercent: scored.length ? Math.round(scored.reduce((n, s) => n + (s.percent ?? 0), 0) / scored.length) : null,
+        recommendations: all.reduce<Record<string, number>>((acc, s) => {
+          if (s.recommendation) acc[s.recommendation] = (acc[s.recommendation] ?? 0) + 1;
+          return acc;
+        }, {}),
+      };
+    });
+    // Best first; those not yet marked after them.
+    return rows.sort((a, b) => (b.averagePercent ?? -1) - (a.averagePercent ?? -1));
   }
 
   async remove(id: string) {

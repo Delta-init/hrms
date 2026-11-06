@@ -2000,6 +2000,15 @@ export type RequisitionStatus =
   | "filled"
   | "cancelled";
 
+/** One interview question as the requester wrote it. */
+export interface IInterviewQuestion {
+  _id: Types.ObjectId;
+  question: string;
+  /** What a good answer covers — for the panel's eyes only. */
+  expectedAnswer: string;
+  maxMarks: number;
+}
+
 export interface IJobRequisition extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
@@ -2027,6 +2036,10 @@ export interface IJobRequisition extends Document {
   jdText?: string;
   jdKey?: string;
   jdFileName?: string;
+  /** Asked in every interview round; each answer is marked out of `maxMarks`. */
+  interviewQuestions?: IInterviewQuestion[];
+  questionsUpdatedAt?: Date | null;
+  questionsUpdatedBy?: Types.ObjectId | IUser | null;
   raisedBy: Types.ObjectId | IUser;
   status: RequisitionStatus;
   workflowStep?: number | null;
@@ -2225,10 +2238,23 @@ export interface IInterviewFeedback extends Document {
   organization?: Types.ObjectId | IOrganization | null;
   interview: Types.ObjectId | IInterview;
   panellist: Types.ObjectId | IUser;
-  recommendation: Recommendation;
+  /** Rows from before drafts existed have none, and were submitted. */
+  status?: "draft" | "submitted";
+  /** Set on every submitted sheet; a draft may not have one yet. */
+  recommendation: Recommendation | null;
   scores?: Array<{ skill: string; rating: number }>;
   notes?: string;
-  submittedAt: Date;
+  answers?: Array<{
+    questionId: Types.ObjectId;
+    question: string;
+    expectedAnswer: string;
+    maxMarks: number;
+    response: string;
+    marks: number | null;
+  }>;
+  totalMarks?: number | null;
+  maxTotal?: number | null;
+  submittedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

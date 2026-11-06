@@ -2,7 +2,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Interview, InterviewFeedback, PanelConflict, Recommendation } from "@/types";
+import type {
+  ApiResponse, Interview, InterviewFeedback, InterviewSheetPage, MyInterview, PanelConflict, Recommendation,
+} from "@/types";
 
 const KEY = ["hiring"] as const;
 
@@ -79,5 +81,54 @@ export const useSubmitFeedback = () => {
       (await api.post<ApiResponse<InterviewFeedback>>(`/hiring/interviews/${id}/feedback`, body)).data.data!,
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Feedback recorded"); },
     onError: (e) => toast.error(errMsg(e, "Could not record your feedback")),
+  });
+};
+
+// ── The panellist's sheet ────────────────────────────────────────────────────
+
+/** The interviews this person sits on. Empty for most people, who are on no panel. */
+export const useMyInterviews = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "my-interviews"],
+    queryFn: async () => (await api.get<ApiResponse<MyInterview[]>>("/hiring/my-interviews")).data.data ?? [],
+    enabled,
+    staleTime: 60 * 1000,
+  });
+
+export const useMySheet = (id?: string) =>
+  useQuery({
+    queryKey: [...KEY, "my-sheet", id],
+    queryFn: async () => (await api.get<ApiResponse<InterviewSheetPage>>(`/hiring/my-interviews/${id}`)).data.data!,
+    enabled: !!id,
+    // Typing is happening on this page; a refetch on refocus would put the
+    // server's copy back over what is in the boxes.
+    refetchOnWindowFocus: false,
+  });
+
+export interface SaveSheetBody {
+  answers: Array<{ questionId: string; response: string; marks: number | null }>;
+  recommendation: Recommendation | null;
+  notes: string;
+  submit: boolean;
+}
+
+/**
+ * Save the sheet — quietly for a draft, which happens on its own while they
+ * type; with a toast for a submit, which is the step they took on purpose.
+ */
+export const useSaveSheet = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: SaveSheetBody & { id: string }) =>
+      (await api.put<ApiResponse<InterviewSheetPage>>(`/hiring/my-interviews/${id}`, body)).data.data!,
+    onSuccess: (data, v) => {
+      qc.setQueryData([...KEY, "my-sheet", v.id], data);
+      if (v.submit) {
+        qc.invalidateQueries({ queryKey: [...KEY, "my-interviews"] });
+        qc.invalidateQueries({ queryKey: [...KEY, "interview-results"] });
+        toast.success("Interview sheet submitted");
+      }
+    },
+    onError: (e, v) => { if (v.submit) toast.error(errMsg(e, "Could not submit the sheet")); },
   });
 };

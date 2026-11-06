@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { AlertTriangle, FileText, Loader2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, FileText, Loader2, Upload, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
   ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -12,12 +12,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSelect } from "@/components/pickers";
-import { useCreateRequisition, useUpdateRequisition, useUploadJd, useReplaceable } from "@/hooks/useHiring";
+import { InterviewQuestionsEditor } from "@/components/hiring/InterviewQuestionsEditor";
+import { useCreateRequisition, useUpdateRequisition, useUploadJd, useReplaceable, useRequisition } from "@/hooks/useHiring";
 import { useDepartments, useMyDepartments } from "@/hooks/useDepartments";
 import { useEmployee } from "@/hooks/useEmployees";
+import { blankQuestion, isBlankQuestion, questionsReady } from "@/lib/interviewQuestions";
+import { cn } from "@/lib/utils";
 import {
   EMPLOYMENT_TYPE_LABELS, LOCATION_LABELS, REQUISITION_TYPE_LABELS,
-  type EmployeeLocation, type EmploymentType, type JobRequisition, type RequisitionType,
+  type EmployeeLocation, type EmploymentType, type InterviewQuestion, type JobRequisition, type RequisitionType,
 } from "@/types";
 
 interface Props {
@@ -58,12 +61,16 @@ const EMPTY: FormValues = {
 };
 
 /**
- * Raising a request to fill a role.
+ * Raising a request to fill a role, in two steps: the role, then the questions
+ * its interviews will ask.
  *
  * The form says who will have to approve it before it is submitted, because the
  * answer depends on what is typed into it: new headcount always goes to
  * Finance, and a replacement does only when it costs more than the person
  * leaving. Discovering that after submitting would make the rule feel arbitrary.
+ *
+ * The questions come from whoever needs the role filled, because they know what
+ * a good answer sounds like and the panel may not. At least one is needed.
  */
 const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id: string })._id) : String(v ?? ""));
 
@@ -89,6 +96,14 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
   const { data: myDepartments = [] } = useMyDepartments();
   const departments = headMode ? myDepartments : departmentData?.data ?? [];
   const { data: team = [] } = useReplaceable(headMode && open);
+  // A list row carries only how many questions there are; the full set is
+  // fetched to edit them.
+  const { data: full } = useRequisition(open && requisition ? requisition._id : undefined);
+
+  const [step, setStep] = useState<1 | 2>(1);
+  const [questions, setQuestions] = useState<InterviewQuestion[]>([blankQuestion()]);
+  const [questionsTouched, setQuestionsTouched] = useState(false);
+  const [showQuestionErrors, setShowQuestionErrors] = useState(false);
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<FormValues>({
     defaultValues: EMPTY,
@@ -121,7 +136,20 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
     if (!open) return;
     reset(requisition ? toForm(requisition) : { ...EMPTY, department: headMode && myDepartments.length === 1 ? myDepartments[0]._id : "" });
     setJdFile(null);
+    setStep(1);
+    setQuestions([blankQuestion()]);
+    setQuestionsTouched(false);
+    setShowQuestionErrors(false);
   }, [open, reset, headMode, myDepartments, requisition]);
+
+  // The saved questions, once they arrive — unless they have already been
+  // typed over in the meantime.
+  useEffect(() => {
+    if (!open || questionsTouched || !full?.interviewQuestions?.length) return;
+    setQuestions(full.interviewQuestions.map((q) => ({ _id: q._id, question: q.question, expectedAnswer: q.expectedAnswer, maxMarks: q.maxMarks })));
+  }, [open, full, questionsTouched]);
+
+  const editQuestions = (next: InterviewQuestion[]) => { setQuestions(next); setQuestionsTouched(true); };
 
   const onSubmit = (data: FormValues) => {
     const save = (payload: Record<string, unknown>, done: (record: JobRequisition) => Promise<void>) =>
@@ -139,6 +167,9 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
         headcount: Number(data.headcount) || 1,
         targetStartDate: data.targetStartDate || null,
         jdText: data.jdText || undefined,
+        interviewQuestions: questions.filter((q) => !isBlankQuestion(q)).map((q) => ({
+          ...q, question: q.question.trim(), expectedAnswer: q.expectedAnswer.trim(),
+        })),
       },
       async (record) => {
         // A JD that will not upload must not cost us the requisition — it is
@@ -149,6 +180,13 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
     );
   };
 
+  const questionsProblem = questionsReady(questions);
+  const submitAll = () => {
+    setShowQuestionErrors(true);
+    if (questionsProblem) return;
+    void handleSubmit(onSubmit, () => setStep(1))();
+  };
+
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-2xl">
@@ -156,7 +194,27 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
           <ResponsiveDialogTitle>{editing ? "Edit requisition" : "Raise a hiring requisition"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
+        {/* Where they are, and that there is a second step coming. */}
+        <ol className="flex items-center gap-2 px-4 text-xs sm:px-0">
+          {([[1, "Role details"], [2, "Interview questions"]] as const).map(([n, label], i) => (
+            <li key={n} className="flex items-center gap-2">
+              {i > 0 && <span className="h-px w-6 bg-border" />}
+              <span className={cn(
+                "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold",
+                step === n ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              )}>{n}</span>
+              <span className={cn(step === n ? "font-medium text-foreground" : "text-muted-foreground")}>{label}</span>
+            </li>
+          ))}
+        </ol>
+
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (step === 1) void handleSubmit(() => setStep(2))(); else submitAll(); }}
+          className="space-y-4 px-4 sm:px-0"
+        >
+          {step === 2 ? (
+            <InterviewQuestionsEditor value={questions} onChange={editQuestions} showErrors={showQuestionErrors} />
+          ) : (<>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Why are you hiring? *</Label>
@@ -339,13 +397,29 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
               )}
             </span>
           </div>
+          </>)}
+
+          {step === 2 && showQuestionErrors && questionsProblem && (
+            <p className="text-xs text-destructive">{questionsProblem}</p>
+          )}
 
           <ResponsiveDialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isPending || uploading}>
-              {(isPending || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {uploading ? "Attaching JD…" : editing ? "Save changes" : "Raise requisition"}
-            </Button>
+            {step === 1 ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                <Button type="submit">Next: interview questions<ArrowRight className="h-4 w-4" /></Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={() => setStep(1)} disabled={isPending || uploading}>
+                  <ArrowLeft className="h-4 w-4" />Back
+                </Button>
+                <Button type="submit" disabled={isPending || uploading}>
+                  {(isPending || uploading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {uploading ? "Attaching JD…" : editing ? "Save changes" : "Raise requisition"}
+                </Button>
+              </>
+            )}
           </ResponsiveDialogFooter>
         </form>
       </ResponsiveDialogContent>

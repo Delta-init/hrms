@@ -2,7 +2,9 @@ import mongoose from "mongoose";
 import { JobRequisition } from "../models/JobRequisition.js";
 import { Employee } from "../models/Employee.js";
 import { ApprovalWorkflow } from "../models/ApprovalWorkflow.js";
-import type { CreateRequisitionInput, UpdateRequisitionInput, ReviewRequisitionInput } from "../validations/jobRequisitionValidation.js";
+import type {
+  CreateRequisitionInput, UpdateRequisitionInput, ReviewRequisitionInput, InterviewQuestionInput,
+} from "../validations/jobRequisitionValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
@@ -97,6 +99,26 @@ function shape<T extends { jdKey?: string | null }>(doc: T | null, forHead = fal
     if (r && typeof r === "object") { const { salary: _s, ...rest } = r; out.replacing = rest; }
   }
   return out as T & { jdUrl: string };
+}
+
+/**
+ * Questions as they are stored. An `_id` the requisition already has is kept,
+ * so an edited question stays the same question and the marks given against it
+ * stay tied to it; any other id is dropped and the question is a new one.
+ */
+function questionsFrom(input: InterviewQuestionInput[], existing: Array<{ _id: unknown }> = []) {
+  const known = new Set(existing.map((q) => String(q._id)));
+  return input.map(({ _id, ...q }) => (_id && known.has(_id) ? { _id, ...q } : q));
+}
+
+/**
+ * A list row: how many questions it has, not the questions. The expected
+ * answers are for the people working the role, and a list is no place to ship
+ * fifty of them per row — the role's own page asks for them.
+ */
+function withoutQuestions<T extends { interviewQuestions?: unknown[] }>(doc: T) {
+  const { interviewQuestions, ...rest } = doc;
+  return { ...rest, interviewQuestionCount: interviewQuestions?.length ?? 0 };
 }
 
 const FINANCE_POP = [
@@ -221,6 +243,9 @@ export class JobRequisitionService {
 
     const doc = await JobRequisition.create({
       ...input,
+      interviewQuestions: questionsFrom(input.interviewQuestions),
+      questionsUpdatedAt: new Date(),
+      questionsUpdatedBy: raisedBy,
       replacing: input.type === "replacement" ? input.replacing ?? null : null,
       replacingSalary,
       budgetApprovalRequired,
@@ -283,7 +308,7 @@ export class JobRequisitionService {
       JobRequisition.find(filter).populate(POP).sort({ [sortField]: sortDir }).skip(skip).limit(limit).lean(),
       JobRequisition.countDocuments(filter),
     ]);
-    return { records: records.map((r) => shape(r, !!restrictToUserId)), pagination: buildPagination(total, page, limit) };
+    return { records: records.map((r) => shape(withoutQuestions(r), !!restrictToUserId)), pagination: buildPagination(total, page, limit) };
   }
 
   async getById(id: string, restrictToUserId?: string, viewerUserId?: string) {
@@ -405,10 +430,44 @@ export class JobRequisitionService {
       );
     }
 
-    Object.assign(record, input);
+    const { interviewQuestions, ...details } = input;
+    Object.assign(record, details);
+    if (interviewQuestions) {
+      record.set("interviewQuestions", questionsFrom(interviewQuestions, record.interviewQuestions));
+      record.questionsUpdatedAt = new Date();
+      record.questionsUpdatedBy = (viewerUserId ?? headOnly ?? null) as never;
+    }
     await record.save();
     const updated = await JobRequisition.findById(id).populate(POP);
     return shape(updated!.toObject(), !!headOnly);
+  }
+
+  /**
+   * Replace the interview questions — at any point until the role is filled or
+   * closed, approved or not. The approvals were for the role and its budget,
+   * not the questions, so changing them reopens nothing. The one who raised it
+   * may, and so may anyone holding hiring edit. A sheet already marked keeps
+   * the copy it was marked against.
+   */
+  async setQuestions(id: string, questions: InterviewQuestionInput[], actor: { userId: string; canEdit: boolean; forHead: boolean }) {
+    const record = await JobRequisition.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    await this.assertNotAbout(record, actor.userId);
+    if (!actor.canEdit && String(record.raisedBy) !== String(actor.userId)) {
+      throw forbidden("Only the person who raised it, or HR, can change its interview questions");
+    }
+    if (["rejected", "cancelled", "filled"].includes(record.status)) {
+      throw Object.assign(
+        new Error(`This requisition is ${record.status === "cancelled" ? "withdrawn or cancelled" : record.status}, so its questions can no longer change`),
+        { statusCode: 400 }
+      );
+    }
+    record.set("interviewQuestions", questionsFrom(questions, record.interviewQuestions));
+    record.questionsUpdatedAt = new Date();
+    record.questionsUpdatedBy = actor.userId as never;
+    await record.save();
+    const updated = await JobRequisition.findById(id).populate(POP);
+    return shape(updated!.toObject(), actor.forHead);
   }
 
   /**

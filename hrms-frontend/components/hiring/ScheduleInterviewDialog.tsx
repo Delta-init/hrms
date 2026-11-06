@@ -23,6 +23,8 @@ interface Props {
   candidateName?: string;
   /** Next round number, so a second interview does not have to be numbered by hand. */
   nextRound: number;
+  /** The role's interview questions. None is allowed, but said: the panel will have nothing to mark. */
+  questionCount?: number;
 }
 
 interface FormValues {
@@ -40,7 +42,7 @@ interface FormValues {
  *  person filling this in is thinking in. */
 const toIso = (date: string, time: string) => (date && time ? new Date(`${date}T${time}`).toISOString() : "");
 
-export function ScheduleInterviewDialog({ open, onOpenChange, applicationId, candidateName, nextRound }: Props) {
+export function ScheduleInterviewDialog({ open, onOpenChange, applicationId, candidateName, nextRound, questionCount }: Props) {
   const { mutate: schedule, isPending } = useScheduleInterview();
   const { data: userData } = useUsers({ limit: "100" });
   const users = userData?.data ?? [];
@@ -95,6 +97,12 @@ export function ScheduleInterviewDialog({ open, onOpenChange, applicationId, can
         </ResponsiveDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 px-4 sm:px-0">
+          {questionCount === 0 && (
+            <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>This role has no interview questions yet, so the panel will have nothing to ask or mark. Add them on the role&apos;s page first if you can.</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="round">Round</Label>

@@ -45,6 +45,22 @@ export const feedbackSchema = z.object({
   notes: z.string().trim().max(4000).optional(),
 });
 
+/**
+ * The panellist's sheet, saved as they go or submitted. Only the shape is
+ * checked here; whether every question is answered, and within its maximum,
+ * depends on the role's questions and is the service's to say.
+ */
+export const sheetSchema = z.object({
+  answers: z.array(z.object({
+    questionId: objectId,
+    response: z.string().max(4000).optional().default(""),
+    marks: z.number().nullable().optional().default(null),
+  })).max(100).default([]),
+  recommendation: z.enum(["strong_yes", "yes", "no", "strong_no"]).nullable().optional(),
+  notes: z.string().trim().max(4000).optional(),
+  submit: z.boolean().default(false),
+});
+
 export const conflictQuerySchema = z.object({
   panel: z.union([z.string(), z.array(z.string())]).transform((v) => (Array.isArray(v) ? v : v.split(",")).filter(Boolean)),
   scheduledAt: z.string().min(1),
@@ -55,3 +71,4 @@ export const conflictQuerySchema = z.object({
 export type ScheduleInterviewInput = z.infer<typeof scheduleInterviewSchema>;
 export type UpdateInterviewInput = z.infer<typeof updateInterviewSchema>;
 export type FeedbackInput = z.infer<typeof feedbackSchema>;
+export type SheetInput = z.infer<typeof sheetSchema>;
