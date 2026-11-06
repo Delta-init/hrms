@@ -89,6 +89,48 @@ export const uploadSpreadsheetSingle = (req: Request, res: Response, next: NextF
   });
 };
 
+/**
+ * A working document — homework set and handed back in a new joiner's first
+ * days. Wider than the photo-and-PDF upload: homework is written in Word and
+ * Excel as often as anything. Same 10 MB.
+ */
+const DOCUMENT_TYPES: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "text/plain": "txt",
+};
+
+/** The extension a working document is stored under. */
+export const documentExt = (mime: string) => DOCUMENT_TYPES[mime] ?? "bin";
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (DOCUMENT_TYPES[file.mimetype]) return cb(null, true);
+    cb(new Error("Unsupported file type. Allowed: PDF, Word, Excel, PowerPoint, text or an image."));
+  },
+}).single("file");
+
+export const uploadDocumentSingle = (req: Request, res: Response, next: NextFunction) => {
+  documentUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "File is too large (max 10MB)." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};
+
 /** Induction video: a different beast from a document, so a different limit. */
 export const MAX_VIDEO_SIZE = 250 * 1024 * 1024;
 
@@ -101,7 +143,7 @@ const videoUpload = multer({
     // upload, and that reader understands MP4. Accepting a format it cannot
     // measure would mean trusting the browser for the one number the whole
     // completion check is compared against.
-    cb(new Error("The induction video must be an MP4."));
+    cb(new Error("The video must be an MP4."));
   },
 }).single("file");
 

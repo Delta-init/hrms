@@ -8,6 +8,7 @@ import {
 import { useDepartmentReport } from "@/hooks/useDepartments";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DepartmentApprovals } from "@/components/departments/DepartmentApprovals";
+import { TeamVideoCard } from "@/components/firstDays/TeamVideoCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -111,6 +112,8 @@ export default function DepartmentReportPage() {
       {/* Before the attendance report: a pending decision is something to act
           on now, where the report below is something to read. */}
       <DepartmentApprovals departmentId={id} departmentName={data.department.name} />
+
+      <TeamVideoCard departmentId={id} />
 
       {/* Members table with leave counts */}
       <Card className="mb-6 overflow-hidden">

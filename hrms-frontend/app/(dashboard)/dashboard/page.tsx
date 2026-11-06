@@ -16,6 +16,8 @@ import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistory
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
 import { WalletCard } from "@/components/wallet/WalletCard";
+import { FirstDaysCards } from "@/components/firstDays/FirstDaysCards";
+import { useMyFirstDays } from "@/hooks/useFirstDays";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +50,8 @@ export default function DashboardPage() {
             is worth knowing about before the day starts, not at the moment the
             button is pressed. */}
         <LocationCard />
+        {/* New joiners waiting on this person — HR's 3CX and Zoho, a head's steps. */}
+        <FirstDaysCards />
         {/* First in the row: this month's pay as it stands (2026-11-04). */}
         <WalletCard />
         <HrDashboard />
@@ -60,6 +64,8 @@ export default function DashboardPage() {
 
 function EmployeeDashboard() {
   const { user } = useAuth();
+  // A new joiner's portal is red for fifteen days; the greeting follows it.
+  const { data: firstDays } = useMyFirstDays();
   const { data: attData } = useMyAttendance({ dateFrom: monthStartISO(), dateTo: todayISO(), limit: "100" });
   const { data: myLeaves } = useMyLeaves({ limit: "5" });
   const { data: holidayData } = useHolidays({ dateFrom: todayISO(), limit: "6" });
@@ -102,13 +108,17 @@ function EmployeeDashboard() {
         <LocationCard />
         {/* Greeting hero */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-indigo-600 to-indigo-800 p-7 text-white shadow-lg">
+          className={cn("relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary p-7 text-white shadow-lg",
+            firstDays?.redActive ? "via-red-600 to-red-800" : "via-indigo-600 to-indigo-800")}>
           <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" />
           <div className="pointer-events-none absolute -bottom-20 right-24 h-56 w-56 rounded-full bg-white/5" />
           <p className="text-sm text-white/70">{today}</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Hi, {firstName} 👋</h1>
           <p className="mt-1 max-w-md text-sm text-white/70">Clock in for the day and keep track of your attendance & leave.</p>
         </motion.div>
+
+        {/* A new joiner's next step, or a head's new joiners. */}
+        <FirstDaysCards />
 
         {/* First in the row: this month's pay as it stands (2026-11-04). */}
         <WalletCard />

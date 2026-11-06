@@ -269,6 +269,7 @@ export class DepartmentService {
     if (input.members !== undefined) record.members = input.members as never;
     if (input.coLeaders !== undefined) record.coLeaders = input.coLeaders as never;
     if (input.webOnlyForRemote !== undefined) record.webOnlyForRemote = input.webOnlyForRemote;
+    if (input.isSales !== undefined) record.isSales = input.isSales;
 
     await record.save();
     // Only re-sync when the roster itself changed — a rename or status edit

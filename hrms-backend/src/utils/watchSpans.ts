@@ -65,3 +65,62 @@ export function playedSpan(last: number, position: number, elapsed: number, grac
     ? { from: last, to: position, outran: false }
     : { from: position - allowed, to: position, outran: true };
 }
+
+/** The rules a watched video is held to — the induction's, used by every video someone must watch in full. */
+export const WATCH_RULES = {
+  /** Wall-clock slack per beat, for network jitter and a throttled background tab. */
+  graceSeconds: 1.5,
+  /** How much of it has to have been seen. */
+  completionRatio: 0.95,
+  /** How near the end the playhead must have reached. */
+  endTolerance: 2,
+  /** A part missed by less than this is jitter, not somewhere to send them back to. */
+  gapSeconds: 1,
+} as const;
+
+/** One person's progress through one video, as it is stored. */
+export interface WatchState {
+  spans: Span[];
+  lastPosition: number;
+  lastBeatAt: Date | null;
+  watchedSeconds: number;
+  skipAttempts: number;
+  completedAt: Date | null;
+}
+
+/**
+ * Record a heartbeat: cover whatever the clock allows between the last
+ * position and this one, count a jump past everything watched, and complete it
+ * once enough is covered and the end has been reached.
+ */
+export function applyBeat(state: WatchState, rawPosition: number, duration: number, now: Date): WatchState {
+  if (state.completedAt) return state;
+  const position = Math.max(0, Math.min(rawPosition, duration));
+  const elapsed = Math.max(0, (now.getTime() - (state.lastBeatAt ?? now).getTime()) / 1000);
+  const played = playedSpan(state.lastPosition, position, elapsed, WATCH_RULES.graceSeconds);
+  const outran = !!played?.outran && position > furthestReached(state.spans) + WATCH_RULES.graceSeconds;
+  const spans = played ? addSpan(state.spans, played.from, played.to) : state.spans;
+  const watchedSeconds = coveredSeconds(spans);
+  const done = watchedSeconds >= duration * WATCH_RULES.completionRatio && furthestReached(spans) >= duration - WATCH_RULES.endTolerance;
+  return {
+    spans,
+    lastPosition: position,
+    lastBeatAt: now,
+    watchedSeconds,
+    skipAttempts: state.skipAttempts + (outran ? 1 : 0),
+    completedAt: done ? now : null,
+  };
+}
+
+/** What the player needs: how much is seen, how far they may skip, and where to open. */
+export function watchProgress(state: Pick<WatchState, "spans" | "completedAt">, duration: number) {
+  const furthest = furthestReached(state.spans);
+  const reachedEnd = furthest >= duration - WATCH_RULES.endTolerance;
+  return {
+    percent: state.completedAt ? 100 : Math.min(100, Math.round((coveredSeconds(state.spans) / duration) * 100)),
+    furthest: Math.floor(furthest),
+    resumeAt: Math.floor(firstGap(state.spans, furthest, WATCH_RULES.gapSeconds) ?? (reachedEnd ? firstGap(state.spans, furthest) : null) ?? furthest),
+    reachedEnd,
+    completed: !!state.completedAt,
+  };
+}

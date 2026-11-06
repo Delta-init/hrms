@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { addSpan, coveredSeconds, firstGap, furthestReached, playedSpan } from "./watchSpans.js";
+import { addSpan, applyBeat, coveredSeconds, firstGap, furthestReached, playedSpan, watchProgress } from "./watchSpans.js";
 
 describe("addSpan", () => {
   it("merges overlapping and touching stretches, in order", () => {
@@ -64,5 +64,32 @@ describe("playedSpan", () => {
   it("covers nothing going backwards or standing still", () => {
     expect(playedSpan(50, 20, 5, 1.5)).toBeNull();
     expect(playedSpan(50, 50, 5, 1.5)).toBeNull();
+  });
+});
+
+describe("applyBeat and watchProgress", () => {
+  const fresh = { spans: [], lastPosition: 0, lastBeatAt: new Date(0), watchedSeconds: 0, skipAttempts: 0, completedAt: null };
+  const at = (s: number) => new Date(s * 1000);
+
+  it("covers what the clock allows and completes at the end", () => {
+    let s = applyBeat(fresh, 10, 20, at(10));
+    expect(s.watchedSeconds).toBe(10);
+    expect(watchProgress(s, 20)).toEqual({ percent: 50, furthest: 10, resumeAt: 10, reachedEnd: false, completed: false });
+    s = applyBeat(s, 20, 20, at(20));
+    expect(s.completedAt).toEqual(at(20));
+    expect(watchProgress(s, 20).percent).toBe(100);
+  });
+
+  it("counts a jump as a skip and covers only the time that passed", () => {
+    const s = applyBeat(fresh, 18, 20, at(2));
+    expect(s.skipAttempts).toBe(1);
+    expect(s.watchedSeconds).toBeCloseTo(3.5);
+    expect(s.completedAt).toBeNull();
+    expect(watchProgress(s, 20).resumeAt).toBe(0);
+  });
+
+  it("does not move once complete", () => {
+    const done = { ...fresh, completedAt: at(5) };
+    expect(applyBeat(done, 3, 20, at(9))).toBe(done);
   });
 });

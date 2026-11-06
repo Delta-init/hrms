@@ -113,6 +113,15 @@ const envSchema = z.object({
    */
   COMP_OFF_AUTO_CREDIT_CRON: z.string().default("0 21 * * *"),
   /**
+   * Starts each new joiner's first days on their joining day and tells them,
+   * their head and HR. Early morning UTC is the start of the day in Dubai and
+   * India alike. Anyone it has not reached yet is caught the moment they, their
+   * head or HR open the app, so a missed run costs nothing.
+   */
+  FIRST_DAYS_CRON: z.string().default("30 3 * * *"),
+  /** Joining on or after this day ("YYYY-MM-DD") gets the first-days guide; nobody before it ever does. */
+  FIRST_DAYS_FROM: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "FIRST_DAYS_FROM must be YYYY-MM-DD").default("2026-11-07"),
+  /**
    * Evening, so the notice reads as "tomorrow" to somebody still at their
    * desk rather than landing after most people have already left for the day.
    */

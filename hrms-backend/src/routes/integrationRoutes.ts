@@ -8,7 +8,7 @@ import {
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
   listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
   listOneTimePayments, markOneTimePaymentPaid, rejectOneTimePayment,
-  listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition, getWalletByEmail,
+  listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition, getWalletByEmail, getFirstDaysByEmail,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
 import {
@@ -33,6 +33,8 @@ router.get("/directory/attendance-now", listAttendanceNow);
 router.get("/directory/attendance-day", listAttendanceDay);
 // Somebody's wallet, by the email they sign in with — every portal's My Wallet page and dashboard card (2026-11-04).
 router.get("/wallet", getWalletByEmail);
+// Whether somebody is in their first fifteen days, by the same email — every portal's red theme (2026-11-06).
+router.get("/first-days", getFirstDaysByEmail);
 
 // Payroll. Behind serviceOrgScope as well as the signature: these touch
 // org-scoped services, and without a tenant installed `scoped()` would read

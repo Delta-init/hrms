@@ -20,7 +20,7 @@ import type { HrmsModule } from "../types/index.js";
  * anywhere, but being told about every tenant's leave is not the same as being
  * able to approve it, and would make the bell useless within a week.
  */
-export async function watchersFor(module: HrmsModule, requesterUserId?: string): Promise<string[]> {
+export async function watchersFor(module: HrmsModule, requesterUserId?: string, action: "approve" | "edit" = "approve"): Promise<string[]> {
   const orgId = getOrgId();
   const out = new Set<string>();
 
@@ -36,7 +36,7 @@ export async function watchersFor(module: HrmsModule, requesterUserId?: string):
       // Super Admin approves everything everywhere, which is exactly why they
       // are not told about everything everywhere.
       .filter((r) => !(r.isSystemRole && r.roleName === "Super Admin"))
-      .filter((r) => r.permissions?.[module]?.approve)
+      .filter((r) => r.permissions?.[module]?.[action])
       .map((r) => r._id);
 
     if (approving.length) {

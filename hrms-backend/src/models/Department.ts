@@ -79,6 +79,12 @@ const departmentSchema = new Schema<IDepartment>(
      * can work around with effort, not a wall.
      */
     webOnlyForRemote: { type: Boolean, default: false },
+    /**
+     * A sales team. Its new joiners get the sales steps of their first days —
+     * the ChatGPT client role-play, sales CRM access and the first cold calls —
+     * which mean nothing to a department that does not sell.
+     */
+    isSales: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ["active", "inactive"],

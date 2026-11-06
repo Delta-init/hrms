@@ -178,7 +178,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
-    defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" },
+    defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, status: "active" },
   });
 
   useEffect(() => {
@@ -200,11 +200,12 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
         coLeaders: coLeaderKeys,
         members: memberKeys,
         webOnlyForRemote: department.webOnlyForRemote ?? false,
+        isSales: department.isSales ?? false,
         status: department.status,
       });
     } else {
       shownAsMembers.current = new Set();
-      reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, status: "active" });
+      reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, status: "active" });
     }
     // `seedKeys` is read through `seedSig`, deliberately — see where it is built.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,6 +255,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       coLeaders: (data.coLeaders ?? []).map(parseKey),
       members: (data.members ?? []).map(parseKey),
       webOnlyForRemote: data.webOnlyForRemote,
+      isSales: data.isSales,
     };
     if (isEditing) {
       // Shown when the form opened, gone now, and not simply moved to another
@@ -339,6 +341,18 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
             </div>
             <Controller control={control} name="webOnlyForRemote" render={({ field }) => (
               <Switch id="webOnlyForRemote" checked={!!field.value} onCheckedChange={field.onChange} />
+            )} />
+          </div>
+
+          <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <Label htmlFor="isSales">Sales team</Label>
+              <p className="text-xs text-muted-foreground">
+                New joiners here also get the sales steps of their first days: the ChatGPT client role-play, sales CRM access and their first cold calls.
+              </p>
+            </div>
+            <Controller control={control} name="isSales" render={({ field }) => (
+              <Switch id="isSales" checked={!!field.value} onCheckedChange={field.onChange} />
             )} />
           </div>
 

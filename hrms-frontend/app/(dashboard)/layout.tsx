@@ -10,6 +10,7 @@ import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { OfflineNotice } from "@/components/pwa/OfflineNotice";
 import { PushNavigationListener } from "@/components/pwa/PushNavigationListener";
 import { RootPortalHistoryBridge } from "@/components/RootPortalHistoryBridge";
+import { FirstDaysTheme, FirstDaysBanner } from "@/components/firstDays/FirstDaysTheme";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -21,6 +22,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
     <RootPortalHistoryBridge />
     <OnboardingGate />
+    <FirstDaysTheme />
     <GuideWelcome />
     <KioskLock />
     <PushNavigationListener />
@@ -29,6 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col p-2 md:p-3">
         <Header />
         <div className="mt-2"><ImpersonationBanner /></div>
+        <FirstDaysBanner />
         <OfflineNotice />
         {/* Dismissible, and the dismissal is remembered: it arrives uninvited
             on every page, and one that cannot be closed is an advert. The

@@ -253,6 +253,8 @@ export interface Department {
   members: DepartmentMember[];
   /** Refuses a mobile sign-in for this department's remote (wfh) members. */
   webOnlyForRemote?: boolean;
+  /** Its new joiners get the sales steps of their first days. */
+  isSales?: boolean;
   status: "active" | "inactive";
   employeeCount?: number;
   createdAt: string;
@@ -3338,4 +3340,62 @@ export interface Wallet {
   payments: WalletPayment[];
   totals: { credited: number; deducted: number; net: number; paid: number; balance: number; financePayable: number | null };
   finance: { connected: boolean; error: string | null; crmError: string | null; runNumbers: string[]; onHold: string | null };
+}
+
+// ─── First days (a new joiner's first 15 days) ───────────────────────────────
+export type FirstDaysStepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "rolePlay" | "access" | "coldCalls";
+/** Waiting: cannot be done yet. Overdue: its day has passed undone. */
+export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue";
+
+export interface FirstDaysFile { name: string; url: string; at: string | null }
+
+export interface FirstDaysStep {
+  key: FirstDaysStepKey;
+  /** Working day 1, 2 or 3. */
+  day: number;
+  dueDay: string;
+  title: string;
+  detail: string;
+  status: FirstDaysStepStatus;
+  /** When it can be done, if that time has not come yet. */
+  opensAt: string | null;
+  waitingFor: string | null;
+  /** What the person looking may do now — the server decides. */
+  can: string[];
+  joinerConfirmed?: boolean;
+  headConfirmed?: boolean;
+  file?: FirstDaysFile | null;
+  video?: { title: string; durationSeconds: number } | null;
+  percent?: number;
+  prompt?: string | null;
+  link?: string | null;
+  tools?: { threeCx: boolean; zoho: boolean; crm: boolean | null };
+  assigned?: boolean;
+}
+
+export interface FirstDaysView {
+  employee: {
+    _id: string; name: string; employeeCode: string; designation: string;
+    department: { _id: string; name: string; isSales: boolean } | null;
+  };
+  startDay: string;
+  /** The 15th day — the portal is red from startDay to here. */
+  endDay: string;
+  /** Day N of 15; past 15 once it is over. */
+  day: number;
+  of: number;
+  redActive: boolean;
+  /** Working days 1, 2 and 3. */
+  stepDays: string[];
+  steps: FirstDaysStep[];
+  doneCount: number;
+  totalCount: number;
+  complete: boolean;
+  viewer: { isJoiner: boolean; isHead: boolean; isHr: boolean };
+}
+
+export interface WatchProgress { percent: number; furthest: number; resumeAt: number; reachedEnd: boolean; completed: boolean }
+
+export interface TeamVideoInfo {
+  _id: string; title: string; fileName: string; durationSeconds: number; url: string; uploadedAt: string; uploadedBy: string;
 }

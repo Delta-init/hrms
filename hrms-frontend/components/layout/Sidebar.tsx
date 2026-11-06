@@ -39,7 +39,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
-  ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen,
+  ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen, Sprout, UserPlus,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,8 @@ import {
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
 import { useMyInterviews } from "@/hooks/useInterviews";
+import { useMyFirstDays, useTeamFirstDays } from "@/hooks/useFirstDays";
+import { actionsFor } from "@/components/firstDays/FirstDaysSteps";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { useMyDepartments } from "@/hooks/useDepartments";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
@@ -74,6 +76,10 @@ export const navItems: {
   approvalsOnly?: boolean;
   /** Drawn only for someone on at least one interview panel. */
   panelOnly?: boolean;
+  /** Drawn only for a new joiner with a first-days guide. */
+  joinerOnly?: boolean;
+  /** Drawn only for a head or HR with new joiners to look after. */
+  newJoinersOnly?: boolean;
   /** Also drawn for someone who heads a department, even without the permission. */
   orHeadsADepartment?: boolean;
   /**
@@ -84,6 +90,7 @@ export const navItems: {
   headLandsOnOwnDepartment?: boolean;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
+  { href: "/first-days", label: "My First 15 Days", icon: Sprout, permModule: null, joinerOnly: true },
   // Not gated on a permission or on Super Admin: who may see this is decided by
   // the server, which is the only side that knows whether somebody heads a
   // department. `canAccess` on the summary carries the answer back.
@@ -120,6 +127,7 @@ export const navItems: {
   // page and the server scope everything else away.
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring", orHeadsADepartment: true },
   { href: "/my-interviews", label: "My Interviews", icon: ClipboardPen, permModule: null, panelOnly: true },
+  { href: "/first-days/team", label: "New Joiners", icon: UserPlus, permModule: null, newJoinersOnly: true },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
   { href: "/agreements", label: "Signed Agreements", icon: FileSignature, permModule: "employees" },
   { href: "/resignations", label: "Resignations", icon: LogOut, permModule: "resignations" },
@@ -173,6 +181,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // Interviewers are mostly not hiring staff, so this is asked of everybody
   // too. Empty for almost everyone, and the link stays hidden.
   const { data: myInterviews = [] } = useMyInterviews(!isKioskOnly);
+  // Same again: a joiner's guide, and the joiners a head or HR looks after.
+  const { data: myFirstDays } = useMyFirstDays(!isKioskOnly);
+  const { data: newJoiners = [] } = useTeamFirstDays(!isKioskOnly);
   /** What waits behind each link, for the badge. Absent means no badge. */
   // The approvals summary already counts every queue that waits on this
   // person, by module — so each section's link carries its own share of it.
@@ -181,6 +192,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/leave": pendingLeave,
     "/regularization": pendingReg,
     "/approvals": approvals?.total ?? 0,
+    "/first-days": (myFirstDays?.steps ?? []).filter((s) => s.status !== "done" && s.can.length > 0).length,
+    "/first-days/team": newJoiners.reduce((n, v) => n + actionsFor(v), 0),
     // Sheets not yet submitted for interviews that have happened or are today.
     "/my-interviews": myInterviews.filter((iv) =>
       iv.sheet?.status !== "submitted" && iv.status !== "no_show" && new Date(iv.scheduledAt).getTime() < Date.now() + 86_400_000).length,
@@ -195,7 +208,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
         const isActive = pathname === href || pathname.startsWith(href + "/");
         const hasBasePermission = permModule !== null && hasPermission(permModule, permAction ?? "view");
         // A third of the menu is deliberately ungated — everyone can raise a
@@ -209,6 +222,10 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
               ? !!approvals?.canAccess
               : panelOnly
                 ? myInterviews.length > 0
+              : joinerOnly
+                ? !!myFirstDays && (myFirstDays.redActive || !myFirstDays.complete)
+              : newJoinersOnly
+                ? newJoiners.length > 0
               : orHeadsADepartment
                 ? hasBasePermission || myDepartments.length > 0
                 : permModule === null ? true : hasBasePermission;

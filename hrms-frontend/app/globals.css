@@ -93,6 +93,31 @@
     --sidebar-border:              217 33% 18%;
     --sidebar-ring:                243 75% 59%;
   }
+
+  /* ── A new joiner's first 15 days: red where everyone else has blue ──
+     Set on <html> by FirstDaysTheme while it lasts. Only the colours that
+     carry the brand change; surfaces, borders and text stay as they are. */
+  :root[data-accent="red"] {
+    --primary:                0 72% 51%;
+    --ring:                   0 72% 51%;
+    --accent:                 0 86% 96%;
+    --accent-foreground:      0 63% 31%;
+    --sidebar-primary:        0 72% 51%;
+    --sidebar-accent:         0 86% 94%;
+    --sidebar-accent-foreground: 0 63% 31%;
+    --sidebar-ring:           0 72% 51%;
+  }
+
+  .dark[data-accent="red"] {
+    --primary:                0 84% 60%;
+    --ring:                   0 84% 60%;
+    --accent:                 0 45% 18%;
+    --accent-foreground:      0 93% 94%;
+    --sidebar-primary:        0 84% 60%;
+    --sidebar-accent:         0 45% 18%;
+    --sidebar-accent-foreground: 0 93% 94%;
+    --sidebar-ring:           0 84% 60%;
+  }
 }
 
 @layer base {

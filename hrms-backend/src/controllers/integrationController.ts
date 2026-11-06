@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { WalletService } from "../services/walletService.js";
+import { FirstDaysService } from "../services/firstDaysService.js";
 import { directoryService, attendanceNow, attendanceDay } from "../services/directoryService.js";
 import { payrollHandoverService } from "../services/payrollHandoverService.js";
 import { ProcurementService, FINANCE_PROCUREMENT_STATUSES, type FinanceProcurementStatus } from "../services/procurementService.js";
@@ -487,6 +488,7 @@ export const rejectHiringRequisition = asyncRoute(async (req, res) => {
 });
 
 const wallets = new WalletService();
+const firstDays = new FirstDaysService();
 
 /**
  * GET /integrations/wallet?email=&month=[&organizationId=] — somebody's wallet for another portal's My Wallet page and
@@ -501,4 +503,17 @@ export const getWalletByEmail = asyncRoute(async (req, res) => {
   const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
   if (organizationId && !/^[a-f0-9]{24}$/i.test(organizationId)) { sendError(res, "organizationId is not a valid id", 400); return; }
   sendSuccess(res, "Wallet", await wallets.forEmail(email, month, organizationId));
+});
+
+/**
+ * Whether somebody is in their first fifteen days, by the email they sign in
+ * with — so another portal can turn red for them too (2026-11-06). `theme` is
+ * "red" while it lasts and null otherwise; a portal needs nothing else.
+ */
+export const getFirstDaysByEmail = asyncRoute(async (req, res) => {
+  const email = String(req.query.email ?? "").trim().toLowerCase();
+  if (!EMAIL.test(email)) { sendError(res, "email is required", 400); return; }
+  const organizationId = String(req.query.organizationId ?? "").trim() || undefined;
+  if (organizationId && !/^[a-f0-9]{24}$/i.test(organizationId)) { sendError(res, "organizationId is not a valid id", 400); return; }
+  sendSuccess(res, "First days", await firstDays.forEmail(email, organizationId));
 });

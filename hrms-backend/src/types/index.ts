@@ -594,6 +594,8 @@ export interface IDepartment extends Document {
   members: Types.DocumentArray<IDepartmentMember & Document>;
   /** Refuses a mobile sign-in for this department's remote (wfh) members. */
   webOnlyForRemote?: boolean;
+  /** Its new joiners get the sales steps of their first days. */
+  isSales?: boolean;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;
