@@ -119,8 +119,11 @@ const envSchema = z.object({
    * head or HR open the app, so a missed run costs nothing.
    */
   FIRST_DAYS_CRON: z.string().default("30 3 * * *"),
-  /** Joining on or after this day ("YYYY-MM-DD") gets the first-days guide; nobody before it ever does. */
-  FIRST_DAYS_FROM: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "FIRST_DAYS_FROM must be YYYY-MM-DD").default("2026-11-07"),
+  /**
+   * Joining on or after this day ("YYYY-MM-DD") gets the first-days guide; nobody before it ever does.
+   * 30 Oct 2026 so that Pallavi Pradhan, still inside her fifteen days at go-live, gets it too (2026-11-06).
+   */
+  FIRST_DAYS_FROM: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "FIRST_DAYS_FROM must be YYYY-MM-DD").default("2026-10-30"),
   /**
    * Evening, so the notice reads as "tomorrow" to somebody still at their
    * desk rather than landing after most people have already left for the day.
