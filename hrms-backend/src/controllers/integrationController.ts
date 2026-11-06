@@ -9,7 +9,7 @@ import { OneTimeAdjustmentService, FINANCE_ONE_TIME_STATUSES, type FinanceOneTim
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
-import { payrollPaymentService, type PaymentLine } from "../services/payrollPaymentService.js";
+import { payrollPaymentService, type PaymentLine, type FinanceSettle } from "../services/payrollPaymentService.js";
 import { notifyPayrollReturned } from "../services/payrollNotifyService.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { readAttendanceDayQuery } from "../utils/attendanceDayQuery.js";
@@ -218,7 +218,12 @@ export const applyFinanceAdjustments = asyncRoute(async (req, res) => {
     }
   }
 
-  const result = await financeAdjustmentService.apply(month, items);
+  const settle = readSettle(req.body?.settle);
+  if (settle === "invalid") {
+    sendError(res, "settle must be a list of { employeeId, paidSoFar, paymentId }", 400);
+    return;
+  }
+  const result = await financeAdjustmentService.apply(month, items, settle);
   sendSuccess(res, `${result.applied} adjustment(s) applied to ${month}`, result);
 });
 
@@ -230,9 +235,35 @@ export const removeFinanceAdjustment = asyncRoute(async (req, res) => {
     sendError(res, "externalId is required", 400);
     return;
   }
-  const result = await financeAdjustmentService.remove(month, externalId);
+  const settle = req.body?.settle === undefined ? [] : readSettle([{ ...req.body.settle, employeeId: "-" }]);
+  if (settle === "invalid") {
+    sendError(res, "settle must be { paidSoFar, paymentId }", 400);
+    return;
+  }
+  const result = await financeAdjustmentService.remove(month, externalId, settle[0]);
   sendSuccess(res, result.message, result);
 });
+
+/**
+ * What finance has paid each person so far, sent with a change to their payslip (2026-11-06), so it says paid or not.
+ * Absent from an older finance: nothing then changes a payslip's paid state, as before.
+ */
+function readSettle(raw: unknown): FinanceSettle[] | "invalid" {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > 500) return "invalid";
+  const out: FinanceSettle[] = [];
+  for (const x of raw as Array<Record<string, unknown>>) {
+    if (!x || typeof x.employeeId !== "string" || typeof x.paymentId !== "string" || !x.paymentId.trim()
+      || typeof x.paidSoFar !== "number" || !Number.isFinite(x.paidSoFar) || x.paidSoFar < 0) return "invalid";
+    out.push({
+      employeeId: x.employeeId, paidSoFar: x.paidSoFar, paymentId: x.paymentId.trim().slice(0, 80),
+      ...(typeof x.paidOn === "string" ? { paidOn: x.paidOn } : {}),
+      ...(typeof x.reference === "string" ? { reference: x.reference.slice(0, 120) } : {}),
+      ...(typeof x.method === "string" ? { method: x.method.slice(0, 40) } : {}),
+    });
+  }
+  return out;
+}
 
 // ── Approval and payment ────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { Payslip } from "../models/Payslip.js";
 import { Employee } from "../models/Employee.js";
 import { PayrollBatch } from "../models/PayrollBatch.js";
 import { PayslipService } from "./payslipService.js";
+import { settleAfterFinanceChange, type FinanceSettle } from "./payrollPaymentService.js";
 import { getOrgId, scoped } from "../utils/orgContext.js";
 
 /**
@@ -58,14 +59,17 @@ export interface AdjustmentOutcome {
   netAfter: number;
   /** Scheduled recovery the payslip as a whole still could not afford. */
   deferred: number;
+  /** Paid or issued after it, for somebody finance had already paid some of (2026-11-06). */
+  payslipStatus?: "paid" | "issued" | null;
 }
 
 /**
- * Where accounts may still change a month: while they have it, and after they approved it until it is paid — then
- * only on a payslip not paid yet (the user, 2026-11-04). A paid payslip is what the bank sent; changing it would make
- * it say something else.
+ * Where accounts may still change a month: while they have it, and after they approved it — a month paid in full too,
+ * and a payslip already paid (the user, 2026-11-06: "after it's paid we can also add or deduct"). Finance checks it
+ * never takes somebody below what they have been paid, and sends what it has paid them so the payslip says paid or
+ * not (payrollPaymentService.settleAfterFinanceChange).
  */
-const OPEN_TO_FINANCE = ["in_finance", "approved", "partially_paid"];
+const OPEN_TO_FINANCE = ["in_finance", "approved", "partially_paid", "paid"];
 
 /** The month must be open to accounts, and only accounts, before anything moves. */
 async function requireInFinance(month: string) {
@@ -82,12 +86,6 @@ async function requireInFinance(month: string) {
   return batch;
 }
 
-/** After approval, a paid payslip stays as it was paid. */
-function requireUnpaid(slip: { status?: string } | null | undefined, who: string, month: string) {
-  if (slip?.status === "paid") {
-    throw err(`${who}'s payslip for ${month} is already paid and can no longer be adjusted. Reverse the payment first.`, 409);
-  }
-}
 
 export class FinanceAdjustmentService {
   /**
@@ -99,7 +97,7 @@ export class FinanceAdjustmentService {
    * together — which matters, because what a month can afford depends on the
    * total, not on the order the items happened to arrive in.
    */
-  async apply(month: string, items: FinanceAdjustmentInput[]) {
+  async apply(month: string, items: FinanceAdjustmentInput[], settle: FinanceSettle[] = []) {
     await requireInFinance(month);
     if (!items.length) throw err("No adjustments were sent", 400);
 
@@ -114,7 +112,6 @@ export class FinanceAdjustmentService {
 
     const slips = await Payslip.find(scoped({ month, employee: { $in: employeeIds } })).select("employee status").lean();
     const slipByEmployee = new Map(slips.map((s) => [String(s.employee), String(s._id)]));
-    const slipStatus = new Map(slips.map((s) => [String(s.employee), String(s.status ?? "")]));
 
     for (const item of items) {
       if (!empById.has(item.employeeId)) throw err(`Employee ${item.employeeId} is not in this organization`, 404);
@@ -123,7 +120,6 @@ export class FinanceAdjustmentService {
         // handover is a person finance never saw when they took the month.
         throw err(`${item.employeeId} has no payslip for ${month}`, 409);
       }
-      requireUnpaid({ status: slipStatus.get(item.employeeId) }, item.employeeId, month);
       if (!(item.amount > 0)) throw err(`"${item.label}" must be a positive amount`, 400);
     }
 
@@ -152,8 +148,12 @@ export class FinanceAdjustmentService {
     }
 
     const outcomes: AdjustmentOutcome[] = [];
+    const settleOf = new Map(settle.map((x) => [x.employeeId, x]));
     for (const employeeId of employeeIds) {
       const result = await payslips.recompute(slipByEmployee.get(employeeId)!);
+      // Somebody finance has paid some of: paid in full now, or owed again (2026-11-06).
+      const s = settleOf.get(employeeId);
+      const payslipStatus = s ? await settleAfterFinanceChange(month, result.payslipId, result.after.net, s) : undefined;
       const mine = items.filter((i) => i.employeeId === employeeId);
       const rows = await OneTimeAdjustment.find({ externalId: { $in: mine.map((m) => m.externalId) } }).lean();
       const byExternal = new Map(rows.map((r) => [r.externalId!, r]));
@@ -174,6 +174,7 @@ export class FinanceAdjustmentService {
           netBefore: result.before.net,
           netAfter: result.after.net,
           deferred: result.deferred,
+          ...(payslipStatus !== undefined ? { payslipStatus } : {}),
         });
       }
     }
@@ -187,7 +188,7 @@ export class FinanceAdjustmentService {
    * Only their own: an externalId identifies a finance-raised row, and HR's own
    * adjustments are not theirs to remove.
    */
-  async remove(month: string, externalId: string) {
+  async remove(month: string, externalId: string, settle?: Omit<FinanceSettle, "employeeId">) {
     await requireInFinance(month);
 
     const row = await OneTimeAdjustment.findOne(scoped({ externalId, source: "finance" }));
@@ -196,7 +197,6 @@ export class FinanceAdjustmentService {
 
     const employeeId = String(row.employee);
     const slip = await Payslip.findOne(scoped({ month, employee: employeeId })).select("_id status").lean();
-    requireUnpaid(slip, employeeId, month);
     await OneTimeAdjustment.deleteOne({ _id: row._id });
     // Its line comes off the payslip first. A payslip worked out from attendance keeps every earning it can't trace to
     // a source as one HR typed by hand, and with the row gone this one can't be traced — its money stayed on the payslip
@@ -209,7 +209,8 @@ export class FinanceAdjustmentService {
     // it. Deleting without rebuilding would leave its money in the payslip with
     // nothing behind it.
     const result = slip ? await payslips.recompute(String(slip._id)) : null;
-    return { message: `Removed "${row.label}"`, externalId, recomputed: result };
+    const payslipStatus = result && settle ? await settleAfterFinanceChange(month, result.payslipId, result.after.net, settle) : undefined;
+    return { message: `Removed "${row.label}"`, externalId, recomputed: result, ...(payslipStatus !== undefined ? { payslipStatus } : {}) };
   }
 
   /** Everything accounts have added to a month so far. */

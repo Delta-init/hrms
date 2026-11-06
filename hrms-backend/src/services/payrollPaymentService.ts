@@ -203,4 +203,78 @@ export class PayrollPaymentService {
   }
 }
 
+/**
+ * What finance has paid somebody so far, sent with an addition or deduction it makes to their payslip once some of it
+ * is paid (the user, 2026-11-06: "a deduction of all that's left marks them paid; an addition after they're paid makes
+ * them part paid again"). `paymentId` is finance's last payment that paid them: the one that closes their payslip.
+ */
+export interface FinanceSettle {
+  employeeId: string;
+  paidSoFar: number;
+  paymentId: string;
+  paidOn?: string;
+  reference?: string;
+  method?: string;
+}
+
+/**
+ * A payslip's paid or not, after finance changed what it says: paid once all of its net has been paid — closed by the
+ * payment finance names, so reversing that payment opens it again — and back to issued when an addition leaves some of
+ * it unpaid. The month follows. Finance moves no money doing this; it only says what is now owed.
+ */
+export async function settleAfterFinanceChange(month: string, payslipId: string, net: number, s: Omit<FinanceSettle, "employeeId">): Promise<"paid" | "issued" | null> {
+  if (!(s.paidSoFar > 0) || !s.paymentId) return null;
+  const slip = await Payslip.findOne(scoped({ _id: payslipId, month })).select("_id status").lean();
+  const batch = await PayrollBatch.findOne(scoped({ month }));
+  if (!slip || !batch) return null;
+  const owedFils = Math.round(net * 100) - Math.round(s.paidSoFar * 100);
+  const id = String(slip._id);
+
+  if (owedFils <= 0 && slip.status !== "paid") {
+    let entry = batch.payments.find((p) => p.paymentId === s.paymentId);
+    if (!entry) {
+      const paidOn = s.paidOn ? new Date(s.paidOn) : new Date();
+      batch.payments.push({
+        paymentId: s.paymentId, paidOn: Number.isNaN(paidOn.getTime()) ? new Date() : paidOn,
+        reference: s.reference ?? "", method: s.method ?? "", payslipCount: 0, payslipIds: [], amount: 0, recordedAt: new Date(),
+      } as never);
+      entry = batch.payments[batch.payments.length - 1]!;
+    }
+    // One from before payments named their payslips is reversed by its paid date, which this one now carries too.
+    const named = (entry as unknown as { payslipIds?: unknown[] }).payslipIds;
+    if (named && !named.map(String).includes(id)) {
+      (entry as unknown as { payslipIds: unknown[] }).payslipIds = [...named, slip._id];
+      entry.payslipCount = (entry as unknown as { payslipIds: unknown[] }).payslipIds.length;
+    }
+    await Payslip.updateOne({ _id: slip._id }, { $set: { status: "paid", paidAt: entry.paidOn } });
+  } else if (owedFils > 0 && slip.status === "paid") {
+    for (const p of batch.payments) {
+      const named = (p as unknown as { payslipIds?: unknown[] }).payslipIds;
+      if (named?.map(String).includes(id)) {
+        (p as unknown as { payslipIds: unknown[] }).payslipIds = named.filter((x) => String(x) !== id);
+        p.payslipCount = (p as unknown as { payslipIds: unknown[] }).payslipIds.length;
+      }
+    }
+    await Payslip.updateOne({ _id: slip._id }, { $set: { status: "issued", paidAt: null } });
+  } else {
+    return slip.status === "paid" ? "paid" : "issued";
+  }
+  batch.markModified("payments");
+
+  const outstanding = await Payslip.countDocuments(scoped({ month, status: { $ne: "paid" } }));
+  const paidAny = await Payslip.countDocuments(scoped({ month, status: "paid" }));
+  const next: PayrollBatchStatus = outstanding === 0 ? "paid" : paidAny > 0 ? "partially_paid" : "approved";
+  if (batch.status !== next) {
+    // Straight assignment, as a reversal does: paid → part paid is a fact finance reports, not a step anybody takes.
+    batch.history.push({
+      from: batch.status, to: next, at: new Date(), by: null, actor: "finance",
+      note: owedFils <= 0 ? `A payslip paid in full by a change finance made (${s.paymentId})` : "A paid payslip owed more after a change finance made",
+    } as never);
+    batch.status = next;
+    batch.paidAt = next === "paid" ? batch.paidAt ?? new Date() : null;
+  }
+  await batch.save();
+  return owedFils <= 0 ? "paid" : "issued";
+}
+
 export const payrollPaymentService = new PayrollPaymentService();
