@@ -178,7 +178,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
 
   const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<DepartmentFormValues>({
     resolver: zodResolver(departmentFormSchema),
-    defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, status: "active" },
+    defaultValues: { name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, callListening: false, status: "active" },
   });
 
   useEffect(() => {
@@ -201,11 +201,12 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
         members: memberKeys,
         webOnlyForRemote: department.webOnlyForRemote ?? false,
         isSales: department.isSales ?? false,
+        callListening: department.callListening ?? false,
         status: department.status,
       });
     } else {
       shownAsMembers.current = new Set();
-      reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, status: "active" });
+      reset({ name: "", code: "", description: "", leader: "", coLeaders: [], members: [], webOnlyForRemote: false, isSales: false, callListening: false, status: "active" });
     }
     // `seedKeys` is read through `seedSig`, deliberately — see where it is built.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,6 +257,7 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
       members: (data.members ?? []).map(parseKey),
       webOnlyForRemote: data.webOnlyForRemote,
       isSales: data.isSales,
+      callListening: data.callListening,
     };
     if (isEditing) {
       // Shown when the form opened, gone now, and not simply moved to another
@@ -353,6 +355,18 @@ export function DepartmentDialog({ open, onOpenChange, department }: Props) {
             </div>
             <Controller control={control} name="isSales" render={({ field }) => (
               <Switch id="isSales" checked={!!field.value} onCheckedChange={field.onChange} />
+            )} />
+          </div>
+
+          <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <Label htmlFor="callListening">Training-call listening</Label>
+              <p className="text-xs text-muted-foreground">
+                New joiners here sit in on training calls on the afternoon of their second day, then write up what they observed.
+              </p>
+            </div>
+            <Controller control={control} name="callListening" render={({ field }) => (
+              <Switch id="callListening" checked={!!field.value} onCheckedChange={field.onChange} />
             )} />
           </div>
 

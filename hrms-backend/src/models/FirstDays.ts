@@ -56,6 +56,11 @@ const firstDaysSchema = new Schema(
       link: { type: String, trim: true, maxlength: 500, default: "" },
       at: { type: Date, default: null },
     },
+    /** Day 2's training calls, written up by the joiner in their own words. */
+    callListening: {
+      notes: { type: String, trim: true, maxlength: 4000, default: "" },
+      at: { type: Date, default: null },
+    },
     // 3CX and Zoho are HR's to give; the sales CRM is the department head's.
     access: {
       threeCx: { type: tickSchema, default: () => ({}) },

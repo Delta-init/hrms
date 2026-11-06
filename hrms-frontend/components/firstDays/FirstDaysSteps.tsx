@@ -6,10 +6,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
 import {
   useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead, useHandInHomework,
-  useSendHomework, useSetToolAccess, useSubmitRolePlay,
+  useSendHomework, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
 } from "@/hooks/useFirstDays";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -117,11 +118,13 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
   const handIn = useHandInHomework();
   const send = useSendHomework();
   const rolePlay = useSubmitRolePlay();
+  const callNotes = useSubmitCallNotes();
   const access = useSetToolAccess();
   const assign = useAssignClients();
   const callsDone = useCallsDone();
   const [watching, setWatching] = useState(false);
   const [link, setLink] = useState("");
+  const [notes, setNotes] = useState<string | null>(null);
 
   switch (step.key) {
     case "session":
@@ -174,6 +177,29 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
           )}
         </div>
       );
+
+    case "callListening": {
+      const editing = can("submit") || can("replace");
+      const draft = notes ?? step.notes ?? "";
+      return (
+        <div className="space-y-2">
+          {step.notes && !editing && <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-sm">{step.notes}</p>}
+          {editing && (
+            <>
+              <Textarea rows={4} maxLength={4000} value={draft} onChange={(e) => setNotes(e.target.value)}
+                placeholder="What happened on the calls — how the caller opened, the questions the client asked, how objections were handled, what you'd do the same or differently." />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={draft.trim().length < 20 || callNotes.isPending}
+                  onClick={() => callNotes.mutate(draft.trim(), { onSuccess: () => setNotes(null) })}>
+                  {can("replace") ? "Save changes" : "Hand in your write-up"}
+                </Button>
+                {draft.trim().length < 20 && <span className="text-[11px] text-muted-foreground">A sentence or two at least.</span>}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
 
     case "rolePlay":
       return (

@@ -85,6 +85,11 @@ const departmentSchema = new Schema<IDepartment>(
      * which mean nothing to a department that does not sell.
      */
     isSales: { type: Boolean, default: false },
+    /**
+     * Its new joiners sit in on training calls on the afternoon of their
+     * second day, and write up what they observed. HR picks the teams.
+     */
+    callListening: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ["active", "inactive"],

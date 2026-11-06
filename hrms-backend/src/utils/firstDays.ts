@@ -17,6 +17,10 @@ export const FIRST_DAYS_LENGTH = 15;
 export const SESSION_ENDS_AT = "13:00";
 /** Day 2's role-play opens in the afternoon. */
 export const ROLE_PLAY_OPENS_AT = "13:00";
+/** So do day 2's training calls — the joiner listens in after the break. */
+export const CALL_LISTENING_OPENS_AT = "13:00";
+/** A write-up of the calls has to say something: a sentence or two at least. */
+export const MIN_CALL_NOTES = 20;
 
 const DAY_MS = 86_400_000;
 

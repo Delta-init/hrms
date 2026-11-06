@@ -13,6 +13,7 @@ export const createDepartmentSchema = z.object({
   members: z.array(memberSchema).default([]),
   webOnlyForRemote: z.boolean().optional(),
   isSales: z.boolean().optional(),
+  callListening: z.boolean().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
@@ -35,6 +36,7 @@ export const updateDepartmentSchema = z.object({
   removedMembers: z.array(memberSchema).optional(),
   webOnlyForRemote: z.boolean().optional(),
   isSales: z.boolean().optional(),
+  callListening: z.boolean().optional(),
   status: z.enum(["active", "inactive"]).optional(),
 });
 

@@ -596,6 +596,8 @@ export interface IDepartment extends Document {
   webOnlyForRemote?: boolean;
   /** Its new joiners get the sales steps of their first days. */
   isSales?: boolean;
+  /** Its new joiners listen in on training calls on day 2 and write up what they observed. */
+  callListening?: boolean;
   status: "active" | "inactive";
   createdAt: Date;
   updatedAt: Date;

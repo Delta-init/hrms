@@ -10,6 +10,7 @@ export const departmentFormSchema = z.object({
   coLeaders: z.array(z.string()).default([]),
   members: z.array(z.string()).default([]),
   isSales: z.boolean().optional(),
+  callListening: z.boolean().optional(),
   webOnlyForRemote: z.boolean().optional(),
   status: z.enum(["active", "inactive"]),
 });

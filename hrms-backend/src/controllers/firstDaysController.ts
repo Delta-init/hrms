@@ -48,6 +48,12 @@ export const submitMyRolePlay = route(async (req, res) => {
   sendSuccess(res, "Role-play handed in", await service.submitRolePlay(req.user!.userId, parsed.data.link));
 });
 
+export const submitMyCallNotes = route(async (req, res) => {
+  const parsed = z.object({ notes: z.string().max(4000) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Write what you observed", 400); return; }
+  sendSuccess(res, "Write-up handed in", await service.submitCallNotes(req.user!.userId, parsed.data.notes));
+});
+
 export const myCallsDone = route(async (req, res) => {
   sendSuccess(res, "Cold calls done", await service.callsDone(req.user!.userId));
 });

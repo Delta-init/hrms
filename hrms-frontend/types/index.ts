@@ -255,6 +255,8 @@ export interface Department {
   webOnlyForRemote?: boolean;
   /** Its new joiners get the sales steps of their first days. */
   isSales?: boolean;
+  /** Its new joiners listen in on training calls on day 2 and write up what they observed. */
+  callListening?: boolean;
   status: "active" | "inactive";
   employeeCount?: number;
   createdAt: string;
@@ -3343,7 +3345,7 @@ export interface Wallet {
 }
 
 // ─── First days (a new joiner's first 15 days) ───────────────────────────────
-export type FirstDaysStepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "rolePlay" | "access" | "coldCalls";
+export type FirstDaysStepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
 /** Waiting: cannot be done yet. Overdue: its day has passed undone. */
 export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue";
 
@@ -3369,6 +3371,8 @@ export interface FirstDaysStep {
   percent?: number;
   prompt?: string | null;
   link?: string | null;
+  /** The joiner's write-up of the training calls. */
+  notes?: string | null;
   tools?: { threeCx: boolean; zoho: boolean; crm: boolean | null };
   assigned?: boolean;
 }

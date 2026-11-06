@@ -54,6 +54,8 @@ export const useHandInHomework = () =>
   useStep(async (file: File) => (await upload("/first-days/mine/homework", file)).data.data!, "Homework handed in", "Could not upload your homework");
 export const useSubmitRolePlay = () =>
   useStep(async (link: string) => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/role-play", { link })).data.data!, "Role-play handed in", "Could not save the link");
+export const useSubmitCallNotes = () =>
+  useStep(async (notes: string) => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/call-notes", { notes })).data.data!, "Write-up handed in", "Could not save your write-up");
 export const useCallsDone = () =>
   useStep<void>(async () => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/calls")).data.data!, "Marked done", "Could not mark the calls done");
 

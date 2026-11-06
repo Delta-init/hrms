@@ -14,7 +14,7 @@ import { scheduleOf } from "../utils/workHours.js";
 import { todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { stillHere, hasLeft } from "../utils/employeeStatus.js";
 import {
-  FIRST_DAYS_LENGTH, ROLE_PLAY_OPENS_AT, SESSION_ENDS_AT,
+  FIRST_DAYS_LENGTH, ROLE_PLAY_OPENS_AT, SESSION_ENDS_AT, CALL_LISTENING_OPENS_AT, MIN_CALL_NOTES,
   addDays, dayNumber, isChatGptShareLink, joiningDayKey, lastRedDay, workingDayKeys,
 } from "../utils/firstDays.js";
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
@@ -26,8 +26,9 @@ import { env } from "../config/env.js";
  *
  * Day 1 — the induction video (done when watched), the 10:30–1 pm session
  * (done when both the joiner and the head confirm it), and the homework the
- * head sends. Day 2 — the homework handed back, the team's video watched, and
- * for sales teams a ChatGPT role-play with the chat's link. Day 3 — 3CX and
+ * head sends. Day 2 — the homework handed back, the team's video watched, in
+ * the teams HR picks an afternoon of listening in on training calls written up
+ * by the joiner, and for sales teams a ChatGPT role-play with the chat's link. Day 3 — 3CX and
  * Zoho from HR, and for sales teams the CRM from the head and the first cold
  * calls on the team's default clients.
  *
@@ -48,7 +49,7 @@ When I type END, step out of character and give me feedback: what I did well, wh
 
 const fail = (message: string, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
-export type StepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "rolePlay" | "access" | "coldCalls";
+export type StepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
 export type StepStatus = "done" | "todo" | "waiting" | "overdue";
 
 /** Who is looking — what they may do follows from it. */
@@ -59,7 +60,7 @@ type EmployeeLite = {
   _id: unknown; name?: string; employeeCode?: string; designation?: string; user?: unknown;
   joiningDate?: Date | null; status?: string; workMode?: "office" | "wfh" | null;
   workSchedule?: { _id: unknown; timeZone?: string; workDays?: number[] } | null;
-  department?: { _id: unknown; name?: string; isSales?: boolean } | null;
+  department?: { _id: unknown; name?: string; isSales?: boolean; callListening?: boolean } | null;
 };
 
 const EMPLOYEE_FIELDS = "name employeeCode designation user joiningDate status workMode workSchedule department";
@@ -67,7 +68,7 @@ const loadEmployee = (filter: Record<string, unknown>) =>
   Employee.findOne(scoped(filter))
     .select(EMPLOYEE_FIELDS)
     .populate("workSchedule", "timeZone workDays name loginTime logoutTime halfDays mode requiredHours")
-    .populate("department", "name isSales")
+    .populate("department", "name isSales callListening")
     .lean<EmployeeLite | null>();
 
 const fmtDay = (key: string) =>
@@ -135,7 +136,7 @@ export class FirstDaysService {
     }))
       .select(EMPLOYEE_FIELDS)
       .populate("workSchedule", "timeZone workDays name loginTime logoutTime halfDays mode requiredHours")
-      .populate("department", "name isSales")
+      .populate("department", "name isSales callListening")
       .lean<EmployeeLite[]>();
     let started = 0;
     for (const emp of due) {
@@ -246,6 +247,7 @@ export class FirstDaysService {
 
     const sessionOpens = zonedTimeToUtc(d1, SESSION_ENDS_AT, tz);
     const rolePlayOpens = zonedTimeToUtc(d2, ROLE_PLAY_OPENS_AT, tz);
+    const callsOpen = zonedTimeToUtc(d2, CALL_LISTENING_OPENS_AT, tz);
     const d2Opens = zonedTimeToUtc(d2, "00:00", tz);
     const access = rec.access;
 
@@ -298,6 +300,15 @@ export class FirstDaysService {
         percent: teamVideo && tv && String(tv.video) === String(teamVideo._id) ? watchProgress(tv as unknown as WatchState, teamVideo.durationSeconds).percent : 0,
         can: viewer.isJoiner && teamVideo && now >= d2Opens && !teamVideoDone ? ["watch"] : [],
       },
+      ...(emp.department?.callListening ? [{
+        key: "callListening" as StepKey, day: 2, dueDay: d2,
+        title: "Listen in on training calls",
+        detail: "This afternoon you sit in on real calls. Afterwards, write down what you heard and what you learned from it.",
+        status: status(!!rec.callListening?.at, d2, now < callsOpen),
+        opensAt: callsOpen,
+        notes: rec.callListening?.notes || null,
+        can: viewer.isJoiner && now >= callsOpen ? [rec.callListening?.at ? "replace" : "submit"] : [],
+      }] : []),
       ...(sales ? [{
         key: "rolePlay" as StepKey, day: 2, dueDay: d2,
         title: "Sales role-play with ChatGPT",
@@ -421,6 +432,31 @@ export class FirstDaysService {
     }
     rec.set("rolePlay", { link: link.trim(), at: new Date() });
     await rec.save();
+    return this.mineView(userId);
+  }
+
+  /** The joiner's write-up of the training calls; submitting it completes the step. */
+  async submitCallNotes(userId: string, notes: string) {
+    const { rec, emp } = await this.mineOrFail(userId);
+    if (!emp.department?.callListening) throw fail("Listening in on training calls isn't a step for your team");
+    if (new Date() < zonedTimeToUtc(rec.stepDays[1] ?? rec.startDay, CALL_LISTENING_OPENS_AT, rec.timeZone)) {
+      throw fail("The training calls are on the afternoon of your second day, from 1 pm");
+    }
+    const text = notes.trim();
+    if (text.length < MIN_CALL_NOTES) throw fail("Write a little more about what you heard — a sentence or two at least");
+    const first = !rec.callListening?.at;
+    rec.set("callListening", { notes: text.slice(0, 4000), at: new Date() });
+    await rec.save();
+    if (first) {
+      await notify({
+        users: (await headContactsFor(userId)).map((h) => h.userId),
+        kind: "reminder",
+        title: `${emp.name ?? "Your new joiner"} wrote up their training calls`,
+        body: text.slice(0, 160),
+        href: "/first-days/team",
+        actor: userId,
+      });
+    }
     return this.mineView(userId);
   }
 
