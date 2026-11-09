@@ -20,6 +20,16 @@ const attendancePenaltyPolicySchema = new Schema<IAttendancePenaltyPolicy>(
      */
     unrecordedDaysUnpaid: { type: Boolean, default: false },
     /**
+     * The first day ("YYYY-MM-DD") an unrecorded day is charged, when the
+     * above is on. Null charges every past day of the month.
+     *
+     * So the switch can be turned on from a date without reaching back: a
+     * month's payslip rebuilt after it went on would otherwise charge every gap
+     * from the 1st — the August 2026 accident, where attendance had barely been
+     * kept and a month's pay went with it.
+     */
+    unrecordedFrom: { type: String, default: null },
+    /**
      * What a regularization proposes by default.
      *
      * Most organizations correct a day to "present", but one that tracks

@@ -222,6 +222,8 @@ export interface AttendancePenaltyPolicy {
   graceLates: number;
   lateBlockSize: number;
   unrecordedDaysUnpaid: boolean;
+  /** The first day ("YYYY-MM-DD") an unrecorded day is unpaid; null for every past day. */
+  unrecordedFrom?: string | null;
   /** What a new regularization proposes before anyone changes it. */
   defaultRegularizationStatus: RegularizationOutcome;
 }
@@ -1088,6 +1090,8 @@ export interface PayslipSummary {
   unrecordedFutureDays?: number;
   /** Whether the organization charges those days as loss of pay. */
   unrecordedDaysUnpaid?: boolean;
+  /** How many were charged — past days, from the date the rule counts from. */
+  unrecordedChargedDays?: number;
   /** Contractual gross cut to the part of the month they were employed. */
   proratedGross?: number;
   /** 1 unless they joined or left mid-month, when it is their share of it. */

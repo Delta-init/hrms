@@ -1080,6 +1080,8 @@ export interface IAttendancePenaltyPolicy extends Document {
   lateBlockSize: number;
   /** A working day with no attendance and no leave counts as unpaid. */
   unrecordedDaysUnpaid: boolean;
+  /** The first day ("YYYY-MM-DD") that is charged for; null for every past day. */
+  unrecordedFrom?: string | null;
   /** What a new regularization proposes before anyone changes it. */
   defaultRegularizationStatus: RegularizationOutcome;
   /** Corrections a person may raise in a month before their manager signs off. */

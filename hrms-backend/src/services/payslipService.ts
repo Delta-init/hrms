@@ -22,7 +22,7 @@ import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
 import { computeReimbursements, markReimbursementsPaid, releaseReimbursements, REIMBURSE_PREFIX } from "./reimbursementService.js";
 import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtimeService.js";
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
-import { getAttendancePenaltyPolicy, computeLatePenaltyDays } from "./attendancePenaltyService.js";
+import { getAttendancePenaltyPolicy, computeLatePenaltyDays, chargesUnrecorded } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
 import { STANDARD_MONTH_DAYS, dayValue, dailyRate } from "../utils/payMonth.js";
 import { policiesForUser, leaveLabel } from "./leavePolicyResolver.js";
@@ -965,6 +965,8 @@ export class PayslipService {
       unrecordedFutureDays: 0,
       // Whether those days cost pay. The form warns very differently either way.
       unrecordedDaysUnpaid: false,
+      /** How many of them were charged: past days, from the date the rule counts from. */
+      unrecordedChargedDays: 0,
     };
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
@@ -1100,9 +1102,12 @@ export class PayslipService {
     // then only for days that have actually passed. Charging the whole month on
     // its first day took a month's pay off everyone for not yet having worked
     // it — which is what a payslip generated mid-month used to do.
+    // From the date it counts from, when one is set — so switching it on does
+    // not reach back over a month's gaps. See chargesUnrecorded().
     base.unrecordedDaysUnpaid = penaltyPolicy.unrecordedDaysUnpaid;
-    const chargeableUnrecorded = Math.max(0, base.unrecordedDays - base.unrecordedFutureDays);
-    if (penaltyPolicy.unrecordedDaysUnpaid && chargeableUnrecorded > 0) {
+    const chargeableUnrecorded = unrecordedKeys.filter((k) => k < today && chargesUnrecorded(penaltyPolicy, k)).length;
+    base.unrecordedChargedDays = chargeableUnrecorded;
+    if (chargeableUnrecorded > 0) {
       base.lopDays = Math.round((base.lopDays + chargeableUnrecorded) * 100) / 100;
     }
 

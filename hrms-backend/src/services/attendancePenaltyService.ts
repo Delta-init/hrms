@@ -4,7 +4,7 @@ import type { IAttendancePenaltyPolicy } from "../types/index.js";
 import { scoped, getOrgId } from "../utils/orgContext.js";
 
 const DEFAULTS = {
-  enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false,
+  enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, unrecordedFrom: null,
   defaultRegularizationStatus: "present" as const, monthlyRegularizationLimit: 3,
 };
 
@@ -12,7 +12,7 @@ const DEFAULTS = {
 export async function getAttendancePenaltyPolicy(): Promise<
   Pick<
     IAttendancePenaltyPolicy,
-    "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid" | "defaultRegularizationStatus" | "monthlyRegularizationLimit"
+    "enabled" | "graceLates" | "lateBlockSize" | "unrecordedDaysUnpaid" | "unrecordedFrom" | "defaultRegularizationStatus" | "monthlyRegularizationLimit"
   >
 > {
   const record = await AttendancePenaltyPolicy.findOne(scoped({})).lean();
@@ -22,11 +22,24 @@ export async function getAttendancePenaltyPolicy(): Promise<
     graceLates: record.graceLates,
     lateBlockSize: record.lateBlockSize,
     unrecordedDaysUnpaid: record.unrecordedDaysUnpaid ?? false,
+    unrecordedFrom: record.unrecordedFrom ?? null,
     defaultRegularizationStatus: record.defaultRegularizationStatus ?? "present",
     // Records written before the limit existed have no value at all — Mongoose
     // applies a default only on save — so the fallback lives here too.
     monthlyRegularizationLimit: record.monthlyRegularizationLimit ?? DEFAULTS.monthlyRegularizationLimit,
   };
+}
+
+/**
+ * Whether a working day with nothing recorded on it is charged: the switch is
+ * on, and the day is on or after the date it counts from. Payroll, the wallet
+ * and the attendance calendar all ask this, so the three cannot disagree.
+ */
+export function chargesUnrecorded(
+  policy: Pick<IAttendancePenaltyPolicy, "unrecordedDaysUnpaid" | "unrecordedFrom">,
+  dayKey: string
+): boolean {
+  return !!policy.unrecordedDaysUnpaid && (!policy.unrecordedFrom || dayKey >= policy.unrecordedFrom);
 }
 
 /** Half-days of penalty LOP for a month with `lateCount` late arrivals under `policy`. */

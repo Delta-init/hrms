@@ -18,7 +18,7 @@ interface Props {
   canEdit: boolean;
 }
 
-const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, monthlyRegularizationLimit: 3, defaultRegularizationStatus: "present" };
+const DEFAULTS: AttendancePenaltyFormValues = { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, unrecordedFrom: "", monthlyRegularizationLimit: 3, defaultRegularizationStatus: "present" };
 
 export function AttendancePenaltyCard({ canEdit }: Props) {
   const { data: policy, isLoading } = useAttendancePenaltyPolicy();
@@ -30,15 +30,16 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
   });
 
   useEffect(() => {
-    if (policy) reset(policy);
+    if (policy) reset({ ...policy, unrecordedFrom: policy.unrecordedFrom ?? "" });
   }, [policy, reset]);
 
   const enabled = watch("enabled");
   const graceLates = watch("graceLates");
   const lateBlockSize = watch("lateBlockSize");
   const unrecordedUnpaid = watch("unrecordedDaysUnpaid");
+  const unrecordedFrom = watch("unrecordedFrom");
 
-  const onSubmit = (data: AttendancePenaltyFormValues) => update(data);
+  const onSubmit = (data: AttendancePenaltyFormValues) => update({ ...data, unrecordedFrom: data.unrecordedFrom || null });
 
   if (isLoading) {
     return <Card className="flex justify-center p-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></Card>;
@@ -80,11 +81,11 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
           <div className="pr-3">
             <p className="text-sm font-medium">Days with no attendance are unpaid</p>
             <p className="text-[11px] text-muted-foreground">
-              A working day with no attendance record, no approved leave and no holiday against it.
-              Every such day in the month counts, including days still to come, so run payroll once
-              the month is complete or people will be docked for days they have not worked yet. Leave
-              this off unless attendance is captured every day: a gap in the data usually means nobody
-              ran attendance, not that the person stayed away.
+              A working day with no attendance record, no approved leave and no holiday against it is
+              marked absent and unpaid, once the day is over. Leave this off unless attendance is
+              captured every day: a gap in the data usually means nobody ran attendance, not that the
+              person stayed away. Anyone who genuinely doesn&apos;t clock in should be marked
+              attendance-exempt first.
             </p>
           </div>
           <Controller name="unrecordedDaysUnpaid" control={control} render={({ field }) => (
@@ -93,12 +94,17 @@ export function AttendancePenaltyCard({ canEdit }: Props) {
         </div>
 
         {unrecordedUnpaid && (
-          <p className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
-            Every unaccounted working day will now reduce pay — the whole month&apos;s, not only the days
-            gone by. A payslip generated on the 8th charges the remaining three weeks as well, so run
-            payroll at month end with attendance complete, or people will be docked for days nobody
-            recorded and days nobody has worked yet.
-          </p>
+          <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="unrecordedFrom" className="text-xs text-amber-800 dark:text-amber-300">Counts from</Label>
+              <Input id="unrecordedFrom" type="date" className="h-8 w-44 bg-background text-foreground" disabled={!canEdit} {...register("unrecordedFrom")} />
+            </div>
+            <p>
+              {unrecordedFrom
+                ? `Unrecorded days from ${new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${unrecordedFrom}T00:00:00Z`))} are unpaid; earlier ones stay paid, even if an older payslip is rebuilt.`
+                : "With no date, every past unrecorded day in a month is unpaid — including in an older month whose payslip gets rebuilt. Set a date to start from."}
+            </p>
+          </div>
         )}
 
         <div className="space-y-1.5 border-t border-border pt-4">

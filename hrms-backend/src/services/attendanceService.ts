@@ -19,7 +19,7 @@ import { resolveWorkScheduleForUser, rosterWorkDaysByUser, workDaysForDate } fro
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { parsePagination, searchRegex } from "../utils/query.js";
 import { Types } from "mongoose";
-import { getAttendancePenaltyPolicy } from "./attendancePenaltyService.js";
+import { getAttendancePenaltyPolicy, chargesUnrecorded } from "./attendancePenaltyService.js";
 
 /**
  * The one device flag a day carries.
@@ -1160,7 +1160,7 @@ export class AttendanceService {
     // charges it. Elsewhere payroll pays it as "not marked", and the calendar
     // painting it red "A" while the payslip took nothing for it (Mohammed
     // midhlaj, 1–20 October 2026) made one of the two look wrong.
-    const { unrecordedDaysUnpaid } = await getAttendancePenaltyPolicy();
+    const penaltyPolicy = await getAttendancePenaltyPolicy();
 
     const empFilter: Record<string, unknown> = { ...orgFilter(), user: { $ne: null } };
     if (employeeId) empFilter._id = Array.isArray(employeeId) ? { $in: employeeId } : employeeId;
@@ -1335,7 +1335,7 @@ export class AttendanceService {
         else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
         else if (holidayNameFor(empWorkMode, key, scheduleId)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key, scheduleId) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
-        else if (key < todayKey) entry = { status: unrecordedDaysUnpaid ? "absent" : "not_marked" };
+        else if (key < todayKey) entry = { status: chargesUnrecorded(penaltyPolicy, key) ? "absent" : "not_marked" };
         else entry = null;
         if (!entry) continue;
         // Attached whatever the day's status says, so leave stays visible even

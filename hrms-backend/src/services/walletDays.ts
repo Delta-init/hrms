@@ -1,6 +1,7 @@
 import type { SummaryTrace } from "./payslipService.js";
 import { employedOn, type EmploymentWindow } from "./employmentWindow.js";
 import { STANDARD_MONTH_DAYS, dayValue } from "../utils/payMonth.js";
+import { chargesUnrecorded } from "./attendancePenaltyService.js";
 
 /**
  * The wallet's month, a day at a time (the user, 2026-11-04: "when they came per day it will credit; if they leave or
@@ -229,7 +230,7 @@ export function buildWalletDays(input: WalletDaysInput): WalletDaysResult {
         take("lop", 0.5, `Half-day ${leave ?? "leave"}, but nothing worked the other half`);
       }
       if (t.unrecorded.includes(k) && k < t.today) {
-        if (t.policy.unrecordedDaysUnpaid) take("lop", 1, "No attendance and no leave recorded");
+        if (chargesUnrecorded(t.policy, k)) take("lop", 1, "No attendance and no leave recorded");
         else notes.push("Nothing recorded — not charged");
       }
       for (const [what, nth] of [["late", lateNth.get(k)], ["early_out", earlyNth.get(k)]] as const) {

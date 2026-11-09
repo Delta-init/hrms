@@ -3,7 +3,7 @@ import { buildWalletDays, monthDays, type WalletDaysInput } from "./walletDays.j
 import type { SummaryTrace } from "./payslipService.js";
 
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
-const POLICY = { enabled: true, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, defaultRegularizationStatus: "present" as const, monthlyRegularizationLimit: 3 };
+const POLICY = { enabled: true, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, unrecordedFrom: null as string | null, defaultRegularizationStatus: "present" as const, monthlyRegularizationLimit: 3 };
 
 /** A month with Sundays off and the rest working days. */
 function trace(month: string, over: Partial<SummaryTrace> = {}): SummaryTrace {
@@ -153,5 +153,13 @@ describe("days with nothing recorded", () => {
     const { days } = buildWalletDays(input({ month: "2026-11", trace: { ...t, policy: { ...POLICY, unrecordedDaysUnpaid: true } }, wholeMonth: false }));
     expect(days[2]!.deductions[0]!.reason).toBe("No attendance and no leave recorded");
     expect(days[11]!.deductions).toEqual([]);
+  });
+
+  it("are charged only from the day it counts from", () => {
+    const from = trace("2026-11", { today: "2026-11-10", unrecorded: ["2026-11-03", "2026-11-05"], policy: { ...POLICY, unrecordedDaysUnpaid: true, unrecordedFrom: "2026-11-04" } });
+    const { days } = buildWalletDays(input({ month: "2026-11", trace: from, wholeMonth: false }));
+    expect(days[2]!.deductions).toEqual([]);
+    expect(days[2]!.note).toBe("Nothing recorded — not charged");
+    expect(days[4]!.deductions[0]!.reason).toBe("No attendance and no leave recorded");
   });
 });

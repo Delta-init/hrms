@@ -72,7 +72,7 @@ function DayBreakdown({ summary, money }: { summary: PayslipSummary; money: (n: 
       label: "Not marked",
       value: String(summary.unrecordedDays),
       note: summary.unrecordedFutureDays ? `${summary.unrecordedFutureDays} not yet happened` : undefined,
-      tone: summary.unrecordedDaysUnpaid ? "text-red-600" : "text-muted-foreground",
+      tone: summary.unrecordedChargedDays ? "text-red-600" : "text-muted-foreground",
     });
 
   const Row = ({ label, value, note, tone, strong }: { label: string; value: string; note?: string; tone?: string; strong?: boolean }) => (
@@ -477,7 +477,9 @@ export function PayslipDialog({ open, onOpenChange, payslip, preset }: Props) {
                   <> — {summary.unrecordedFutureDays} of which {summary.unrecordedFutureDays === 1 ? "has" : "have"} not happened yet</>
                 )}.{" "}
                 {summary.unrecordedDaysUnpaid
-                  ? `All ${summary.unrecordedDays} are charged as loss of pay. Generate once the month is complete, or the figure will be higher than it should be.`
+                  ? summary.unrecordedChargedDays
+                    ? `${summary.unrecordedChargedDays === summary.unrecordedDays ? "All" : summary.unrecordedChargedDays} of them ${summary.unrecordedChargedDays === 1 ? "is" : "are"} charged as loss of pay, as absent — check attendance is complete before generating.`
+                    : "None of them is charged: they are still to come, or fall before the date the rule counts from."
                   : "They are being paid in full — check the month is complete before generating."}
               </div>
             )}
