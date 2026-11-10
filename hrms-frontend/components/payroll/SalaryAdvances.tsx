@@ -65,6 +65,16 @@ const monthName = (ym?: string | null, add = 0) => {
 };
 
 /** Which salary it comes back out of, once HR has said — kept apart from the dates it was asked and paid. */
+/** Finance paid a different amount than was asked (2026-11-10): what was asked, beside what was paid. */
+function AmountChanged({ r }: { r: SalaryAdvance }) {
+  if (r.requestedAmount == null) return null;
+  return (
+    <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+      Asked {money(r.requestedAmount, r.currency)} · finance paid {money(r.amount, r.currency)}
+    </span>
+  );
+}
+
 function Recovery({ r }: { r: SalaryAdvance }) {
   if (!r.months || !r.startMonth) return null;
   const months = r.months === 1 ? `${monthName(r.startMonth)} salary` : `${monthName(r.startMonth)} – ${monthName(r.startMonth, r.months - 1)} salaries`;
@@ -147,6 +157,7 @@ function MyAdvances() {
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill r={r} />
                     <span className="text-sm font-semibold tabular-nums">{money(r.amount, r.currency)}</span>
+                    <AmountChanged r={r} />
                     <Recovery r={r} />
                   </div>
                   <p className="mt-1 text-sm">{r.reason}</p>
@@ -261,6 +272,7 @@ function Queue() {
                     <StatusPill r={r} />
                     <span className="text-sm font-semibold">{nameOf(r.employee) || nameOf(r.user) || "—"}</span>
                     <span className="text-sm font-semibold tabular-nums">{money(r.amount, r.currency)}</span>
+                    <AmountChanged r={r} />
                     <Recovery r={r} />
                   </div>
                   <p className="mt-1.5 text-sm">{r.reason}</p>

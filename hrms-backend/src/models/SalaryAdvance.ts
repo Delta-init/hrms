@@ -19,6 +19,11 @@ const salaryAdvanceSchema = new Schema<ISalaryAdvance>(
     employee: { type: Schema.Types.ObjectId, ref: "Employee", required: true },
     user: { type: Schema.Types.ObjectId, ref: "User", required: true },
     amount: { type: Number, required: true, min: 0 },
+    /**
+     * What was asked for, kept when finance paid a different amount (2026-11-10). Null when finance paid what was
+     * asked. `amount` is then what was paid — the recovery and payroll go by it.
+     */
+    requestedAmount: { type: Number, min: 0, default: null },
     currency: { type: String, default: "AED", uppercase: true, trim: true, maxlength: 6 },
     reason: { type: String, required: [true, "A reason is required"], trim: true, maxlength: 500 },
     neededBy: { type: Date, default: null },

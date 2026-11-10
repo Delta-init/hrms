@@ -2960,6 +2960,8 @@ export interface SalaryAdvance {
   raisedBy?: { _id: string; name: string } | string | null;
   /** HR went over one month's salary, with a note saying why. */
   overLimit?: boolean;
+  /** What was asked for, when finance paid a different amount (2026-11-10); `amount` is then what was paid. */
+  requestedAmount?: number | null;
   createdAt: string;
 }
 export interface SalaryAdvanceEligibility {

@@ -434,6 +434,8 @@ export const approveSalaryAdvance = asyncRoute(async (req, res) => {
     reference: req.body?.reference ?? null,
     paidOn: req.body?.paidOn ?? null,
     method: req.body?.method ?? null,
+    // What finance paid, when it differs from what was asked (2026-11-10).
+    amount: req.body?.amount ?? null,
   });
   sendSuccess(res, "Salary advance paid", record);
 });

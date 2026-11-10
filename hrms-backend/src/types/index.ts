@@ -1705,6 +1705,8 @@ export interface ISalaryAdvance extends Document {
   /** HR, when HR raised it on the employee's behalf. */
   raisedBy?: Types.ObjectId | IUser | null;
   overLimit?: boolean;
+  /** What was asked for, when finance paid a different amount; `amount` is then what was paid. */
+  requestedAmount?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

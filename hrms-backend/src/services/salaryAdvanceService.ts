@@ -345,11 +345,15 @@ export class SalaryAdvanceService {
    * Idempotent for approval — a retry after a lost response finds the request
    * already approved with its loan, and answers with that rather than
    * refusing, so finance can safely send again.
+   *
+   * Finance may pay a different amount than was asked (2026-11-10): `amount`
+   * becomes what was paid, the asked one is kept as `requestedAmount`, and the
+   * recovery is that amount over HR's months. More than was asked needs a note.
    */
   async recordFinanceDecision(
     organization: string,
     id: string,
-    input: { decision: "approve" | "reject"; note?: string | null; reference?: string | null; paidOn?: string | null; method?: string | null }
+    input: { decision: "approve" | "reject"; note?: string | null; reference?: string | null; paidOn?: string | null; method?: string | null; amount?: number | string | null }
   ) {
     const record = await SalaryAdvance.findOne({ _id: id, organization });
     if (!record) throw new AdvanceError("Advance not found", 404);
@@ -359,6 +363,17 @@ export class SalaryAdvanceService {
     if (record.status !== "hr_approved") throw new AdvanceError("Only an advance HR has approved is waiting on finance", 409);
 
     if (input.decision === "approve") {
+      if (input.amount != null && input.amount !== "") {
+        const paid = r2(Number(input.amount));
+        if (!Number.isFinite(paid) || paid <= 0) throw new AdvanceError("The amount paid must be more than 0", 400);
+        if (paid !== r2(record.amount)) {
+          if (paid > record.amount && !input.note?.trim()) {
+            throw new AdvanceError(`Paying more than the ${money(record.amount, record.currency)} asked for needs a note saying why`, 400);
+          }
+          record.requestedAmount = record.requestedAmount ?? record.amount;
+          record.amount = paid;
+        }
+      }
       const months = record.months ?? 1;
       const paidOn = input.paidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) ? input.paidOn : new Date().toISOString().slice(0, 10);
       // Dated mid-month in the start month: a loan's first instalment falls in
@@ -376,7 +391,7 @@ export class SalaryAdvanceService {
         status: "active",
         kind: "advance",
         advance: record._id,
-        notes: `Salary advance paid on ${paidOn}${input.reference ? ` (${input.reference})` : ""}; recovered over ${months} month${months === 1 ? "" : "s"} from ${record.startMonth}.`.slice(0, 500),
+        notes: `Salary advance paid on ${paidOn}${input.reference ? ` (${input.reference})` : ""}${record.requestedAmount != null ? `; ${money(record.amount, record.currency)} paid of ${money(record.requestedAmount, record.currency)} asked` : ""}; recovered over ${months} month${months === 1 ? "" : "s"} from ${record.startMonth}.`.slice(0, 500),
       });
       record.status = "approved";
       record.loan = loan._id;
@@ -399,21 +414,30 @@ export class SalaryAdvanceService {
   }
 
   private async announceFinanceDecision(
-    record: { _id: unknown; user: unknown; employee: unknown; amount: number; currency: string; status: string; months?: number | null; startMonth?: string | null; financeNote?: string },
+    record: { _id: unknown; user: unknown; employee: unknown; amount: number; currency: string; status: string; months?: number | null; startMonth?: string | null; financeNote?: string; requestedAmount?: number | null },
     organization: string
   ) {
     const amount = money(record.amount, record.currency);
+    // Finance paid a different amount than was asked: say so, with its note.
+    const changed = record.status === "approved" && record.requestedAmount != null
+      ? ` Finance paid this instead of the ${money(record.requestedAmount, record.currency)} you asked for${record.financeNote ? ` — ${record.financeNote}` : ""}.`
+      : "";
     const emp = await Employee.findById(record.employee).select("name").lean<{ name?: string } | null>();
     if (record.status === "approved") {
       const per = money(r2(record.amount / (record.months ?? 1)), record.currency);
       await tellRequester(
         record,
         "Your salary advance has been paid",
-        `${amount}. ${per} a month will be taken from your salary for ${record.months} month${record.months === 1 ? "" : "s"}, from ${record.startMonth}.`,
+        `${amount}.${changed} ${per} a month will be taken from your salary for ${record.months} month${record.months === 1 ? "" : "s"}, from ${record.startMonth}.`,
         "positive",
         organization
       );
-      await tellApprovers(`Salary advance paid — ${emp?.name ?? "an employee"}`, `${amount}, recovered from ${record.startMonth}.`, undefined, organization);
+      await tellApprovers(
+        `Salary advance paid — ${emp?.name ?? "an employee"}`,
+        `${amount}${record.requestedAmount != null ? ` (asked ${money(record.requestedAmount, record.currency)}, changed by finance)` : ""}, recovered from ${record.startMonth}.`,
+        undefined,
+        organization
+      );
     } else {
       await tellRequester(record, "Your salary advance was not approved by finance", `${amount}${record.financeNote ? `<br><br>${record.financeNote}` : ""}`, "negative", organization);
       await tellApprovers(`Salary advance refused by finance — ${emp?.name ?? "an employee"}`, `${amount}${record.financeNote ? `<br><br>${record.financeNote}` : ""}`, undefined, organization);
