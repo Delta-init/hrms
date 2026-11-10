@@ -331,11 +331,13 @@ export class SalaryAdvanceService {
       { path: "hrReviewedBy", select: "name email" },
       { path: "raisedBy", select: "name" },
     ];
+    // requestedAmount always present (null = paid as asked): it also tells finance this HRMS takes a changed amount.
+    const withAsked = <T extends { requestedAmount?: number | null }>(rows: T[]) => rows.map((r) => ({ ...r, requestedAmount: r.requestedAmount ?? null }));
     if (status === "hr_approved") {
-      return SalaryAdvance.find({ organization, status: "hr_approved" }).populate(populate).sort({ neededBy: 1, hrReviewedAt: 1 }).lean();
+      return withAsked(await SalaryAdvance.find({ organization, status: "hr_approved" }).populate(populate).sort({ neededBy: 1, hrReviewedAt: 1 }).lean());
     }
     const filter = status === "all" ? { organization } : { organization, status };
-    return SalaryAdvance.find(filter).populate(populate).sort({ createdAt: -1 }).limit(500).lean();
+    return withAsked(await SalaryAdvance.find(filter).populate(populate).sort({ createdAt: -1 }).limit(500).lean());
   }
 
   /**

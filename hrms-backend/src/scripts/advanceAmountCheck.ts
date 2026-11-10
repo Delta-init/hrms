@@ -99,6 +99,14 @@ const jerin = await person("Jerin"), dhinesh = await person("Dhinesh"), sam = aw
 
 console.log("\nPaid less than asked");
 const less = await waiting(jerin, 350, 1);
+{
+  // Finance's queue says requestedAmount (null) on every row — how finance knows this HRMS takes a changed amount.
+  const url = `/api/v1/integrations/advances/requests?organizationId=${org}`;
+  const ts = String(Date.now()), nonce = crypto.randomUUID();
+  const q = await fetch(origin + url, { headers: { "x-delta-client": CLIENT, "x-delta-timestamp": ts, "x-delta-nonce": nonce, "x-delta-signature": signRequest(SECRET, "GET", url, ts, nonce, "") } });
+  const rows = ((await q.json()) as { data?: any[] }).data ?? [];
+  check("finance's queue carries requestedAmount: null", rows.length === 1 && "requestedAmount" in rows[0] && rows[0].requestedAmount === null, j(rows));
+}
 let r = await pay(less, { amount: 300 });
 let a = await stored(less);
 check("paid: amount 300, the 350 asked kept", r.status === 200 && a.status === "approved" && a.amount === 300 && a.requestedAmount === 350, j({ r, a }));
