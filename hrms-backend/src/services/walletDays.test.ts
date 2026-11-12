@@ -11,7 +11,7 @@ function trace(month: string, over: Partial<SummaryTrace> = {}): SummaryTrace {
   return {
     tz: "Asia/Dubai", start: new Date(`${month}-01T00:00:00Z`), end: new Date(`${month}-28T00:00:00Z`), today: "2099-01-01",
     working, holidays: new Set(), paidLeave: new Map(), unpaidLeave: new Map(), absent: new Set(), half: new Set(),
-    halfLeaveNoAttendance: new Set(), unrecorded: [], policy: POLICY, exempt: false, ...over,
+    halfLeaveNoAttendance: new Set(), unrecorded: [], wfh: new Set(), policy: POLICY, exempt: false, ...over,
   };
 }
 
@@ -152,6 +152,18 @@ describe("days with nothing recorded", () => {
   it("are charged when it did, but only once the day is over", () => {
     const { days } = buildWalletDays(input({ month: "2026-11", trace: { ...t, policy: { ...POLICY, unrecordedDaysUnpaid: true } }, wholeMonth: false }));
     expect(days[2]!.deductions[0]!.reason).toBe("No attendance and no leave recorded");
+    expect(days[11]!.deductions).toEqual([]);
+  });
+
+  it("include an approved work-from-home day nobody clocked in on, said as such", () => {
+    const wfh = trace("2026-11", { today: "2026-11-10", unrecorded: ["2026-11-03"], wfh: new Set(["2026-11-03", "2026-11-04", "2026-11-12"]), policy: { ...POLICY, unrecordedDaysUnpaid: true, unrecordedFrom: "2026-11-01" } });
+    const { days } = buildWalletDays(input({ month: "2026-11", trace: wfh, wholeMonth: false, attendance: [at("2026-11-04", "present")] }));
+    expect(days[2]!.label).toBe("Work from home · not clocked in");
+    expect(days[2]!.deductions[0]!.reason).toBe("Work from home, but no clock-in from your device");
+    expect(days[3]!.label).toBe("On time");
+    expect(days[3]!.note).toBe("Work from home");
+    expect(days[3]!.deductions).toEqual([]);
+    expect(days[11]!.label).toBe("Work from home");
     expect(days[11]!.deductions).toEqual([]);
   });
 

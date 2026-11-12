@@ -211,10 +211,12 @@ export function buildWalletDays(input: WalletDaysInput): WalletDaysResult {
     } else if (!t.working.has(k) || rec?.status === "weekend") {
       day.kind = "rest_day"; day.label = "Rest day · paid";
     } else if (k >= t.today && !input.wholeMonth) {
-      day.kind = "upcoming"; day.label = k === t.today ? "Today" : "Still to come";
+      day.kind = "upcoming"; day.label = t.wfh?.has(k) ? "Work from home" : k === t.today ? "Today" : "Still to come";
     } else {
-      day.kind = "no_record"; day.label = "No attendance recorded";
+      day.kind = "no_record"; day.label = t.wfh?.has(k) ? "Work from home · not clocked in" : "No attendance recorded";
     }
+    // Approved to work from home, and clocked in: paid by the punch like any day.
+    if (rec && t.wfh?.has(k)) notes.push("Work from home");
 
     // What came off it, and why — the payslip's own rules, in its order.
     const off: WalletDeduction[] = [];
@@ -230,7 +232,9 @@ export function buildWalletDays(input: WalletDaysInput): WalletDaysResult {
         take("lop", 0.5, `Half-day ${leave ?? "leave"}, but nothing worked the other half`);
       }
       if (t.unrecorded.includes(k) && k < t.today) {
-        if (chargesUnrecorded(t.policy, k)) take("lop", 1, "No attendance and no leave recorded");
+        if (chargesUnrecorded(t.policy, k)) {
+          take("lop", 1, t.wfh?.has(k) ? "Work from home, but no clock-in from your device" : "No attendance and no leave recorded");
+        }
         else notes.push("Nothing recorded — not charged");
       }
       for (const [what, nth] of [["late", lateNth.get(k)], ["early_out", earlyNth.get(k)]] as const) {

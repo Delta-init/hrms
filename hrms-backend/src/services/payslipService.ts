@@ -111,6 +111,8 @@ export interface SummaryTrace {
   halfLeaveNoAttendance: Set<string>;
   /** Working days with no attendance, leave or holiday. */
   unrecorded: string[];
+  /** Approved work-from-home days — paid only through a punch, so noted rather than counted. */
+  wfh: Set<string>;
   policy: Awaited<ReturnType<typeof getAttendancePenaltyPolicy>>;
   /** Attendance costs them nothing (employee setting). */
   exempt: boolean;
@@ -971,12 +973,12 @@ export class PayslipService {
     const userId = emp.user?._id ?? null;
     if (!userId) return base;
 
-    const [att, unpaid, anyLeave, holidays] = await Promise.all([
+    const [att, approvedLeave, anyApproved, holidays] = await Promise.all([
       Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
       LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type days startDate endDate halfDay").lean(),
       // Any approved leave counts as accounted for, paid or not — the day is
       // explained, which is what the coverage check is asking about.
-      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("startDate endDate").lean(),
+      LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type startDate endDate").lean(),
       // This person's calendar, not the organisation's — a Kerala holiday must
       // not pay a Dubai employee for a day they worked.
       Holiday.find({
@@ -985,6 +987,19 @@ export class PayslipService {
         ...(await holidayScope(await workModeOfUser(userId), await scheduleIdOfUser(userId))),
       }).select("date").lean(),
     ]);
+
+    /**
+     * Work from home is not leave from work, so it pays nothing by itself.
+     *
+     * An approved work-from-home day only lets an office employee clock in
+     * from their own device that day; the day is paid by that punch, under the
+     * same late, early and half-day rules as any other. With no punch it is a
+     * day with nothing recorded, and charged as one where the organisation
+     * charges those (2026-11-12). The day still comes out of their allowance.
+     */
+    const wfhDays = new Set(approvedLeave.filter((l) => l.type === "wfh").flatMap((l) => dayRange(l.startDate, l.endDate, start, end, tz)));
+    const unpaid = approvedLeave.filter((l) => l.type !== "wfh");
+    const anyLeave = anyApproved.filter((l) => l.type !== "wfh");
 
     // Build day-level sets so a day that is both absent and on unpaid leave
     // counts once (LOP is not double-counted).
@@ -1133,6 +1148,7 @@ export class PayslipService {
         half: halfSet,
         halfLeaveNoAttendance,
         unrecorded: unrecordedKeys,
+        wfh: wfhDays,
         policy: penaltyPolicy,
         exempt: !!emp.attendanceExempt,
       } satisfies SummaryTrace);

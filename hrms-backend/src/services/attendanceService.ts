@@ -739,12 +739,15 @@ export class AttendanceService {
       // an approved work-from-home day: somebody who must never self-punch is
       // not made an exception by being allowed to work from home.
       canSelfPunch: !employee?.kioskOnly && (!enforced || workMode !== "office" || wfhToday),
-      // Only remote staff are held to one browser. Office staff punch at a
-      // kiosk, which already knows exactly which device it is.
-      devicePolicy: workMode === "wfh" ? org?.settings?.remoteDevice ?? "off" : "off",
-      // Remote staff only. A kiosk has already seen the person standing at it,
-      // so a browser's opinion of where they are adds nothing there.
-      requireLocation: workMode === "wfh" && !!org?.settings?.requireRemoteLocation,
+      // Only remote staff are held to one browser — and office staff on an
+      // approved work-from-home day, who are remote for that day and punch
+      // from their own device rather than a kiosk (2026-11-12). On any other
+      // day an office punch is at a kiosk, which knows exactly which device it is.
+      devicePolicy: workMode === "wfh" || wfhToday ? org?.settings?.remoteDevice ?? "off" : "off",
+      // Remote staff only, and office staff on a work-from-home day for the
+      // same reason. A kiosk has already seen the person standing at it, so a
+      // browser's opinion of where they are adds nothing there.
+      requireLocation: (workMode === "wfh" || wfhToday) && !!org?.settings?.requireRemoteLocation,
       employeeId: employee ? String(employee._id) : null,
       trustedDevice: employee?.trustedDevice ?? null,
     };
@@ -1332,7 +1335,10 @@ export class AttendanceService {
           entry = recs[key];
           if ((entry.workedMinutes ?? 0) > 0) { workedTotal += entry.workedMinutes!; workedDays++; }
         } else if (!employedOn(window, key)) entry = null;
-        else if (leaveMap.has(key)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
+        // A work-from-home day that has passed without a punch is not paid by
+        // the approval alone (see the payslip), so it reads as any day with
+        // nothing recorded — the approval stays attached below.
+        else if (leaveMap.has(key) && !(leaveMap.get(key) === "wfh" && key < todayKey)) entry = { status: leaveMap.get(key) === "wfh" ? "wfh" : "on_leave" };
         else if (holidayNameFor(empWorkMode, key, scheduleId)) entry = { status: "holiday", note: holidayNameFor(empWorkMode, key, scheduleId) };
         else if (!workDays.includes(dow)) entry = { status: "weekend" };
         else if (key < todayKey) entry = { status: chargesUnrecorded(penaltyPolicy, key) ? "absent" : "not_marked" };

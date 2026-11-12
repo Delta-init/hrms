@@ -193,7 +193,7 @@ export class WalletService {
       tz: "Asia/Dubai", start: new Date(0), end: new Date(0),
       today: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date()),
       working: new Set(), holidays: new Set(), paidLeave: new Map(), unpaidLeave: new Map(), absent: new Set(), half: new Set(),
-      halfLeaveNoAttendance: new Set(), unrecorded: [], exempt: false,
+      halfLeaveNoAttendance: new Set(), unrecorded: [], wfh: new Set(), exempt: false,
       policy: { enabled: false, graceLates: 3, lateBlockSize: 3, unrecordedDaysUnpaid: false, unrecordedFrom: null, defaultRegularizationStatus: "present", monthlyRegularizationLimit: 3 },
     };
 
