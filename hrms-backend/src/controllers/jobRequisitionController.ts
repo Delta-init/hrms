@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
 import {
   createRequisitionSchema, updateRequisitionSchema, reviewRequisitionSchema, withdrawRequisitionSchema, setQuestionsSchema,
+  setStandingSchema,
 } from "../validations/jobRequisitionValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
@@ -60,6 +61,20 @@ export const setRequisitionQuestions = async (req: AuthenticatedRequest, res: Re
       forHead: !!headOnly(req, "view"),
     });
     sendSuccess(res, "Interview questions saved", record);
+  } catch (error) { next(error); }
+};
+
+/** Active, closed or cancelled once approved, and/or the priority — the list's dropdowns. */
+export const setRequisitionStanding = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = setStandingSchema.safeParse(req.body ?? {});
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const record = await service.setStanding(req.params.id, parsed.data, {
+      userId: req.user!.userId,
+      canEdit: hasPermission(req.user?.role, "hiring", "edit"),
+      forHead: !!headOnly(req, "view"),
+    });
+    sendSuccess(res, "Requisition updated", record);
   } catch (error) { next(error); }
 };
 

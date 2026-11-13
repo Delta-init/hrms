@@ -19,8 +19,8 @@ import { useEmployee } from "@/hooks/useEmployees";
 import { blankQuestion, isBlankQuestion, questionsReady } from "@/lib/interviewQuestions";
 import { cn } from "@/lib/utils";
 import {
-  EMPLOYMENT_TYPE_LABELS, LOCATION_LABELS, REQUISITION_TYPE_LABELS,
-  type EmployeeLocation, type EmploymentType, type InterviewQuestion, type JobRequisition, type RequisitionType,
+  EMPLOYMENT_TYPE_LABELS, LOCATION_LABELS, REQUISITION_PRIORITY_LABELS, REQUISITION_TYPE_LABELS,
+  type EmployeeLocation, type EmploymentType, type InterviewQuestion, type JobRequisition, type RequisitionPriority, type RequisitionType,
 } from "@/types";
 
 interface Props {
@@ -51,13 +51,14 @@ interface FormValues {
   currency: string;
   justification: string;
   targetStartDate: string;
+  priority: RequisitionPriority;
   jdText: string;
 }
 
 const EMPTY: FormValues = {
   type: "replacement", replacing: "", title: "", department: "", designation: "",
   location: "", employmentType: "full_time", headcount: 1,
-  salaryMin: "", salaryMax: "", currency: "AED", justification: "", targetStartDate: "", jdText: "",
+  salaryMin: "", salaryMax: "", currency: "AED", justification: "", targetStartDate: "", priority: "normal", jdText: "",
 };
 
 /**
@@ -82,7 +83,7 @@ function toForm(r: JobRequisition): FormValues {
     employmentType: r.employmentType ?? "full_time", headcount: r.headcount ?? 1,
     salaryMin: r.salaryMin != null ? String(r.salaryMin) : "", salaryMax: r.salaryMax != null ? String(r.salaryMax) : "",
     currency: r.currency ?? "AED", justification: r.justification ?? "",
-    targetStartDate: r.targetStartDate ? r.targetStartDate.slice(0, 10) : "", jdText: r.jdText ?? "",
+    targetStartDate: r.targetStartDate ? r.targetStartDate.slice(0, 10) : "", priority: r.priority ?? "normal", jdText: r.jdText ?? "",
   };
 }
 
@@ -333,6 +334,19 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
             <div className="space-y-1.5">
               <Label htmlFor="targetStartDate">Wanted by</Label>
               <Input id="targetStartDate" type="date" {...register("targetStartDate")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Priority</Label>
+              <Controller name="priority" control={control} render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(REQUISITION_PRIORITY_LABELS) as RequisitionPriority[]).map((x) => (
+                      <SelectItem key={x} value={x}>{REQUISITION_PRIORITY_LABELS[x]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )} />
             </div>
           </div>
 

@@ -9,6 +9,7 @@ import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { RequisitionDialog } from "@/components/hiring/RequisitionDialog";
+import { DeadlineCell, PrioritySelect, StateSelect, hasStanding } from "@/components/hiring/RequisitionStanding";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
@@ -22,8 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
-  REQUISITION_STATUS_LABELS, REQUISITION_TYPE_LABELS,
-  type JobRequisition, type RequisitionStatus, type RequisitionType,
+  REQUISITION_PRIORITY_LABELS, REQUISITION_STATUS_LABELS, REQUISITION_TYPE_LABELS,
+  type JobRequisition, type RequisitionPriority, type RequisitionStatus, type RequisitionType,
 } from "@/types";
 
 const ALL = "__all__";
@@ -36,8 +37,12 @@ const statusStyles: Record<RequisitionStatus, string> = {
   rejected: "bg-red-500/10 text-red-600 border-red-500/20",
   on_hold: "bg-sky-500/10 text-sky-600 border-sky-500/20",
   filled: "bg-primary/10 text-primary border-primary/20",
+  closed: "bg-primary/10 text-primary border-primary/20",
   cancelled: "bg-muted text-muted-foreground border-border",
 };
+
+/** The status filter's order: where a requisition stands once approved first, then the approval states. */
+const STATUS_FILTER: RequisitionStatus[] = ["approved", "closed", "cancelled", "pending", "finance_pending", "rejected", "on_hold", "filled", "draft"];
 
 const fmtDate = (iso?: string | null) =>
   iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—";
@@ -78,6 +83,8 @@ export default function HiringPage() {
   const mine = (r: JobRequisition) => idOf(r.raisedBy) === String(user?._id ?? "");
   const canEditRow = (r: JobRequisition) => (mine(r) || canEditAny) && EDITABLE.includes(r.status) && !(r.approvalTrail ?? []).length;
   const canWithdrawRow = (r: JobRequisition) => (mine(r) || canEditAny) && WITHDRAWABLE.includes(r.status);
+  /** Active / closed / cancelled and the priority — the raiser's and HR's to change. */
+  const canManageRow = (r: JobRequisition) => mine(r) || canEditAny;
   const [deleteTarget, setDeleteTarget] = useState<JobRequisition | null>(null);
 
   const columns: DataTableColumn<JobRequisition>[] = [
@@ -116,7 +123,8 @@ export default function HiringPage() {
       ),
     },
     { id: "raisedBy", label: "Raised by", defaultVisible: false, render: (r) => <span className="text-muted-foreground">{nameOf(r.raisedBy)}</span> },
-    { id: "wanted", label: "Wanted by", render: (r) => <span className="text-muted-foreground">{fmtDate(r.targetStartDate)}</span> },
+    { id: "priority", label: "Priority", render: (r) => <PrioritySelect requisition={r} canChange={canManageRow(r)} /> },
+    { id: "wanted", label: "Wanted by", render: (r) => <DeadlineCell requisition={r} fmt={fmtDate} /> },
     {
       id: "stage", label: "Stage",
       render: (r) =>
@@ -135,15 +143,20 @@ export default function HiringPage() {
       id: "status", label: "Status", alwaysVisible: true, sortKey: "status",
       render: (r) => (
         <div>
-          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
-            {r.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[r.status]}
-          </span>
+          {/* Once approved it is set from here — active, closed or cancelled. */}
+          {canManageRow(r) && hasStanding(r) ? (
+            <StateSelect requisition={r} />
+          ) : (
+            <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[r.status])}>
+              {r.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[r.status]}
+            </span>
+          )}
           {r.withdrawnAt && r.withdrawReason && (
             <div className="mt-0.5 max-w-[16rem] truncate text-[10px] text-muted-foreground" title={r.withdrawReason}>{r.withdrawReason}</div>
           )}
           {/* Who made the last call, when it was finance rather than HR. */}
           {r.financeReviewedAt && (
-            <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">by finance</div>
+            <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">approved by finance</div>
           )}
         </div>
       ),
@@ -317,11 +330,23 @@ export default function HiringPage() {
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Status</Label>
               <Select value={query.filters.status ?? ALL} onValueChange={(v) => query.setFilter("status", v)}>
-                <SelectTrigger className="h-9 w-[140px]"><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="All" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ALL}>All statuses</SelectItem>
-                  {(Object.keys(REQUISITION_STATUS_LABELS) as RequisitionStatus[]).map((s) => (
+                  {STATUS_FILTER.map((s) => (
                     <SelectItem key={s} value={s}>{REQUISITION_STATUS_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Priority</Label>
+              <Select value={query.filters.priority ?? ALL} onValueChange={(v) => query.setFilter("priority", v)}>
+                <SelectTrigger className="h-9 w-[140px]"><SelectValue placeholder="All" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All priorities</SelectItem>
+                  {(Object.keys(REQUISITION_PRIORITY_LABELS) as RequisitionPriority[]).map((x) => (
+                    <SelectItem key={x} value={x}>{REQUISITION_PRIORITY_LABELS[x]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -350,6 +375,7 @@ export default function HiringPage() {
           Currency: r.currency ?? "",
           "Needs accounts": r.budgetApprovalRequired ? "Yes" : "No",
           "Raised by": nameOf(r.raisedBy),
+          Priority: REQUISITION_PRIORITY_LABELS[r.priority ?? "normal"],
           "Wanted by": fmtDate(r.targetStartDate),
           Status: REQUISITION_STATUS_LABELS[r.status],
           Finance: r.financeReviewedAt

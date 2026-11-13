@@ -22,6 +22,7 @@ import { OfferMailsDialog } from "@/components/hiring/OfferMailsDialog";
 import { OfferTemplatesDialog } from "@/components/hiring/OfferTemplatesDialog";
 import { InterviewQuestionsDialog } from "@/components/hiring/InterviewQuestionsDialog";
 import { InterviewResults } from "@/components/hiring/InterviewResults";
+import { PrioritySelect, StateSelect, hasStanding } from "@/components/hiring/RequisitionStanding";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -160,7 +161,10 @@ export default function RequisitionDetailPage() {
         }
         icon={Users}
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Where it stands, set here as on the list — the raiser's and HR's to change. */}
+            {requisition && <PrioritySelect requisition={requisition} canChange={canEdit || raisedByMe} />}
+            {requisition && (canEdit || raisedByMe) && hasStanding(requisition) && <StateSelect requisition={requisition} />}
             {canEdit && !headOnly && (
               <Button variant="outline" onClick={() => setTemplatesOpen(true)}><Mail className="h-4 w-4" />Offer emails</Button>
             )}
@@ -179,7 +183,9 @@ export default function RequisitionDetailPage() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             This requisition is <strong>{(requisition.withdrawnAt ? "Withdrawn" : REQUISITION_STATUS_LABELS[requisition.status]).toLowerCase()}</strong>.
-            Candidates can only be added once it is approved.
+            {hasStanding(requisition)
+              ? " Set it back to Active to add candidates."
+              : " Candidates can only be added once it is approved."}
           </span>
         </div>
       )}

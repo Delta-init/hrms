@@ -2,7 +2,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, HiringWorkflowState, InterviewQuestion, InterviewResult, JobRequisition, RequisitionStatus } from "@/types";
+import type {
+  ApiResponse, HiringWorkflowState, InterviewQuestion, InterviewResult, JobRequisition, RequisitionPriority, RequisitionState, RequisitionStatus,
+} from "@/types";
 
 const KEY = ["hiring"] as const;
 
@@ -35,6 +37,20 @@ export const useSetRequisitionQuestions = () => {
       (await api.put<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}/questions`, { interviewQuestions })).data.data!,
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Interview questions saved"); },
     onError: (e) => toast.error(errMsg(e, "Could not save the interview questions")),
+  });
+};
+
+/** Active, closed or cancelled once approved, and/or the priority. */
+export const useSetRequisitionStanding = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: { id: string; state?: RequisitionState; priority?: RequisitionPriority }) =>
+      (await api.patch<ApiResponse<JobRequisition>>(`/hiring/requisitions/${id}/standing`, body)).data.data!,
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      toast.success(v.state ? `Marked ${v.state}` : "Priority updated");
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not update the requisition")),
   });
 };
 

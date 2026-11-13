@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createRequisition, getRequisitions, getRequisitionById,
   updateRequisition, reviewRequisition, deleteRequisition, withdrawRequisition, getHiringWorkflowState, uploadJd, getReplaceable,
-  setRequisitionQuestions,
+  setRequisitionQuestions, setRequisitionStanding,
 } from "../controllers/jobRequisitionController.js";
 import {
   createCandidate, getCandidates, getCandidateById, updateCandidate, deleteCandidate,
@@ -44,6 +44,9 @@ router.put("/requisitions/:id", checkPermissionOrDepartmentHead("hiring", "edit"
 // anyone who can read requisitions; the service lets through only the one who
 // raised it and whoever holds hiring edit.
 router.put("/requisitions/:id/questions", checkPermissionOrDepartmentHead("hiring", "view"), setRequisitionQuestions);
+// Active / closed / cancelled once approved, and the priority. Same admission
+// as the questions: the service lets through the raiser and hiring edit.
+router.patch("/requisitions/:id/standing", checkPermissionOrDepartmentHead("hiring", "view"), setRequisitionStanding);
 // Approving is its own permission, and the workflow narrows it further to the
 // role holding the current step.
 router.patch("/requisitions/:id/review", checkPermission("hiring", "approve"), reviewRequisition);

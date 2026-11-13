@@ -2603,15 +2603,22 @@ export interface DocumentsOverview {
 // ─── Hiring ──────────────────────────────────────────────────────────────────
 export type RequisitionType = "replacement" | "new_headcount";
 /** finance_pending: HR approved one that needs accounts, and finance decides it next. */
-export type RequisitionStatus = "draft" | "pending" | "finance_pending" | "approved" | "rejected" | "on_hold" | "filled" | "cancelled";
+export type RequisitionStatus = "draft" | "pending" | "finance_pending" | "approved" | "rejected" | "on_hold" | "filled" | "closed" | "cancelled";
+/** How soon a role has to be filled. */
+export type RequisitionPriority = "urgent" | "high" | "normal" | "low";
+export const REQUISITION_PRIORITY_LABELS: Record<RequisitionPriority, string> = {
+  urgent: "Urgent", high: "High", normal: "Normal", low: "Low",
+};
+/** An approved requisition's standing, as its dropdown sets it. */
+export type RequisitionState = "active" | "closed" | "cancelled";
 
 export const REQUISITION_TYPE_LABELS: Record<RequisitionType, string> = {
   replacement: "Replacement",
   new_headcount: "New headcount",
 };
 export const REQUISITION_STATUS_LABELS: Record<RequisitionStatus, string> = {
-  draft: "Draft", pending: "Pending", finance_pending: "Waiting for finance", approved: "Approved", rejected: "Rejected",
-  on_hold: "On hold", filled: "Filled", cancelled: "Cancelled",
+  draft: "Draft", pending: "Pending", finance_pending: "Waiting for finance", approved: "Active", rejected: "Rejected",
+  on_hold: "On hold", filled: "Filled", closed: "Closed", cancelled: "Cancelled",
 };
 
 /** One question for the interview panel, as the requester wrote it. */
@@ -2645,6 +2652,9 @@ export interface JobRequisition {
   /** Typed in directly. Independent of the attachment — a role can carry both. */
   jdText?: string;
   jdFileName?: string;
+  /** Absent on requisitions from before priority existed — they read as normal. */
+  priority?: RequisitionPriority;
+  stateChangedAt?: string | null;
   /** On the single-requisition response; a list row carries only the count. */
   interviewQuestions?: InterviewQuestion[];
   interviewQuestionCount?: number;

@@ -197,7 +197,7 @@ export async function hrmsReportForPortal(q: { org?: string; from?: string; to?:
   for (const r of requisitions) {
     const s = str(r.status), raiser = who(r.raisedBy);
     hr.add({ ...raiser, team: deptName.get(oid(r.department)) ?? raiser.team }, r.createdAt, { requisitions: 1, headcount: Number(r.headcount) || 1,
-      approved: s === "approved" || s === "filled" ? 1 : 0, rejected: s === "rejected" ? 1 : 0, filled: s === "filled" ? 1 : 0 },
+      approved: s === "approved" || s === "filled" || s === "closed" ? 1 : 0, rejected: s === "rejected" ? 1 : 0, filled: s === "filled" ? 1 : 0 },
       { at: iso(r.createdAt), id: String(r._id), kind: "requisition", title: str(r.title), detail: `${Number(r.headcount) || 1} · ${words(r.type)}`, status: words(s) });
   }
   for (const a of applications) {

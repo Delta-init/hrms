@@ -2006,7 +2006,12 @@ export type RequisitionStatus =
   | "rejected"
   | "on_hold"
   | "filled"
+  /** No longer recruiting — filled some other way, or not needed now. Can be reopened. */
+  | "closed"
   | "cancelled";
+
+/** How soon a role has to be filled. Normal unless somebody says otherwise. */
+export type RequisitionPriority = "urgent" | "high" | "normal" | "low";
 
 /** One interview question as the requester wrote it. */
 export interface IInterviewQuestion {
@@ -2046,6 +2051,11 @@ export interface IJobRequisition extends Document {
   jdFileName?: string;
   /** Asked in every interview round; each answer is marked out of `maxMarks`. */
   interviewQuestions?: IInterviewQuestion[];
+  /** Absent on requisitions from before it existed, which read as normal. */
+  priority?: RequisitionPriority;
+  /** Who last moved it between active, closed and cancelled once approved, and when. */
+  stateChangedAt?: Date | null;
+  stateChangedBy?: Types.ObjectId | IUser | null;
   questionsUpdatedAt?: Date | null;
   questionsUpdatedBy?: Types.ObjectId | IUser | null;
   raisedBy: Types.ObjectId | IUser;

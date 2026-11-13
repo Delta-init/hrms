@@ -58,11 +58,19 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
     questionsUpdatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
 
     raisedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    /** How soon it has to be filled. Requisitions from before this have none, and read as normal. */
+    priority: { type: String, enum: ["urgent", "high", "normal", "low"], default: "normal", index: true },
+    /** The last move between active, closed and cancelled after approval — who and when. */
+    stateChangedAt: { type: Date, default: null },
+    stateChangedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     status: {
       type: String,
       // finance_pending: HR approved one that needs accounts, and it waits on
       // finance's decision (HIRING_FINANCE_STEP=on) — see review().
-      enum: ["draft", "pending", "finance_pending", "approved", "rejected", "on_hold", "filled", "cancelled"],
+      // closed: approved, then no longer recruiting — reopened by setting it
+      // active again (see setState). cancelled covers both a withdrawal before
+      // any decision (withdrawnAt set) and a cancellation after approval.
+      enum: ["draft", "pending", "finance_pending", "approved", "rejected", "on_hold", "filled", "closed", "cancelled"],
       default: "pending",
       index: true,
     },

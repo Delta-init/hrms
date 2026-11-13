@@ -37,6 +37,7 @@ const base = z.object({
   status: z.enum(["draft", "pending"]).optional(),
   jdText: z.string().trim().max(20000).optional(),
   interviewQuestions: interviewQuestions.optional(),
+  priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
 });
 
 // A new request carries its questions: the panel should not be left to make
@@ -65,6 +66,16 @@ export const reviewRequisitionSchema = z.object({
 
 export const setQuestionsSchema = z.object({ interviewQuestions });
 
+/**
+ * A requisition's standing once approved, as the list's dropdown sets it —
+ * active (recruiting), closed or cancelled — and/or its priority. Either may
+ * come alone.
+ */
+export const setStandingSchema = z.object({
+  state: z.enum(["active", "closed", "cancelled"]).optional(),
+  priority: z.enum(["urgent", "high", "normal", "low"]).optional(),
+}).refine((v) => v.state || v.priority, "Say what to change");
+
 export const withdrawRequisitionSchema = z.object({
   reason: z.string().trim().max(500).optional().default(""),
 });
@@ -73,3 +84,4 @@ export type CreateRequisitionInput = z.infer<typeof createRequisitionSchema>;
 export type UpdateRequisitionInput = z.infer<typeof updateRequisitionSchema>;
 export type ReviewRequisitionInput = z.infer<typeof reviewRequisitionSchema>;
 export type InterviewQuestionInput = z.infer<typeof interviewQuestion>;
+export type SetStandingInput = z.infer<typeof setStandingSchema>;

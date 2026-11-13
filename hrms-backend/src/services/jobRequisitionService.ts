@@ -3,7 +3,7 @@ import { JobRequisition } from "../models/JobRequisition.js";
 import { Employee } from "../models/Employee.js";
 import { ApprovalWorkflow } from "../models/ApprovalWorkflow.js";
 import type {
-  CreateRequisitionInput, UpdateRequisitionInput, ReviewRequisitionInput, InterviewQuestionInput,
+  CreateRequisitionInput, UpdateRequisitionInput, ReviewRequisitionInput, InterviewQuestionInput, SetStandingInput,
 } from "../validations/jobRequisitionValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -80,7 +80,11 @@ interface RequisitionQuery extends PaginationQuery {
   type?: string;
   department?: string;
   raisedBy?: string;
+  priority?: string;
 }
+
+/** What the list's dropdown calls each standing an approved requisition can have. */
+const STATE_TO_STATUS = { active: "approved", closed: "closed", cancelled: "cancelled" } as const;
 
 /**
  * A stored requisition with its JD as a link rather than a key.
@@ -291,6 +295,8 @@ export class JobRequisitionService {
       if (mine.length) filter.replacing = { $nin: mine };
     }
     if (query.status) filter.status = query.status;
+    // Requisitions from before priority existed have none, and are normal.
+    if (query.priority) filter.priority = query.priority === "normal" ? { $in: ["normal", null] } : query.priority;
     if (query.type) filter.type = query.type;
     if (restrictToUserId) {
       const heads = await departmentsHeadedBy(restrictToUserId);
@@ -456,7 +462,7 @@ export class JobRequisitionService {
     if (!actor.canEdit && String(record.raisedBy) !== String(actor.userId)) {
       throw forbidden("Only the person who raised it, or HR, can change its interview questions");
     }
-    if (["rejected", "cancelled", "filled"].includes(record.status)) {
+    if (["rejected", "cancelled", "filled", "closed"].includes(record.status)) {
       throw Object.assign(
         new Error(`This requisition is ${record.status === "cancelled" ? "withdrawn or cancelled" : record.status}, so its questions can no longer change`),
         { statusCode: 400 }
@@ -465,6 +471,47 @@ export class JobRequisitionService {
     record.set("interviewQuestions", questionsFrom(questions, record.interviewQuestions));
     record.questionsUpdatedAt = new Date();
     record.questionsUpdatedBy = actor.userId as never;
+    await record.save();
+    const updated = await JobRequisition.findById(id).populate(POP);
+    return shape(updated!.toObject(), actor.forHead);
+  }
+
+  /**
+   * Its standing once approved — active (recruiting), closed or cancelled — and
+   * its priority, as the list's dropdowns set them.
+   *
+   * Only an approved requisition moves between the three, and back: one still
+   * in its approvals goes through review() or withdraw(), and one withdrawn
+   * before it was ever decided cannot be revived into something nobody
+   * approved. Priority can change at any point. The one who raised it may do
+   * either, and so may anyone holding hiring edit.
+   */
+  async setStanding(id: string, input: SetStandingInput, actor: { userId: string; canEdit: boolean; forHead: boolean }) {
+    const record = await JobRequisition.findOne(scoped({ _id: id }));
+    if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
+    await this.assertNotAbout(record, actor.userId);
+    if (!actor.canEdit && String(record.raisedBy) !== String(actor.userId)) {
+      throw forbidden("Only the person who raised it, or HR, can change this requisition");
+    }
+
+    if (input.state) {
+      const decided = ["approved", "closed", "filled"].includes(record.status) || (record.status === "cancelled" && !record.withdrawnAt);
+      if (!decided) {
+        throw Object.assign(
+          new Error(record.withdrawnAt
+            ? "This requisition was withdrawn before it was decided — raise a new one instead"
+            : `Only an approved requisition can be made active, closed or cancelled — this one is ${STATUS_WORDS[record.status] ?? record.status}`),
+          { statusCode: 400 }
+        );
+      }
+      const status = STATE_TO_STATUS[input.state];
+      if (record.status !== status) {
+        record.status = status;
+        record.stateChangedAt = new Date();
+        record.stateChangedBy = actor.userId as never;
+      }
+    }
+    if (input.priority) record.priority = input.priority;
     await record.save();
     const updated = await JobRequisition.findById(id).populate(POP);
     return shape(updated!.toObject(), actor.forHead);
