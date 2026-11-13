@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, FirstDaysView, TeamVideoInfo, WatchProgress } from "@/types";
+import type { ApiResponse, FirstDaysView, HomeworkSendResult, TeamVideoInfo, WatchProgress } from "@/types";
 
 const KEY = ["first-days"] as const;
 
@@ -41,17 +41,23 @@ function useStep<V>(fn: (vars: V) => Promise<FirstDaysView>, done: string, faile
   });
 }
 
-const upload = (url: string, file: File) => {
+const upload = (url: string, file: File, fields: Record<string, string> = {}) => {
   const form = new FormData();
+  // Fields first: the server reads them alongside the file.
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
   form.append("file", file);
   return api.post<ApiResponse<FirstDaysView>>(url, form, { headers: { "Content-Type": "multipart/form-data" } });
 };
+
+/** 1: the day-1 homework, handed back on day 2. 2: the optional day-2 one, handed back on day 3. */
+export type HomeworkDay = 1 | 2;
 
 // ── The joiner ──
 export const useConfirmMySession = () =>
   useStep<void>(async () => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/session")).data.data!, "Session confirmed", "Could not confirm the session");
 export const useHandInHomework = () =>
-  useStep(async (file: File) => (await upload("/first-days/mine/homework", file)).data.data!, "Homework handed in", "Could not upload your homework");
+  useStep(async ({ file, day = 1 }: { file: File; day?: HomeworkDay }) =>
+    (await upload("/first-days/mine/homework", file, { day: String(day) })).data.data!, "Homework handed in", "Could not upload your homework");
 export const useSubmitRolePlay = () =>
   useStep(async (link: string) => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/role-play", { link })).data.data!, "Role-play handed in", "Could not save the link");
 export const useSubmitCallNotes = () =>
@@ -63,7 +69,29 @@ export const useCallsDone = () =>
 export const useConfirmSessionAsHead = () =>
   useStep(async (employeeId: string) => (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/session`)).data.data!, "Session confirmed", "Could not confirm the session");
 export const useSendHomework = () =>
-  useStep(async ({ employeeId, file }: { employeeId: string; file: File }) => (await upload(`/first-days/${employeeId}/homework`, file)).data.data!, "Homework sent", "Could not send the homework");
+  useStep(async ({ employeeId, file, day = 1 }: { employeeId: string; file: File; day?: HomeworkDay }) =>
+    (await upload(`/first-days/${employeeId}/homework`, file, { day: String(day) })).data.data!, "Homework sent", "Could not send the homework");
+
+/** One homework file to several joiners; resolves with how each went. */
+export const useSendHomeworkToMany = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ employeeIds, file, day }: { employeeIds: string[]; file: File; day: HomeworkDay }) => {
+      const form = new FormData();
+      form.append("day", String(day));
+      form.append("employeeIds", JSON.stringify(employeeIds));
+      form.append("file", file);
+      const res = await api.post<ApiResponse<HomeworkSendResult[]>>("/first-days/homework/many", form, { headers: { "Content-Type": "multipart/form-data" } });
+      return { results: res.data.data ?? [], message: res.data.message };
+    },
+    onSuccess: ({ results, message }) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      if (results.every((r) => r.ok)) toast.success(message ?? "Homework sent");
+      else toast.error(message ?? "Some could not be sent");
+    },
+    onError: (e) => toast.error(errMsg(e, "Could not send the homework")),
+  });
+};
 export const useSetToolAccess = () =>
   useStep(async ({ employeeId, tool, given }: { employeeId: string; tool: "threeCx" | "zoho" | "crm"; given: boolean }) =>
     (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/access`, { tool, given })).data.data!, "Access updated", "Could not update access");

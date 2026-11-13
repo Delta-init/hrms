@@ -194,7 +194,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/leave": pendingLeave,
     "/regularization": pendingReg,
     "/approvals": approvals?.total ?? 0,
-    "/first-days": (myFirstDays?.steps ?? []).filter((s) => s.status !== "done" && s.can.length > 0).length,
+    "/first-days": (myFirstDays?.steps ?? []).filter((s) => s.status !== "done" && s.status !== "optional" && s.can.length > 0).length,
     "/first-days/team": newJoiners.reduce((n, v) => n + actionsFor(v), 0),
     // Sheets not yet submitted for interviews that have happened or are today.
     "/my-interviews": myInterviews.filter((iv) =>

@@ -27,6 +27,9 @@ async function storeDocument(req: AuthenticatedRequest, employeeOrUser: string) 
   return { key, name: (file.originalname || "File").slice(0, 200) };
 }
 
+/** Which homework a multipart form is about: "2" for the day-2 one, anything else the day-1 one. */
+const homeworkDay = (req: AuthenticatedRequest): 1 | 2 => (String((req.body as { day?: unknown } | undefined)?.day ?? "1") === "2" ? 2 : 1);
+
 // ── The joiner ───────────────────────────────────────────────────────────────
 
 export const getMyFirstDays = route(async (req, res) => {
@@ -39,7 +42,7 @@ export const confirmMySession = route(async (req, res) => {
 
 export const handInMyHomework = route(async (req, res) => {
   if (!req.file) { sendError(res, "Attach your homework file", 400); return; }
-  sendSuccess(res, "Homework handed in", await service.handInHomework(req.user!.userId, await storeDocument(req, req.user!.userId)));
+  sendSuccess(res, "Homework handed in", await service.handInHomework(req.user!.userId, await storeDocument(req, req.user!.userId), homeworkDay(req)));
 });
 
 export const submitMyRolePlay = route(async (req, res) => {
@@ -82,7 +85,23 @@ export const confirmSessionAsHead = route(async (req, res) => {
 export const sendHomework = route(async (req, res) => {
   if (!req.file) { sendError(res, "Attach the homework file", 400); return; }
   const file = await storeDocument(req, req.params.employeeId);
-  sendSuccess(res, "Homework sent", await service.sendHomework(req.params.employeeId, req.user!.userId, isHr(req), file));
+  sendSuccess(res, "Homework sent", await service.sendHomework(req.params.employeeId, req.user!.userId, isHr(req), file, homeworkDay(req)));
+});
+
+/**
+ * One file to several joiners. The form carries `employeeIds` as a JSON list;
+ * the file is stored once and every joiner's guide points at the same copy.
+ */
+export const sendHomeworkToMany = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the homework file", 400); return; }
+  let ids: unknown;
+  try { ids = JSON.parse(String((req.body as { employeeIds?: unknown }).employeeIds ?? "[]")); } catch { ids = null; }
+  const parsed = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(100).safeParse(ids);
+  if (!parsed.success) { sendError(res, "Pick at least one new joiner", 400); return; }
+  const file = await storeDocument(req, req.user!.userId);
+  const results = await service.sendHomeworkToMany(parsed.data, req.user!.userId, isHr(req), file, homeworkDay(req));
+  const sent = results.filter((r) => r.ok).length;
+  sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
 });
 
 export const setToolAccess = route(async (req, res) => {

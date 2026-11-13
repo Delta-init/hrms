@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   getMyFirstDays, confirmMySession, handInMyHomework, submitMyRolePlay, submitMyCallNotes, myCallsDone, startMyTeamVideo, myTeamVideoBeat,
-  getTeamFirstDays, confirmSessionAsHead, sendHomework, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
+  getTeamFirstDays, confirmSessionAsHead, sendHomework, sendHomeworkToMany, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
 } from "../controllers/firstDaysController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadDocumentSingle, uploadVideoSingle } from "../middleware/upload.js";
@@ -24,6 +24,8 @@ router.post("/mine/team-video/start", startMyTeamVideo);
 router.post("/mine/team-video/beat", myTeamVideoBeat);
 
 router.get("/team", getTeamFirstDays);
+// Several joiners at once — each still checked as if sent on its own.
+router.post("/homework/many", uploadDocumentSingle, sendHomeworkToMany);
 router.get("/team-video/:departmentId", getTeamVideo);
 router.post("/team-video/:departmentId", uploadVideoSingle, uploadTeamVideo);
 

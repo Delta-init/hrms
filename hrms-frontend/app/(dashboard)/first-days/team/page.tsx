@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, FileUp, Loader2, Users } from "lucide-react";
 import { useTeamFirstDays } from "@/hooks/useFirstDays";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FirstDaysSteps, actionsFor } from "@/components/firstDays/FirstDaysSteps";
+import { SendHomeworkDialog } from "@/components/firstDays/SendHomeworkDialog";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,10 +18,21 @@ import { cn } from "@/lib/utils";
 export default function TeamFirstDaysPage() {
   const { data = [], isLoading } = useTeamFirstDays();
   const [open, setOpen] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  // Shown when this person can send homework to anybody here.
+  const canSend = data.some((v) => v.steps.some((s) => (s.key === "homework" || s.key === "homework2") && s.can.length > 0));
 
   return (
     <div className="space-y-6">
-      <PageHeader title="New joiners" description="People in their first fifteen days, and what each is waiting on." icon={Users} />
+      <PageHeader
+        title="New joiners"
+        description="People in their first fifteen days, and what each is waiting on."
+        icon={Users}
+        action={canSend && data.length > 1 && (
+          <Button variant="outline" onClick={() => setSending(true)}><FileUp className="h-4 w-4" />Send homework to several</Button>
+        )}
+      />
+      <SendHomeworkDialog open={sending} onOpenChange={setSending} joiners={data} />
       {isLoading ? (
         <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : !data.length ? (

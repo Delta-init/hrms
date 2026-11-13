@@ -23,6 +23,7 @@ const STATUS: Record<FirstDaysStepStatus, { label: string; tone: string; icon: R
   todo: { label: "To do", tone: "bg-primary/10 text-primary", icon: Circle },
   waiting: { label: "Not yet", tone: "bg-muted text-muted-foreground", icon: Clock },
   overdue: { label: "Overdue", tone: "bg-red-500/10 text-red-700 dark:text-red-400", icon: AlertTriangle },
+  optional: { label: "Optional", tone: "bg-muted text-muted-foreground", icon: Circle },
 };
 
 const fmtDay = (key: string) =>
@@ -37,7 +38,8 @@ const fmtOpens = (iso: string) => {
 };
 
 /** Steps the person looking can act on now. */
-export const actionsFor = (v: FirstDaysView) => v.steps.filter((s) => s.status !== "done" && s.can.length > 0).length;
+export const actionsFor = (v: FirstDaysView) =>
+  v.steps.filter((s) => s.status !== "done" && s.status !== "optional" && s.can.length > 0).length;
 
 /**
  * Days 1 to 3, step by step, for whoever is looking. The joiner, their head
@@ -146,26 +148,33 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
       );
 
     case "homework":
+    case "homework2": {
+      const day = step.key === "homework2" ? 2 : 1;
+      const label = day === 2 ? "day-2 homework" : "homework";
       return (
         <div className="flex flex-wrap items-center gap-2">
-          {step.file ? <FileLink file={step.file} label="Homework" /> : !step.can.length && <span className="text-xs text-muted-foreground">Not sent yet.</span>}
+          {step.file ? <FileLink file={step.file} label={day === 2 ? "Day-2 homework" : "Homework"} /> : !step.can.length && <span className="text-xs text-muted-foreground">Not sent yet.</span>}
           {(can("send") || can("replace")) && (
-            <UploadButton label={can("replace") ? "Replace the homework" : "Send homework"} busy={send.isPending}
-              onFile={(file) => send.mutate({ employeeId, file })} />
+            <UploadButton label={can("replace") ? `Replace the ${label}` : `Send ${label}`} busy={send.isPending}
+              onFile={(file) => send.mutate({ employeeId, file, day })} />
           )}
         </div>
       );
+    }
 
     case "homeworkResult":
+    case "homework2Result": {
+      const day = step.key === "homework2Result" ? 2 : 1;
       return (
         <div className="flex flex-wrap items-center gap-2">
           {step.file && <FileLink file={step.file} label="Handed in" />}
           {(can("upload") || can("replace")) && (
             <UploadButton label={can("replace") ? "Upload again" : "Upload your homework"} busy={handIn.isPending}
-              onFile={(file) => handIn.mutate(file)} />
+              onFile={(file) => handIn.mutate({ file, day })} />
           )}
         </div>
       );
+    }
 
     case "teamVideo":
       if (watching) return <TeamVideoPlayer />;

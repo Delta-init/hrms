@@ -42,6 +42,12 @@ const firstDaysSchema = new Schema(
     },
     homework: { type: fileSchema, default: null },
     homeworkResult: { type: fileSchema, default: null },
+    /**
+     * A second homework, set on day 2 and handed back on day 3. Optional: a
+     * department that has none sends nothing, and nothing is ever overdue.
+     */
+    homework2: { type: fileSchema, default: null },
+    homework2Result: { type: fileSchema, default: null },
     /** Their progress through the department's team video — the same counting as the induction's. */
     teamVideo: {
       video: { type: Schema.Types.ObjectId, ref: "TeamVideo", default: null },

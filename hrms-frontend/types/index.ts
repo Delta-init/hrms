@@ -3363,9 +3363,15 @@ export interface Wallet {
 }
 
 // ─── First days (a new joiner's first 15 days) ───────────────────────────────
-export type FirstDaysStepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
+export type FirstDaysStepKey =
+  | "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay"
+  | "homework2" | "homework2Result" | "access" | "coldCalls";
 /** Waiting: cannot be done yet. Overdue: its day has passed undone. */
-export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue";
+/** "optional": the day-2 homework nobody has sent — never counted, never overdue. */
+export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue" | "optional";
+
+/** How sending one homework to several joiners went, joiner by joiner. */
+export interface HomeworkSendResult { employeeId: string; name: string; ok: boolean; message: string }
 
 export interface FirstDaysFile { name: string; url: string; at: string | null }
 

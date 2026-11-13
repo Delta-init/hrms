@@ -49,8 +49,18 @@ When I type END, step out of character and give me feedback: what I did well, wh
 
 const fail = (message: string, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
-export type StepKey = "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
-export type StepStatus = "done" | "todo" | "waiting" | "overdue";
+export type StepKey =
+  | "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay"
+  | "homework2" | "homework2Result" | "access" | "coldCalls";
+/** "optional": a step that may never happen — the day-2 homework nobody sent. Never counted, never overdue. */
+export type StepStatus = "done" | "todo" | "waiting" | "overdue" | "optional";
+
+/** Which homework: the day-1 one, handed back on day 2, or the optional day-2 one, handed back on day 3. */
+export type HomeworkDay = 1 | 2;
+const HOMEWORK = {
+  1: { set: "homework", result: "homeworkResult" },
+  2: { set: "homework2", result: "homework2Result" },
+} as const;
 
 /** Who is looking — what they may do follows from it. */
 export interface Viewer { userId: string; isJoiner: boolean; isHead: boolean; isHr: boolean }
@@ -278,7 +288,9 @@ export class FirstDaysService {
         detail: "Your head sends it as a file after the session. Hand it back tomorrow.",
         status: status(!!rec.homework?.key, d1, false),
         file: fileOut(rec.homework),
-        can: asHead && !rec.homeworkResult?.key ? [rec.homework?.key ? "replace" : "send"] : [],
+        // Replaceable at any time, even once handed back: the joiner is told
+        // and can hand in again; what they already handed in still counts.
+        can: asHead ? [rec.homework?.key ? "replace" : "send"] : [],
       },
       {
         key: "homeworkResult" as StepKey, day: 2, dueDay: d2,
@@ -319,6 +331,33 @@ export class FirstDaysService {
         link: rec.rolePlay?.link || null,
         can: viewer.isJoiner && now >= rolePlayOpens ? [rec.rolePlay?.link ? "replace" : "submit"] : [],
       }] : []),
+      // The day-2 homework. The joiner only ever sees it once it has been
+      // sent; the head and HR see where to send it, marked optional.
+      ...(rec.homework2?.key ? [
+        {
+          key: "homework2" as StepKey, day: 2, dueDay: d2,
+          title: "Day-2 homework from your department head",
+          detail: `Hand it back by ${fmtDay(d3)}.`,
+          status: "done" as StepStatus,
+          file: fileOut(rec.homework2),
+          can: asHead ? ["replace"] : [],
+        },
+        {
+          key: "homework2Result" as StepKey, day: 3, dueDay: d3,
+          title: "Hand in your day-2 homework",
+          detail: "Upload what you did as a file.",
+          status: status(!!rec.homework2Result?.key, d3, false),
+          file: fileOut(rec.homework2Result),
+          can: viewer.isJoiner ? [rec.homework2Result?.key ? "replace" : "upload"] : [],
+        },
+      ] : asHead ? [{
+        key: "homework2" as StepKey, day: 2, dueDay: d2,
+        title: "Day-2 homework (optional)",
+        detail: "If your department sets a second homework, send it here. They hand it back on day 3.",
+        status: "optional" as StepStatus,
+        file: null,
+        can: ["send"],
+      }] : []),
       {
         key: "access" as StepKey, day: 3, dueDay: d3,
         title: sales ? "3CX, Zoho and CRM access" : "3CX and Zoho access",
@@ -348,7 +387,9 @@ export class FirstDaysService {
       }] : []),
     ].map((s) => ({ waitingFor: null as string | null, opensAt: null as Date | null, ...s }));
 
-    const doneCount = steps.filter((s) => s.status === "done").length;
+    // An optional step nobody took up is not part of the count either way.
+    const counted = steps.filter((s) => s.status !== "optional");
+    const doneCount = counted.filter((s) => s.status === "done").length;
     return {
       employee: {
         _id: emp._id, name: emp.name ?? "—", employeeCode: emp.employeeCode ?? "", designation: emp.designation ?? "",
@@ -362,8 +403,8 @@ export class FirstDaysService {
       stepDays: [d1, d2, d3],
       steps,
       doneCount,
-      totalCount: steps.length,
-      complete: doneCount === steps.length,
+      totalCount: counted.length,
+      complete: doneCount === counted.length,
       viewer: { isJoiner: viewer.isJoiner, isHead: viewer.isHead, isHr: viewer.isHr },
     };
   }
@@ -405,15 +446,18 @@ export class FirstDaysService {
     return this.mineView(userId);
   }
 
-  async handInHomework(userId: string, file: { key: string; name: string }) {
+  /** Hand back the day-1 or day-2 homework, or replace what was handed back. */
+  async handInHomework(userId: string, file: { key: string; name: string }, day: HomeworkDay = 1) {
     const { rec, emp } = await this.mineOrFail(userId);
-    if (!rec.homework?.key) throw fail("Your homework hasn't been sent yet");
-    rec.set("homeworkResult", { key: file.key, name: file.name, at: new Date(), by: userId });
+    const slot = HOMEWORK[day];
+    if (!rec.get(`${slot.set}.key`)) throw fail(day === 1 ? "Your homework hasn't been sent yet" : "Your day-2 homework hasn't been sent yet");
+    const again = !!rec.get(`${slot.result}.key`);
+    rec.set(slot.result, { key: file.key, name: file.name, at: new Date(), by: userId });
     await rec.save();
     await notify({
       users: (await headContactsFor(userId)).map((h) => h.userId),
       kind: "reminder",
-      title: `${emp.name ?? "Your new joiner"} handed in their homework`,
+      title: `${emp.name ?? "Your new joiner"} ${again ? "handed in a new version of" : "handed in"} their ${day === 2 ? "day-2 " : ""}homework`,
       body: file.name,
       href: "/first-days/team",
       actor: userId,
@@ -556,18 +600,48 @@ export class FirstDaysService {
     return this.view(rec, emp, viewer);
   }
 
-  async sendHomework(employeeId: string, userId: string, isHr: boolean, file: { key: string; name: string }) {
+  /**
+   * Send the day-1 or day-2 homework, or replace it — at any time, even once
+   * it has been handed back. The joiner is told either way; what they handed
+   * in stays and still counts, and they can hand in again if it needs to change.
+   */
+  async sendHomework(employeeId: string, userId: string, isHr: boolean, file: { key: string; name: string }, day: HomeworkDay = 1) {
     const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
-    if (rec.homeworkResult?.key) throw fail("They've already handed it in");
-    rec.set("homework", { key: file.key, name: file.name, at: new Date(), by: userId });
+    const slot = HOMEWORK[day];
+    const replacing = !!rec.get(`${slot.set}.key`);
+    const handedIn = !!rec.get(`${slot.result}.key`);
+    rec.set(slot.set, { key: file.key, name: file.name, at: new Date(), by: userId });
     await rec.save();
+    const dueDay = rec.stepDays[day] ?? rec.startDay;
+    const which = day === 2 ? "day-2 homework" : "homework";
     await notify({
       users: [rec.user], kind: "reminder",
-      title: "Your homework is here",
-      body: `Hand it in by ${fmtDay(rec.stepDays[1] ?? rec.startDay)} — upload what you did as a file.`,
+      title: replacing ? `Your ${which} has been updated` : `Your ${which} is here`,
+      body: handedIn
+        ? "What you handed in still counts. If your answer needs changing, upload it again."
+        : `Hand it in by ${fmtDay(dueDay)} — upload what you did as a file.`,
       href: "/first-days", actor: userId,
     });
     return this.view(rec, emp, viewer);
+  }
+
+  /**
+   * One homework file to several joiners at once. Each is checked on its own —
+   * a head only reaches their own department's joiners — and one refusal does
+   * not stop the rest; the answer says how each went.
+   */
+  async sendHomeworkToMany(employeeIds: string[], userId: string, isHr: boolean, file: { key: string; name: string }, day: HomeworkDay) {
+    const results: { employeeId: string; name: string; ok: boolean; message: string }[] = [];
+    for (const employeeId of [...new Set(employeeIds)]) {
+      try {
+        const v = await this.sendHomework(employeeId, userId, isHr, file, day);
+        results.push({ employeeId, name: v.employee.name, ok: true, message: "Sent" });
+      } catch (e) {
+        const emp = await loadEmployee({ _id: employeeId }).catch(() => null);
+        results.push({ employeeId, name: emp?.name ?? "Unknown", ok: false, message: e instanceof Error ? e.message : "Could not send" });
+      }
+    }
+    return results;
   }
 
   /** 3CX and Zoho are HR's to tick; the sales CRM is the head's (or HR's). Unticking is allowed — a mistick happens. */
