@@ -15,6 +15,7 @@ import {
 } from "./faceClient.js";
 import { deleteObject, publicUrl, putObject } from "./uploadService.js";
 import { scoped } from "../utils/orgContext.js";
+import { judgeClash, selfSimilarity } from "../utils/faceClash.js";
 
 /**
  * The wording an employee agrees to before their face is enrolled.
@@ -139,7 +140,9 @@ export class FaceEnrollmentService {
     await this.assertNobodyElseHasThisFace(
       this.galleryKey(target.organization),
       input.images,
-      String(target._id)
+      faces.map((f) => f.embedding),
+      { id: String(target._id), name: target.name, organization: target.organization },
+      input.actorId
     );
 
     const existing = await FaceProfile.findOne({ user: target._id });
@@ -226,11 +229,20 @@ export class FaceEnrollmentService {
    *  - the face IS someone else's, which is usually the wrong account open;
    *  - the face is merely too alike — twins — where enrolling the second would
    *    break the first, and one of them needs a PIN instead.
+   *
+   * Being alike is not enough to refuse. What the kiosk needs is for each
+   * person to match themselves clearly better than the other, so the new
+   * captures are compared with each other as well — see utils/faceClash. A
+   * look-alike who matches themselves at 0.9 and the other person at 0.38 is
+   * enrolled; refusing them left the kiosk with only the other person to match
+   * their face against.
    */
   private async assertNobodyElseHasThisFace(
     orgKey: string,
     images: string[],
-    targetUserId: string
+    embeddings: number[][],
+    target: { id: string; name: string; organization: unknown },
+    actorId: string
   ): Promise<void> {
     let result;
     try {
@@ -246,30 +258,44 @@ export class FaceEnrollmentService {
     }
 
     const threshold = result.thresholds?.min_score ?? 0.45;
+    const margin = result.thresholds?.min_margin ?? 0.05;
     const band = Number(env.FACE_DUPLICATE_MARGIN) || 0.1;
 
     const clash = (result.candidates ?? [])
-      .filter((c) => c.user_id !== targetUserId)
+      .filter((c) => c.user_id !== target.id)
       .sort((a, b) => b.score - a.score)[0];
-    if (!clash || clash.score < threshold - band) return;
+    if (!clash) return;
+
+    const self = selfSimilarity(embeddings);
+    const verdict = judgeClash({ clash: clash.score, self, threshold, margin, band });
+    if (verdict === "clear") return;
 
     const owner = await User.findById(clash.user_id).select("name");
     const who = owner?.name ?? "another employee";
+    // Recorded either way: enrolment photos are not kept, so these two numbers
+    // are the only way to tell afterwards why somebody was or was not let in.
+    const detail = `closest: ${who} ${clash.score.toFixed(2)}; own captures ${self === null ? "n/a" : self.toFixed(2)}; ${verdict}`;
+    await this.audit(
+      verdict === "separable" ? "face.enroll_lookalike" : "face.enroll_refused",
+      actorId, target.id, target.name, target.organization, detail
+    ).catch(() => null);
 
-    if (clash.score >= threshold) {
+    if (verdict === "separable") return;
+
+    if (verdict === "same_person") {
       throw new FaceEnrollmentError(
         `This face is already enrolled for ${who}. Delete that enrolment first if this is the same person.`,
         409,
         "FACE_ALREADY_ENROLLED",
-        { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score }
+        { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score, self }
       );
     }
 
     throw new FaceEnrollmentError(
-      `This face is too similar to ${who}'s for the kiosk to tell them apart. Enrolling it would stop both of them checking in, so use a login and password for one of them.`,
+      `This face is too similar to ${who}'s for the kiosk to tell them apart. Try again in good light, looking straight at the camera. If it still says this, use a login and password for one of them.`,
       409,
       "FACE_TOO_SIMILAR",
-      { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score }
+      { conflictsWith: { userId: clash.user_id, name: who }, score: clash.score, self }
     );
   }
 
@@ -414,7 +440,8 @@ export class FaceEnrollmentService {
     actorId: string,
     targetId: string,
     targetName: string,
-    organization: unknown
+    organization: unknown,
+    detail?: string
   ): Promise<void> {
     const actor = await User.findById(actorId).select("name");
     await AuditLog.create({
@@ -424,6 +451,7 @@ export class FaceEnrollmentService {
       actorName: actor?.name ?? "Unknown",
       target: targetId,
       targetName,
+      ...(detail ? { detail: detail.slice(0, 300) } : {}),
     });
   }
 }

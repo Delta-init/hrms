@@ -10,6 +10,8 @@ const auditLogSchema = new Schema<IAuditLog>(
     actorName: { type: String, required: true, trim: true, maxlength: 120 },
     target: { type: Schema.Types.ObjectId, ref: "User", default: null },
     targetName: { type: String, trim: true, maxlength: 120, default: null },
+    /** A line of what happened beyond who did what to whom — a face clash's scores, say. */
+    detail: { type: String, trim: true, maxlength: 300, default: undefined },
   },
   { timestamps: { createdAt: true, updatedAt: false }, versionKey: false }
 );

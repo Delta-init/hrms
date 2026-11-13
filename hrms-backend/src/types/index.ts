@@ -1979,6 +1979,7 @@ export interface IAuditLog extends Document {
   actorName: string;
   target?: Types.ObjectId | IUser | null;
   targetName?: string | null;
+  detail?: string;
   createdAt: Date;
 }
 
