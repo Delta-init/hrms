@@ -50,6 +50,13 @@ export const HRMS_MODULES = [
   "advances",
   "onboardingTasks",
   "hiring",
+  // What recruitment advertising costs, logged weekly. Its own module rather
+  // than riding on `hiring`: a department head raising a requisition has no
+  // business with the company's ad budget, and management reading the spend
+  // needs nothing else of hiring. view reads it, create logs and corrects a
+  // week, edit sets the platforms and the budget, delete removes a week.
+  // New: no existing role carries it — see seeds/grantAdSpendAccess.
+  "adSpend",
   "confirmations",
   "letters",
   "announcements",
@@ -2310,4 +2317,69 @@ export interface IProgramRegistration extends Document {
   status: "registered" | "cancelled";
   registeredAt: Date;
   cancelledAt?: Date | null;
+}
+
+// ─── Recruitment ad spend ─────────────────────────────────────────────────────
+/** A place job ads are bought: LinkedIn, Indeed, Meta… */
+export interface IAdPlatform {
+  /** Stable — amounts are stored against it, so renaming the label moves nothing. */
+  key: string;
+  label: string;
+  /** Retired platforms stay so old weeks still name them; they are just not offered. */
+  active: boolean;
+}
+
+export interface IAdSpendSettings extends Document {
+  _id: Types.ObjectId;
+  organization: Types.ObjectId | null;
+  currency: string;
+  /** Per calendar month. Zero means no budget has been set. */
+  monthlyBudget: number;
+  platforms: IAdPlatform[];
+  /** Monday the weekly log is owed from ("YYYY-MM-DD"). Unset: no reminders, nothing reported missing. */
+  trackingFrom: string | null;
+  updatedBy?: Types.ObjectId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IAdSpendLine {
+  _id?: Types.ObjectId;
+  /** The hiring request it was for, when there is one. */
+  requisition?: Types.ObjectId | null;
+  /** The role as named — kept even when linked, so a renamed request does not rewrite history. */
+  role: string;
+  amounts: { platform: string; amount: number }[];
+  note?: string;
+}
+
+export interface IAdSpendAttachment {
+  _id: Types.ObjectId;
+  key: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  uploadedBy: Types.ObjectId | null;
+  uploadedAt: Date;
+}
+
+export interface IAdSpendWeek extends Document {
+  _id: Types.ObjectId;
+  organization: Types.ObjectId | null;
+  /** The Monday the week starts on, "YYYY-MM-DD". */
+  weekStart: string;
+  lines: IAdSpendLine[];
+  total: number;
+  currency: string;
+  /** Logged, and there was nothing to log — distinct from not logged at all. */
+  nothingSpent: boolean;
+  note?: string;
+  attachments: IAdSpendAttachment[];
+  source: "entry" | "import";
+  loggedBy?: Types.ObjectId | null;
+  loggedAt: Date;
+  updatedBy?: Types.ObjectId | null;
+  history: { at: Date; by: Types.ObjectId | null; action: "logged" | "changed" | "imported"; total: number }[];
+  createdAt: Date;
+  updatedAt: Date;
 }

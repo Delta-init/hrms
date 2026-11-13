@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateCandidate, useUploadResume } from "@/hooks/useCandidates";
+import { useAdPlatformNames } from "@/hooks/useAdSpend";
 
 interface Props {
   open: boolean;
@@ -33,17 +35,26 @@ const EMPTY: FormValues = {
 
 const num = (v: string) => (v === "" ? undefined : Number(v));
 
+/** Where candidates come from besides the paid ad platforms. */
+const OTHER_SOURCES = ["Referral", "Agency", "Walk-in", "Careers page"];
+const TYPED = "__typed";
+
 export function CandidateDialog({ open, onOpenChange, onSaved }: Props) {
   const { mutate: create, isPending } = useCreateCandidate();
   const { mutateAsync: uploadCv, isPending: uploading } = useUploadResume();
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({ defaultValues: EMPTY });
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormValues>({ defaultValues: EMPTY });
+  // A list rather than free text, so a candidate's source is the same word the
+  // ad spend tracker uses for that platform — that is what lets it work out a
+  // cost per candidate. "Other" still takes anything.
+  const { data: platformNames = [] } = useAdPlatformNames(open);
+  const [sourceChoice, setSourceChoice] = useState("");
 
   // The CV rides along with the form but is sent separately: the upload needs
   // an id to attach to, which does not exist until the candidate is saved.
   const [cv, setCv] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (open) { reset(EMPTY); setCv(null); } }, [open, reset]);
+  useEffect(() => { if (open) { reset(EMPTY); setCv(null); setSourceChoice(""); } }, [open, reset]);
 
   const onSubmit = (d: FormValues) => {
     create(
@@ -97,7 +108,19 @@ export function CandidateDialog({ open, onOpenChange, onSaved }: Props) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="source">Source</Label>
-              <Input id="source" placeholder="Referral, agency, LinkedIn…" {...register("source")} />
+              <Select
+                value={sourceChoice}
+                onValueChange={(v) => { setSourceChoice(v); setValue("source", v === TYPED ? "" : v); }}
+              >
+                <SelectTrigger id="source"><SelectValue placeholder="Where they came from" /></SelectTrigger>
+                <SelectContent>
+                  {platformNames.map((p) => <SelectItem key={`ad-${p}`} value={p}>{p}</SelectItem>)}
+                  {platformNames.length > 0 && <SelectSeparator />}
+                  {OTHER_SOURCES.filter((o) => !platformNames.includes(o)).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  <SelectItem value={TYPED}>Other…</SelectItem>
+                </SelectContent>
+              </Select>
+              {sourceChoice === TYPED && <Input placeholder="Where they came from" maxLength={60} {...register("source")} />}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="location">Location</Label>

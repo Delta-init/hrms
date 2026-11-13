@@ -39,6 +39,7 @@ import {
   X,
   FolderOpen,
   Briefcase,
+  Coins,
   ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen, Sprout, UserPlus,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
@@ -126,6 +127,7 @@ export const navItems: {
   // Heads see their own departments' requisitions and raise new ones; the
   // page and the server scope everything else away.
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring", orHeadsADepartment: true },
+  { href: "/hiring/ad-spend", label: "Ad Spend", icon: Coins, permModule: "adSpend" },
   { href: "/my-interviews", label: "My Interviews", icon: ClipboardPen, permModule: null, panelOnly: true },
   { href: "/first-days/team", label: "New Joiners", icon: UserPlus, permModule: null, newJoinersOnly: true },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
@@ -205,11 +207,17 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/assets": mod("procurement"),
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
+  const activeHref = navItems
+    .map((n) => n.href)
+    .filter((h) => pathname === h || pathname.startsWith(h + "/"))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
       {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
-        const isActive = pathname === href || pathname.startsWith(href + "/");
+        // The longest link that matches wins, so /hiring/ad-spend lights up
+        // Ad Spend and not Hiring as well.
+        const isActive = activeHref === href;
         const hasBasePermission = permModule !== null && hasPermission(permModule, permAction ?? "view");
         // A third of the menu is deliberately ungated — everyone can raise a
         // ticket or see their own payslip. That is right for a person and wrong

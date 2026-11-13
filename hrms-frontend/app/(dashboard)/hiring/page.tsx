@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users, ShieldAlert, Pencil, Undo2, Loader2 } from "lucide-react";
+import { Briefcase, Plus, Check, X, MoreHorizontal, Trash2, AlertTriangle, Settings, Users, ShieldAlert, Pencil, Undo2, Loader2, Coins } from "lucide-react";
 import Link from "next/link";
 import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition, useWithdrawRequisition } from "@/hooks/useHiring";
 import { usePendingOffers, useDecideOffer } from "@/hooks/useCandidates";
@@ -214,6 +214,7 @@ export default function HiringPage() {
         icon={Briefcase}
         action={
           <div className="flex items-center gap-2">
+            {hasPermission("adSpend", "view") && <Button asChild variant="outline"><Link href="/hiring/ad-spend"><Coins className="h-4 w-4" />Ad spend</Link></Button>}
             {!headOnly && <Button asChild variant="outline"><Link href="/hiring/candidates"><Users className="h-4 w-4" />Candidates</Link></Button>}
             {canCreate && <Button onClick={() => setDialogOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Raise requisition</Button>}
           </div>

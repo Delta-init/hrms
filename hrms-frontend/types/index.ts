@@ -43,6 +43,7 @@ export const HRMS_MODULES = [
   "advances",
   "onboardingTasks",
   "hiring",
+  "adSpend",
   "confirmations",
   "letters",
   "announcements",
@@ -87,6 +88,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   advances: "Salary Advances",
   onboardingTasks: "Onboarding Tasks",
   hiring: "Hiring",
+  adSpend: "Recruitment Ad Spend",
   confirmations: "Confirmations",
   letters: "Letters",
   announcements: "Announcements",
@@ -3418,4 +3420,85 @@ export interface WatchProgress { percent: number; furthest: number; resumeAt: nu
 
 export interface TeamVideoInfo {
   _id: string; title: string; fileName: string; durationSeconds: number; url: string; uploadedAt: string; uploadedBy: string;
+}
+
+// ─── Recruitment ad spend ─────────────────────────────────────────────────────
+export interface AdPlatform { key: string; label: string; active: boolean }
+
+export interface AdSpendSettings {
+  currency: string;
+  /** Per calendar month; 0 = none set. */
+  monthlyBudget: number;
+  platforms: AdPlatform[];
+  /** Monday the weekly log is owed from — null: no reminders, nothing reported missing. */
+  trackingFrom: string | null;
+  timeZone: string;
+  saved: boolean;
+  updatedAt: string | null;
+  updatedBy: { _id: string; name: string } | null;
+  today: string;
+  currentWeek: string;
+  lastWeek: string;
+}
+
+export interface AdSpendRequisition { _id: string; title: string; status: string; department: string }
+
+export interface AdSpendLine {
+  _id?: string;
+  requisition: string | null;
+  requisitionTitle?: string | null;
+  role: string;
+  amounts: { platform: string; amount: number }[];
+  note: string;
+  total?: number;
+}
+
+export interface AdSpendAttachment {
+  _id: string; key: string; fileName: string; contentType: string; size: number; url: string;
+  uploadedBy: { _id: string; name: string } | null; uploadedAt: string;
+}
+
+export interface AdSpendWeekDoc {
+  _id: string;
+  weekStart: string;
+  lines: AdSpendLine[];
+  total: number;
+  currency: string;
+  nothingSpent: boolean;
+  note: string;
+  attachments: AdSpendAttachment[];
+  source: "entry" | "import";
+  loggedBy: { _id: string; name: string } | null;
+  loggedAt: string;
+  updatedBy: { _id: string; name: string } | null;
+  updatedAt: string;
+  history: { at: string; by: { _id: string; name: string } | null; action: "logged" | "changed" | "imported"; total: number }[];
+}
+
+export interface AdSpendWeekView { weekStart: string; weekEnd: string; label: string; future: boolean; week: AdSpendWeekDoc | null }
+
+export interface AdSpendWeekRow {
+  weekStart: string; label: string; total: number; nothingSpent: boolean; roles: string[]; attachments: number;
+  source: "entry" | "import"; loggedBy: { _id: string; name: string } | null; loggedAt: string; updatedAt: string;
+}
+
+export interface AdSpendWeekList { weeks: AdSpendWeekRow[]; missing: { weekStart: string; label: string }[] }
+
+export interface AdSpendOverview {
+  from: string;
+  to: string;
+  currency: string;
+  monthlyBudget: number;
+  trackingFrom: string | null;
+  months: { month: string; total: number; byPlatform: Record<string, number>; overBudget: boolean }[];
+  platforms: { key: string; label: string; active: boolean; spend: number; candidates: number; costPerCandidate: number | null }[];
+  roles: {
+    key: string; role: string; requisition: { _id: string; title: string; status: string } | null; total: number;
+    byPlatform: Record<string, number>; weeks: number; applications: number | null; hired: number | null;
+    costPerApplication: number | null; costPerHire: number | null;
+  }[];
+  totals: { spend: number; weeksLogged: number; candidates: number; candidatesFromAds: number };
+  thisMonth: { month: string; spend: number; budget: number };
+  lastWeek: { weekStart: string; label: string; status: "logged" | "nothing" | "missing" | "not_tracked"; total: number };
+  missing: { weekStart: string; label: string }[];
 }

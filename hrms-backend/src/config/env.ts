@@ -120,6 +120,13 @@ const envSchema = z.object({
    */
   FIRST_DAYS_CRON: z.string().default("30 3 * * *"),
   /**
+   * Reminds whoever logs recruitment ad spend that last week is not in yet:
+   * Monday, and again Wednesday for a week still missing. 06:00 UTC is 10:00
+   * in Dubai and 11:30 in India. Only reaches organisations that have set
+   * when the log is owed from (Hiring › Ad spend › Settings).
+   */
+  AD_SPEND_REMIND_CRON: z.string().default("0 6 * * 1,3"),
+  /**
    * Joining on or after this day ("YYYY-MM-DD") gets the first-days guide; nobody before it ever does.
    * 30 Oct 2026 so that Pallavi Pradhan, still inside her fifteen days at go-live, gets it too (2026-11-06).
    */
