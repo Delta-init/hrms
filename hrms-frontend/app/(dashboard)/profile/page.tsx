@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
-import { MyVisaCard } from "@/components/visa/MyVisaCard";
+import { MyDocumentsCard } from "@/components/visa/MyDocumentsCard";
 import { EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS, type Employee, type EmployeeStatus } from "@/types";
 
 const statusStyles: Record<EmployeeStatus, string> = {
@@ -70,10 +70,10 @@ export default function MyProfilePage() {
         <InstallPrompt persistent />
       </div>
 
-      {/* Dubai-based staff only: when the visa runs out, where it stands, and
-          the way to send the renewed one before the reminders get insistent. */}
+      {/* Everything on the record that runs out, soonest first — and the way
+          to send a renewed visa before the reminders get insistent. */}
       <div className="mb-6 empty:hidden">
-        <MyVisaCard />
+        <MyDocumentsCard employee={e} />
       </div>
 
       {/* Your own face is yours to set up. It sat only on the admin's view of

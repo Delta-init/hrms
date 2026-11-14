@@ -21,7 +21,7 @@ import { startRegularizationPromptCron } from "./jobs/regularizationPromptJob.js
 import { startCompOffAutoCreditCron } from "./jobs/compOffAutoCreditJob.js";
 import { startFirstDaysCron } from "./jobs/firstDaysJob.js";
 import { startAdSpendReminderCron } from "./jobs/adSpendReminderJob.js";
-import { startVisaReminderCron } from "./jobs/visaReminderJob.js";
+import { startDocumentReminderCron } from "./jobs/documentReminderJob.js";
 import { startHolidayReminderCron } from "./jobs/holidayReminderJob.js";
 import { startReminderCron } from "./jobs/reminderJob.js";
 import { startProbationCron } from "./jobs/probationJob.js";
@@ -111,7 +111,7 @@ const start = async () => {
   startCompOffAutoCreditCron();
   startFirstDaysCron();
   startAdSpendReminderCron();
-  startVisaReminderCron();
+  startDocumentReminderCron();
   startHolidayReminderCron();
   startReminderCron();
   startProbationCron();

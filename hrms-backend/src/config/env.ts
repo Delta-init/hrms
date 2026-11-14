@@ -127,11 +127,11 @@ const envSchema = z.object({
    */
   AD_SPEND_REMIND_CRON: z.string().default("0 6 * * 1,3"),
   /**
-   * Visa reminders to the employee, their head and HR — 30, 15, 5, 2 and 1
-   * days before the expiry, on the day, and daily after. 05:00 UTC is 9 am in
-   * Dubai, before the working day starts.
+   * Document expiry reminders — visa, labour card, Emirates ID, passport,
+   * custom documents, company documents — 30, 15, 5, 2 and 1 days before, on
+   * the day, and daily after. 05:00 UTC is 9 am in Dubai.
    */
-  VISA_REMINDER_CRON: z.string().default("0 5 * * *"),
+  DOC_REMINDER_CRON: z.string().default("0 5 * * *"),
   /**
    * Joining on or after this day ("YYYY-MM-DD") gets the first-days guide; nobody before it ever does.
    * 30 Oct 2026 so that Pallavi Pradhan, still inside her fifteen days at go-live, gets it too (2026-11-06).
