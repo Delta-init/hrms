@@ -830,6 +830,8 @@ export interface IEmployee extends Document {
   familyMembers?: IFamilyMember[];
   passport?: IPassport;
   visa?: IVisa;
+  /** HR says no UAE visa applies — the visa popup never shows. */
+  visaNotRequired?: boolean;
   labourCard?: ILabourCard;
   emiratesId?: IEmiratesId;
 
@@ -2380,6 +2382,30 @@ export interface IAdSpendWeek extends Document {
   loggedAt: Date;
   updatedBy?: Types.ObjectId | null;
   history: { at: Date; by: Types.ObjectId | null; action: "logged" | "changed" | "imported"; total: number }[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Visa updates from employees ─────────────────────────────────────────────
+/**
+ * A visa, or a renewal under way, sent in by the employee through the popup.
+ * Nothing reaches their record until HR approves it.
+ */
+export interface IVisaSubmission extends Document {
+  _id: Types.ObjectId;
+  organization: Types.ObjectId | null;
+  employee: Types.ObjectId;
+  user: Types.ObjectId;
+  /** "visa": the visa itself, with its expiry. "renewal": proof a renewal is under way. */
+  kind: "visa" | "renewal";
+  expiryDate: Date | null;
+  file: { key: string; name: string; contentType: string; size: number };
+  status: "pending" | "approved" | "rejected";
+  submittedAt: Date;
+  reviewedBy?: Types.ObjectId | null;
+  reviewedAt?: Date | null;
+  /** HR's reason when it is sent back. */
+  reviewNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }

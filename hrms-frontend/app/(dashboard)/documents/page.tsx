@@ -2,13 +2,15 @@
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FolderOpen, FileText, AlertTriangle, Loader2, BellOff, BellRing, Users, Building2 } from "lucide-react";
+import { FolderOpen, FileText, AlertTriangle, Loader2, BellOff, BellRing, Users, Building2, Plane } from "lucide-react";
 import { useDocumentsOverview, useIgnoreDocuments, useUnignoreDocuments } from "@/hooks/useDocumentsOverview";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
+import { VisaUpdatesPanel } from "@/components/visa/VisaUpdatesPanel";
+import { useVisaPendingCount } from "@/hooks/useVisa";
 import { CompanyDocumentsPanel } from "@/components/documents/CompanyDocumentsPanel";
 import { useCompanyDocuments } from "@/hooks/useCompanyDocuments";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -94,7 +96,7 @@ function Documents() {
   // a page with no way to filter by any of what it had counted.
   // The dashboard deep-links here with a status, so the tab is a query too —
   // a link that lands on the wrong half of the page is worse than no link.
-  const [tab, setTab] = useState<string>(params.get("tab") === "company" ? "company" : "people");
+  const [tab, setTab] = useState<string>(params.get("tab") === "company" ? "company" : params.get("tab") === "visa" ? "visa" : "people");
   const [status, setStatus] = useState<string>(params.get("status") ?? ALL);
   const [within, setWithin] = useState<string>(params.get("within") ?? DEFAULT_WINDOW);
   const [location, setLocation] = useState<string>(ALL);
@@ -127,6 +129,8 @@ function Documents() {
   const companyDue = (companyData?.counts.expired ?? 0) + (companyData?.counts.expiring ?? 0);
 
   const canEdit = hasPermission("employees", "edit");
+  // Visas sent in through the popup wait here for HR, who alone can approve them.
+  const { data: visaPending = 0 } = useVisaPendingCount(canEdit);
   const { mutate: ignore, isPending: ignoring } = useIgnoreDocuments();
   const { mutate: unignore, isPending: restoring } = useUnignoreDocuments();
 
@@ -259,12 +263,15 @@ function Documents() {
         tabs={[
           { key: "people", label: "Employee documents", icon: Users },
           { key: "company", label: "Company documents", icon: Building2, count: companyDue },
+          ...(canEdit ? [{ key: "visa", label: "Visa updates", icon: Plane, count: visaPending }] : []),
         ]}
         value={tab}
         onChange={setTab}
       />
 
-      {tab === "company" ? (
+      {tab === "visa" && canEdit ? (
+        <VisaUpdatesPanel />
+      ) : tab === "company" ? (
         <CompanyDocumentsPanel
           within={within}
           onWithinChange={setWithin}

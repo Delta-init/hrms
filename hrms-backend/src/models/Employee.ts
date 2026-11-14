@@ -349,6 +349,12 @@ const employeeSchema = new Schema<IEmployee>(
     familyMembers: { type: [familyMemberSchema], default: [] },
     passport: { type: passportSchema, default: undefined },
     visa: { type: visaSchema, default: undefined },
+    /**
+     * HR's word that this person needs no UAE visa — a national, or someone on
+     * an arrangement the visa fields don't describe. Keeps the "update your
+     * visa" popup away from them; it says nothing about the visa itself.
+     */
+    visaNotRequired: { type: Boolean, default: false },
     labourCard: { type: labourCardSchema, default: undefined },
     emiratesId: { type: emiratesIdSchema, default: undefined },
     otherDocuments: { type: [otherDocumentSchema], default: [] },

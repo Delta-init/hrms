@@ -11,6 +11,7 @@ import { OfflineNotice } from "@/components/pwa/OfflineNotice";
 import { PushNavigationListener } from "@/components/pwa/PushNavigationListener";
 import { RootPortalHistoryBridge } from "@/components/RootPortalHistoryBridge";
 import { FirstDaysTheme, FirstDaysBanner } from "@/components/firstDays/FirstDaysTheme";
+import { VisaGate, VisaPendingNotice } from "@/components/visa/VisaGate";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -22,6 +23,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
     <RootPortalHistoryBridge />
     <OnboardingGate />
+    <VisaGate />
     <FirstDaysTheme />
     <GuideWelcome />
     <KioskLock />
@@ -32,6 +34,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Header />
         <div className="mt-2"><ImpersonationBanner /></div>
         <FirstDaysBanner />
+        <VisaPendingNotice />
         <OfflineNotice />
         {/* Dismissible, and the dismissal is remembered: it arrives uninvited
             on every page, and one that cannot be closed is an advert. The

@@ -1,4 +1,6 @@
 "use client";
+import { Switch } from "@/components/ui/switch";
+import { useSetVisaNotRequired } from "@/hooks/useVisa";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -180,6 +182,8 @@ export function EmployeeProfileSections({ employee: e, canEdit, variant = "all",
             <Item label="Issue date" value={fmtDate(e.visa?.issueDate)} icon={CalendarDays} />
             <Item label="Expiry date" value={fmtDate(e.visa?.expiryDate)} icon={CalendarDays} />
           </Grid>
+          {/* HR only: someone the "update your visa" popup should leave alone. */}
+          {canEdit && !selfService && <VisaNotNeededSwitch employeeId={e._id} value={!!e.visaNotRequired} />}
         </Section>
 
         {/* Labour card */}
@@ -263,3 +267,17 @@ function AddressBlock({ a }: { a?: { address?: string; city?: string; state?: st
 }
 
 const Empty = () => <p className="py-4 text-center text-sm text-muted-foreground">Not added yet.</p>;
+
+/** HR's switch: no UAE visa applies to this person, so the visa popup never asks them. */
+function VisaNotNeededSwitch({ employeeId, value }: { employeeId: string; value: boolean }) {
+  const { mutate, isPending } = useSetVisaNotRequired();
+  return (
+    <label className="mt-4 flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-border/60 px-3 py-2">
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">Visa not needed</span>
+        <span className="block text-xs text-muted-foreground">They won&apos;t be asked to update their visa.</span>
+      </span>
+      <Switch checked={value} disabled={isPending} onCheckedChange={(v) => mutate({ employeeId, notRequired: v })} aria-label="Visa not needed" />
+    </label>
+  );
+}

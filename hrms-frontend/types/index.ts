@@ -526,6 +526,8 @@ export interface Employee {
   familyMembers?: FamilyMember[];
   passport?: Passport;
   visa?: Visa;
+  /** HR says no UAE visa applies — the visa popup never shows. */
+  visaNotRequired?: boolean;
   labourCard?: LabourCard;
   emiratesId?: EmiratesId;
 
@@ -3507,4 +3509,42 @@ export interface AdSpendOverview {
   thisMonth: { month: string; spend: number; budget: number };
   lastWeek: { weekStart: string; label: string; status: "logged" | "nothing" | "missing" | "not_tracked"; total: number };
   missing: { weekStart: string; label: string }[];
+}
+
+// ─── Visa updates from employees ─────────────────────────────────────────────
+export type VisaGateReason = "missing" | "missing_date" | "missing_copy" | "expired" | "returned";
+
+export interface VisaSubmissionLite {
+  _id: string; kind: "visa" | "renewal"; status: "pending" | "approved" | "rejected";
+  submittedAt: string; expiryDate: string | null; fileName: string; reviewNote: string | null; reviewedAt: string | null;
+}
+
+/** Whether the popup must show for the person signed in. */
+export interface MyVisaStatus {
+  applies: boolean;
+  required: boolean;
+  reason: VisaGateReason | null;
+  pending: boolean;
+  renewalUntil: string | null;
+  expiryDate: string | null;
+  hasCopy: boolean;
+  latest: VisaSubmissionLite | null;
+}
+
+export interface VisaSubmissionRow {
+  _id: string;
+  kind: "visa" | "renewal";
+  status: "pending" | "approved" | "rejected";
+  submittedAt: string;
+  expiryDate: string | null;
+  file: { name: string; url: string; contentType: string };
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  employee: { _id: string; name: string; employeeCode: string; department: string; currentExpiry: string | null } | null;
+}
+
+export interface VisaOutstanding {
+  counts: { total: number; upToDate: number; waiting: number; outstanding: number; exempt: number };
+  rows: { _id: string; name: string; employeeCode: string; department: string; reason: VisaGateReason | null; expiryDate: string | null; hasCopy: boolean }[];
 }

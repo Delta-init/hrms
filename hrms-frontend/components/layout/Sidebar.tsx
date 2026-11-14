@@ -59,6 +59,7 @@ import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
 import { useMyInterviews } from "@/hooks/useInterviews";
 import { useMyFirstDays, useTeamFirstDays } from "@/hooks/useFirstDays";
+import { useVisaPendingCount } from "@/hooks/useVisa";
 import { actionsFor } from "@/components/firstDays/FirstDaysSteps";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { useMyDepartments } from "@/hooks/useDepartments";
@@ -186,6 +187,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // Same again: a joiner's guide, and the joiners a head or HR looks after.
   const { data: myFirstDays } = useMyFirstDays(!isKioskOnly);
   const { data: newJoiners = [] } = useTeamFirstDays(!isKioskOnly);
+  // Visas employees sent in, waiting on whoever may approve them.
+  const { data: visaPending = 0 } = useVisaPendingCount(!isKioskOnly && hasPermission("employees", "edit"));
   /** What waits behind each link, for the badge. Absent means no badge. */
   // The approvals summary already counts every queue that waits on this
   // person, by module — so each section's link carries its own share of it.
@@ -205,6 +208,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/confirmations": mod("confirmation"),
     // Procurement lives under Assets: new requests waiting for HR.
     "/assets": mod("procurement"),
+    "/documents": visaPending,
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
   const activeHref = navItems
