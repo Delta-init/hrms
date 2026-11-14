@@ -95,8 +95,11 @@ export class SalaryAdvanceService {
    * What this person may ask for right now, and why not if they can't.
    *
    * The limit is one month's salary — the contractual gross for this month,
-   * the same figure payroll pays from. Someone still repaying an earlier
-   * advance, or with one already in someone's hands, has to finish that first.
+   * the same figure payroll pays from — across everything still owed. Somebody
+   * repaying an earlier advance can ask again for what is left of that month's
+   * salary (2,000 salary, 100 still owed: up to 1,900 more); payroll recovers
+   * them oldest first. Only one request can be in progress at a time, so HR
+   * and finance decide them one by one.
    */
   async eligibility(userId: string) {
     const emp = await Employee.findOne(scoped({ user: userId })).select("_id").lean<{ _id: unknown } | null>();
@@ -119,12 +122,14 @@ export class SalaryAdvanceService {
     ]);
     const owing = r2(owingLoans.reduce((a, l) => a + (l.amount - l.amountRepaid), 0));
 
+    const maxAmount = r2(Math.max(0, monthlySalary - owing));
+
     let reason = "";
     if (monthlySalary <= 0) reason = "No salary is on record for you yet — ask HR to add it first";
     else if (open) reason = "You already have an advance request in progress";
-    else if (owing > 0) reason = `You are still repaying an earlier advance (${money(owing, currency)} left)`;
+    else if (maxAmount <= 0) reason = `You still owe ${money(owing, currency)} in advances — a full month's salary — so you can ask again once some of it is repaid`;
 
-    return { canRequest: !reason, reason, monthlySalary, maxAmount: monthlySalary, currency, owing, open: !!open };
+    return { canRequest: !reason, reason, monthlySalary, maxAmount, currency, owing, open: !!open };
   }
 
   /**
@@ -144,14 +149,14 @@ export class SalaryAdvanceService {
 
     const elig = await this.eligibilityFor(String(emp._id));
     if (elig.open) throw new AdvanceError(`${emp.name} already has an advance in progress`, 409);
-    if (elig.owing > 0) throw new AdvanceError(`${emp.name} is still repaying an earlier advance (${money(elig.owing, elig.currency)} left)`, 409);
-
     const overLimit = input.amount > elig.maxAmount;
     if (overLimit && !input.note?.trim()) {
       throw new AdvanceError(
-        elig.maxAmount > 0
-          ? `That is more than one month's salary (${money(elig.maxAmount, elig.currency)}) — add a note saying why`
-          : `${emp.name} has no salary on record, so any amount is over the limit — add a note saying why`,
+        elig.monthlySalary <= 0
+          ? `${emp.name} has no salary on record, so any amount is over the limit — add a note saying why`
+          : elig.owing > 0
+            ? `That is more than ${emp.name} can take — ${money(elig.maxAmount, elig.currency)}: one month's salary, less ${money(elig.owing, elig.currency)} still being repaid — add a note saying why`
+            : `That is more than one month's salary (${money(elig.maxAmount, elig.currency)}) — add a note saying why`,
         400
       );
     }
@@ -207,7 +212,12 @@ export class SalaryAdvanceService {
     const elig = await this.eligibility(userId);
     if (!elig.canRequest) throw new AdvanceError(elig.reason, 409);
     if (input.amount > elig.maxAmount) {
-      throw new AdvanceError(`You can ask for up to one month's salary — ${money(elig.maxAmount, elig.currency)}`, 400);
+      throw new AdvanceError(
+        elig.owing > 0
+          ? `You can ask for up to ${money(elig.maxAmount, elig.currency)} — one month's salary, less ${money(elig.owing, elig.currency)} still being repaid`
+          : `You can ask for up to one month's salary — ${money(elig.maxAmount, elig.currency)}`,
+        400
+      );
     }
 
     let record;

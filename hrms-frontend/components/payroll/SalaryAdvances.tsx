@@ -20,7 +20,7 @@ import {
   ResponsiveDialogTitle, ResponsiveDialogFooter,
 } from "@/components/ui/responsive-dialog";
 import { cn } from "@/lib/utils";
-import { SALARY_ADVANCE_STATUS_LABELS, type SalaryAdvance, type SalaryAdvanceStatus } from "@/types";
+import { SALARY_ADVANCE_STATUS_LABELS, type SalaryAdvance, type SalaryAdvanceEligibility, type SalaryAdvanceStatus } from "@/types";
 
 const nameOf = (v: unknown) => (v && typeof v === "object" ? String((v as { name?: string }).name ?? "") : "");
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -93,6 +93,12 @@ function Recovery({ r }: { r: SalaryAdvance }) {
  * is recovered; finance then approves the payment in the finance system, and only
  * then is anything taken from a payslip.
  */
+/** How much can be asked for, and why that much: one month's salary, less anything still being repaid. */
+const limitText = (e: SalaryAdvanceEligibility) =>
+  e.owing > 0
+    ? `Ask for up to ${money(e.maxAmount, e.currency)} — one month's salary, less ${money(e.owing, e.currency)} still being repaid.`
+    : `Ask for up to one month's salary — ${money(e.maxAmount, e.currency)}.`;
+
 export function SalaryAdvances() {
   const { hasPermission } = useAuth();
   const canApprove = hasPermission("advances", "approve");
@@ -136,7 +142,7 @@ function MyAdvances() {
             {eligLoading
               ? "Checking…"
               : elig?.canRequest
-                ? `Ask for up to one month's salary — ${money(elig.maxAmount, elig.currency)}. HR approves and sets how it's taken back, then finance pays it.`
+                ? `${limitText(elig)} HR approves and sets how it's taken back, then finance pays it.`
                 : elig?.reason}
           </p>
         </div>
@@ -187,7 +193,7 @@ function MyAdvances() {
               <Label htmlFor="adv-amount">Amount ({elig?.currency ?? "AED"}) *</Label>
               <Input id="adv-amount" type="number" min={1} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
               <p className={cn("text-[11px]", tooMuch ? "text-destructive" : "text-muted-foreground")}>
-                Up to {elig ? money(elig.maxAmount, elig.currency) : "one month's salary"}.
+                {elig ? limitText(elig) : "Up to one month's salary."}
               </p>
             </div>
             <div className="space-y-1.5">
@@ -390,7 +396,8 @@ function RaiseForEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenC
 
   const value = Number(amount);
   const m = Math.max(1, Math.min(12, Number(months) || 1));
-  const blocked = !!elig && (elig.open || elig.owing > 0);
+  // Still repaying is no longer a stop — only an advance already in progress is.
+  const blocked = !!elig && !!elig.open;
   const overLimit = !!elig && value > elig.maxAmount;
   const ready = !!employee && !blocked && value > 0 && !!reason.trim() && !!startMonth && (!overLimit || !!note.trim());
 
@@ -409,7 +416,7 @@ function RaiseForEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenC
                   : elig.open
                     ? "They already have an advance in progress."
                     : elig.owing > 0
-                      ? `They are still repaying an earlier advance (${money(elig.owing, elig.currency)} left).`
+                      ? `Still repaying ${money(elig.owing, elig.currency)} — up to ${money(elig.maxAmount, elig.currency)} more without a note.`
                       : elig.maxAmount > 0
                         ? `One month's salary: ${money(elig.maxAmount, elig.currency)}.`
                         : "No salary on record — any amount needs a note."}
