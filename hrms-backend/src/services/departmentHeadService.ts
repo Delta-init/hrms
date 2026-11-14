@@ -210,33 +210,34 @@ export async function notifyDepartmentHead(opts: {
     )
     .join("");
 
-  // One at a time rather than a single To: list — a mail server rejecting one
-  // bad address must not cost every other recipient their copy, and each
+  // One message each rather than a single To: list — a mail server rejecting
+  // one bad address must not cost every other recipient their copy, and each
   // person's reason for receiving this ("head of" vs "reports to") differs.
-  let sentAny = false;
+  //
+  // Sent without waiting: whoever raised or decided the request gets their
+  // answer once it is saved, not after every mail has crossed the network.
+  // The answer is therefore "somebody is there to tell" — which is what the
+  // regularisation form's "who was told" panel means by it.
   for (const person of recipients) {
-    try {
-      await sendMail({
-        to: person.email,
-        organization: getOrgId() ?? undefined,
-        subject: opts.subject,
-        text:
-          `${opts.headline}\n\n` +
-          opts.rows.map(([k, v]) => `${k}: ${v}`).join("\n") +
-          `\n\n${ctaLabel}: ${opts.link}\n`,
-        html:
-          `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
-          `<h2 style="color:${accent};margin-bottom:4px">${heading}</h2>` +
-          `<p style="color:#555">${opts.headline}</p>` +
-          `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">${cells}</table>` +
-          `<p><a href="${opts.link}" style="display:inline-block;background:${accent};color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">${ctaLabel}</a></p>` +
-          `<p style="color:#999;font-size:12px;margin-top:20px">You receive this because you are ${opts.requesterName}'s department head or reporting manager.</p>` +
-          `</div>`,
-      });
-      sentAny = true;
-    } catch {
+    void sendMail({
+      to: person.email,
+      organization: getOrgId() ?? undefined,
+      subject: opts.subject,
+      text:
+        `${opts.headline}\n\n` +
+        opts.rows.map(([k, v]) => `${k}: ${v}`).join("\n") +
+        `\n\n${ctaLabel}: ${opts.link}\n`,
+      html:
+        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+        `<h2 style="color:${accent};margin-bottom:4px">${heading}</h2>` +
+        `<p style="color:#555">${opts.headline}</p>` +
+        `<table style="border-collapse:collapse;margin:16px 0;font-size:14px">${cells}</table>` +
+        `<p><a href="${opts.link}" style="display:inline-block;background:${accent};color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">${ctaLabel}</a></p>` +
+        `<p style="color:#999;font-size:12px;margin-top:20px">You receive this because you are ${opts.requesterName}'s department head or reporting manager.</p>` +
+        `</div>`,
+    }).catch(() => {
       /* the request is saved; a failed notice to one recipient must not cost the others */
-    }
+    });
   }
-  return sentAny;
+  return true;
 }

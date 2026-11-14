@@ -112,12 +112,15 @@ export async function notifyReviewed(n: ReviewNotice): Promise<void> {
       ...(n.note ? [`Note: ${n.note}`] : []),
     ].join("\n");
 
-    await sendMail({
+    // Not waited for. The decision is saved and the in-app notice written;
+    // the person who pressed Approve should not sit through a mail server's
+    // handshake before seeing it done. Failures are still logged.
+    void sendMail({
       to: user.email,
       subject: `${n.subject} ${verdict} — ${n.details[0]?.value ?? ""}`.trim(),
       html: html(n, user.name ?? "there"),
       text: plain,
-    });
+    }).catch((err) => console.error("✉️  review email failed:", err instanceof Error ? err.message : err));
   } catch (err) {
     console.error("✉️  review notification failed:", err instanceof Error ? err.message : err);
   }

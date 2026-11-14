@@ -59,7 +59,13 @@ function transportFor(cfg: SmtpConfig): Transporter {
   const key = `${cfg.host}:${cfg.port}:${cfg.secure}:${cfg.user}`;
   let t = transports.get(key);
   if (!t) {
+    // Pooled: a logged-in connection is kept and reused. Without it every
+    // message opened its own connection — handshake, TLS, login — which to
+    // Gmail is the better part of a second before anything is even sent.
     t = nodemailer.createTransport({
+      pool: true,
+      maxConnections: 3,
+      maxMessages: 100,
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
