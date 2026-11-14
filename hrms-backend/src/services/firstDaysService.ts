@@ -259,6 +259,8 @@ export class FirstDaysService {
     const rolePlayOpens = zonedTimeToUtc(d2, ROLE_PLAY_OPENS_AT, tz);
     const callsOpen = zonedTimeToUtc(d2, CALL_LISTENING_OPENS_AT, tz);
     const d2Opens = zonedTimeToUtc(d2, "00:00", tz);
+    const hw2Sent = !!rec.homework2?.key;
+    const hw2In = !!rec.homework2Result?.key;
     const access = rec.access;
 
     const steps = [
@@ -331,32 +333,38 @@ export class FirstDaysService {
         link: rec.rolePlay?.link || null,
         can: viewer.isJoiner && now >= rolePlayOpens ? [rec.rolePlay?.link ? "replace" : "submit"] : [],
       }] : []),
-      // The day-2 homework. The joiner only ever sees it once it has been
-      // sent; the head and HR see where to send it, marked optional.
-      ...(rec.homework2?.key ? [
-        {
-          key: "homework2" as StepKey, day: 2, dueDay: d2,
-          title: "Day-2 homework from your department head",
-          detail: `Hand it back by ${fmtDay(d3)}.`,
-          status: "done" as StepStatus,
-          file: fileOut(rec.homework2),
-          can: asHead ? ["replace"] : [],
-        },
-        {
-          key: "homework2Result" as StepKey, day: 3, dueDay: d3,
-          title: "Hand in your day-2 homework",
-          detail: "Upload what you did as a file.",
-          status: status(!!rec.homework2Result?.key, d3, false),
-          file: fileOut(rec.homework2Result),
-          can: viewer.isJoiner ? [rec.homework2Result?.key ? "replace" : "upload"] : [],
-        },
-      ] : asHead ? [{
+      // The day-2 homework. The head's file, when there is one — heads also
+      // hand a second homework out in person, so the joiner's place to hand
+      // it in is there from day 2 either way. Nothing sent and nothing handed
+      // in is "optional": not counted, never overdue.
+      ...(hw2Sent ? [{
+        key: "homework2" as StepKey, day: 2, dueDay: d2,
+        title: "Day-2 homework from your department head",
+        detail: `Hand it back by ${fmtDay(d3)}.`,
+        status: "done" as StepStatus,
+        file: fileOut(rec.homework2),
+        can: asHead ? ["replace"] : [],
+      }] : asHead ? [{
         key: "homework2" as StepKey, day: 2, dueDay: d2,
         title: "Day-2 homework (optional)",
-        detail: "If your department sets a second homework, send it here. They hand it back on day 3.",
+        detail: "If your department sets a second homework, send it here — or hand it out in person; they can hand it in here either way, by day 3.",
         status: "optional" as StepStatus,
         file: null,
         can: ["send"],
+      }] : []),
+      ...(viewer.isJoiner || hw2Sent || hw2In ? [{
+        key: "homework2Result" as StepKey, day: 3, dueDay: d3,
+        title: viewer.isJoiner ? "Hand in your day-2 homework" : "Day-2 homework handed in",
+        detail: !viewer.isJoiner
+          ? hw2Sent ? `Due back by ${fmtDay(d3)}.` : "Handed in for a homework given outside HRMS."
+          : hw2Sent
+          ? "Upload what you did as a file."
+          : now < d2Opens
+            ? `If your department head gives you a second homework, hand it in here from ${fmtDay(d2)}.`
+            : "If your department head gave you a second homework, upload what you did here.",
+        status: hw2In ? "done" as StepStatus : hw2Sent ? status(false, d3, false) : "optional" as StepStatus,
+        file: fileOut(rec.homework2Result),
+        can: viewer.isJoiner && (hw2Sent || now >= d2Opens) ? [hw2In ? "replace" : "upload"] : [],
       }] : []),
       {
         key: "access" as StepKey, day: 3, dueDay: d3,
@@ -450,7 +458,12 @@ export class FirstDaysService {
   async handInHomework(userId: string, file: { key: string; name: string }, day: HomeworkDay = 1) {
     const { rec, emp } = await this.mineOrFail(userId);
     const slot = HOMEWORK[day];
-    if (!rec.get(`${slot.set}.key`)) throw fail(day === 1 ? "Your homework hasn't been sent yet" : "Your day-2 homework hasn't been sent yet");
+    // Day 1's needs the head's file first. Day 2's can come in without one —
+    // heads hand it out in person too — but not before the second day starts.
+    if (day === 1 && !rec.homework?.key) throw fail("Your homework hasn't been sent yet");
+    if (day === 2 && !rec.homework2?.key && new Date() < zonedTimeToUtc(rec.stepDays[1] ?? rec.startDay, "00:00", rec.timeZone)) {
+      throw fail("The day-2 homework is handed in from your second day");
+    }
     const again = !!rec.get(`${slot.result}.key`);
     rec.set(slot.result, { key: file.key, name: file.name, at: new Date(), by: userId });
     await rec.save();

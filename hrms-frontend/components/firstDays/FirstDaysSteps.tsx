@@ -168,6 +168,7 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
       return (
         <div className="flex flex-wrap items-center gap-2">
           {step.file && <FileLink file={step.file} label="Handed in" />}
+          {!step.file && !view.viewer.isJoiner && <span className="text-xs text-muted-foreground">Not handed in yet.</span>}
           {(can("upload") || can("replace")) && (
             <UploadButton label={can("replace") ? "Upload again" : "Upload your homework"} busy={handIn.isPending}
               onFile={(file) => handIn.mutate({ file, day })} />
