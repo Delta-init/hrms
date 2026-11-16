@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DOC_ACCEPT, KindPicker, MAX_VIDEO_MB, VIDEO_ACCEPT, checkFile } from "@/components/firstDays/AddHomeworkDialog";
 import { useAddHomeworkToMany, type HomeworkKind } from "@/hooks/useFirstDays";
-import type { FirstDaysView, HomeworkSendResult } from "@/types";
+import { VideoSourceToggle, VimeoPicker, type VideoSource } from "@/components/firstDays/VimeoPicker";
+import type { FirstDaysView, HomeworkSendResult, VimeoVideo } from "@/types";
 
 const DAY_MS = 86_400_000;
 const addDays = (key: string, n: number) => new Date(Date.parse(`${key}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
@@ -49,6 +50,9 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   const today = dates[0] ?? "";
 
   const [kind, setKind] = useState<HomeworkKind>("document");
+  const [source, setSource] = useState<VideoSource>("upload");
+  const [vimeo, setVimeo] = useState<VimeoVideo | null>(null);
+  const fromVimeo = kind === "video" && source === "vimeo";
   const [sentPct, setSentPct] = useState<number | null>(null);
   const [day, setDay] = useState("");
   const [title, setTitle] = useState("");
@@ -62,7 +66,7 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setKind("document"); setSentPct(null); setDay(today); setTitle(""); setFile(null); setResults(null); setError(null);
+    setKind("document"); setSource("upload"); setVimeo(null); setSentPct(null); setDay(today); setTitle(""); setFile(null); setResults(null); setError(null);
     // Only on opening: a refresh behind the form must not reset it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -86,10 +90,10 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
     setError(null);
     if (!title.trim()) { setError("Give the homework a title"); return; }
     if (!chosen.length) { setError("Pick at least one new joiner"); return; }
-    if (!file) { setError(kind === "video" ? "Choose the video" : "Choose the question document"); return; }
-    setSentPct(0);
+    if (fromVimeo ? !vimeo : !file) { setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question document"); return; }
+    setSentPct(fromVimeo ? null : 0);
     // All sent: done, and the toast says so. Any refused: stay open and say who and why.
-    send.mutate({ employeeIds: chosen, title: title.trim(), day, file, kind, onProgress: setSentPct }, {
+    send.mutate({ employeeIds: chosen, title: title.trim(), day, kind, ...(fromVimeo ? { vimeoId: vimeo!.id } : { file, onProgress: setSentPct }) }, {
       onSuccess: ({ results: r }) => { if (r.every((x) => x.ok)) onOpenChange(false); else setResults(r); },
       onSettled: () => setSentPct(null),
     });
@@ -162,6 +166,16 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
             )}
           </div>
 
+          {kind === "video" && (
+            <div className="space-y-1.5">
+              <Label>The video</Label>
+              <VideoSourceToggle source={source} onChange={(s) => { setSource(s); setError(null); }} disabled={send.isPending} />
+            </div>
+          )}
+          {fromVimeo ? (
+            <VimeoPicker value={vimeo} disabled={send.isPending}
+              onPick={(v) => { setVimeo(v); setError(null); setResults(null); if (!title.trim()) setTitle(v.name.slice(0, 160)); }} />
+          ) : (
           <div className="space-y-2">
             <Label>{kind === "video" ? `Video (MP4, up to ${MAX_VIDEO_MB} MB)` : "Question document"}</Label>
             <input ref={input} type="file" className="hidden" accept={kind === "video" ? VIDEO_ACCEPT : DOC_ACCEPT}
@@ -180,6 +194,7 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
               </span>}
             </div>
           </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <ResponsiveDialogFooter>

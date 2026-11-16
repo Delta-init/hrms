@@ -1,6 +1,10 @@
 "use client";
 import { useRef, useState } from "react";
-import { FileText, Loader2, Paperclip, PlayCircle, X } from "lucide-react";
+import { ExternalLink, FileText, Loader2, Paperclip, PlayCircle, X } from "lucide-react";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
+import { VimeoPicker } from "@/components/firstDays/VimeoPicker";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
@@ -8,7 +12,7 @@ import { DOC_ACCEPT, VIDEO_ACCEPT, checkFile } from "@/components/firstDays/AddH
 import { FileLink, UploadButton } from "@/components/firstDays/FirstDaysFiles";
 import { useSetHomeworkQuestion, useSubmitWriteUp } from "@/hooks/useFirstDays";
 import { toast } from "@/lib/toast";
-import type { FirstDaysHomework, FirstDaysView } from "@/types";
+import type { FirstDaysHomework, FirstDaysView, VimeoVideo } from "@/types";
 
 /** Matches the server's floor for a write-up. */
 const MIN_WRITE_UP = 20;
@@ -25,22 +29,39 @@ export function VideoHomeworkBody({ item: h, view }: { item: FirstDaysHomework; 
   const can = (a: string) => h.can.includes(a);
   const replace = useSetHomeworkQuestion();
   const [watching, setWatching] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   if (!joiner) {
+    const length = h.durationSeconds ? ` (${clock(h.durationSeconds)})` : "";
     return (
       <div className="mt-3 space-y-2 pl-6">
         <div className="flex flex-wrap items-center gap-2">
-          {h.question && <FileLink file={h.question} label={`Video${h.durationSeconds ? ` (${clock(h.durationSeconds)})` : ""}`} video />}
+          {h.question && <FileLink file={h.question} label={`Video${length}`} video />}
+          {h.vimeo && (
+            <a href={h.vimeo.link} target="_blank" rel="noopener noreferrer"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-primary hover:bg-muted">
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Vimeo{length}: {h.vimeo.name}</span>
+            </a>
+          )}
           {h.answer && <FileLink file={h.answer} label="Their file" />}
           {can("replaceQuestion") && (
-            <UploadButton label="Replace the video" busy={replace.isPending} accept={VIDEO_ACCEPT}
-              onFile={(file) => {
-                const bad = checkFile("video", file);
-                if (bad) { toast.error(bad); return; }
-                replace.mutate({ employeeId: view.employee._id, itemId: h.id, file, kind: "video" });
-              }} />
+            <>
+              <UploadButton label={h.vimeo ? "Upload an MP4 instead" : "Replace the video"} busy={replace.isPending} accept={VIDEO_ACCEPT}
+                onFile={(file) => {
+                  const bad = checkFile("video", file);
+                  if (bad) { toast.error(bad); return; }
+                  replace.mutate({ employeeId: view.employee._id, itemId: h.id, file, kind: "video" });
+                }} />
+              <Button size="sm" variant="outline" disabled={replace.isPending} onClick={() => setPicking(true)}>
+                {h.vimeo ? "Pick another from Vimeo" : "Pick from Vimeo instead"}
+              </Button>
+            </>
           )}
         </div>
+        {picking && (
+          <ReplaceFromVimeo onClose={() => setPicking(false)} busy={replace.isPending}
+            onPick={(v) => replace.mutate({ employeeId: view.employee._id, itemId: h.id, vimeoId: v.id, kind: "video" }, { onSuccess: () => setPicking(false) })} />
+        )}
         {!h.watched && h.status !== "waiting" && <WatchBar percent={h.percent} />}
         {h.notes
           ? <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-sm">{h.notes}</p>
@@ -138,5 +159,27 @@ function WriteUp({ item: h }: { item: FirstDaysHomework }) {
         {short && <span className="text-[11px] text-muted-foreground">A sentence or two at least.</span>}
       </div>
     </div>
+  );
+}
+
+/** Swap a homework's video for another from the Vimeo folder. */
+function ReplaceFromVimeo({ onClose, onPick, busy }: { onClose: () => void; onPick: (v: VimeoVideo) => void; busy: boolean }) {
+  const [picked, setPicked] = useState<VimeoVideo | null>(null);
+  return (
+    <ResponsiveDialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <ResponsiveDialogContent desktopClassName="max-w-md">
+        <ResponsiveDialogHeader><ResponsiveDialogTitle>Pick a video from Vimeo</ResponsiveDialogTitle></ResponsiveDialogHeader>
+        <div className="min-w-0 space-y-2 px-4 sm:px-0">
+          <VimeoPicker value={picked} onPick={setPicked} disabled={busy} />
+          <p className="text-xs text-muted-foreground">They watch the new video from the start. What they already handed in still counts.</p>
+        </div>
+        <ResponsiveDialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!picked || busy} onClick={() => picked && onPick(picked)}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}Use this video
+          </Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

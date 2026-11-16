@@ -2,6 +2,8 @@ import type { Response, NextFunction } from "express";
 import { z } from "zod";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { FirstDaysService } from "../services/firstDaysService.js";
+import { folderVideo, folderVideos, vimeoConnected } from "../services/vimeoService.js";
+import { departmentsHeadedBy } from "../services/departmentHeadService.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
 import { documentExt } from "../middleware/upload.js";
 import { mp4Duration } from "./agreementController.js";
@@ -146,14 +148,74 @@ export const setHomeworkVideo = route(async (req, res) => {
   const stored = await storeVideo(req, req.params.employeeId);
   if (!stored) { sendError(res, NOT_MP4, 400); return; }
   sendSuccess(res, "Video replaced", await service.setHomeworkQuestion(
-    req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), stored.file, { seconds: stored.seconds }
+    req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), { file: stored.file, video: { seconds: stored.seconds } }
   ));
 });
 
 export const setHomeworkQuestion = route(async (req, res) => {
   if (!req.file) { sendError(res, "Attach the question document", 400); return; }
   const file = await storeDocument(req, req.params.employeeId);
-  sendSuccess(res, "Question saved", await service.setHomeworkQuestion(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), file));
+  sendSuccess(res, "Question saved", await service.setHomeworkQuestion(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), { file }));
+});
+
+// ── Video homework from the company's Vimeo folder ──────────────────────────
+
+/** Heads and HR set homework; nobody else needs to see what is in the folder. */
+async function setsHomework(req: AuthenticatedRequest) {
+  return isHr(req) || (await departmentsHeadedBy(req.user!.userId)).length > 0;
+}
+
+/**
+ * The videos in the company's Vimeo folder, each saying whether it can play
+ * inside HRMS and, if not, what to change in Vimeo. `connected: false` until
+ * the server has a Vimeo token and folder.
+ */
+export const listVimeoVideos = route(async (req, res) => {
+  if (!(await setsHomework(req))) { sendError(res, "Only department heads and HR set homework", 403); return; }
+  if (!vimeoConnected()) { sendSuccess(res, "Vimeo isn't connected", { connected: false, videos: [] }); return; }
+  const videos = await folderVideos(req.query.fresh === "1");
+  sendSuccess(res, "Vimeo videos", { connected: true, videos });
+});
+
+const vimeoPick = z.object({ vimeoId: z.string().regex(/^\d+$/, "Pick a video from the list") });
+/** The picked video, checked with Vimeo now — its length is Vimeo's, never the browser's. */
+async function pickedVimeo(body: unknown) {
+  const parsed = vimeoPick.safeParse(body ?? {});
+  if (!parsed.success) return null;
+  const v = await folderVideo(parsed.data.vimeoId);
+  return { ref: { id: v.id, hash: v.hash, name: v.name.slice(0, 200) }, seconds: v.durationSeconds };
+}
+
+export const addVimeoHomework = route(async (req, res) => {
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
+  const picked = await pickedVimeo(req.body);
+  if (!picked) { sendError(res, "Pick a video from the list", 400); return; }
+  sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), {
+    ...fields, kind: "video", vimeo: picked.ref, videoSeconds: picked.seconds,
+  }));
+});
+
+export const setHomeworkVimeo = route(async (req, res) => {
+  const picked = await pickedVimeo(req.body);
+  if (!picked) { sendError(res, "Pick a video from the list", 400); return; }
+  sendSuccess(res, "Video replaced", await service.setHomeworkQuestion(
+    req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), { video: { seconds: picked.seconds, vimeo: picked.ref } }
+  ));
+});
+
+export const addVimeoHomeworkToMany = route(async (req, res) => {
+  const ids = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(100).safeParse((req.body as { employeeIds?: unknown } | undefined)?.employeeIds);
+  if (!ids.success) { sendError(res, "Pick at least one new joiner", 400); return; }
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
+  const picked = await pickedVimeo(req.body);
+  if (!picked) { sendError(res, "Pick a video from the list", 400); return; }
+  const results = await service.addHomeworkToMany(ids.data, req.user!.userId, isHr(req), {
+    ...fields, kind: "video", vimeo: picked.ref, videoSeconds: picked.seconds,
+  });
+  const sent = results.filter((r) => r.ok).length;
+  sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
 });
 
 /**

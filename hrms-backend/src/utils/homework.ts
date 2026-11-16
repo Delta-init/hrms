@@ -13,7 +13,8 @@ import { todayInTz } from "./schedule.js";
  * its answer is a file. A video's "question" is the video itself: the joiner
  * watches it to the end — back is fine, ahead is not, counted the way the
  * induction video is — and then writes what they learned, with a file if they
- * like. The write-up is the hand-in.
+ * like. The write-up is the hand-in. The video is either an uploaded MP4 or
+ * one from the company's Vimeo folder.
  *
  * Two fixed slots came before the list — the day-1 homework (handed back on
  * day 2) and a day-2 one (handed back on day 3). Records that used them keep
@@ -52,6 +53,8 @@ export interface HomeworkEntry {
   handedIn: boolean;
   /** A video watched to the end, as the server counted it. */
   watched: boolean;
+  /** A video from the company's Vimeo folder, instead of an uploaded file. */
+  vimeo: { id: string; hash: string; name: string } | null;
 }
 
 export interface HomeworkRecordLike {
@@ -65,6 +68,7 @@ export interface HomeworkRecordLike {
     _id?: unknown; title?: string | null; day: string; kind?: string | null; videoSeconds?: number | null;
     question?: HomeworkFile | null; answer?: HomeworkFile | null; notes?: string | null;
     watch?: { completedAt?: Date | null } | null;
+    vimeo?: { id?: string | null; hash?: string | null; name?: string | null } | null;
     answeredAt?: Date | null; addedAt?: Date | null;
   }> | null;
 }
@@ -83,14 +87,14 @@ export function homeworkEntries(rec: HomeworkRecordLike, tz: string): HomeworkEn
   const out: HomeworkEntry[] = [];
   if (rec.homework?.key || rec.homeworkResult?.key) {
     out.push({
-      id: LEGACY_IDS[1], title: "Homework", day: d1, dueDay: d2, legacy: 1, kind: "document", videoSeconds: 0, notes: null, watched: false,
+      id: LEGACY_IDS[1], title: "Homework", day: d1, dueDay: d2, legacy: 1, kind: "document", videoSeconds: 0, notes: null, watched: false, vimeo: null,
       question: file(rec.homework), answer: file(rec.homeworkResult), answeredAt: rec.homeworkResult?.at ?? null,
       handedIn: !!rec.homeworkResult?.key,
     });
   }
   if (rec.homework2?.key || rec.homework2Result?.key) {
     out.push({
-      id: LEGACY_IDS[2], title: "Day-2 homework", day: d2, dueDay: d3, legacy: 2, kind: "document", videoSeconds: 0, notes: null, watched: false,
+      id: LEGACY_IDS[2], title: "Day-2 homework", day: d2, dueDay: d3, legacy: 2, kind: "document", videoSeconds: 0, notes: null, watched: false, vimeo: null,
       question: file(rec.homework2), answer: file(rec.homework2Result), answeredAt: rec.homework2Result?.at ?? null,
       handedIn: !!rec.homework2Result?.key,
     });
@@ -106,6 +110,7 @@ export function homeworkEntries(rec: HomeworkRecordLike, tz: string): HomeworkEn
       answeredAt: h.answeredAt ?? (video ? null : h.answer?.at ?? null),
       handedIn: video ? !!notes : !!h.answer?.key,
       watched: video && !!h.watch?.completedAt,
+      vimeo: video && h.vimeo?.id ? { id: h.vimeo.id, hash: h.vimeo.hash ?? "", name: h.vimeo.name ?? "" } : null,
     });
   }
   // Stable, so on the same day the old slots stay ahead of the list.
@@ -123,12 +128,15 @@ export function homeworkStatus(e: HomeworkEntry, today: string, tz: string): { s
     const at = e.answeredAt ?? e.answer?.at ?? null;
     return { status: "done", late: !!at && todayInTz(tz, at) > e.dueDay };
   }
-  if (!e.question || today < e.day) return { status: "waiting", late: false };
+  if (!hasQuestion(e) || today < e.day) return { status: "waiting", late: false };
   return { status: today > e.dueDay ? "overdue" : "todo", late: false };
 }
 
+/** Its question is on file: the document, or the video — uploaded or from Vimeo. */
+export const hasQuestion = (e: HomeworkEntry) => !!e.question || !!e.vimeo;
+
 /** Whether it is open to the joiner: its question (or video) is on file and its day has come. */
-export const canAnswer = (e: HomeworkEntry, today: string) => !!e.question && today >= e.day;
+export const canAnswer = (e: HomeworkEntry, today: string) => hasQuestion(e) && today >= e.day;
 
 /** A video's write-up opens once it has been watched to the end — or stays open once handed in. */
 export const canWriteUp = (e: HomeworkEntry, today: string) => e.kind === "video" && canAnswer(e, today) && (e.watched || e.handedIn);

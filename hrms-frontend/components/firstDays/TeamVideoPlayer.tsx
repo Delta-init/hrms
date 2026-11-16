@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { useStartWatching, useWatchBeat } from "@/hooks/useFirstDays";
+import type VimeoPlayer from "@vimeo/player";
 import { cn } from "@/lib/utils";
 import type { WatchProgress } from "@/types";
 
@@ -49,6 +50,13 @@ export function TeamVideoPlayer({ homeworkId, doneText }: { homeworkId?: string;
   if (error || !opened) {
     const message = (error as { response?: { data?: { message?: string } } } | null)?.response?.data?.message;
     return <p className="text-sm text-muted-foreground">{message ?? "The video could not be opened."}</p>;
+  }
+
+  if (opened.video.vimeo) {
+    return (
+      <VimeoWatch embedUrl={opened.video.vimeo.embedUrl} title={opened.video.title} durationSeconds={opened.video.durationSeconds}
+        initial={opened.progress} homeworkId={homeworkId} doneText={doneText} />
+    );
   }
 
   const seekTo = (fraction: number) => {
@@ -125,6 +133,80 @@ export function TeamVideoPlayer({ homeworkId, doneText }: { homeworkId?: string;
       </div>
       <p className="text-xs text-muted-foreground">
         {done ? doneText ?? "Watched in full — this step is done." : `${progress?.percent ?? 0}% watched. You can go back, but not skip ahead — play it through to the end.`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * A video from the company's Vimeo folder, held to the same rules in Vimeo's
+ * own player: its play bar may show (the free plan can't hide it), but a jump
+ * past the furthest point reached is sent straight back, speed is held at 1×,
+ * and the server still counts only what played from where the playhead is
+ * every few seconds. The player library loads only when a Vimeo video opens.
+ */
+function VimeoWatch({ embedUrl, title, durationSeconds, initial, homeworkId, doneText }: {
+  embedUrl: string; title: string; durationSeconds: number; initial: WatchProgress; homeworkId?: string; doneText?: string;
+}) {
+  const { mutate: beat } = useWatchBeat(homeworkId);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [progress, setProgress] = useState<WatchProgress>(initial);
+  const done = !!progress.completed;
+  const doneRef = useRef(done);
+  doneRef.current = done;
+  const furthest = useRef(Math.max(initial.furthest ?? 0, initial.resumeAt ?? 0));
+
+  useEffect(() => {
+    let cancelled = false;
+    let player: VimeoPlayer | null = null;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const back = () => { player?.setCurrentTime(furthest.current).catch(() => {}); };
+    (async () => {
+      const { default: Player } = await import("@vimeo/player");
+      if (cancelled || !frame.current) return;
+      player = new Player(frame.current);
+      await player.ready().catch(() => {});
+      if (cancelled) return;
+      const resume = initial.resumeAt ?? 0;
+      if (!initial.completed && resume > 1 && resume < durationSeconds - 1) player.setCurrentTime(resume).catch(() => {});
+      // Normal play moves a fraction of a second between updates; anything
+      // further ahead than that is a jump, and goes back.
+      player.on("timeupdate", ({ seconds }: { seconds: number }) => {
+        if (doneRef.current) return;
+        if (seconds > furthest.current + 2) back();
+        else if (seconds > furthest.current) furthest.current = seconds;
+      });
+      player.on("seeked", ({ seconds }: { seconds: number }) => { if (!doneRef.current && seconds > furthest.current + 2) back(); });
+      player.on("playbackratechange", ({ playbackRate }: { playbackRate: number }) => {
+        if (playbackRate !== 1) player?.setPlaybackRate(1).catch(() => {});
+      });
+      player.on("ended", () => { if (!doneRef.current) beat(durationSeconds, { onSuccess: setProgress }); });
+      timer = setInterval(async () => {
+        if (doneRef.current || !player) return;
+        if (await player.getPaused().catch(() => true)) return;
+        const t = await player.getCurrentTime().catch(() => null);
+        if (t !== null) beat(t, { onSuccess: setProgress });
+      }, BEAT_MS);
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      player?.destroy().catch(() => {});
+    };
+    // The player is set up once per video; what it reads changes through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedUrl]);
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-hidden rounded-xl bg-black">
+        <iframe ref={frame} src={embedUrl} title={title} className="aspect-video w-full" allow="autoplay; fullscreen" allowFullScreen />
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${progress.percent ?? 0}%` }} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {done ? doneText ?? "Watched in full — this step is done." : `${progress.percent ?? 0}% watched. You can go back, but not skip ahead — play it through to the end.`}
       </p>
     </div>
   );

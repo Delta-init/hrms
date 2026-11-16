@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, FirstDaysView, HomeworkSendResult, TeamVideoInfo, WatchProgress } from "@/types";
+import type { ApiResponse, FirstDaysView, HomeworkSendResult, TeamVideoInfo, VimeoVideo, WatchProgress } from "@/types";
 
 const KEY = ["first-days"] as const;
 
@@ -80,20 +80,55 @@ export const useCallsDone = () =>
 // ── Heads and HR ──
 export const useConfirmSessionAsHead = () =>
   useStep(async (employeeId: string) => (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/session`)).data.data!, "Session confirmed", "Could not confirm the session");
-/** A homework for one of the joiner's days: a question document, or a video. */
+/** The videos in the company's Vimeo folder, for heads and HR picking a video homework. */
+export const useVimeoVideos = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "vimeo"],
+    queryFn: async () => (await api.get<ApiResponse<{ connected: boolean; videos: VimeoVideo[] }>>("/first-days/vimeo/videos")).data.data!,
+    enabled,
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+
+/** Ask Vimeo again now, past the server's short cache — after fixing a video's privacy there. */
+export const useRefreshVimeo = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.get<ApiResponse<{ connected: boolean; videos: VimeoVideo[] }>>("/first-days/vimeo/videos", { params: { fresh: "1" } })).data.data!,
+    onSuccess: (d) => qc.setQueryData([...KEY, "vimeo"], d),
+    onError: (e) => toast.error(errMsg(e, "Could not reach Vimeo")),
+  });
+};
+
+/** What a homework is made of: a file (document or MP4), or a video from Vimeo by its id. */
+type Source = { file?: File | null; vimeoId?: string };
+
+/** A homework for one of the joiner's days: a question document, an uploaded video, or a video from Vimeo. */
 export const useAddHomework = () =>
-  useStep(async ({ employeeId, title, day, file, kind, onProgress }: { employeeId: string; title: string; day: string; file: File; kind: HomeworkKind; onProgress?: OnProgress }) =>
-    (await upload(`/first-days/${employeeId}/homework${kind === "video" ? "/video" : ""}`, file, { title, day }, onProgress)).data.data!, "Homework sent", "Could not send the homework");
+  useStep(async ({ employeeId, title, day, file, vimeoId, kind, onProgress }: { employeeId: string; title: string; day: string; kind: HomeworkKind; onProgress?: OnProgress } & Source) =>
+    vimeoId
+      ? (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/homework/vimeo`, { title, day, vimeoId })).data.data!
+      : (await upload(`/first-days/${employeeId}/homework${kind === "video" ? "/video" : ""}`, file ?? null, { title, day }, onProgress)).data.data!,
+    "Homework sent", "Could not send the homework");
 /** Replace a homework's question document or video, or attach a question to an answer kept from before. */
 export const useSetHomeworkQuestion = () =>
-  useStep(async ({ employeeId, itemId, file, kind }: { employeeId: string; itemId: string; file: File; kind: HomeworkKind }) =>
-    (await upload(`/first-days/${employeeId}/homework/${encodeURIComponent(itemId)}/${kind === "video" ? "video" : "question"}`, file)).data.data!, "Saved", "Could not save the file");
+  useStep(async ({ employeeId, itemId, file, vimeoId, kind }: { employeeId: string; itemId: string; kind: HomeworkKind } & Source) => {
+    const base = `/first-days/${employeeId}/homework/${encodeURIComponent(itemId)}`;
+    return vimeoId
+      ? (await api.post<ApiResponse<FirstDaysView>>(`${base}/vimeo`, { vimeoId })).data.data!
+      : (await upload(`${base}/${kind === "video" ? "video" : "question"}`, file ?? null)).data.data!;
+  }, "Saved", "Could not save the file");
 
 /** One homework to several joiners, for the same date; resolves with how each went. */
 export const useAddHomeworkToMany = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ employeeIds, title, day, file, kind, onProgress }: { employeeIds: string[]; title: string; day: string; file: File; kind: HomeworkKind; onProgress?: OnProgress }) => {
+    mutationFn: async ({ employeeIds, title, day, file, vimeoId, kind, onProgress }: { employeeIds: string[]; title: string; day: string; kind: HomeworkKind; onProgress?: OnProgress } & Source) => {
+      if (vimeoId) {
+        const res = await api.post<ApiResponse<HomeworkSendResult[]>>("/first-days/homework/many/vimeo", { employeeIds, title, day, vimeoId });
+        return { results: res.data.data ?? [], message: res.data.message };
+      }
+      if (!file) throw new Error("Choose the file");
       const form = new FormData();
       form.append("title", title);
       form.append("day", day);
@@ -156,7 +191,7 @@ const watchBase = (homeworkId?: string) =>
 export const useStartWatching = (homeworkId?: string) =>
   useMutation({
     mutationFn: async () =>
-      (await api.post<ApiResponse<{ video: { title: string; url: string; durationSeconds: number }; progress: WatchProgress }>>(`${watchBase(homeworkId)}/start`)).data.data!,
+      (await api.post<ApiResponse<{ video: { title: string; url: string; durationSeconds: number; vimeo?: { embedUrl: string } | null }; progress: WatchProgress }>>(`${watchBase(homeworkId)}/start`)).data.data!,
   });
 export const useWatchBeat = (homeworkId?: string) => {
   const qc = useQueryClient();

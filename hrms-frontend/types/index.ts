@@ -3421,8 +3421,10 @@ export interface FirstDaysHomework {
   status: FirstDaysStepStatus;
   /** Answered, but after the due day. */
   late: boolean;
-  /** The question document — or the video. */
+  /** The question document — or the uploaded video. */
   question: FirstDaysFile | null;
+  /** A video from the company's Vimeo folder. The link is for heads and HR; joiners watch in HRMS. */
+  vimeo: { name: string; link: string } | null;
   /** The answer file — optional alongside a video's write-up. */
   answer: FirstDaysFile | null;
   /** A video's write-up: what they learned. */
@@ -3472,6 +3474,19 @@ export interface FirstDaysView {
   totalCount: number;
   complete: boolean;
   viewer: { isJoiner: boolean; isHead: boolean; isHr: boolean };
+}
+
+/** A video in the company's Vimeo folder, and whether it can play inside HRMS. */
+export interface VimeoVideo {
+  id: string;
+  hash: string;
+  name: string;
+  durationSeconds: number;
+  thumbnail: string | null;
+  link: string;
+  playable: boolean;
+  /** Why it can't play inside HRMS, and what to change in Vimeo. */
+  reason: string | null;
 }
 
 export interface WatchProgress { percent: number; furthest: number; resumeAt: number; reachedEnd: boolean; completed: boolean }

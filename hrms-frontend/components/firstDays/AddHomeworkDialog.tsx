@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAddHomework, type HomeworkKind } from "@/hooks/useFirstDays";
+import { VideoSourceToggle, VimeoPicker, type VideoSource } from "@/components/firstDays/VimeoPicker";
 import { cn } from "@/lib/utils";
-import type { FirstDaysView } from "@/types";
+import type { FirstDaysView, VimeoVideo } from "@/types";
 
 export const DOC_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*";
 export const VIDEO_ACCEPT = "video/mp4,.mp4";
@@ -64,7 +65,8 @@ interface Props {
 /**
  * A homework for one joiner: a document or a video, a title, which of their
  * fifteen days it is for, and the file — required, since there is nothing to
- * answer without it.
+ * answer without it. A video is uploaded, or picked from the company's Vimeo
+ * folder.
  */
 export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
   const add = useAddHomework();
@@ -72,24 +74,28 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [day, setDay] = useState(view.today);
   const [file, setFile] = useState<File | null>(null);
+  const [source, setSource] = useState<VideoSource>("upload");
+  const [vimeo, setVimeo] = useState<VimeoVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const first = view.employee.name.split(" ")[0] || view.employee.name;
+  const fromVimeo = kind === "video" && source === "vimeo";
 
   useEffect(() => {
     if (openOn === null) return;
-    setKind("document"); setTitle(""); setDay(openOn); setFile(null); setError(null); setSent(null);
+    setKind("document"); setTitle(""); setDay(openOn); setFile(null); setSource("upload"); setVimeo(null); setError(null); setSent(null);
   }, [openOn]);
 
   const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setError(null); } };
+  const pickVimeo = (v: VimeoVideo) => { setVimeo(v); setError(null); if (!title.trim()) setTitle(v.name.slice(0, 160)); };
   const submit = () => {
     setError(null);
     if (!title.trim()) { setError("Give the homework a title"); return; }
-    if (!file) { setError(kind === "video" ? "Choose the video" : "Choose the question document"); return; }
-    setSent(0);
+    if (fromVimeo ? !vimeo : !file) { setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question document"); return; }
+    setSent(fromVimeo ? null : 0);
     add.mutate(
-      { employeeId: view.employee._id, title: title.trim(), day, file, kind, onProgress: setSent },
+      { employeeId: view.employee._id, title: title.trim(), day, kind, ...(fromVimeo ? { vimeoId: vimeo!.id } : { file, onProgress: setSent }) },
       { onSuccess: onClose, onSettled: () => setSent(null) }
     );
   };
@@ -121,6 +127,18 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
             </Select>
             <p className="text-xs text-muted-foreground">{whenText(day, view.today, first)}</p>
           </div>
+          {kind === "video" && (
+            <div className="space-y-1.5">
+              <Label>The video</Label>
+              <VideoSourceToggle source={source} onChange={(s) => { setSource(s); setError(null); }} disabled={add.isPending} />
+            </div>
+          )}
+          {fromVimeo ? (
+            <div className="space-y-1.5">
+              <VimeoPicker value={vimeo} onPick={pickVimeo} disabled={add.isPending} />
+              <p className="text-xs text-muted-foreground">{first} watches it inside HRMS and can go back but not skip ahead; once it&apos;s watched to the end, they write what they learned.</p>
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <Label>{kind === "video" ? `Video (MP4, up to ${MAX_VIDEO_MB} MB)` : "Question document"}</Label>
             <input ref={input} type="file" className="hidden" accept={kind === "video" ? VIDEO_ACCEPT : DOC_ACCEPT}
@@ -142,6 +160,7 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
             </div>
             {kind === "video" && <p className="text-xs text-muted-foreground">{first} can go back but not skip ahead; once it&apos;s watched to the end, they write what they learned.</p>}
           </div>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <ResponsiveDialogFooter>

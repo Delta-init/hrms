@@ -18,7 +18,8 @@ import {
   addDays, dayNumber, isChatGptShareLink, joiningDayKey, lastRedDay, workingDayKeys,
 } from "../utils/firstDays.js";
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
-import { MIN_WRITE_UP, canAnswer, canWriteUp, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
+import { MIN_WRITE_UP, canAnswer, canWriteUp, hasQuestion, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
+import { vimeoEmbedUrl } from "../utils/vimeo.js";
 import { env } from "../config/env.js";
 
 /**
@@ -59,8 +60,16 @@ export type StepStatus = "done" | "todo" | "waiting" | "overdue";
 
 /** A file as it arrives, stored: a question document, an answer, or a homework video. */
 type StoredFile = { key: string; name: string };
-/** A new homework: a document's question, or a video with its length read from the file. */
-type NewHomework = { title: string; day: string; file: StoredFile; kind?: HomeworkKind; videoSeconds?: number };
+/** A video in the company's Vimeo folder, as checked with Vimeo when it was picked. */
+export type VimeoRef = { id: string; hash: string; name: string };
+/**
+ * A new homework: a document's question, an uploaded video with its length
+ * read from the file, or a video from Vimeo with its length from Vimeo.
+ */
+type NewHomework = { title: string; day: string; file?: StoredFile; vimeo?: VimeoRef; kind?: HomeworkKind; videoSeconds?: number };
+/** What replaces a homework's question: a document, or a video — uploaded, or from Vimeo. */
+type NewQuestion = { file?: StoredFile; video?: { seconds: number; vimeo?: VimeoRef } };
+const vimeoLink = (v: { id: string; hash: string }) => `https://vimeo.com/${v.id}${v.hash ? `/${v.hash}` : ""}`;
 
 /** What the joiner is told to do with a homework, by kind. */
 const HOMEWORK_TODO: Record<HomeworkKind, string> = {
@@ -430,6 +439,8 @@ export class FirstDaysService {
         id: e.id, placeholder: false, kind: e.kind, title: e.title, day: e.day, dayNumber: dayNumber(rec.startDay, e.day), dueDay: e.dueDay,
         status: status as StepStatus, late,
         question: viewer.isJoiner && ahead ? null : fileOut(e.question),
+        // The joiner watches it in HRMS, never on vimeo.com, where nothing counts.
+        vimeo: e.vimeo && !viewer.isJoiner ? { name: e.vimeo.name, link: vimeoLink(e.vimeo) } : e.vimeo ? { name: e.vimeo.name, link: "" } : null,
         answer: fileOut(e.answer),
         notes: e.notes,
         durationSeconds: e.videoSeconds,
@@ -437,14 +448,14 @@ export class FirstDaysService {
         percent: video && watch && e.videoSeconds ? watchProgress(watch as unknown as WatchState, e.videoSeconds).percent : 0,
         opensAt: ahead ? zonedTimeToUtc(e.day, "00:00", tz) : null,
         // Kept from before questions were required: the answer stands, and the head can put the question with it.
-        missingQuestion: !e.question,
+        missingQuestion: !hasQuestion(e),
         can: [
           ...(viewer.isJoiner && canAnswer(e, today)
             ? video
               ? ["watch", ...(canWriteUp(e, today) ? ["writeUp"] : [])]
               : [e.answer ? "replaceAnswer" : "answer"]
             : []),
-          ...(asHead ? [e.question ? "replaceQuestion" : "attachQuestion"] : []),
+          ...(asHead ? [hasQuestion(e) ? "replaceQuestion" : "attachQuestion"] : []),
         ],
       };
     });
@@ -452,7 +463,7 @@ export class FirstDaysService {
       items.unshift({
         id: "day-1", placeholder: true, kind: "document", title: "Day-1 homework", day: d1, dayNumber: 1, dueDay: d1,
         status: (viewer.isJoiner ? "waiting" : today > d1 ? "overdue" : "todo") as StepStatus, late: false,
-        question: null, answer: null, notes: null, durationSeconds: 0, watched: false, percent: 0, opensAt: null, missingQuestion: false,
+        question: null, vimeo: null, answer: null, notes: null, durationSeconds: 0, watched: false, percent: 0, opensAt: null, missingQuestion: false,
         can: mayAdd ? ["add"] : [],
       });
     }
@@ -516,7 +527,7 @@ export class FirstDaysService {
     const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
     if (!entry) throw fail("That homework isn't in your guide", 404);
     if (entry.kind === "video") throw fail("This homework is a video — watch it, then write what you learned");
-    if (!entry.question) throw fail("Your department head hasn't added the question for this homework yet");
+    if (!hasQuestion(entry)) throw fail("Your department head hasn't added the question for this homework yet");
     if (!canAnswer(entry, today)) throw fail(`This homework opens on ${fmtDay(entry.day)}`);
     const again = !!entry.answer;
     const now = new Date();
@@ -578,7 +589,13 @@ export class FirstDaysService {
     }
     await rec.save();
     return {
-      video: { title: entry.title, url: publicUrl(entry.question!.key!), durationSeconds: entry.videoSeconds },
+      video: {
+        title: entry.title,
+        url: entry.question?.key ? publicUrl(entry.question.key) : "",
+        durationSeconds: entry.videoSeconds,
+        // A Vimeo video plays in Vimeo's player; the counting is the same.
+        vimeo: entry.vimeo ? { embedUrl: vimeoEmbedUrl(entry.vimeo.id, entry.vimeo.hash) } : null,
+      },
       progress,
     };
   }
@@ -763,12 +780,14 @@ export class FirstDaysService {
   async addHomework(employeeId: string, userId: string, isHr: boolean, input: NewHomework) {
     const { rec, emp, viewer } = await this.mayAddHomework(employeeId, userId, isHr, input.day);
     const kind: HomeworkKind = input.kind === "video" ? "video" : "document";
+    if (!input.file && !(kind === "video" && input.vimeo)) throw fail(kind === "video" ? "Choose the video" : "Attach the question document");
     const title = input.title.trim().slice(0, 160) || "Homework";
     const now = new Date();
     const opensNow = input.day <= todayInTz(rec.timeZone);
     rec.homeworks.push({
       title, kind, day: input.day,
-      question: { key: input.file.key, name: input.file.name, at: now, by: userId },
+      question: input.file ? { key: input.file.key, name: input.file.name, at: now, by: userId } : null,
+      vimeo: kind === "video" && !input.file && input.vimeo ? input.vimeo : null,
       videoSeconds: kind === "video" ? Math.round(input.videoSeconds ?? 0) : 0,
       watch: kind === "video" ? emptyWatch() : null,
       addedAt: now, addedBy: userId, notifiedAt: opensNow ? now : null,
@@ -806,18 +825,22 @@ export class FirstDaysService {
    * or attach one to an answer kept from before questions were required. The
    * joiner is told if the homework is open; an answer already in still counts.
    */
-  async setHomeworkQuestion(employeeId: string, itemId: string, userId: string, isHr: boolean, file: StoredFile, video?: { seconds: number }) {
+  async setHomeworkQuestion(employeeId: string, itemId: string, userId: string, isHr: boolean, src: NewQuestion) {
     const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
     const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
     if (!entry) throw fail("That homework isn't in their guide", 404);
-    if (entry.kind === "video" && !video) throw fail("This homework is a video — replace it with an MP4");
+    const { video } = src;
+    if (entry.kind === "video" && !video) throw fail("This homework is a video — replace it with a video");
     if (entry.kind !== "video" && video) throw fail("This homework is a document — replace it with a document");
-    const stored = { key: file.key, name: file.name, at: new Date(), by: userId };
+    if (!src.file && !video?.vimeo) throw fail("Choose the replacement");
+    const stored = src.file ? { key: src.file.key, name: src.file.name, at: new Date(), by: userId } : null;
     if (entry.legacy) {
       rec.set(entry.legacy === 1 ? "homework" : "homework2", stored);
     } else {
       const h = rec.homeworks.id(itemId)!;
+      // An uploaded video replaces a Vimeo one, or the other way round.
       h.set("question", stored);
+      h.set("vimeo", video?.vimeo && !stored ? video.vimeo : null);
       // A new video is a different film: it is watched from the start. What
       // they handed in for the old one still counts.
       if (video) { h.set("videoSeconds", Math.round(video.seconds)); h.set("watch", emptyWatch()); }
@@ -828,7 +851,7 @@ export class FirstDaysService {
         users: [rec.user], kind: "reminder",
         title: video
           ? `The video for “${entry.title}” has been updated`
-          : entry.question ? `The question for “${entry.title}” has been updated` : `The question for “${entry.title}” is on file`,
+          : hasQuestion(entry) ? `The question for “${entry.title}” has been updated` : `The question for “${entry.title}” is on file`,
         body: entry.handedIn
           ? video ? "What you handed in still counts. The new video is in your guide." : "What you handed in still counts. If your answer needs changing, upload it again."
           : video ? "Watch it to the end, then write what you learned." : "Upload your answer as a file.",

@@ -47,7 +47,7 @@ describe("homeworkStatus", () => {
   const entry = (over: Record<string, unknown> = {}) => {
     const e = {
       id: "a", title: "T", day: "2026-11-16", dueDay: "2026-11-16", legacy: 0 as const, kind: "document" as const,
-      videoSeconds: 0, notes: null, watched: false, question: f("q.docx"), answer: null, answeredAt: null, ...over,
+      videoSeconds: 0, notes: null, watched: false, vimeo: null, question: f("q.docx"), answer: null, answeredAt: null, ...over,
     };
     return { ...e, handedIn: "handedIn" in over ? !!over.handedIn : !!e.answer };
   };
@@ -100,5 +100,15 @@ describe("video homework", () => {
   it("never treats a document as a video", () => {
     const [d] = homeworkEntries({ startDay: "2026-11-12", homeworks: [{ _id: "d", title: "Doc", day: "2026-11-16", question: f("q.docx") }] }, TZ);
     expect([d.kind, d.videoSeconds, canWriteUp({ ...d, watched: true }, "2026-11-16")]).toEqual(["document", 0, false]);
+  });
+});
+
+describe("video homework from Vimeo", () => {
+  it("counts the Vimeo video as its question — open on its day, with no file stored", () => {
+    const [e] = homeworkEntries({
+      startDay: "2026-11-12",
+      homeworks: [{ _id: "v", title: "Refund call", day: "2026-11-16", kind: "video", videoSeconds: 62, question: null, vimeo: { id: "76979871", hash: "", name: "Refund call training" } }],
+    }, TZ);
+    expect([e.question, e.vimeo?.id, canAnswer(e, "2026-11-16"), homeworkStatus(e, "2026-11-16", TZ).status]).toEqual([null, "76979871", true, "todo"]);
   });
 });

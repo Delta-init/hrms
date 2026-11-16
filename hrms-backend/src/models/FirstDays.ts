@@ -38,17 +38,23 @@ const watchSchema = new Schema(
 /**
  * One homework from the department head (or HR): for a day of the fifteen, and
  * the joiner's answer once that day comes. A document homework's question is
- * a file and so is its answer. A video homework's "question" is the video; the
- * joiner watches it to the end, then writes what they learned (a file is
- * optional) — the write-up is the hand-in.
+ * a file and so is its answer. A video homework's "question" is the video —
+ * an uploaded MP4 in `question`, or one from the company's Vimeo folder in
+ * `vimeo`; the joiner watches it to the end, then writes what they learned (a
+ * file is optional) — the write-up is the hand-in.
  */
 const homeworkSchema = new Schema({
   title: { type: String, trim: true, maxlength: 160, required: true },
   kind: { type: String, enum: ["document", "video"], default: "document" },
   /** "YYYY-MM-DD" in the joiner's zone. Answers open on it; on time means by it. */
   day: { type: String, required: true },
-  /** The question document — or, for a video homework, the MP4. */
-  question: { type: fileSchema, required: true },
+  /** The question document — or, for a video homework, the uploaded MP4. Empty for a Vimeo video. */
+  question: { type: fileSchema, default: null },
+  /** A video from the company's Vimeo folder: its id, the unlisted hash if any, and its name there. */
+  vimeo: {
+    type: new Schema({ id: { type: String, required: true }, hash: { type: String, default: "" }, name: { type: String, default: "" } }, { _id: false }),
+    default: null,
+  },
   /** A video's length, read from the file when it was uploaded. */
   videoSeconds: { type: Number, default: 0 },
   watch: { type: watchSchema, default: null },

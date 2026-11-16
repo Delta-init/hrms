@@ -164,6 +164,15 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(), // e.g. https://pub-xxxx.r2.dev or a custom domain
 
+  // Vimeo, for video homework picked from the company's Vimeo folder. A
+  // personal access token with the read-only "public" and "private" scopes,
+  // and the folder's id (the number at the end of its vimeo.com address).
+  // When either is unset, "Pick from Vimeo" says Vimeo isn't connected and
+  // everything else works as before.
+  VIMEO_ACCESS_TOKEN: z.string().optional(),
+  VIMEO_FOLDER_ID: z.string().regex(/^\d+$/, "VIMEO_FOLDER_ID must be the folder's number").optional(),
+  VIMEO_API_URL: z.string().default("https://api.vimeo.com"),
+
   // Face recognition service (hrms-face-ditector). When unset, face enrollment
   // and face attendance are disabled and their routes return a clear error —
   // the rest of the API is unaffected.

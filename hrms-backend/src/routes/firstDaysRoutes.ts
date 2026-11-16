@@ -4,6 +4,7 @@ import {
   startMyHomeworkVideo, myHomeworkVideoBeat, submitMyWriteUp,
   getTeamFirstDays, confirmSessionAsHead, addHomework, setHomeworkQuestion, addHomeworkToMany, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
   addVideoHomework, setHomeworkVideo, addVideoHomeworkToMany,
+  listVimeoVideos, addVimeoHomework, setHomeworkVimeo, addVimeoHomeworkToMany,
 } from "../controllers/firstDaysController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadDocumentSingle, uploadVideoSingle } from "../middleware/upload.js";
@@ -32,14 +33,18 @@ router.get("/team", getTeamFirstDays);
 // Several joiners at once — each still checked as if sent on its own.
 router.post("/homework/many", uploadDocumentSingle, addHomeworkToMany);
 router.post("/homework/many/video", uploadVideoSingle, addVideoHomeworkToMany);
+router.post("/homework/many/vimeo", addVimeoHomeworkToMany);
+router.get("/vimeo/videos", listVimeoVideos);
 router.get("/team-video/:departmentId", getTeamVideo);
 router.post("/team-video/:departmentId", uploadVideoSingle, uploadTeamVideo);
 
 router.post("/:employeeId/session", confirmSessionAsHead);
 router.post("/:employeeId/homework", uploadDocumentSingle, addHomework);
 router.post("/:employeeId/homework/video", uploadVideoSingle, addVideoHomework);
+router.post("/:employeeId/homework/vimeo", addVimeoHomework);
 router.post("/:employeeId/homework/:itemId/question", uploadDocumentSingle, setHomeworkQuestion);
 router.post("/:employeeId/homework/:itemId/video", uploadVideoSingle, setHomeworkVideo);
+router.post("/:employeeId/homework/:itemId/vimeo", setHomeworkVimeo);
 router.post("/:employeeId/access", setToolAccess);
 router.post("/:employeeId/clients", assignClients);
 

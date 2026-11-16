@@ -93,7 +93,8 @@ const csp = [
   // Photos and documents come from the API's signed /files route, so this can
   // name that origin instead of trusting every https host on the internet —
   // which is what it took to load them straight off a public bucket.
-  `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""} ${tvMediaHost}`,
+  // Plus the thumbnails in the Vimeo video picker for homework.
+  `img-src 'self' data: blob:${apiOrigin ? ` ${apiOrigin}` : ""} ${tvMediaHost} https://i.vimeocdn.com`,
   // The induction video is served from the same signed /files route as the
   // photos above, and without this it falls back to default-src 'self' — which
   // is not the API's origin, so the player was refused the file and showed a
@@ -104,7 +105,9 @@ const csp = [
   // somebody never comes back from, which means framing a PDF served by the
   // API. Without this it falls back to default-src 'self' and the frame is
   // refused, exactly as the video was.
-  `frame-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""}`,
+  // Plus Vimeo's player, for video homework picked from the company's Vimeo
+  // folder — only that one host, not Vimeo as a whole.
+  `frame-src 'self' blob:${apiOrigin ? ` ${apiOrigin}` : ""} https://player.vimeo.com`,
   "font-src 'self' data:",
   `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}${rootTvOrigin ? ` ${rootTvOrigin}` : ""}${isDev ? " ws: wss:" : ""}`,
   "object-src 'none'",
