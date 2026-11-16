@@ -77,6 +77,24 @@ export const useSubmitCallNotes = () =>
 export const useCallsDone = () =>
   useStep<void>(async () => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/calls")).data.data!, "Marked done", "Could not mark the calls done");
 
+// ── Additional homework: the joiner's own presentation videos ──
+/** A video uploaded (with progress), or a link to it on Google Drive, YouTube or Vimeo. */
+type ExtraInput = { file?: File | null; link?: string; onProgress?: OnProgress };
+const sendExtra = async (base: string, { file, link, onProgress }: ExtraInput, fields: Record<string, string> = {}) =>
+  file
+    ? (await upload(`${base}/video`, file, fields, onProgress)).data.data!
+    : (await api.post<ApiResponse<FirstDaysView>>(`${base}/link`, { ...fields, link })).data.data!;
+export const useAddExtra = () =>
+  useStep(async ({ title, ...input }: { title: string } & ExtraInput) => sendExtra("/first-days/mine/extras", input, { title }),
+    "Handed in", "Could not hand it in");
+export const useExtraNewVersion = () =>
+  useStep(async ({ extraId, ...input }: { extraId: string } & ExtraInput) => sendExtra(`/first-days/mine/extras/${encodeURIComponent(extraId)}`, input),
+    "New version handed in", "Could not hand in the new version");
+export const useExtraFeedback = () =>
+  useStep(async ({ employeeId, extraId, text }: { employeeId: string; extraId: string; text: string }) =>
+    (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/extras/${encodeURIComponent(extraId)}/feedback`, { text })).data.data!,
+    "Feedback sent", "Could not send the feedback");
+
 // ── Heads and HR ──
 export const useConfirmSessionAsHead = () =>
   useStep(async (employeeId: string) => (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/session`)).data.data!, "Session confirmed", "Could not confirm the session");

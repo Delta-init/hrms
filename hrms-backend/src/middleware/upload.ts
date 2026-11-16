@@ -157,3 +157,37 @@ export const uploadVideoSingle = (req: Request, res: Response, next: NextFunctio
     next();
   });
 };
+
+/**
+ * A joiner's own recording — their presentation video for an additional
+ * homework. Unlike a training video, nobody's watching is counted against it,
+ * so its length is never read and the formats phones record in are all fine:
+ * MP4, an iPhone's MOV, and WebM. Same size limit as any video.
+ */
+const CLIP_TYPES: Record<string, string> = {
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/x-m4v": "m4v",
+  "video/webm": "webm",
+};
+export const clipExt = (mime: string) => CLIP_TYPES[mime] ?? "mp4";
+
+const clipUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_VIDEO_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (CLIP_TYPES[file.mimetype]) return cb(null, true);
+    cb(new Error("The video must be an MP4, MOV or WebM."));
+  },
+}).single("file");
+
+export const uploadClipSingle = (req: Request, res: Response, next: NextFunction) => {
+  clipUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "The video is too large (max 250MB) — put it on Google Drive, YouTube or Vimeo and paste the link instead." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};

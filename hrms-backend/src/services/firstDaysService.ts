@@ -20,6 +20,7 @@ import {
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
 import { MIN_WRITE_UP, canAnswer, canWriteUp, hasQuestion, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
 import { vimeoEmbedUrl } from "../utils/vimeo.js";
+import { videoLink } from "../utils/videoLink.js";
 import { env } from "../config/env.js";
 
 /**
@@ -70,6 +71,9 @@ type NewHomework = { title: string; day: string; file?: StoredFile; vimeo?: Vime
 /** What replaces a homework's question: a document, or a video — uploaded, or from Vimeo. */
 type NewQuestion = { file?: StoredFile; video?: { seconds: number; vimeo?: VimeoRef } };
 const vimeoLink = (v: { id: string; hash: string }) => `https://vimeo.com/${v.id}${v.hash ? `/${v.hash}` : ""}`;
+
+/** An additional homework's video: uploaded, or a link to it elsewhere. */
+type ExtraSource = { video?: StoredFile; link?: string };
 
 /** What the joiner is told to do with a homework, by kind. */
 const HOMEWORK_TODO: Record<HomeworkKind, string> = {
@@ -391,6 +395,7 @@ export class FirstDaysService {
     ].map((s) => ({ waitingFor: null as string | null, opensAt: null as Date | null, ...s }));
 
     const homework = this.homeworkView(rec, viewer, today);
+    const extras = this.extrasView(rec, viewer, today);
     const doneCount = steps.filter((s) => s.status === "done").length + homework.answered;
     const totalCount = steps.length + homework.total;
     return {
@@ -407,6 +412,7 @@ export class FirstDaysService {
       stepDays: [d1, d2, d3],
       steps,
       homework,
+      extras,
       doneCount,
       totalCount,
       complete: doneCount === totalCount,
@@ -478,6 +484,26 @@ export class FirstDaysService {
       /** The days a homework can be set for — empty for anyone who can't set one now. */
       days,
     };
+  }
+
+  /**
+   * The joiner's additional homework — their own presentation videos, with any
+   * feedback. Not counted in their progress: it is optional, and never overdue.
+   */
+  private extrasView(rec: Rec, viewer: Viewer, today: string) {
+    const asHead = viewer.isHead || viewer.isHr;
+    const items = [...(rec.extras ?? [])]
+      .sort((a, b) => (a.addedAt?.getTime() ?? 0) - (b.addedAt?.getTime() ?? 0))
+      .map((x) => ({
+        id: String(x._id), title: x.title, day: x.day, dayNumber: dayNumber(rec.startDay, x.day),
+        video: fileOut(x.video),
+        link: x.link ? { url: x.link, host: videoLink(x.link)?.host ?? "Link" } : null,
+        addedAt: x.addedAt ?? null, updatedAt: x.updatedAt ?? null, versions: x.versions ?? 1,
+        feedback: (x.feedback ?? []).map((f) => ({ text: f.text, byName: f.byName || "Department head", at: f.at ?? null })),
+        can: [...(viewer.isJoiner ? ["newVersion"] : []), ...(asHead ? ["feedback"] : [])],
+      }));
+    // Added during the fifteen days; a new version of one already there, any time.
+    return { items, canAdd: viewer.isJoiner && today >= rec.startDay && today <= rec.endDay };
   }
 
   // ── The joiner's own steps ─────────────────────────────────────────────────
@@ -634,6 +660,78 @@ export class FirstDaysService {
       actor: userId,
     });
     return this.mineView(userId);
+  }
+
+  // ── Additional homework — the joiner's own presentation videos ─────────────
+
+  /** The video as it will be stored: the uploaded file, or a link we accept. */
+  private extraSource(input: ExtraSource, userId: string) {
+    if (input.video) return { video: { key: input.video.key, name: input.video.name, at: new Date(), by: userId }, link: "" };
+    const link = videoLink(input.link ?? "");
+    if (!link) throw fail("Paste a Google Drive, YouTube or Vimeo link to the video");
+    return { video: null, link: link.url };
+  }
+
+  /** Their head and HR, told a presentation came in. */
+  private async announceExtra(userId: string, name: string, title: string, again: boolean) {
+    const heads = (await headContactsFor(userId)).map((h) => String(h.userId));
+    const hr = (await watchersFor("onboardingTasks", undefined, "edit")).map(String);
+    const users = Array.from(new Set([...heads, ...hr])).filter((u) => u !== String(userId));
+    if (!users.length) return;
+    await notify({
+      users, kind: "reminder",
+      title: `${name} ${again ? "uploaded a new version of" : "handed in"} additional homework`,
+      body: title,
+      href: "/first-days/team",
+      actor: userId,
+    });
+  }
+
+  /** A new additional homework, on any day of the fifteen: a title and their video. */
+  async addExtra(userId: string, title: string, input: ExtraSource) {
+    const { rec, emp } = await this.mineOrFail(userId);
+    const today = todayInTz(rec.timeZone);
+    if (today > rec.endDay) throw fail(`Additional homework is added during your first fifteen days — they ended on ${fmtDay(rec.endDay)}`);
+    const name = title.trim().slice(0, 160) || "Presentation";
+    const now = new Date();
+    rec.extras.push({ title: name, day: today, ...this.extraSource(input, userId), addedAt: now, updatedAt: now, versions: 1 });
+    await rec.save();
+    await this.announceExtra(userId, emp.name ?? "Your new joiner", name, false);
+    return this.mineView(userId);
+  }
+
+  /** A new version of one — the new video replaces the old; the feedback on it stays. */
+  async newExtraVersion(userId: string, extraId: string, input: ExtraSource) {
+    const { rec, emp } = await this.mineOrFail(userId);
+    const x = (rec.extras ?? []).find((e) => String(e._id) === extraId);
+    if (!x) throw fail("That additional homework isn't in your guide", 404);
+    const src = this.extraSource(input, userId);
+    x.set("video", src.video);
+    x.set("link", src.link);
+    x.set("updatedAt", new Date());
+    x.set("versions", (x.versions ?? 1) + 1);
+    await rec.save();
+    await this.announceExtra(userId, emp.name ?? "Your new joiner", x.title, true);
+    return this.mineView(userId);
+  }
+
+  /** The head's (or HR's) feedback on a joiner's additional homework; the joiner is told. */
+  async extraFeedback(employeeId: string, extraId: string, userId: string, isHr: boolean, text: string) {
+    const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
+    const x = (rec.extras ?? []).find((e) => String(e._id) === extraId);
+    if (!x) throw fail("That additional homework isn't in their guide", 404);
+    const note = text.trim().slice(0, 2000);
+    if (note.length < 2) throw fail("Write your feedback first");
+    const byName = (await User.findById(userId).select("name").lean<{ name?: string } | null>())?.name ?? "";
+    x.feedback.push({ text: note, by: userId, byName, at: new Date() });
+    await rec.save();
+    await notify({
+      users: [rec.user], kind: "reminder",
+      title: `Feedback on “${x.title}”`,
+      body: `${byName || "Your department head"}: ${note.slice(0, 140)}`,
+      href: "/first-days", actor: userId,
+    });
+    return this.view(rec, emp, viewer);
   }
 
   async submitRolePlay(userId: string, link: string) {

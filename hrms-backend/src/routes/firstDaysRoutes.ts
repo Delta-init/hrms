@@ -5,9 +5,10 @@ import {
   getTeamFirstDays, confirmSessionAsHead, addHomework, setHomeworkQuestion, addHomeworkToMany, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
   addVideoHomework, setHomeworkVideo, addVideoHomeworkToMany,
   listVimeoVideos, addVimeoHomework, setHomeworkVimeo, addVimeoHomeworkToMany,
+  addMyExtraVideo, addMyExtraLink, myExtraVideo, myExtraLink, giveExtraFeedback,
 } from "../controllers/firstDaysController.js";
 import { authenticate } from "../middleware/auth.js";
-import { uploadDocumentSingle, uploadVideoSingle } from "../middleware/upload.js";
+import { uploadClipSingle, uploadDocumentSingle, uploadVideoSingle } from "../middleware/upload.js";
 
 /**
  * A new joiner's first days. No module permission on any route: the joiner,
@@ -23,6 +24,11 @@ router.post("/mine/homework/:itemId", uploadDocumentSingle, answerMyHomework);
 router.post("/mine/homework/:itemId/video/start", startMyHomeworkVideo);
 router.post("/mine/homework/:itemId/video/beat", myHomeworkVideoBeat);
 router.post("/mine/homework/:itemId/write-up", uploadDocumentSingle, submitMyWriteUp);
+// Additional homework: the joiner's own presentation videos.
+router.post("/mine/extras/video", uploadClipSingle, addMyExtraVideo);
+router.post("/mine/extras/link", addMyExtraLink);
+router.post("/mine/extras/:extraId/video", uploadClipSingle, myExtraVideo);
+router.post("/mine/extras/:extraId/link", myExtraLink);
 router.post("/mine/role-play", submitMyRolePlay);
 router.post("/mine/call-notes", submitMyCallNotes);
 router.post("/mine/calls", myCallsDone);
@@ -47,5 +53,6 @@ router.post("/:employeeId/homework/:itemId/video", uploadVideoSingle, setHomewor
 router.post("/:employeeId/homework/:itemId/vimeo", setHomeworkVimeo);
 router.post("/:employeeId/access", setToolAccess);
 router.post("/:employeeId/clients", assignClients);
+router.post("/:employeeId/extras/:extraId/feedback", giveExtraFeedback);
 
 export default router;

@@ -11,6 +11,7 @@ import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
 import { AddHomeworkDialog } from "@/components/firstDays/AddHomeworkDialog";
 import { FileLink, UploadButton } from "@/components/firstDays/FirstDaysFiles";
 import { VideoHomeworkBody } from "@/components/firstDays/VideoHomework";
+import { AdditionalHomework } from "@/components/firstDays/AdditionalHomework";
 import {
   useAnswerHomework, useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead,
   useSetHomeworkQuestion, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
@@ -67,6 +68,7 @@ export function FirstDaysSteps({ view }: { view: FirstDaysView }) {
         );
       })}
       <HomeworkSection view={view} />
+      <AdditionalHomework view={view} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { FirstDaysService } from "../services/firstDaysService.js";
 import { folderVideo, folderVideos, vimeoConnected } from "../services/vimeoService.js";
 import { departmentsHeadedBy } from "../services/departmentHeadService.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
-import { documentExt } from "../middleware/upload.js";
+import { clipExt, documentExt } from "../middleware/upload.js";
 import { mp4Duration } from "./agreementController.js";
 import { hasPermission } from "../middleware/permissions.js";
 import { getOrgId } from "../utils/orgContext.js";
@@ -83,6 +83,48 @@ export const submitMyWriteUp = route(async (req, res) => {
   if (!parsed.success) { sendError(res, "Write what you learned", 400); return; }
   const file = req.file ? await storeDocument(req, req.user!.userId) : null;
   sendSuccess(res, "Write-up handed in", await service.submitWriteUp(req.user!.userId, req.params.itemId, parsed.data.notes, file));
+});
+
+// ── Additional homework — the joiner's own presentation videos ──────────────
+
+const extraTitle = z.object({ title: z.string().trim().min(1, "Give it a title").max(160) });
+
+/** The joiner's own recording into storage, as the format it came in. */
+async function storeClip(req: AuthenticatedRequest) {
+  const file = req.file!;
+  const key = attachmentKey(getOrgId(), req.user!.userId, "first-days", clipExt(file.mimetype), Date.now());
+  await putObject(key, file.buffer, file.mimetype);
+  return { key, name: (file.originalname || "presentation").slice(0, 200) };
+}
+
+export const addMyExtraVideo = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Choose your video", 400); return; }
+  const t = extraTitle.safeParse(req.body ?? {});
+  if (!t.success) { sendError(res, "Give it a title", 400); return; }
+  sendSuccess(res, "Handed in", await service.addExtra(req.user!.userId, t.data.title, { video: await storeClip(req) }));
+});
+
+export const addMyExtraLink = route(async (req, res) => {
+  const parsed = extraTitle.extend({ link: z.string().trim().min(1).max(500) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, parsed.error.issues[0]?.message ?? "Give it a title and paste the link", 400); return; }
+  sendSuccess(res, "Handed in", await service.addExtra(req.user!.userId, parsed.data.title, { link: parsed.data.link }));
+});
+
+export const myExtraVideo = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Choose your video", 400); return; }
+  sendSuccess(res, "New version handed in", await service.newExtraVersion(req.user!.userId, req.params.extraId, { video: await storeClip(req) }));
+});
+
+export const myExtraLink = route(async (req, res) => {
+  const parsed = z.object({ link: z.string().trim().min(1).max(500) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Paste the link", 400); return; }
+  sendSuccess(res, "New version handed in", await service.newExtraVersion(req.user!.userId, req.params.extraId, { link: parsed.data.link }));
+});
+
+export const giveExtraFeedback = route(async (req, res) => {
+  const parsed = z.object({ text: z.string().max(2000) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Write your feedback", 400); return; }
+  sendSuccess(res, "Feedback sent", await service.extraFeedback(req.params.employeeId, req.params.extraId, req.user!.userId, isHr(req), parsed.data.text));
 });
 
 export const submitMyRolePlay = route(async (req, res) => {

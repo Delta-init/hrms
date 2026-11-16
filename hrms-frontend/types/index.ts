@@ -3443,6 +3443,24 @@ export interface FirstDaysHomework {
   can: string[];
 }
 
+/** An additional homework: the joiner's own presentation video, with feedback. Optional; not counted. */
+export interface FirstDaysExtra {
+  id: string;
+  title: string;
+  day: string;
+  dayNumber: number;
+  /** Uploaded to HRMS… */
+  video: FirstDaysFile | null;
+  /** …or linked: Google Drive, YouTube or Vimeo. */
+  link: { url: string; host: string } | null;
+  addedAt: string | null;
+  updatedAt: string | null;
+  versions: number;
+  feedback: { text: string; byName: string; at: string | null }[];
+  /** Joiner: newVersion. Head or HR: feedback. */
+  can: string[];
+}
+
 export interface FirstDaysView {
   employee: {
     _id: string; name: string; employeeCode: string; designation: string;
@@ -3469,6 +3487,8 @@ export interface FirstDaysView {
     /** The days a homework can be set for; empty when canAdd is false. */
     days: { key: string; number: number }[];
   };
+  /** The joiner's own additional homework. canAdd: the joiner, during the fifteen days. */
+  extras: { items: FirstDaysExtra[]; canAdd: boolean };
   /** Steps and homework together. */
   doneCount: number;
   totalCount: number;

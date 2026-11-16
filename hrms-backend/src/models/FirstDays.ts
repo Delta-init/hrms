@@ -70,6 +70,35 @@ const homeworkSchema = new Schema({
   notifiedAt: { type: Date, default: null },
 });
 
+/**
+ * An additional homework: something the joiner hands in of their own accord —
+ * their presentation video — on any day of the fifteen. Optional: never
+ * counted, never overdue. The video is uploaded or linked (Google Drive,
+ * YouTube, Vimeo); a new version replaces it. Their head and HR can leave
+ * feedback, kept as a list so nobody's note overwrites another's.
+ */
+const extraSchema = new Schema({
+  title: { type: String, trim: true, maxlength: 160, required: true },
+  /** The day it was added, "YYYY-MM-DD" in the joiner's zone. */
+  day: { type: String, required: true },
+  video: { type: fileSchema, default: null },
+  link: { type: String, trim: true, maxlength: 500, default: "" },
+  addedAt: { type: Date, default: Date.now },
+  /** When the latest version came in. */
+  updatedAt: { type: Date, default: Date.now },
+  versions: { type: Number, default: 1 },
+  feedback: {
+    type: [{
+      text: { type: String, trim: true, maxlength: 2000, required: true },
+      by: { type: Schema.Types.ObjectId, ref: "User", default: null },
+      byName: { type: String, default: "" },
+      at: { type: Date, default: Date.now },
+      _id: false,
+    }],
+    default: [],
+  },
+});
+
 const firstDaysSchema = new Schema(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -93,6 +122,8 @@ const firstDaysSchema = new Schema(
      * See utils/homework.ts for how they are read.
      */
     homeworks: { type: [homeworkSchema], default: [] },
+    /** The joiner's own additional homework — their presentation videos. */
+    extras: { type: [extraSchema], default: [] },
     /**
      * The two fixed slots from before the list: the day-1 homework, handed back
      * on day 2, and a day-2 one, handed back on day 3. No new homework goes
