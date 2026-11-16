@@ -49,15 +49,13 @@ const upload = (url: string, file: File, fields: Record<string, string> = {}) =>
   return api.post<ApiResponse<FirstDaysView>>(url, form, { headers: { "Content-Type": "multipart/form-data" } });
 };
 
-/** 1: the day-1 homework, handed back on day 2. 2: the optional day-2 one, handed back on day 3. */
-export type HomeworkDay = 1 | 2;
-
 // ── The joiner ──
 export const useConfirmMySession = () =>
   useStep<void>(async () => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/session")).data.data!, "Session confirmed", "Could not confirm the session");
-export const useHandInHomework = () =>
-  useStep(async ({ file, day = 1 }: { file: File; day?: HomeworkDay }) =>
-    (await upload("/first-days/mine/homework", file, { day: String(day) })).data.data!, "Homework handed in", "Could not upload your homework");
+/** The joiner's answer to one homework, or a new version of it. */
+export const useAnswerHomework = () =>
+  useStep(async ({ itemId, file }: { itemId: string; file: File }) =>
+    (await upload(`/first-days/mine/homework/${encodeURIComponent(itemId)}`, file)).data.data!, "Answer handed in", "Could not upload your answer");
 export const useSubmitRolePlay = () =>
   useStep(async (link: string) => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/role-play", { link })).data.data!, "Role-play handed in", "Could not save the link");
 export const useSubmitCallNotes = () =>
@@ -68,17 +66,23 @@ export const useCallsDone = () =>
 // ── Heads and HR ──
 export const useConfirmSessionAsHead = () =>
   useStep(async (employeeId: string) => (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/session`)).data.data!, "Session confirmed", "Could not confirm the session");
-export const useSendHomework = () =>
-  useStep(async ({ employeeId, file, day = 1 }: { employeeId: string; file: File; day?: HomeworkDay }) =>
-    (await upload(`/first-days/${employeeId}/homework`, file, { day: String(day) })).data.data!, "Homework sent", "Could not send the homework");
+/** A homework for one of the joiner's days, with its question document. */
+export const useAddHomework = () =>
+  useStep(async ({ employeeId, title, day, file }: { employeeId: string; title: string; day: string; file: File }) =>
+    (await upload(`/first-days/${employeeId}/homework`, file, { title, day })).data.data!, "Homework sent", "Could not send the homework");
+/** Replace a homework's question document, or attach one to an answer kept from before. */
+export const useSetHomeworkQuestion = () =>
+  useStep(async ({ employeeId, itemId, file }: { employeeId: string; itemId: string; file: File }) =>
+    (await upload(`/first-days/${employeeId}/homework/${encodeURIComponent(itemId)}/question`, file)).data.data!, "Question saved", "Could not save the question");
 
-/** One homework file to several joiners; resolves with how each went. */
-export const useSendHomeworkToMany = () => {
+/** One homework to several joiners, for the same date; resolves with how each went. */
+export const useAddHomeworkToMany = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ employeeIds, file, day }: { employeeIds: string[]; file: File; day: HomeworkDay }) => {
+    mutationFn: async ({ employeeIds, title, day, file }: { employeeIds: string[]; title: string; day: string; file: File }) => {
       const form = new FormData();
-      form.append("day", String(day));
+      form.append("title", title);
+      form.append("day", day);
       form.append("employeeIds", JSON.stringify(employeeIds));
       form.append("file", file);
       const res = await api.post<ApiResponse<HomeworkSendResult[]>>("/first-days/homework/many", form, { headers: { "Content-Type": "multipart/form-data" } });

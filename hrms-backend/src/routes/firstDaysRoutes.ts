@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
-  getMyFirstDays, confirmMySession, handInMyHomework, submitMyRolePlay, submitMyCallNotes, myCallsDone, startMyTeamVideo, myTeamVideoBeat,
-  getTeamFirstDays, confirmSessionAsHead, sendHomework, sendHomeworkToMany, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
+  getMyFirstDays, confirmMySession, answerMyHomework, submitMyRolePlay, submitMyCallNotes, myCallsDone, startMyTeamVideo, myTeamVideoBeat,
+  getTeamFirstDays, confirmSessionAsHead, addHomework, setHomeworkQuestion, addHomeworkToMany, setToolAccess, assignClients, getTeamVideo, uploadTeamVideo,
 } from "../controllers/firstDaysController.js";
 import { authenticate } from "../middleware/auth.js";
 import { uploadDocumentSingle, uploadVideoSingle } from "../middleware/upload.js";
@@ -16,7 +16,7 @@ router.use(authenticate);
 
 router.get("/mine", getMyFirstDays);
 router.post("/mine/session", confirmMySession);
-router.post("/mine/homework", uploadDocumentSingle, handInMyHomework);
+router.post("/mine/homework/:itemId", uploadDocumentSingle, answerMyHomework);
 router.post("/mine/role-play", submitMyRolePlay);
 router.post("/mine/call-notes", submitMyCallNotes);
 router.post("/mine/calls", myCallsDone);
@@ -25,12 +25,13 @@ router.post("/mine/team-video/beat", myTeamVideoBeat);
 
 router.get("/team", getTeamFirstDays);
 // Several joiners at once — each still checked as if sent on its own.
-router.post("/homework/many", uploadDocumentSingle, sendHomeworkToMany);
+router.post("/homework/many", uploadDocumentSingle, addHomeworkToMany);
 router.get("/team-video/:departmentId", getTeamVideo);
 router.post("/team-video/:departmentId", uploadVideoSingle, uploadTeamVideo);
 
 router.post("/:employeeId/session", confirmSessionAsHead);
-router.post("/:employeeId/homework", uploadDocumentSingle, sendHomework);
+router.post("/:employeeId/homework", uploadDocumentSingle, addHomework);
+router.post("/:employeeId/homework/:itemId/question", uploadDocumentSingle, setHomeworkQuestion);
 router.post("/:employeeId/access", setToolAccess);
 router.post("/:employeeId/clients", assignClients);
 

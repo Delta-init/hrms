@@ -18,19 +18,24 @@ import {
   addDays, dayNumber, isChatGptShareLink, joiningDayKey, lastRedDay, workingDayKeys,
 } from "../utils/firstDays.js";
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
+import { canAnswer, homeworkEntries, homeworkStatus } from "../utils/homework.js";
 import { env } from "../config/env.js";
 
 /**
  * A new joiner's first fifteen days: a red portal, and the steps of days 1 to
  * 3 laid out for them, their department head and HR.
  *
- * Day 1 — the induction video (done when watched), the 10:30–1 pm session
- * (done when both the joiner and the head confirm it), and the homework the
- * head sends. Day 2 — the homework handed back, the team's video watched, in
- * the teams HR picks an afternoon of listening in on training calls written up
- * by the joiner, and for sales teams a ChatGPT role-play with the chat's link. Day 3 — 3CX and
- * Zoho from HR, and for sales teams the CRM from the head and the first cold
- * calls on the team's default clients.
+ * Day 1 — the induction video (done when watched) and the 10:30–1 pm session
+ * (done when both the joiner and the head confirm it). Day 2 — the team's
+ * video watched, in the teams HR picks an afternoon of listening in on
+ * training calls written up by the joiner, and for sales teams a ChatGPT
+ * role-play with the chat's link. Day 3 — 3CX and Zoho from HR, and for sales
+ * teams the CRM from the head and the first cold calls on the team's default
+ * clients.
+ *
+ * And homework, on any of the fifteen days: the head sets it with a question
+ * document, and the joiner answers it from that day — see utils/homework.ts.
+ * One for day 1 is expected; the rest are as many as the head sets.
  *
  * HR can do anything a head can, which covers the departments with no head.
  */
@@ -49,18 +54,11 @@ When I type END, step out of character and give me feedback: what I did well, wh
 
 const fail = (message: string, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 
-export type StepKey =
-  | "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay"
-  | "homework2" | "homework2Result" | "access" | "coldCalls";
-/** "optional": a step that may never happen — the day-2 homework nobody sent. Never counted, never overdue. */
-export type StepStatus = "done" | "todo" | "waiting" | "overdue" | "optional";
+export type StepKey = "induction" | "session" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
+export type StepStatus = "done" | "todo" | "waiting" | "overdue";
 
-/** Which homework: the day-1 one, handed back on day 2, or the optional day-2 one, handed back on day 3. */
-export type HomeworkDay = 1 | 2;
-const HOMEWORK = {
-  1: { set: "homework", result: "homeworkResult" },
-  2: { set: "homework2", result: "homework2Result" },
-} as const;
+/** A homework as it arrives: the head's question document, stored. */
+type StoredFile = { key: string; name: string };
 
 /** Who is looking — what they may do follows from it. */
 export interface Viewer { userId: string; isJoiner: boolean; isHead: boolean; isHr: boolean }
@@ -153,7 +151,40 @@ export class FirstDaysService {
       const had = await FirstDays.exists(scoped({ employee: emp._id }));
       if ((await this.ensureFor(emp)) && !had) started++;
     }
+    await this.announceDueHomework();
     return { started };
+  }
+
+  /**
+   * Homework set ahead for a day that has now come: the joiner is told that
+   * morning. Each one is claimed before the message goes, so two runs at once
+   * (the morning job and a head opening the page) never tell them twice.
+   */
+  private async announceDueHomework() {
+    const pending = await FirstDays.find(scoped({ homeworks: { $elemMatch: { notifiedAt: null } } }))
+      .select("user employee timeZone homeworks").lean();
+    for (const rec of pending) {
+      const today = todayInTz(rec.timeZone ?? "Asia/Dubai");
+      const opening = (rec.homeworks ?? []).filter((h) => !h.notifiedAt && h.day <= today);
+      if (!opening.length) continue;
+      const emp = await Employee.findById(rec.employee).select("status").lean<{ status?: string } | null>();
+      if (!emp || hasLeft(emp.status)) continue;
+      const claimed: string[] = [];
+      for (const h of opening) {
+        const r = await FirstDays.updateOne(
+          { _id: rec._id, homeworks: { $elemMatch: { _id: h._id, notifiedAt: null } } },
+          { $set: { "homeworks.$.notifiedAt": new Date() } }
+        );
+        if (r.modifiedCount) claimed.push(h.title);
+      }
+      if (!claimed.length) continue;
+      await notify({
+        users: [rec.user], kind: "reminder",
+        title: claimed.length === 1 ? `New homework: ${claimed[0]}` : `${claimed.length} new homework today`,
+        body: "Upload your answer today — what you did, as a file.",
+        href: "/first-days",
+      });
+    }
   }
 
   /** The joiner, their head and HR, told on day 1. */
@@ -180,7 +211,7 @@ export class FirstDaysService {
       users: heads,
       kind: "reminder",
       title: `${name} ${today ? "joins" : "joined"} your team ${when}`,
-      body: "Their day-1 session runs 10:30 to 1 pm — confirm it afterwards, then send their homework.",
+      body: "Their day-1 session runs 10:30 to 1 pm — confirm it afterwards, then add their day-1 homework.",
       href: "/first-days/team",
     });
     await notify({
@@ -259,8 +290,6 @@ export class FirstDaysService {
     const rolePlayOpens = zonedTimeToUtc(d2, ROLE_PLAY_OPENS_AT, tz);
     const callsOpen = zonedTimeToUtc(d2, CALL_LISTENING_OPENS_AT, tz);
     const d2Opens = zonedTimeToUtc(d2, "00:00", tz);
-    const hw2Sent = !!rec.homework2?.key;
-    const hw2In = !!rec.homework2Result?.key;
     const access = rec.access;
 
     const steps = [
@@ -283,25 +312,6 @@ export class FirstDaysService {
           ...(viewer.isJoiner && !rec.session?.joinerAt ? ["confirm"] : []),
           ...(asHead && !rec.session?.headAt ? ["confirmHead"] : []),
         ],
-      },
-      {
-        key: "homework" as StepKey, day: 1, dueDay: d1,
-        title: "Homework from your department head",
-        detail: "Your head sends it as a file after the session. Hand it back tomorrow.",
-        status: status(!!rec.homework?.key, d1, false),
-        file: fileOut(rec.homework),
-        // Replaceable at any time, even once handed back: the joiner is told
-        // and can hand in again; what they already handed in still counts.
-        can: asHead ? [rec.homework?.key ? "replace" : "send"] : [],
-      },
-      {
-        key: "homeworkResult" as StepKey, day: 2, dueDay: d2,
-        title: "Hand in your homework",
-        detail: "Upload what you did as a file.",
-        status: status(!!rec.homeworkResult?.key, d2, !rec.homework?.key),
-        waitingFor: rec.homework?.key ? null : "the homework from your department head",
-        file: fileOut(rec.homeworkResult),
-        can: viewer.isJoiner && rec.homework?.key ? [rec.homeworkResult?.key ? "replace" : "upload"] : [],
       },
       {
         key: "teamVideo" as StepKey, day: 2, dueDay: d2,
@@ -333,39 +343,6 @@ export class FirstDaysService {
         link: rec.rolePlay?.link || null,
         can: viewer.isJoiner && now >= rolePlayOpens ? [rec.rolePlay?.link ? "replace" : "submit"] : [],
       }] : []),
-      // The day-2 homework. The head's file, when there is one — heads also
-      // hand a second homework out in person, so the joiner's place to hand
-      // it in is there from day 2 either way. Nothing sent and nothing handed
-      // in is "optional": not counted, never overdue.
-      ...(hw2Sent ? [{
-        key: "homework2" as StepKey, day: 2, dueDay: d2,
-        title: "Day-2 homework from your department head",
-        detail: `Hand it back by ${fmtDay(d3)}.`,
-        status: "done" as StepStatus,
-        file: fileOut(rec.homework2),
-        can: asHead ? ["replace"] : [],
-      }] : asHead ? [{
-        key: "homework2" as StepKey, day: 2, dueDay: d2,
-        title: "Day-2 homework (optional)",
-        detail: "If your department sets a second homework, send it here — or hand it out in person; they can hand it in here either way, by day 3.",
-        status: "optional" as StepStatus,
-        file: null,
-        can: ["send"],
-      }] : []),
-      ...(viewer.isJoiner || hw2Sent || hw2In ? [{
-        key: "homework2Result" as StepKey, day: 3, dueDay: d3,
-        title: viewer.isJoiner ? "Hand in your day-2 homework" : "Day-2 homework handed in",
-        detail: !viewer.isJoiner
-          ? hw2Sent ? `Due back by ${fmtDay(d3)}.` : "Handed in for a homework given outside HRMS."
-          : hw2Sent
-          ? "Upload what you did as a file."
-          : now < d2Opens
-            ? `If your department head gives you a second homework, hand it in here from ${fmtDay(d2)}.`
-            : "If your department head gave you a second homework, upload what you did here.",
-        status: hw2In ? "done" as StepStatus : hw2Sent ? status(false, d3, false) : "optional" as StepStatus,
-        file: fileOut(rec.homework2Result),
-        can: viewer.isJoiner && (hw2Sent || now >= d2Opens) ? [hw2In ? "replace" : "upload"] : [],
-      }] : []),
       {
         key: "access" as StepKey, day: 3, dueDay: d3,
         title: sales ? "3CX, Zoho and CRM access" : "3CX and Zoho access",
@@ -395,9 +372,9 @@ export class FirstDaysService {
       }] : []),
     ].map((s) => ({ waitingFor: null as string | null, opensAt: null as Date | null, ...s }));
 
-    // An optional step nobody took up is not part of the count either way.
-    const counted = steps.filter((s) => s.status !== "optional");
-    const doneCount = counted.filter((s) => s.status === "done").length;
+    const homework = this.homeworkView(rec, viewer, today);
+    const doneCount = steps.filter((s) => s.status === "done").length + homework.answered;
+    const totalCount = steps.length + homework.total;
     return {
       employee: {
         _id: emp._id, name: emp.name ?? "—", employeeCode: emp.employeeCode ?? "", designation: emp.designation ?? "",
@@ -408,12 +385,68 @@ export class FirstDaysService {
       day: dayNumber(rec.startDay, today),
       of: FIRST_DAYS_LENGTH,
       redActive: today >= rec.startDay && today <= rec.endDay,
+      today,
       stepDays: [d1, d2, d3],
       steps,
+      homework,
       doneCount,
-      totalCount: counted.length,
-      complete: doneCount === counted.length,
+      totalCount,
+      complete: doneCount === totalCount,
       viewer: { isJoiner: viewer.isJoiner, isHead: viewer.isHead, isHr: viewer.isHr },
+    };
+  }
+
+  /**
+   * The homework list as this viewer sees it. Each homework counts as one step.
+   *
+   * Day 1's is expected: until the head sets one for that day, a stand-in
+   * says so — overdue for the head once day 1 has passed, and for the joiner
+   * simply waiting, since it is not theirs to do. A homework for a day still
+   * ahead shows the joiner that it is coming, not what it asks.
+   */
+  private homeworkView(rec: Rec, viewer: Viewer, today: string) {
+    const tz = rec.timeZone;
+    const d1 = rec.stepDays[0] ?? rec.startDay;
+    const asHead = viewer.isHead || viewer.isHr;
+    // Set during the fifteen days, for one of them.
+    const mayAdd = asHead && today >= rec.startDay && today <= rec.endDay;
+    const entries = homeworkEntries(rec, tz);
+
+    const items = entries.map((e) => {
+      const { status, late } = homeworkStatus(e, today, tz);
+      const ahead = today < e.day;
+      return {
+        id: e.id, placeholder: false, title: e.title, day: e.day, dayNumber: dayNumber(rec.startDay, e.day), dueDay: e.dueDay,
+        status: status as StepStatus, late,
+        question: viewer.isJoiner && ahead ? null : fileOut(e.question),
+        answer: fileOut(e.answer),
+        opensAt: ahead ? zonedTimeToUtc(e.day, "00:00", tz) : null,
+        // Kept from before questions were required: the answer stands, and the head can put the question with it.
+        missingQuestion: !e.question,
+        can: [
+          ...(viewer.isJoiner && canAnswer(e, today) ? [e.answer ? "replaceAnswer" : "answer"] : []),
+          ...(asHead ? [e.question ? "replaceQuestion" : "attachQuestion"] : []),
+        ],
+      };
+    });
+    if (!entries.some((e) => e.day === d1)) {
+      items.unshift({
+        id: "day-1", placeholder: true, title: "Day-1 homework", day: d1, dayNumber: 1, dueDay: d1,
+        status: (viewer.isJoiner ? "waiting" : today > d1 ? "overdue" : "todo") as StepStatus, late: false,
+        question: null, answer: null, opensAt: null, missingQuestion: false,
+        can: mayAdd ? ["add"] : [],
+      });
+    }
+
+    const days: { key: string; number: number }[] = [];
+    if (mayAdd) for (let k = rec.startDay; k <= rec.endDay; k = addDays(k, 1)) days.push({ key: k, number: dayNumber(rec.startDay, k) });
+    return {
+      items,
+      answered: items.filter((i) => i.status === "done").length,
+      total: items.length,
+      canAdd: mayAdd,
+      /** The days a homework can be set for — empty for anyone who can't set one now. */
+      days,
     };
   }
 
@@ -445,7 +478,7 @@ export class FirstDaysService {
           users: (await headContactsFor(userId)).map((h) => h.userId),
           kind: "reminder",
           title: `${name} confirmed their day-1 session`,
-          body: "Confirm it on your side too, then send their homework.",
+          body: "Confirm it on your side too, then add their day-1 homework.",
           href: "/first-days/team",
           actor: userId,
         });
@@ -454,24 +487,33 @@ export class FirstDaysService {
     return this.mineView(userId);
   }
 
-  /** Hand back the day-1 or day-2 homework, or replace what was handed back. */
-  async handInHomework(userId: string, file: { key: string; name: string }, day: HomeworkDay = 1) {
+  /**
+   * The joiner's answer to one homework, or a new version of it. Only once its
+   * question is on file and its day has come; late is accepted, and marked.
+   */
+  async answerHomework(userId: string, itemId: string, file: StoredFile) {
     const { rec, emp } = await this.mineOrFail(userId);
-    const slot = HOMEWORK[day];
-    // Day 1's needs the head's file first. Day 2's can come in without one —
-    // heads hand it out in person too — but not before the second day starts.
-    if (day === 1 && !rec.homework?.key) throw fail("Your homework hasn't been sent yet");
-    if (day === 2 && !rec.homework2?.key && new Date() < zonedTimeToUtc(rec.stepDays[1] ?? rec.startDay, "00:00", rec.timeZone)) {
-      throw fail("The day-2 homework is handed in from your second day");
+    const today = todayInTz(rec.timeZone);
+    const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
+    if (!entry) throw fail("That homework isn't in your guide", 404);
+    if (!entry.question) throw fail("Your department head hasn't added the question for this homework yet");
+    if (!canAnswer(entry, today)) throw fail(`This homework opens on ${fmtDay(entry.day)}`);
+    const again = !!entry.answer;
+    const now = new Date();
+    const stored = { key: file.key, name: file.name, at: now, by: userId };
+    if (entry.legacy) {
+      rec.set(entry.legacy === 1 ? "homeworkResult" : "homework2Result", stored);
+    } else {
+      const h = rec.homeworks.id(itemId)!;
+      h.set("answer", stored);
+      if (!h.answeredAt) h.set("answeredAt", now);
     }
-    const again = !!rec.get(`${slot.result}.key`);
-    rec.set(slot.result, { key: file.key, name: file.name, at: new Date(), by: userId });
     await rec.save();
     await notify({
       users: (await headContactsFor(userId)).map((h) => h.userId),
       kind: "reminder",
-      title: `${emp.name ?? "Your new joiner"} ${again ? "handed in a new version of" : "handed in"} their ${day === 2 ? "day-2 " : ""}homework`,
-      body: file.name,
+      title: `${emp.name ?? "Your new joiner"} ${again ? "handed in a new version of" : "answered"} “${entry.title}”`,
+      body: today > entry.dueDay && !again ? `${file.name} · late — it was due ${fmtDay(entry.dueDay)}` : file.name,
       href: "/first-days/team",
       actor: userId,
     });
@@ -614,40 +656,76 @@ export class FirstDaysService {
   }
 
   /**
-   * Send the day-1 or day-2 homework, or replace it — at any time, even once
-   * it has been handed back. The joiner is told either way; what they handed
-   * in stays and still counts, and they can hand in again if it needs to change.
+   * Set a homework for one of the joiner's fifteen days, with its question
+   * document. Only while those days last. For today, or a day already gone,
+   * the joiner is told now and can answer at once — due today, never late for
+   * the head's lateness; for a day ahead, they are told that morning.
    */
-  async sendHomework(employeeId: string, userId: string, isHr: boolean, file: { key: string; name: string }, day: HomeworkDay = 1) {
+  async addHomework(employeeId: string, userId: string, isHr: boolean, input: { title: string; day: string; file: StoredFile }) {
     const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
-    const slot = HOMEWORK[day];
-    const replacing = !!rec.get(`${slot.set}.key`);
-    const handedIn = !!rec.get(`${slot.result}.key`);
-    rec.set(slot.set, { key: file.key, name: file.name, at: new Date(), by: userId });
-    await rec.save();
-    const dueDay = rec.stepDays[day] ?? rec.startDay;
-    const which = day === 2 ? "day-2 homework" : "homework";
-    await notify({
-      users: [rec.user], kind: "reminder",
-      title: replacing ? `Your ${which} has been updated` : `Your ${which} is here`,
-      body: handedIn
-        ? "What you handed in still counts. If your answer needs changing, upload it again."
-        : `Hand it in by ${fmtDay(dueDay)} — upload what you did as a file.`,
-      href: "/first-days", actor: userId,
+    const name = emp.name ?? "This joiner";
+    const today = todayInTz(rec.timeZone);
+    if (today > rec.endDay) throw fail(`${name}'s fifteen days ended on ${fmtDay(rec.endDay)} — homework is set during them`);
+    if (input.day < rec.startDay || input.day > rec.endDay) {
+      throw fail(`Pick a day from ${fmtDay(rec.startDay)} to ${fmtDay(rec.endDay)} — ${name}'s fifteen days`);
+    }
+    const title = input.title.trim().slice(0, 160) || "Homework";
+    const now = new Date();
+    const opensNow = input.day <= today;
+    rec.homeworks.push({
+      title, day: input.day,
+      question: { key: input.file.key, name: input.file.name, at: now, by: userId },
+      addedAt: now, addedBy: userId, notifiedAt: opensNow ? now : null,
     });
+    await rec.save();
+    if (opensNow) {
+      await notify({
+        users: [rec.user], kind: "reminder",
+        title: `New homework: ${title}`,
+        body: "Upload your answer today — what you did, as a file.",
+        href: "/first-days", actor: userId,
+      });
+    }
     return this.view(rec, emp, viewer);
   }
 
   /**
-   * One homework file to several joiners at once. Each is checked on its own —
-   * a head only reaches their own department's joiners — and one refusal does
-   * not stop the rest; the answer says how each went.
+   * Replace a homework's question document — at any time, even once answered —
+   * or attach one to an answer kept from before questions were required. The
+   * joiner is told if the homework is open; an answer already in still counts.
    */
-  async sendHomeworkToMany(employeeIds: string[], userId: string, isHr: boolean, file: { key: string; name: string }, day: HomeworkDay) {
+  async setHomeworkQuestion(employeeId: string, itemId: string, userId: string, isHr: boolean, file: StoredFile) {
+    const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
+    const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
+    if (!entry) throw fail("That homework isn't in their guide", 404);
+    const stored = { key: file.key, name: file.name, at: new Date(), by: userId };
+    if (entry.legacy) rec.set(entry.legacy === 1 ? "homework" : "homework2", stored);
+    else rec.homeworks.id(itemId)!.set("question", stored);
+    await rec.save();
+    if (todayInTz(rec.timeZone) >= entry.day) {
+      await notify({
+        users: [rec.user], kind: "reminder",
+        title: entry.question ? `The question for “${entry.title}” has been updated` : `The question for “${entry.title}” is on file`,
+        body: entry.answer
+          ? "What you handed in still counts. If your answer needs changing, upload it again."
+          : "Upload your answer as a file.",
+        href: "/first-days", actor: userId,
+      });
+    }
+    return this.view(rec, emp, viewer);
+  }
+
+  /**
+   * One homework to several joiners at once, for the same date. Each is
+   * checked on its own — a head only reaches their own department's joiners,
+   * and the date must fall in that joiner's fifteen days — and one refusal
+   * does not stop the rest; the answer says how each went.
+   */
+  async addHomeworkToMany(employeeIds: string[], userId: string, isHr: boolean, input: { title: string; day: string; file: StoredFile }) {
     const results: { employeeId: string; name: string; ok: boolean; message: string }[] = [];
-    for (const employeeId of [...new Set(employeeIds)]) {
+    for (const employeeId of Array.from(new Set(employeeIds))) {
       try {
-        const v = await this.sendHomework(employeeId, userId, isHr, file, day);
+        const v = await this.addHomework(employeeId, userId, isHr, input);
         results.push({ employeeId, name: v.employee.name, ok: true, message: "Sent" });
       } catch (e) {
         const emp = await loadEmployee({ _id: employeeId }).catch(() => null);

@@ -22,6 +22,24 @@ const tickSchema = new Schema(
   { _id: false }
 );
 
+/**
+ * One homework from the department head (or HR): for a day of the fifteen, with
+ * a question document, and the joiner's answer once that day comes.
+ */
+const homeworkSchema = new Schema({
+  title: { type: String, trim: true, maxlength: 160, required: true },
+  /** "YYYY-MM-DD" in the joiner's zone. Answers open on it; on time means by it. */
+  day: { type: String, required: true },
+  question: { type: fileSchema, required: true },
+  answer: { type: fileSchema, default: null },
+  /** The first answer's time — replacing it later doesn't make it late. */
+  answeredAt: { type: Date, default: null },
+  addedAt: { type: Date, default: Date.now },
+  addedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  /** When the joiner was told: at once for today or a day gone, that morning for a day ahead. */
+  notifiedAt: { type: Date, default: null },
+});
+
 const firstDaysSchema = new Schema(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -40,12 +58,19 @@ const firstDaysSchema = new Schema(
       headAt: { type: Date, default: null },
       headBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     },
+    /**
+     * The homework, as many as the head sets, each for a day of the fifteen.
+     * See utils/homework.ts for how they are read.
+     */
+    homeworks: { type: [homeworkSchema], default: [] },
+    /**
+     * The two fixed slots from before the list: the day-1 homework, handed back
+     * on day 2, and a day-2 one, handed back on day 3. No new homework goes
+     * into them; records that used them keep them, read as list entries, and a
+     * file replaced on one of those is still written here.
+     */
     homework: { type: fileSchema, default: null },
     homeworkResult: { type: fileSchema, default: null },
-    /**
-     * A second homework, set on day 2 and handed back on day 3. Optional: a
-     * department that has none sends nothing, and nothing is ever overdue.
-     */
     homework2: { type: fileSchema, default: null },
     homework2Result: { type: fileSchema, default: null },
     /** Their progress through the department's team video — the same counting as the induction's. */

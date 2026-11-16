@@ -3365,12 +3365,9 @@ export interface Wallet {
 }
 
 // ─── First days (a new joiner's first 15 days) ───────────────────────────────
-export type FirstDaysStepKey =
-  | "induction" | "session" | "homework" | "homeworkResult" | "teamVideo" | "callListening" | "rolePlay"
-  | "homework2" | "homework2Result" | "access" | "coldCalls";
+export type FirstDaysStepKey = "induction" | "session" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
 /** Waiting: cannot be done yet. Overdue: its day has passed undone. */
-/** "optional": the day-2 homework nobody has sent — never counted, never overdue. */
-export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue" | "optional";
+export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue";
 
 /** How sending one homework to several joiners went, joiner by joiner. */
 export interface HomeworkSendResult { employeeId: string; name: string; ok: boolean; message: string }
@@ -3403,6 +3400,35 @@ export interface FirstDaysStep {
   assigned?: boolean;
 }
 
+/**
+ * One homework: the head's question document for a day of the fifteen, and
+ * the joiner's answer. Counts as one step.
+ */
+export interface FirstDaysHomework {
+  /** The list entry's id; "legacy-1"/"legacy-2" for the old fixed slots; "day-1" for the stand-in. */
+  id: string;
+  /** The stand-in for the expected day-1 homework, until the head sets one. */
+  placeholder: boolean;
+  title: string;
+  /** "YYYY-MM-DD" — answers open on it. */
+  day: string;
+  /** Day N of the fifteen. */
+  dayNumber: number;
+  /** The last day an answer is on time. */
+  dueDay: string;
+  status: FirstDaysStepStatus;
+  /** Answered, but after the due day. */
+  late: boolean;
+  question: FirstDaysFile | null;
+  answer: FirstDaysFile | null;
+  /** When it opens, for a day still ahead. */
+  opensAt: string | null;
+  /** An answer kept from before questions were required. */
+  missingQuestion: boolean;
+  /** Joiner: answer | replaceAnswer. Head or HR: add (stand-in) | replaceQuestion | attachQuestion. */
+  can: string[];
+}
+
 export interface FirstDaysView {
   employee: {
     _id: string; name: string; employeeCode: string; designation: string;
@@ -3415,9 +3441,21 @@ export interface FirstDaysView {
   day: number;
   of: number;
   redActive: boolean;
+  /** Today, in the joiner's zone. */
+  today: string;
   /** Working days 1, 2 and 3. */
   stepDays: string[];
   steps: FirstDaysStep[];
+  homework: {
+    items: FirstDaysHomework[];
+    answered: number;
+    total: number;
+    /** Whether this viewer can set a homework now — the head or HR, during the fifteen days. */
+    canAdd: boolean;
+    /** The days a homework can be set for; empty when canAdd is false. */
+    days: { key: string; number: number }[];
+  };
+  /** Steps and homework together. */
   doneCount: number;
   totalCount: number;
   complete: boolean;

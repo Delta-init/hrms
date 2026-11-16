@@ -27,8 +27,14 @@ async function storeDocument(req: AuthenticatedRequest, employeeOrUser: string) 
   return { key, name: (file.originalname || "File").slice(0, 200) };
 }
 
-/** Which homework a multipart form is about: "2" for the day-2 one, anything else the day-1 one. */
-const homeworkDay = (req: AuthenticatedRequest): 1 | 2 => (String((req.body as { day?: unknown } | undefined)?.day ?? "1") === "2" ? 2 : 1);
+/** A new homework's title and day, from its multipart form. Null when the day is missing or malformed. */
+function homeworkFields(req: AuthenticatedRequest) {
+  const parsed = z.object({
+    title: z.string().trim().max(160).default(""),
+    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).safeParse(req.body ?? {});
+  return parsed.success ? parsed.data : null;
+}
 
 // ── The joiner ───────────────────────────────────────────────────────────────
 
@@ -40,9 +46,9 @@ export const confirmMySession = route(async (req, res) => {
   sendSuccess(res, "Session confirmed", await service.confirmSessionMine(req.user!.userId));
 });
 
-export const handInMyHomework = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach your homework file", 400); return; }
-  sendSuccess(res, "Homework handed in", await service.handInHomework(req.user!.userId, await storeDocument(req, req.user!.userId), homeworkDay(req)));
+export const answerMyHomework = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach your answer as a file", 400); return; }
+  sendSuccess(res, "Answer handed in", await service.answerHomework(req.user!.userId, req.params.itemId, await storeDocument(req, req.user!.userId)));
 });
 
 export const submitMyRolePlay = route(async (req, res) => {
@@ -82,24 +88,34 @@ export const confirmSessionAsHead = route(async (req, res) => {
   sendSuccess(res, "Session confirmed", await service.confirmSessionHead(req.params.employeeId, req.user!.userId, isHr(req)));
 });
 
-export const sendHomework = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach the homework file", 400); return; }
+export const addHomework = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the question document", 400); return; }
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
   const file = await storeDocument(req, req.params.employeeId);
-  sendSuccess(res, "Homework sent", await service.sendHomework(req.params.employeeId, req.user!.userId, isHr(req), file, homeworkDay(req)));
+  sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), { ...fields, file }));
+});
+
+export const setHomeworkQuestion = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the question document", 400); return; }
+  const file = await storeDocument(req, req.params.employeeId);
+  sendSuccess(res, "Question saved", await service.setHomeworkQuestion(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), file));
 });
 
 /**
- * One file to several joiners. The form carries `employeeIds` as a JSON list;
- * the file is stored once and every joiner's guide points at the same copy.
+ * One homework to several joiners. The form carries `employeeIds` as a JSON
+ * list; the file is stored once and every joiner's guide points at the same copy.
  */
-export const sendHomeworkToMany = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach the homework file", 400); return; }
+export const addHomeworkToMany = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the question document", 400); return; }
   let ids: unknown;
   try { ids = JSON.parse(String((req.body as { employeeIds?: unknown }).employeeIds ?? "[]")); } catch { ids = null; }
   const parsed = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(100).safeParse(ids);
   if (!parsed.success) { sendError(res, "Pick at least one new joiner", 400); return; }
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
   const file = await storeDocument(req, req.user!.userId);
-  const results = await service.sendHomeworkToMany(parsed.data, req.user!.userId, isHr(req), file, homeworkDay(req));
+  const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), { ...fields, file });
   const sent = results.filter((r) => r.ok).length;
   sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
 });

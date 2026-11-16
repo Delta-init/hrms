@@ -19,7 +19,9 @@ export function FirstDaysCards() {
   const { data: mine } = useMyFirstDays(enabled);
   const { data: team = [] } = useTeamFirstDays(enabled);
 
-  const next = mine?.steps.find((s) => s.status === "overdue" || s.status === "todo");
+  const nextStep = mine?.steps.find((s) => s.status === "overdue" || s.status === "todo");
+  const nextHomework = mine?.homework?.items.find((h) => (h.status === "overdue" || h.status === "todo") && h.can.includes("answer"));
+  const next = nextStep?.title ?? (nextHomework ? `Answer “${nextHomework.title}”` : null);
   const waiting = team.reduce((n, v) => n + actionsFor(v), 0);
 
   return (
@@ -31,7 +33,7 @@ export function FirstDaysCards() {
             <div className="min-w-0 flex-1">
               <p className="font-semibold">Your first 15 days{mine.redActive ? ` · Day ${mine.day} of ${mine.of}` : ""}</p>
               <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                {mine.complete ? "Every step is done." : next ? `Next: ${next.title}` : "Nothing to do right now — the next step opens later."}
+                {mine.complete ? "Every step is done." : next ? `Next: ${next}` : "Nothing to do right now — the next step opens later."}
                 {` · ${mine.doneCount} of ${mine.totalCount} done`}
               </p>
             </div>

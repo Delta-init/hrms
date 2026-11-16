@@ -1,20 +1,21 @@
 "use client";
 import { useRef, useState } from "react";
 import {
-  Check, CheckCircle2, Circle, Clock, Copy, ExternalLink, FileText, Loader2, PlayCircle, Upload, AlertTriangle,
+  Check, CheckCircle2, Circle, Clock, Copy, ExternalLink, FileText, Loader2, PlayCircle, Plus, Upload, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
+import { AddHomeworkDialog } from "@/components/firstDays/AddHomeworkDialog";
 import {
-  useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead, useHandInHomework,
-  useSendHomework, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
+  useAnswerHomework, useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead,
+  useSetHomeworkQuestion, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
 } from "@/hooks/useFirstDays";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import type { FirstDaysStep, FirstDaysStepStatus, FirstDaysView } from "@/types";
+import type { FirstDaysHomework, FirstDaysStep, FirstDaysStepStatus, FirstDaysView } from "@/types";
 
 const DOC_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*";
 
@@ -23,8 +24,8 @@ const STATUS: Record<FirstDaysStepStatus, { label: string; tone: string; icon: R
   todo: { label: "To do", tone: "bg-primary/10 text-primary", icon: Circle },
   waiting: { label: "Not yet", tone: "bg-muted text-muted-foreground", icon: Clock },
   overdue: { label: "Overdue", tone: "bg-red-500/10 text-red-700 dark:text-red-400", icon: AlertTriangle },
-  optional: { label: "Optional", tone: "bg-muted text-muted-foreground", icon: Circle },
 };
+const LATE = { label: "Answered late", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400" };
 
 const fmtDay = (key: string) =>
   new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${key}T00:00:00Z`));
@@ -37,9 +38,13 @@ const fmtOpens = (iso: string) => {
   }).format(d);
 };
 
-/** Steps the person looking can act on now. */
+/**
+ * Steps the person looking can act on now. For homework only the step that
+ * moves it on counts — setting the day-1 one, or answering — not replacing a file.
+ */
 export const actionsFor = (v: FirstDaysView) =>
-  v.steps.filter((s) => s.status !== "done" && s.status !== "optional" && s.can.length > 0).length;
+  v.steps.filter((s) => s.status !== "done" && s.can.length > 0).length
+  + (v.homework?.items ?? []).filter((h) => h.status !== "done" && (h.can.includes("add") || h.can.includes("answer"))).length;
 
 /**
  * Days 1 to 3, step by step, for whoever is looking. The joiner, their head
@@ -61,6 +66,96 @@ export function FirstDaysSteps({ view }: { view: FirstDaysView }) {
           </section>
         );
       })}
+      <HomeworkSection view={view} />
+    </div>
+  );
+}
+
+/**
+ * Every homework, by day: the head's question and the joiner's answer side
+ * by side. The joiner answers from the homework's day, once its question is
+ * on file; the head or HR sets new ones during the fifteen days.
+ */
+function HomeworkSection({ view }: { view: FirstDaysView }) {
+  const hw = view.homework;
+  // The day the add form opens on; null while it is closed.
+  const [adding, setAdding] = useState<string | null>(null);
+  if (!hw) return null;
+  return (
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Homework</h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">{hw.answered} of {hw.total} answered</span>
+          {hw.canAdd && (
+            <Button size="sm" variant="outline" className="h-8" onClick={() => setAdding(view.today)}><Plus className="h-3.5 w-3.5" />Add homework</Button>
+          )}
+        </div>
+      </div>
+      {hw.items.length === 0
+        ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No homework yet.</p>
+        : hw.items.map((h) => <HomeworkRow key={h.id} item={h} view={view} onAdd={setAdding} />)}
+      {hw.canAdd && (
+        <AddHomeworkDialog view={view} day={adding} onClose={() => setAdding(null)} />
+      )}
+    </section>
+  );
+}
+
+function homeworkDetail(h: FirstDaysHomework, view: FirstDaysView) {
+  const joiner = view.viewer.isJoiner;
+  const due = h.dueDay === view.today ? "today" : fmtDay(h.dueDay);
+  if (h.placeholder) {
+    if (joiner) return "Your department head sets it after your day-1 session.";
+    return h.can.includes("add") ? "Expected on day 1 — set it after the session; they answer it that day." : "None was set during their fifteen days.";
+  }
+  if (h.status === "done") {
+    if (h.missingQuestion && !joiner) return "Handed in before questions were required — attach the question to keep the record whole.";
+    return h.late ? `Handed in after it was due (${fmtDay(h.dueDay)}).` : "Handed in on time.";
+  }
+  if (h.status === "waiting") return joiner ? `Opens ${fmtDay(h.day)} — you answer it that day.` : `Opens for them ${fmtDay(h.day)}.`;
+  if (h.status === "overdue") {
+    return joiner ? `It was due ${fmtDay(h.dueDay)} — you can still hand it in; it will be marked late.` : `Was due ${fmtDay(h.dueDay)}.`;
+  }
+  return joiner ? `Answer it ${due === "today" ? "today" : `by ${due}`} — upload what you did as a file.` : `Due ${due}.`;
+}
+
+function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: FirstDaysView; onAdd: (day: string) => void }) {
+  const answer = useAnswerHomework();
+  const question = useSetHomeworkQuestion();
+  const can = (a: string) => h.can.includes(a);
+  const st = STATUS[h.status];
+  const chip = h.status === "done" && h.late ? LATE : h.status === "done" ? { ...st, label: "Answered" } : st;
+  const joiner = view.viewer.isJoiner;
+  return (
+    <div className={cn("rounded-xl border p-4", h.status === "overdue" ? "border-red-500/30" : h.status === "todo" && joiner ? "border-primary/40" : "border-border")}>
+      <div className="flex flex-wrap items-start gap-2">
+        <st.icon className={cn("mt-0.5 h-4 w-4 shrink-0", h.status === "done" ? (h.late ? "text-amber-600" : "text-emerald-600") : h.status === "overdue" ? "text-red-600" : "text-muted-foreground")} />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">
+            {h.title}
+            <span className="font-normal text-muted-foreground"> · Day {h.dayNumber}{h.day === view.today ? " (today)" : ""}</span>
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{homeworkDetail(h, view)}</p>
+        </div>
+        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", chip.tone)}>{chip.label}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 pl-6">
+        {h.question && <FileLink file={h.question} label="Question" />}
+        {h.answer && <FileLink file={h.answer} label={joiner ? "Your answer" : "Answer"} />}
+        {!joiner && !h.placeholder && !h.answer && h.status !== "waiting" && <span className="text-xs text-muted-foreground">Not answered yet.</span>}
+        {(can("answer") || can("replaceAnswer")) && (
+          <UploadButton label={can("replaceAnswer") ? "Upload again" : "Upload your answer"} busy={answer.isPending}
+            onFile={(file) => answer.mutate({ itemId: h.id, file })} />
+        )}
+        {(can("replaceQuestion") || can("attachQuestion")) && (
+          <UploadButton label={can("attachQuestion") ? "Attach the question" : "Replace the question"} busy={question.isPending}
+            onFile={(file) => question.mutate({ employeeId: view.employee._id, itemId: h.id, file })} />
+        )}
+        {can("add") && (
+          <Button size="sm" onClick={() => onAdd(h.day)}><Plus className="h-3.5 w-3.5" />Add the day-1 homework</Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -117,8 +212,6 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
   const can = (a: string) => step.can.includes(a);
   const confirmMine = useConfirmMySession();
   const confirmHead = useConfirmSessionAsHead();
-  const handIn = useHandInHomework();
-  const send = useSendHomework();
   const rolePlay = useSubmitRolePlay();
   const callNotes = useSubmitCallNotes();
   const access = useSetToolAccess();
@@ -146,36 +239,6 @@ function StepBody({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) 
           )}
         </div>
       );
-
-    case "homework":
-    case "homework2": {
-      const day = step.key === "homework2" ? 2 : 1;
-      const label = day === 2 ? "day-2 homework" : "homework";
-      return (
-        <div className="flex flex-wrap items-center gap-2">
-          {step.file ? <FileLink file={step.file} label={day === 2 ? "Day-2 homework" : "Homework"} /> : !step.can.length && <span className="text-xs text-muted-foreground">Not sent yet.</span>}
-          {(can("send") || can("replace")) && (
-            <UploadButton label={can("replace") ? `Replace the ${label}` : `Send ${label}`} busy={send.isPending}
-              onFile={(file) => send.mutate({ employeeId, file, day })} />
-          )}
-        </div>
-      );
-    }
-
-    case "homeworkResult":
-    case "homework2Result": {
-      const day = step.key === "homework2Result" ? 2 : 1;
-      return (
-        <div className="flex flex-wrap items-center gap-2">
-          {step.file && <FileLink file={step.file} label="Handed in" />}
-          {!step.file && !view.viewer.isJoiner && <span className="text-xs text-muted-foreground">Not handed in yet.</span>}
-          {(can("upload") || can("replace")) && (
-            <UploadButton label={can("replace") ? "Upload again" : "Upload your homework"} busy={handIn.isPending}
-              onFile={(file) => handIn.mutate({ file, day })} />
-          )}
-        </div>
-      );
-    }
 
     case "teamVideo":
       if (watching) return <TeamVideoPlayer />;

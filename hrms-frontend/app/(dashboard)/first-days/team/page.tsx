@@ -12,15 +12,15 @@ import { cn } from "@/lib/utils";
 /**
  * The new joiners a department head or HR looks after, each with their steps
  * and the buttons that are this person's to press — the head confirms the
- * session, sends homework, gives CRM access and assigns clients; HR gives 3CX
+ * session, sets homework, gives CRM access and assigns clients; HR gives 3CX
  * and Zoho, and stands in for a head where a department has none.
  */
 export default function TeamFirstDaysPage() {
   const { data = [], isLoading } = useTeamFirstDays();
   const [open, setOpen] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  // Shown when this person can send homework to anybody here.
-  const canSend = data.some((v) => v.steps.some((s) => (s.key === "homework" || s.key === "homework2") && s.can.length > 0));
+  // Shown when this person can set homework for more than one joiner here.
+  const canSend = data.filter((v) => v.homework?.canAdd).length > 1;
 
   return (
     <div className="space-y-6">
@@ -28,7 +28,7 @@ export default function TeamFirstDaysPage() {
         title="New joiners"
         description="People in their first fifteen days, and what each is waiting on."
         icon={Users}
-        action={canSend && data.length > 1 && (
+        action={canSend && (
           <Button variant="outline" onClick={() => setSending(true)}><FileUp className="h-4 w-4" />Send homework to several</Button>
         )}
       />
