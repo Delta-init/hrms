@@ -20,8 +20,10 @@ export function FirstDaysCards() {
   const { data: team = [] } = useTeamFirstDays(enabled);
 
   const nextStep = mine?.steps.find((s) => s.status === "overdue" || s.status === "todo");
-  const nextHomework = mine?.homework?.items.find((h) => (h.status === "overdue" || h.status === "todo") && h.can.includes("answer"));
-  const next = nextStep?.title ?? (nextHomework ? `Answer “${nextHomework.title}”` : null);
+  const nextHomework = mine?.homework?.items.find((h) => (h.status === "overdue" || h.status === "todo") && h.can.some((a) => a === "answer" || a === "watch" || a === "writeUp"));
+  const next = nextStep?.title ?? (nextHomework
+    ? nextHomework.kind === "video" ? `${nextHomework.watched ? "Write up" : "Watch"} “${nextHomework.title}”` : `Answer “${nextHomework.title}”`
+    : null);
   const waiting = team.reduce((n, v) => n + actionsFor(v), 0);
 
   return (

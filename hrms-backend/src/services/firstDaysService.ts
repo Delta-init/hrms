@@ -18,7 +18,7 @@ import {
   addDays, dayNumber, isChatGptShareLink, joiningDayKey, lastRedDay, workingDayKeys,
 } from "../utils/firstDays.js";
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
-import { canAnswer, homeworkEntries, homeworkStatus } from "../utils/homework.js";
+import { MIN_WRITE_UP, canAnswer, canWriteUp, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
 import { env } from "../config/env.js";
 
 /**
@@ -57,8 +57,17 @@ const fail = (message: string, statusCode = 400) => Object.assign(new Error(mess
 export type StepKey = "induction" | "session" | "teamVideo" | "callListening" | "rolePlay" | "access" | "coldCalls";
 export type StepStatus = "done" | "todo" | "waiting" | "overdue";
 
-/** A homework as it arrives: the head's question document, stored. */
+/** A file as it arrives, stored: a question document, an answer, or a homework video. */
 type StoredFile = { key: string; name: string };
+/** A new homework: a document's question, or a video with its length read from the file. */
+type NewHomework = { title: string; day: string; file: StoredFile; kind?: HomeworkKind; videoSeconds?: number };
+
+/** What the joiner is told to do with a homework, by kind. */
+const HOMEWORK_TODO: Record<HomeworkKind, string> = {
+  document: "Upload your answer today — what you did, as a file.",
+  video: "Watch it to the end today, then write what you learned.",
+};
+const emptyWatch = () => ({ spans: [], lastPosition: 0, lastBeatAt: null, watchedSeconds: 0, skipAttempts: 0, completedAt: null });
 
 /** Who is looking — what they may do follows from it. */
 export interface Viewer { userId: string; isJoiner: boolean; isHead: boolean; isHr: boolean }
@@ -169,19 +178,19 @@ export class FirstDaysService {
       if (!opening.length) continue;
       const emp = await Employee.findById(rec.employee).select("status").lean<{ status?: string } | null>();
       if (!emp || hasLeft(emp.status)) continue;
-      const claimed: string[] = [];
+      const claimed: { title: string; kind: HomeworkKind }[] = [];
       for (const h of opening) {
         const r = await FirstDays.updateOne(
           { _id: rec._id, homeworks: { $elemMatch: { _id: h._id, notifiedAt: null } } },
           { $set: { "homeworks.$.notifiedAt": new Date() } }
         );
-        if (r.modifiedCount) claimed.push(h.title);
+        if (r.modifiedCount) claimed.push({ title: h.title, kind: h.kind === "video" ? "video" : "document" });
       }
       if (!claimed.length) continue;
       await notify({
         users: [rec.user], kind: "reminder",
-        title: claimed.length === 1 ? `New homework: ${claimed[0]}` : `${claimed.length} new homework today`,
-        body: "Upload your answer today — what you did, as a file.",
+        title: claimed.length === 1 ? `New homework: ${claimed[0].title}` : `${claimed.length} new homework today`,
+        body: claimed.length === 1 ? HOMEWORK_TODO[claimed[0].kind] : "They're in your first-days guide — do them today.",
         href: "/first-days",
       });
     }
@@ -415,25 +424,35 @@ export class FirstDaysService {
     const items = entries.map((e) => {
       const { status, late } = homeworkStatus(e, today, tz);
       const ahead = today < e.day;
+      const video = e.kind === "video";
+      const watch = video ? rec.homeworks.id(e.id)?.watch : null;
       return {
-        id: e.id, placeholder: false, title: e.title, day: e.day, dayNumber: dayNumber(rec.startDay, e.day), dueDay: e.dueDay,
+        id: e.id, placeholder: false, kind: e.kind, title: e.title, day: e.day, dayNumber: dayNumber(rec.startDay, e.day), dueDay: e.dueDay,
         status: status as StepStatus, late,
         question: viewer.isJoiner && ahead ? null : fileOut(e.question),
         answer: fileOut(e.answer),
+        notes: e.notes,
+        durationSeconds: e.videoSeconds,
+        watched: e.watched,
+        percent: video && watch && e.videoSeconds ? watchProgress(watch as unknown as WatchState, e.videoSeconds).percent : 0,
         opensAt: ahead ? zonedTimeToUtc(e.day, "00:00", tz) : null,
         // Kept from before questions were required: the answer stands, and the head can put the question with it.
         missingQuestion: !e.question,
         can: [
-          ...(viewer.isJoiner && canAnswer(e, today) ? [e.answer ? "replaceAnswer" : "answer"] : []),
+          ...(viewer.isJoiner && canAnswer(e, today)
+            ? video
+              ? ["watch", ...(canWriteUp(e, today) ? ["writeUp"] : [])]
+              : [e.answer ? "replaceAnswer" : "answer"]
+            : []),
           ...(asHead ? [e.question ? "replaceQuestion" : "attachQuestion"] : []),
         ],
       };
     });
     if (!entries.some((e) => e.day === d1)) {
       items.unshift({
-        id: "day-1", placeholder: true, title: "Day-1 homework", day: d1, dayNumber: 1, dueDay: d1,
+        id: "day-1", placeholder: true, kind: "document", title: "Day-1 homework", day: d1, dayNumber: 1, dueDay: d1,
         status: (viewer.isJoiner ? "waiting" : today > d1 ? "overdue" : "todo") as StepStatus, late: false,
-        question: null, answer: null, opensAt: null, missingQuestion: false,
+        question: null, answer: null, notes: null, durationSeconds: 0, watched: false, percent: 0, opensAt: null, missingQuestion: false,
         can: mayAdd ? ["add"] : [],
       });
     }
@@ -496,6 +515,7 @@ export class FirstDaysService {
     const today = todayInTz(rec.timeZone);
     const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
     if (!entry) throw fail("That homework isn't in your guide", 404);
+    if (entry.kind === "video") throw fail("This homework is a video — watch it, then write what you learned");
     if (!entry.question) throw fail("Your department head hasn't added the question for this homework yet");
     if (!canAnswer(entry, today)) throw fail(`This homework opens on ${fmtDay(entry.day)}`);
     const again = !!entry.answer;
@@ -514,6 +534,85 @@ export class FirstDaysService {
       kind: "reminder",
       title: `${emp.name ?? "Your new joiner"} ${again ? "handed in a new version of" : "answered"} “${entry.title}”`,
       body: today > entry.dueDay && !again ? `${file.name} · late — it was due ${fmtDay(entry.dueDay)}` : file.name,
+      href: "/first-days/team",
+      actor: userId,
+    });
+    return this.mineView(userId);
+  }
+
+  /** A video homework of the joiner's, open today — refused otherwise, saying why. */
+  private async myVideoHomework(userId: string, itemId: string) {
+    const { rec, emp } = await this.mineOrFail(userId);
+    const today = todayInTz(rec.timeZone);
+    const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
+    if (!entry) throw fail("That homework isn't in your guide", 404);
+    if (entry.kind !== "video") throw fail("This homework isn't a video");
+    if (!canAnswer(entry, today)) throw fail(`This homework opens on ${fmtDay(entry.day)}`);
+    const h = rec.homeworks.id(itemId)!;
+    if (!h.watch) h.set("watch", emptyWatch());
+    return { rec, emp, entry, h, today };
+  }
+
+  private static watchState(w: { spans?: { from: number; to: number }[]; lastPosition?: number; lastBeatAt?: Date | null; watchedSeconds?: number; skipAttempts?: number; completedAt?: Date | null } | null | undefined): WatchState {
+    return {
+      spans: (w?.spans ?? []).map((s) => ({ from: s.from, to: s.to })),
+      lastPosition: w?.lastPosition ?? 0,
+      lastBeatAt: w?.lastBeatAt ?? null,
+      watchedSeconds: w?.watchedSeconds ?? 0,
+      skipAttempts: w?.skipAttempts ?? 0,
+      completedAt: w?.completedAt ?? null,
+    };
+  }
+
+  /**
+   * Open a video homework where they left off. Watched the induction's way:
+   * the server counts what played from where the playhead is every few
+   * seconds, so skipping ahead counts for nothing; going back is fine.
+   */
+  async startHomeworkVideo(userId: string, itemId: string) {
+    const { rec, entry, h } = await this.myVideoHomework(userId, itemId);
+    const progress = watchProgress(FirstDaysService.watchState(h.watch), entry.videoSeconds);
+    if (!progress.completed) {
+      h.set("watch.lastBeatAt", new Date());
+      h.set("watch.lastPosition", progress.resumeAt);
+    }
+    await rec.save();
+    return {
+      video: { title: entry.title, url: publicUrl(entry.question!.key!), durationSeconds: entry.videoSeconds },
+      progress,
+    };
+  }
+
+  async homeworkVideoBeat(userId: string, itemId: string, position: number) {
+    const { rec, entry, h } = await this.myVideoHomework(userId, itemId);
+    const next = applyBeat(FirstDaysService.watchState(h.watch), position, entry.videoSeconds, new Date());
+    h.set("watch", next);
+    await rec.save();
+    return watchProgress(next, entry.videoSeconds);
+  }
+
+  /**
+   * The joiner's write-up of a video homework — what they learned — with a
+   * file if they want one. Opens once the video has been watched to the end;
+   * handing it in is what completes the homework. It can be changed after;
+   * a file sent with the change replaces the last one, none keeps it.
+   */
+  async submitWriteUp(userId: string, itemId: string, notes: string, file: StoredFile | null) {
+    const { rec, emp, entry, h, today } = await this.myVideoHomework(userId, itemId);
+    if (!canWriteUp(entry, today)) throw fail("Watch the video to the end first — then write what you learned");
+    const text = notes.trim();
+    if (text.length < MIN_WRITE_UP) throw fail("Write a little more about what you learned — a sentence or two at least");
+    const again = entry.handedIn;
+    const now = new Date();
+    h.set("notes", text.slice(0, 4000));
+    if (file) h.set("answer", { key: file.key, name: file.name, at: now, by: userId });
+    if (!h.answeredAt) h.set("answeredAt", now);
+    await rec.save();
+    await notify({
+      users: (await headContactsFor(userId)).map((x) => x.userId),
+      kind: "reminder",
+      title: `${emp.name ?? "Your new joiner"} ${again ? "changed their write-up for" : "watched and wrote up"} “${entry.title}”`,
+      body: today > entry.dueDay && !again ? `Late — it was due ${fmtDay(entry.dueDay)}. ${text.slice(0, 120)}` : text.slice(0, 160),
       href: "/first-days/team",
       actor: userId,
     });
@@ -661,20 +760,17 @@ export class FirstDaysService {
    * the joiner is told now and can answer at once — due today, never late for
    * the head's lateness; for a day ahead, they are told that morning.
    */
-  async addHomework(employeeId: string, userId: string, isHr: boolean, input: { title: string; day: string; file: StoredFile }) {
-    const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
-    const name = emp.name ?? "This joiner";
-    const today = todayInTz(rec.timeZone);
-    if (today > rec.endDay) throw fail(`${name}'s fifteen days ended on ${fmtDay(rec.endDay)} — homework is set during them`);
-    if (input.day < rec.startDay || input.day > rec.endDay) {
-      throw fail(`Pick a day from ${fmtDay(rec.startDay)} to ${fmtDay(rec.endDay)} — ${name}'s fifteen days`);
-    }
+  async addHomework(employeeId: string, userId: string, isHr: boolean, input: NewHomework) {
+    const { rec, emp, viewer } = await this.mayAddHomework(employeeId, userId, isHr, input.day);
+    const kind: HomeworkKind = input.kind === "video" ? "video" : "document";
     const title = input.title.trim().slice(0, 160) || "Homework";
     const now = new Date();
-    const opensNow = input.day <= today;
+    const opensNow = input.day <= todayInTz(rec.timeZone);
     rec.homeworks.push({
-      title, day: input.day,
+      title, kind, day: input.day,
       question: { key: input.file.key, name: input.file.name, at: now, by: userId },
+      videoSeconds: kind === "video" ? Math.round(input.videoSeconds ?? 0) : 0,
+      watch: kind === "video" ? emptyWatch() : null,
       addedAt: now, addedBy: userId, notifiedAt: opensNow ? now : null,
     });
     await rec.save();
@@ -682,7 +778,7 @@ export class FirstDaysService {
       await notify({
         users: [rec.user], kind: "reminder",
         title: `New homework: ${title}`,
-        body: "Upload your answer today — what you did, as a file.",
+        body: HOMEWORK_TODO[kind],
         href: "/first-days", actor: userId,
       });
     }
@@ -690,25 +786,52 @@ export class FirstDaysService {
   }
 
   /**
+   * Whether this head (or HR) may set this joiner a homework for that day —
+   * their own department's joiner, during the fifteen days, for one of them.
+   * Asked before a large video is stored, as well as when it is saved.
+   */
+  async mayAddHomework(employeeId: string, userId: string, isHr: boolean, day: string) {
+    const found = await this.forReviewer(employeeId, userId, isHr);
+    const { rec, emp } = found;
+    const name = emp.name ?? "This joiner";
+    if (todayInTz(rec.timeZone) > rec.endDay) throw fail(`${name}'s fifteen days ended on ${fmtDay(rec.endDay)} — homework is set during them`);
+    if (day < rec.startDay || day > rec.endDay) {
+      throw fail(`Pick a day from ${fmtDay(rec.startDay)} to ${fmtDay(rec.endDay)} — ${name}'s fifteen days`);
+    }
+    return found;
+  }
+
+  /**
    * Replace a homework's question document — at any time, even once answered —
    * or attach one to an answer kept from before questions were required. The
    * joiner is told if the homework is open; an answer already in still counts.
    */
-  async setHomeworkQuestion(employeeId: string, itemId: string, userId: string, isHr: boolean, file: StoredFile) {
+  async setHomeworkQuestion(employeeId: string, itemId: string, userId: string, isHr: boolean, file: StoredFile, video?: { seconds: number }) {
     const { rec, emp, viewer } = await this.forReviewer(employeeId, userId, isHr);
     const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
     if (!entry) throw fail("That homework isn't in their guide", 404);
+    if (entry.kind === "video" && !video) throw fail("This homework is a video — replace it with an MP4");
+    if (entry.kind !== "video" && video) throw fail("This homework is a document — replace it with a document");
     const stored = { key: file.key, name: file.name, at: new Date(), by: userId };
-    if (entry.legacy) rec.set(entry.legacy === 1 ? "homework" : "homework2", stored);
-    else rec.homeworks.id(itemId)!.set("question", stored);
+    if (entry.legacy) {
+      rec.set(entry.legacy === 1 ? "homework" : "homework2", stored);
+    } else {
+      const h = rec.homeworks.id(itemId)!;
+      h.set("question", stored);
+      // A new video is a different film: it is watched from the start. What
+      // they handed in for the old one still counts.
+      if (video) { h.set("videoSeconds", Math.round(video.seconds)); h.set("watch", emptyWatch()); }
+    }
     await rec.save();
     if (todayInTz(rec.timeZone) >= entry.day) {
       await notify({
         users: [rec.user], kind: "reminder",
-        title: entry.question ? `The question for “${entry.title}” has been updated` : `The question for “${entry.title}” is on file`,
-        body: entry.answer
-          ? "What you handed in still counts. If your answer needs changing, upload it again."
-          : "Upload your answer as a file.",
+        title: video
+          ? `The video for “${entry.title}” has been updated`
+          : entry.question ? `The question for “${entry.title}” has been updated` : `The question for “${entry.title}” is on file`,
+        body: entry.handedIn
+          ? video ? "What you handed in still counts. The new video is in your guide." : "What you handed in still counts. If your answer needs changing, upload it again."
+          : video ? "Watch it to the end, then write what you learned." : "Upload your answer as a file.",
         href: "/first-days", actor: userId,
       });
     }
@@ -721,7 +844,7 @@ export class FirstDaysService {
    * and the date must fall in that joiner's fifteen days — and one refusal
    * does not stop the rest; the answer says how each went.
    */
-  async addHomeworkToMany(employeeIds: string[], userId: string, isHr: boolean, input: { title: string; day: string; file: StoredFile }) {
+  async addHomeworkToMany(employeeIds: string[], userId: string, isHr: boolean, input: NewHomework) {
     const results: { employeeId: string; name: string; ok: boolean; message: string }[] = [];
     for (const employeeId of Array.from(new Set(employeeIds))) {
       try {

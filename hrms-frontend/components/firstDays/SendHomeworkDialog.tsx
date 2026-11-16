@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, FileText, Loader2, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, FileText, Loader2, Upload, Video, XCircle } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
 } from "@/components/ui/responsive-dialog";
@@ -9,8 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DOC_ACCEPT } from "@/components/firstDays/AddHomeworkDialog";
-import { useAddHomeworkToMany } from "@/hooks/useFirstDays";
+import { DOC_ACCEPT, KindPicker, MAX_VIDEO_MB, VIDEO_ACCEPT, checkFile } from "@/components/firstDays/AddHomeworkDialog";
+import { useAddHomeworkToMany, type HomeworkKind } from "@/hooks/useFirstDays";
 import type { FirstDaysView, HomeworkSendResult } from "@/types";
 
 const DAY_MS = 86_400_000;
@@ -29,9 +29,10 @@ interface Props {
 }
 
 /**
- * The same homework to several new joiners in one go — one title, one date,
- * one question document. Each joiner gets it as that date's homework in their
- * own fifteen days, so only those whose fifteen days include the date are listed.
+ * The same homework to several new joiners in one go — a document or a video,
+ * one title, one date, one file (stored once). Each joiner gets it as that
+ * date's homework in their own fifteen days, so only those whose fifteen days
+ * include the date are listed.
  */
 export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   const send = useAddHomeworkToMany();
@@ -47,6 +48,8 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   }, [canAdd]);
   const today = dates[0] ?? "";
 
+  const [kind, setKind] = useState<HomeworkKind>("document");
+  const [sentPct, setSentPct] = useState<number | null>(null);
   const [day, setDay] = useState("");
   const [title, setTitle] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -59,7 +62,7 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setDay(today); setTitle(""); setFile(null); setResults(null); setError(null);
+    setKind("document"); setSentPct(null); setDay(today); setTitle(""); setFile(null); setResults(null); setError(null);
     // Only on opening: a refresh behind the form must not reset it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -78,14 +81,17 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   const allOn = eligible.length > 0 && eligible.every((v) => picked.has(v.employee._id));
   const chosen = eligible.filter((v) => picked.has(v.employee._id)).map((v) => v.employee._id);
 
+  const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setError(null); } };
   const submit = () => {
     setError(null);
     if (!title.trim()) { setError("Give the homework a title"); return; }
     if (!chosen.length) { setError("Pick at least one new joiner"); return; }
-    if (!file) { setError("Choose the question document"); return; }
+    if (!file) { setError(kind === "video" ? "Choose the video" : "Choose the question document"); return; }
+    setSentPct(0);
     // All sent: done, and the toast says so. Any refused: stay open and say who and why.
-    send.mutate({ employeeIds: chosen, title: title.trim(), day, file }, {
+    send.mutate({ employeeIds: chosen, title: title.trim(), day, file, kind, onProgress: setSentPct }, {
       onSuccess: ({ results: r }) => { if (r.every((x) => x.ok)) onOpenChange(false); else setResults(r); },
+      onSettled: () => setSentPct(null),
     });
   };
 
@@ -94,6 +100,10 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
       <ResponsiveDialogContent desktopClassName="max-w-lg">
         <ResponsiveDialogHeader><ResponsiveDialogTitle>Send homework to several</ResponsiveDialogTitle></ResponsiveDialogHeader>
         <div className="min-w-0 space-y-5 px-4 sm:px-0">
+          <div className="space-y-1.5">
+            <Label>Type</Label>
+            <KindPicker kind={kind} onChange={pickKind} disabled={send.isPending} />
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="hw-many-title">Title</Label>
             <Input id="hw-many-title" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Objection handling — fees" />
@@ -153,14 +163,21 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
           </div>
 
           <div className="space-y-2">
-            <Label>Question document</Label>
-            <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT}
-              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setFile(f); setResults(null); } }} />
+            <Label>{kind === "video" ? `Video (MP4, up to ${MAX_VIDEO_MB} MB)` : "Question document"}</Label>
+            <input ref={input} type="file" className="hidden" accept={kind === "video" ? VIDEO_ACCEPT : DOC_ACCEPT}
+              onChange={(e) => {
+                const f = e.target.files?.[0]; e.target.value = "";
+                if (!f) return;
+                const bad = checkFile(kind, f);
+                if (bad) { setError(bad); setFile(null); } else { setError(null); setFile(f); setResults(null); }
+              }} />
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()} disabled={send.isPending}>
                 <Upload className="h-3.5 w-3.5" />{file ? "Choose another" : "Choose file"}
               </Button>
-              {file && <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm"><FileText className="h-4 w-4 shrink-0" /><span className="truncate">{file.name}</span></span>}
+              {file && <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm">
+                {kind === "video" ? <Video className="h-4 w-4 shrink-0" /> : <FileText className="h-4 w-4 shrink-0" />}<span className="truncate">{file.name}</span>
+              </span>}
             </div>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -169,7 +186,7 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
           <Button variant="outline" onClick={() => onOpenChange(false)}>{results ? "Close" : "Cancel"}</Button>
           <Button onClick={submit} disabled={send.isPending || eligible.length === 0}>
             {send.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Send to {chosen.length} {chosen.length === 1 ? "joiner" : "joiners"}
+            {send.isPending && sentPct !== null && sentPct < 100 ? `Uploading ${sentPct}%` : `Send to ${chosen.length} ${chosen.length === 1 ? "joiner" : "joiners"}`}
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

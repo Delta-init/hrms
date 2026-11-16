@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Pause, Play, Volume2, VolumeX } from "lucide-react";
-import { useStartTeamVideo, useTeamVideoBeat } from "@/hooks/useFirstDays";
+import { useStartWatching, useWatchBeat } from "@/hooks/useFirstDays";
 import { cn } from "@/lib/utils";
 import type { WatchProgress } from "@/types";
 
@@ -11,14 +11,15 @@ const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 
 /**
- * The team's video, watched the way the induction is: the server decides how
- * much has been seen from where the playhead is every few seconds, it opens
- * where they got to, and it can be scrubbed back but not ahead of the furthest
- * point reached. The native controls come back once it counts as watched.
+ * A video the joiner must watch in full — the team's, or a video homework when
+ * `homeworkId` is given — watched the way the induction is: the server decides
+ * how much has been seen from where the playhead is every few seconds, it
+ * opens where they got to, and it can be scrubbed back but not ahead of the
+ * furthest point reached. The native controls come back once it counts as watched.
  */
-export function TeamVideoPlayer() {
-  const { mutate: start, data: opened, isPending: opening, error } = useStartTeamVideo();
-  const { mutate: beat } = useTeamVideoBeat();
+export function TeamVideoPlayer({ homeworkId, doneText }: { homeworkId?: string; doneText?: string } = {}) {
+  const { mutate: start, data: opened, isPending: opening, error } = useStartWatching(homeworkId);
+  const { mutate: beat } = useWatchBeat(homeworkId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const furthest = useRef(0);
   const [progress, setProgress] = useState<WatchProgress | null>(null);
@@ -123,7 +124,7 @@ export function TeamVideoPlayer() {
         <div className={cn("h-full rounded-full bg-primary transition-[width] duration-500")} style={{ width: `${progress?.percent ?? 0}%` }} />
       </div>
       <p className="text-xs text-muted-foreground">
-        {done ? "Watched in full — this step is done." : `${progress?.percent ?? 0}% watched. Play it through to the end — each part counts once, and only while it plays.`}
+        {done ? doneText ?? "Watched in full — this step is done." : `${progress?.percent ?? 0}% watched. You can go back, but not skip ahead — play it through to the end.`}
       </p>
     </div>
   );

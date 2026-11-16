@@ -22,15 +22,39 @@ const tickSchema = new Schema(
   { _id: false }
 );
 
+/** How far somebody has watched a video — the same counting as the induction's (utils/watchSpans). */
+const watchSchema = new Schema(
+  {
+    spans: { type: [{ from: { type: Number, required: true }, to: { type: Number, required: true }, _id: false }], default: [] },
+    lastPosition: { type: Number, default: 0 },
+    lastBeatAt: { type: Date, default: null },
+    watchedSeconds: { type: Number, default: 0 },
+    skipAttempts: { type: Number, default: 0 },
+    completedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 /**
- * One homework from the department head (or HR): for a day of the fifteen, with
- * a question document, and the joiner's answer once that day comes.
+ * One homework from the department head (or HR): for a day of the fifteen, and
+ * the joiner's answer once that day comes. A document homework's question is
+ * a file and so is its answer. A video homework's "question" is the video; the
+ * joiner watches it to the end, then writes what they learned (a file is
+ * optional) — the write-up is the hand-in.
  */
 const homeworkSchema = new Schema({
   title: { type: String, trim: true, maxlength: 160, required: true },
+  kind: { type: String, enum: ["document", "video"], default: "document" },
   /** "YYYY-MM-DD" in the joiner's zone. Answers open on it; on time means by it. */
   day: { type: String, required: true },
+  /** The question document — or, for a video homework, the MP4. */
   question: { type: fileSchema, required: true },
+  /** A video's length, read from the file when it was uploaded. */
+  videoSeconds: { type: Number, default: 0 },
+  watch: { type: watchSchema, default: null },
+  /** A video homework's write-up. */
+  notes: { type: String, trim: true, maxlength: 4000, default: "" },
+  /** The answer file — required for a document homework, optional with a video's write-up. */
   answer: { type: fileSchema, default: null },
   /** The first answer's time — replacing it later doesn't make it late. */
   answeredAt: { type: Date, default: null },

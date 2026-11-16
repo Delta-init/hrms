@@ -1,7 +1,7 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
-  Check, CheckCircle2, Circle, Clock, Copy, ExternalLink, FileText, Loader2, PlayCircle, Plus, Upload, AlertTriangle,
+  Check, CheckCircle2, Circle, Clock, Copy, ExternalLink, PlayCircle, Plus, Video, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
 import { AddHomeworkDialog } from "@/components/firstDays/AddHomeworkDialog";
+import { FileLink, UploadButton } from "@/components/firstDays/FirstDaysFiles";
+import { VideoHomeworkBody } from "@/components/firstDays/VideoHomework";
 import {
   useAnswerHomework, useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead,
   useSetHomeworkQuestion, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
@@ -16,8 +18,6 @@ import {
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import type { FirstDaysHomework, FirstDaysStep, FirstDaysStepStatus, FirstDaysView } from "@/types";
-
-const DOC_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*";
 
 const STATUS: Record<FirstDaysStepStatus, { label: string; tone: string; icon: React.ElementType }> = {
   done: { label: "Done", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", icon: CheckCircle2 },
@@ -38,13 +38,13 @@ const fmtOpens = (iso: string) => {
   }).format(d);
 };
 
-/**
- * Steps the person looking can act on now. For homework only the step that
- * moves it on counts — setting the day-1 one, or answering — not replacing a file.
- */
+/** What moves a homework on — setting the day-1 one, answering, watching, writing up — not replacing a file. */
+const HOMEWORK_MOVES = ["add", "answer", "watch", "writeUp"];
+
+/** Steps the person looking can act on now. */
 export const actionsFor = (v: FirstDaysView) =>
   v.steps.filter((s) => s.status !== "done" && s.can.length > 0).length
-  + (v.homework?.items ?? []).filter((h) => h.status !== "done" && (h.can.includes("add") || h.can.includes("answer"))).length;
+  + (v.homework?.items ?? []).filter((h) => h.status !== "done" && h.can.some((a) => HOMEWORK_MOVES.includes(a))).length;
 
 /**
  * Days 1 to 3, step by step, for whoever is looking. The joiner, their head
@@ -114,10 +114,21 @@ function homeworkDetail(h: FirstDaysHomework, view: FirstDaysView) {
     return h.late ? `Handed in after it was due (${fmtDay(h.dueDay)}).` : "Handed in on time.";
   }
   if (h.status === "waiting") return joiner ? `Opens ${fmtDay(h.day)} — you answer it that day.` : `Opens for them ${fmtDay(h.day)}.`;
+  const by = due === "today" ? "today" : `by ${due}`;
+  if (h.kind === "video") {
+    const seen = h.watched ? "Watched in full" : `${h.percent}% watched`;
+    if (!joiner) return h.status === "overdue" ? `Was due ${fmtDay(h.dueDay)}. ${seen}.` : `Due ${due}. ${seen}.`;
+    if (h.watched) return h.status === "overdue"
+      ? `Watched — now write what you learned. It was due ${fmtDay(h.dueDay)}, so it will be marked late.`
+      : `Watched — now write what you learned, ${by}.`;
+    return h.status === "overdue"
+      ? `It was due ${fmtDay(h.dueDay)} — watch it to the end and write it up; it will be marked late.`
+      : `Watch it to the end ${by} — you can go back, but not skip ahead — then write what you learned.`;
+  }
   if (h.status === "overdue") {
     return joiner ? `It was due ${fmtDay(h.dueDay)} — you can still hand it in; it will be marked late.` : `Was due ${fmtDay(h.dueDay)}.`;
   }
-  return joiner ? `Answer it ${due === "today" ? "today" : `by ${due}`} — upload what you did as a file.` : `Due ${due}.`;
+  return joiner ? `Answer it ${by} — upload what you did as a file.` : `Due ${due}.`;
 }
 
 function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: FirstDaysView; onAdd: (day: string) => void }) {
@@ -133,6 +144,7 @@ function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: 
         <st.icon className={cn("mt-0.5 h-4 w-4 shrink-0", h.status === "done" ? (h.late ? "text-amber-600" : "text-emerald-600") : h.status === "overdue" ? "text-red-600" : "text-muted-foreground")} />
         <div className="min-w-0 flex-1">
           <p className="font-medium">
+            {h.kind === "video" && <Video className="mr-1 inline h-4 w-4 -translate-y-px text-muted-foreground" aria-label="Video" />}
             {h.title}
             <span className="font-normal text-muted-foreground"> · Day {h.dayNumber}{h.day === view.today ? " (today)" : ""}</span>
           </p>
@@ -140,6 +152,7 @@ function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: 
         </div>
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", chip.tone)}>{chip.label}</span>
       </div>
+      {h.kind === "video" && !h.placeholder ? <VideoHomeworkBody item={h} view={view} /> : (
       <div className="mt-3 flex flex-wrap items-center gap-2 pl-6">
         {h.question && <FileLink file={h.question} label="Question" />}
         {h.answer && <FileLink file={h.answer} label={joiner ? "Your answer" : "Answer"} />}
@@ -150,12 +163,13 @@ function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: 
         )}
         {(can("replaceQuestion") || can("attachQuestion")) && (
           <UploadButton label={can("attachQuestion") ? "Attach the question" : "Replace the question"} busy={question.isPending}
-            onFile={(file) => question.mutate({ employeeId: view.employee._id, itemId: h.id, file })} />
+            onFile={(file) => question.mutate({ employeeId: view.employee._id, itemId: h.id, file, kind: "document" })} />
         )}
         {can("add") && (
           <Button size="sm" onClick={() => onAdd(h.day)}><Plus className="h-3.5 w-3.5" />Add the day-1 homework</Button>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -181,29 +195,6 @@ function StepRow({ step, view }: { step: FirstDaysStep; view: FirstDaysView }) {
         <StepBody step={step} view={view} />
       </div>
     </div>
-  );
-}
-
-function FileLink({ file, label }: { file: { name: string; url: string }; label: string }) {
-  return (
-    <a href={file.url} target="_blank" rel="noopener noreferrer"
-      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-primary hover:bg-muted">
-      <FileText className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{label}: {file.name}</span>
-    </a>
-  );
-}
-
-/** A button that opens a file picker and hands the chosen file on. */
-function UploadButton({ label, busy, onFile }: { label: string; busy: boolean; onFile: (f: File) => void }) {
-  const input = useRef<HTMLInputElement>(null);
-  return (
-    <>
-      <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT}
-        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }} />
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => input.current?.click()}>
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}{label}
-      </Button>
-    </>
   );
 }
 

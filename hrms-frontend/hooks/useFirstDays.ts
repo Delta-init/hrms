@@ -41,13 +41,23 @@ function useStep<V>(fn: (vars: V) => Promise<FirstDaysView>, done: string, faile
   });
 }
 
-const upload = (url: string, file: File, fields: Record<string, string> = {}) => {
+/** Called with 0–100 as a large upload goes. */
+export type OnProgress = (percent: number) => void;
+
+const upload = (url: string, file: File | null, fields: Record<string, string> = {}, onProgress?: OnProgress) => {
   const form = new FormData();
   // Fields first: the server reads them alongside the file.
   for (const [k, v] of Object.entries(fields)) form.append(k, v);
-  form.append("file", file);
-  return api.post<ApiResponse<FirstDaysView>>(url, form, { headers: { "Content-Type": "multipart/form-data" } });
+  if (file) form.append("file", file);
+  return api.post<ApiResponse<FirstDaysView>>(url, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    // A homework video can be 250 MB.
+    timeout: 10 * 60 * 1000,
+    onUploadProgress: onProgress ? (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)); } : undefined,
+  });
 };
+
+export type HomeworkKind = "document" | "video";
 
 // ── The joiner ──
 export const useConfirmMySession = () =>
@@ -56,6 +66,10 @@ export const useConfirmMySession = () =>
 export const useAnswerHomework = () =>
   useStep(async ({ itemId, file }: { itemId: string; file: File }) =>
     (await upload(`/first-days/mine/homework/${encodeURIComponent(itemId)}`, file)).data.data!, "Answer handed in", "Could not upload your answer");
+/** A video homework's write-up, with a file if they attach one. */
+export const useSubmitWriteUp = () =>
+  useStep(async ({ itemId, notes, file }: { itemId: string; notes: string; file: File | null }) =>
+    (await upload(`/first-days/mine/homework/${encodeURIComponent(itemId)}/write-up`, file, { notes })).data.data!, "Write-up handed in", "Could not save your write-up");
 export const useSubmitRolePlay = () =>
   useStep(async (link: string) => (await api.post<ApiResponse<FirstDaysView>>("/first-days/mine/role-play", { link })).data.data!, "Role-play handed in", "Could not save the link");
 export const useSubmitCallNotes = () =>
@@ -66,26 +80,30 @@ export const useCallsDone = () =>
 // ── Heads and HR ──
 export const useConfirmSessionAsHead = () =>
   useStep(async (employeeId: string) => (await api.post<ApiResponse<FirstDaysView>>(`/first-days/${employeeId}/session`)).data.data!, "Session confirmed", "Could not confirm the session");
-/** A homework for one of the joiner's days, with its question document. */
+/** A homework for one of the joiner's days: a question document, or a video. */
 export const useAddHomework = () =>
-  useStep(async ({ employeeId, title, day, file }: { employeeId: string; title: string; day: string; file: File }) =>
-    (await upload(`/first-days/${employeeId}/homework`, file, { title, day })).data.data!, "Homework sent", "Could not send the homework");
-/** Replace a homework's question document, or attach one to an answer kept from before. */
+  useStep(async ({ employeeId, title, day, file, kind, onProgress }: { employeeId: string; title: string; day: string; file: File; kind: HomeworkKind; onProgress?: OnProgress }) =>
+    (await upload(`/first-days/${employeeId}/homework${kind === "video" ? "/video" : ""}`, file, { title, day }, onProgress)).data.data!, "Homework sent", "Could not send the homework");
+/** Replace a homework's question document or video, or attach a question to an answer kept from before. */
 export const useSetHomeworkQuestion = () =>
-  useStep(async ({ employeeId, itemId, file }: { employeeId: string; itemId: string; file: File }) =>
-    (await upload(`/first-days/${employeeId}/homework/${encodeURIComponent(itemId)}/question`, file)).data.data!, "Question saved", "Could not save the question");
+  useStep(async ({ employeeId, itemId, file, kind }: { employeeId: string; itemId: string; file: File; kind: HomeworkKind }) =>
+    (await upload(`/first-days/${employeeId}/homework/${encodeURIComponent(itemId)}/${kind === "video" ? "video" : "question"}`, file)).data.data!, "Saved", "Could not save the file");
 
 /** One homework to several joiners, for the same date; resolves with how each went. */
 export const useAddHomeworkToMany = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ employeeIds, title, day, file }: { employeeIds: string[]; title: string; day: string; file: File }) => {
+    mutationFn: async ({ employeeIds, title, day, file, kind, onProgress }: { employeeIds: string[]; title: string; day: string; file: File; kind: HomeworkKind; onProgress?: OnProgress }) => {
       const form = new FormData();
       form.append("title", title);
       form.append("day", day);
       form.append("employeeIds", JSON.stringify(employeeIds));
       form.append("file", file);
-      const res = await api.post<ApiResponse<HomeworkSendResult[]>>("/first-days/homework/many", form, { headers: { "Content-Type": "multipart/form-data" } });
+      const res = await api.post<ApiResponse<HomeworkSendResult[]>>(`/first-days/homework/many${kind === "video" ? "/video" : ""}`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 10 * 60 * 1000,
+        onUploadProgress: onProgress ? (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)); } : undefined,
+      });
       return { results: res.data.data ?? [], message: res.data.message };
     },
     onSuccess: ({ results, message }) => {
@@ -128,16 +146,22 @@ export const useUploadTeamVideo = () => {
   });
 };
 
-/** The joiner watching it: open where they left off, then report the playhead. Silent — it fires every few seconds. */
-export const useStartTeamVideo = () =>
+/**
+ * The joiner watching a video they must see in full — the team's video, or a
+ * video homework when `homeworkId` is given: open where they left off, then
+ * report the playhead. Silent — it fires every few seconds.
+ */
+const watchBase = (homeworkId?: string) =>
+  homeworkId ? `/first-days/mine/homework/${encodeURIComponent(homeworkId)}/video` : "/first-days/mine/team-video";
+export const useStartWatching = (homeworkId?: string) =>
   useMutation({
     mutationFn: async () =>
-      (await api.post<ApiResponse<{ video: { title: string; url: string; durationSeconds: number }; progress: WatchProgress }>>("/first-days/mine/team-video/start")).data.data!,
+      (await api.post<ApiResponse<{ video: { title: string; url: string; durationSeconds: number }; progress: WatchProgress }>>(`${watchBase(homeworkId)}/start`)).data.data!,
   });
-export const useTeamVideoBeat = () => {
+export const useWatchBeat = (homeworkId?: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (position: number) => (await api.post<ApiResponse<WatchProgress>>("/first-days/mine/team-video/beat", { position })).data.data!,
+    mutationFn: async (position: number) => (await api.post<ApiResponse<WatchProgress>>(`${watchBase(homeworkId)}/beat`, { position })).data.data!,
     onSuccess: (p) => { if (p.completed) qc.invalidateQueries({ queryKey: KEY }); },
   });
 };

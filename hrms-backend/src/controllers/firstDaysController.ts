@@ -27,6 +27,20 @@ async function storeDocument(req: AuthenticatedRequest, employeeOrUser: string) 
   return { key, name: (file.originalname || "File").slice(0, 200) };
 }
 
+/**
+ * A homework video into storage, with its length read from the file — never
+ * from the browser. Null when the file isn't a readable MP4.
+ */
+async function storeVideo(req: AuthenticatedRequest, employeeOrUser: string) {
+  const file = req.file!;
+  const seconds = mp4Duration(file.buffer);
+  if (!seconds || seconds < 1) return null;
+  const key = attachmentKey(getOrgId(), employeeOrUser, "first-days", "mp4", Date.now());
+  await putObject(key, file.buffer, "video/mp4");
+  return { file: { key, name: (file.originalname || "video.mp4").slice(0, 200) }, seconds: Math.round(seconds) };
+}
+const NOT_MP4 = "Could not read the video's length from the file. It must be a standard MP4.";
+
 /** A new homework's title and day, from its multipart form. Null when the day is missing or malformed. */
 function homeworkFields(req: AuthenticatedRequest) {
   const parsed = z.object({
@@ -49,6 +63,24 @@ export const confirmMySession = route(async (req, res) => {
 export const answerMyHomework = route(async (req, res) => {
   if (!req.file) { sendError(res, "Attach your answer as a file", 400); return; }
   sendSuccess(res, "Answer handed in", await service.answerHomework(req.user!.userId, req.params.itemId, await storeDocument(req, req.user!.userId)));
+});
+
+export const startMyHomeworkVideo = route(async (req, res) => {
+  sendSuccess(res, "Homework video", await service.startHomeworkVideo(req.user!.userId, req.params.itemId));
+});
+
+export const myHomeworkVideoBeat = route(async (req, res) => {
+  const parsed = z.object({ position: z.coerce.number().min(0).max(100_000) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "A playback position is required", 400); return; }
+  sendSuccess(res, "Progress recorded", await service.homeworkVideoBeat(req.user!.userId, req.params.itemId, parsed.data.position));
+});
+
+/** A video homework's write-up, as a multipart form: `notes`, and a file if they attach one. */
+export const submitMyWriteUp = route(async (req, res) => {
+  const parsed = z.object({ notes: z.string().max(4000) }).safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Write what you learned", 400); return; }
+  const file = req.file ? await storeDocument(req, req.user!.userId) : null;
+  sendSuccess(res, "Write-up handed in", await service.submitWriteUp(req.user!.userId, req.params.itemId, parsed.data.notes, file));
 });
 
 export const submitMyRolePlay = route(async (req, res) => {
@@ -96,6 +128,28 @@ export const addHomework = route(async (req, res) => {
   sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), { ...fields, file }));
 });
 
+/** A video homework: checked before the video is stored, since it can be 250 MB. */
+export const addVideoHomework = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the video (MP4)", 400); return; }
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
+  await service.mayAddHomework(req.params.employeeId, req.user!.userId, isHr(req), fields.day);
+  const stored = await storeVideo(req, req.params.employeeId);
+  if (!stored) { sendError(res, NOT_MP4, 400); return; }
+  sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), {
+    ...fields, kind: "video", file: stored.file, videoSeconds: stored.seconds,
+  }));
+});
+
+export const setHomeworkVideo = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the video (MP4)", 400); return; }
+  const stored = await storeVideo(req, req.params.employeeId);
+  if (!stored) { sendError(res, NOT_MP4, 400); return; }
+  sendSuccess(res, "Video replaced", await service.setHomeworkQuestion(
+    req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), stored.file, { seconds: stored.seconds }
+  ));
+});
+
 export const setHomeworkQuestion = route(async (req, res) => {
   if (!req.file) { sendError(res, "Attach the question document", 400); return; }
   const file = await storeDocument(req, req.params.employeeId);
@@ -116,6 +170,24 @@ export const addHomeworkToMany = route(async (req, res) => {
   if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
   const file = await storeDocument(req, req.user!.userId);
   const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), { ...fields, file });
+  const sent = results.filter((r) => r.ok).length;
+  sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
+});
+
+/** One video homework to several joiners: the video is stored once and shared. */
+export const addVideoHomeworkToMany = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Attach the video (MP4)", 400); return; }
+  let ids: unknown;
+  try { ids = JSON.parse(String((req.body as { employeeIds?: unknown }).employeeIds ?? "[]")); } catch { ids = null; }
+  const parsed = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(100).safeParse(ids);
+  if (!parsed.success) { sendError(res, "Pick at least one new joiner", 400); return; }
+  const fields = homeworkFields(req);
+  if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
+  const stored = await storeVideo(req, req.user!.userId);
+  if (!stored) { sendError(res, NOT_MP4, 400); return; }
+  const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), {
+    ...fields, kind: "video", file: stored.file, videoSeconds: stored.seconds,
+  });
   const sent = results.filter((r) => r.ok).length;
   sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
 });

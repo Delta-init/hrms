@@ -3409,6 +3409,8 @@ export interface FirstDaysHomework {
   id: string;
   /** The stand-in for the expected day-1 homework, until the head sets one. */
   placeholder: boolean;
+  /** A document (question file, answer file) or a video (watched in full, then written up). */
+  kind: "document" | "video";
   title: string;
   /** "YYYY-MM-DD" — answers open on it. */
   day: string;
@@ -3419,13 +3421,23 @@ export interface FirstDaysHomework {
   status: FirstDaysStepStatus;
   /** Answered, but after the due day. */
   late: boolean;
+  /** The question document — or the video. */
   question: FirstDaysFile | null;
+  /** The answer file — optional alongside a video's write-up. */
   answer: FirstDaysFile | null;
+  /** A video's write-up: what they learned. */
+  notes: string | null;
+  /** A video's length in seconds. */
+  durationSeconds: number;
+  /** A video watched to the end, as the server counted it. */
+  watched: boolean;
+  /** How much of a video has been watched. */
+  percent: number;
   /** When it opens, for a day still ahead. */
   opensAt: string | null;
   /** An answer kept from before questions were required. */
   missingQuestion: boolean;
-  /** Joiner: answer | replaceAnswer. Head or HR: add (stand-in) | replaceQuestion | attachQuestion. */
+  /** Joiner: answer | replaceAnswer (document), watch | writeUp (video). Head or HR: add (stand-in) | replaceQuestion | attachQuestion. */
   can: string[];
 }
 
