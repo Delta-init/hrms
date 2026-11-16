@@ -179,7 +179,7 @@ const rows = (list.body.data ?? []) as Array<Record<string, any>>;
 check("list: 200, org A's two waiting, oldest HR approval first",
   list.status === 200 && rows.map((r) => r.title).join() === "Taxi to client meeting,Lunch with the team",
   `${list.status} ${rows.map((r) => r.title).join()}`);
-const KEYS = "_id,title,category,amount,currency,expenseDate,month,description,receiptUrl,status,employee,user,hrReviewedBy,hrReviewedAt,hrNote,createdAt,rejectedBy,financeRef,paidOn,paymentMethod,financeNote,financeReviewedBy,financeReviewedAt";
+const KEYS = "_id,title,category,amount,requestedAmount,currency,expenseDate,month,description,receiptUrl,status,employee,user,hrReviewedBy,hrReviewedAt,hrNote,createdAt,rejectedBy,financeRef,paidOn,paymentMethod,financeNote,financeReviewedBy,financeReviewedAt";
 check("each row has exactly the contract's fields", rows.every((r) => Object.keys(r).join() === KEYS), Object.keys(rows[0] ?? {}).join());
 const row = rows[0] ?? {};
 check("the row: amount, currency, dates, receipt, employee and department, HR's approver and note",
@@ -201,8 +201,10 @@ const pendingTry = await call("POST", `${R}/${stillWithHr!._id}/approve?${A}`, {
 check("approve one still with HR: 409", pendingTry.status === 409 && /still with HR/.test(String(pendingTry.body.message)), `${pendingTry.status} ${pendingTry.body.message}`);
 const payslipTry = await call("POST", `${R}/${offClaim!._id}/approve?${A}`, { reference: "EXP-1" });
 check("approve one approved for the payslip: 409", payslipTry.status === 409, `${payslipTry.status} ${payslipTry.body.message}`);
-const otherAmount = await call("POST", `${R}/${toPay!._id}/approve?${A}`, { reference: "EXP-1", amount: 90 });
-check("approve at another amount: 409, and it still waits", otherAmount.status === 409 && (await statusOf(toPay!._id)) === "hr_approved", `${otherAmount.status} ${otherAmount.body.message}`);
+const more = await call("POST", `${R}/${toPay!._id}/approve?${A}`, { reference: "EXP-1", amount: 90 });
+check("approve at more than claimed with no note: 400, and it still waits", more.status === 400 && /needs a note/.test(String(more.body.message)) && (await statusOf(toPay!._id)) === "hr_approved", `${more.status} ${more.body.message}`);
+const zero = await call("POST", `${R}/${toPay!._id}/approve?${A}`, { reference: "EXP-1", amount: 0 });
+check("approve at 0: 400", zero.status === 400 && (await statusOf(toPay!._id)) === "hr_approved", `${zero.status} ${zero.body.message}`);
 
 const ok = await call("POST", `${R}/${toPay!._id}/approve?${A}`, { reference: "EXP-00231", paidOn: "2026-11-16", method: "bank_transfer", amount: 85, note: "Paid with the week's claims", by: "Fatima Finance" });
 const okRec = ok.body.data ?? {};
@@ -212,6 +214,7 @@ check("approve: 200, paid, with finance's number, date, method, note, name and t
   `${ok.status} ${JSON.stringify(okRec)}`);
 const stored = await Reimbursement.findById(toPay!._id).lean();
 check("…stored with no payslip", stored?.status === "paid" && !stored.payslip, JSON.stringify(stored));
+check("…paid as claimed: amount 85, nothing kept as claimed", okRec.amount === 85 && okRec.requestedAmount === null && stored?.amount === 85 && stored?.requestedAmount == null, JSON.stringify(okRec));
 const again = await call("POST", `${R}/${toPay!._id}/approve?${A}`, { reference: "EXP-00231", note: "retry" });
 check("approve again (a retry): 200, the first answer unchanged",
   again.status === 200 && again.body.data?.financeReviewedAt === okRec.financeReviewedAt && again.body.data?.financeNote === "Paid with the week's claims",
@@ -235,25 +238,51 @@ check("approve one finance refused: 409", noApprove.status === 409, `${noApprove
 const hrOverturn = await errOf(hrReview(orgA, toRefuse!._id, "approved"));
 check("HR can't overturn finance's refusal: 409", hrOverturn?.statusCode === 409, JSON.stringify(hrOverturn));
 
+// ── Another amount than claimed (2026-11-16) ────────────────────────────────
+const hotel = await file(orgA, staff._id, "Hotel for the expo", 400);
+const parking = await file(orgA, staff._id, "Parking at the venue", 30);
+await hrReview(orgA, hotel!._id, "approved");
+await hrReview(orgA, parking!._id, "approved");
+const less = await call("POST", `${R}/${hotel!._id}/approve?${A}`, { reference: "EXP-00232", paidOn: "2026-11-16", method: "cash", amount: 300, by: "Fatima Finance" });
+check("paid less, no note needed: 200, amount 300, 400 kept as claimed",
+  less.status === 200 && less.body.data?.status === "paid" && less.body.data?.amount === 300 && less.body.data?.requestedAmount === 400,
+  `${less.status} ${JSON.stringify(less.body.data)}`);
+const hotelRow = await Reimbursement.findById(hotel!._id).lean();
+check("…stored: amount 300, requestedAmount 400", hotelRow?.amount === 300 && hotelRow?.requestedAmount === 400, JSON.stringify(hotelRow));
+const lessAgain = await call("POST", `${R}/${hotel!._id}/approve?${A}`, { reference: "EXP-00232", amount: 300 });
+check("…a retry: 200, still 300 of 400", lessAgain.status === 200 && lessAgain.body.data?.amount === 300 && lessAgain.body.data?.requestedAmount === 400, JSON.stringify(lessAgain.body.data));
+const moreNoNote = await call("POST", `${R}/${parking!._id}/approve?${A}`, { reference: "EXP-00233", amount: 35 });
+check("paid more with no note: 400", moreNoNote.status === 400 && (await statusOf(parking!._id)) === "hr_approved", `${moreNoNote.status} ${moreNoNote.body.message}`);
+const moreNote = await call("POST", `${R}/${parking!._id}/approve?${A}`, { reference: "EXP-00233", paidOn: "2026-11-16", method: "cash", amount: 35, note: "The ticket was 35 — receipt was cut off" });
+check("paid more with a note: 200, amount 35, 30 kept as claimed, the note kept",
+  moreNote.status === 200 && moreNote.body.data?.amount === 35 && moreNote.body.data?.requestedAmount === 30 && moreNote.body.data?.financeNote === "The ticket was 35 — receipt was cut off",
+  `${moreNote.status} ${JSON.stringify(moreNote.body.data)}`);
+
 const after = await call("GET", `${R}?${A}`);
 check("decided ones leave the queue", after.status === 200 && after.body.data?.length === 0, JSON.stringify(after.body.data?.map((r: { title: string }) => r.title)));
 const paidList = await call("GET", `${R}?${A}&status=paid`);
-check("status=paid: the one finance paid (not the payslip's)", paidList.body.data?.map((r: { title: string }) => r.title).join() === "Taxi to client meeting", JSON.stringify(paidList.body.data?.map((r: { title: string }) => r.title)));
+const titles = (l: Res) => (l.body.data ?? []).map((r: { title: string }) => r.title).sort().join();
+check("status=paid: the three finance paid (not the payslip's)", titles(paidList) === "Hotel for the expo,Parking at the venue,Taxi to client meeting", titles(paidList));
 const refusedList = await call("GET", `${R}?${A}&status=rejected`);
 check("status=rejected: the one finance refused (not HR's)", refusedList.body.data?.map((r: { title: string }) => r.title).join() === "Lunch with the team", JSON.stringify(refusedList.body.data?.map((r: { title: string }) => r.title)));
 const allList = await call("GET", `${R}?${A}&status=all`);
-check("status=all: both that reached finance, newest decision first",
-  allList.body.data?.map((r: { title: string }) => r.title).join() === "Lunch with the team,Taxi to client meeting",
+check("status=all: the four that reached finance, newest decision first",
+  titles(allList) === "Hotel for the expo,Lunch with the team,Parking at the venue,Taxi to client meeting" && allList.body.data?.[0]?.title === "Parking at the venue",
   JSON.stringify(allList.body.data?.map((r: { title: string }) => r.title)));
 check("org B's still waiting", (await statusOf(bClaim!._id)) === "hr_approved");
 const later = await inOrg(orgA, () => computeReimbursements(String(emp._id), "2026-11"));
 check("the payslip still never takes the finance-paid one", !later.ids.includes(String(toPay!._id)), JSON.stringify(later));
 
 await sleep(300);
-const paidNote = await Notification.findOne({ user: staff._id, title: "Your reimbursement has been paid" }).lean();
+const paidNotes = await Notification.find({ user: staff._id, title: "Your reimbursement has been paid" }).lean();
+const paidNote = paidNotes.find((n) => /EXP-00231/.test(String(n.body)));
 check("the employee is told it was paid — amount, date, method and number",
-  !!paidNote && /AED 85\.00/.test(String(paidNote.body)) && /16 Nov 2026/.test(String(paidNote.body)) && /bank transfer/.test(String(paidNote.body)) && /EXP-00231/.test(String(paidNote.body)),
-  JSON.stringify(paidNote));
+  !!paidNote && /AED 85\.00/.test(String(paidNote.body)) && /16 Nov 2026/.test(String(paidNote.body)) && /bank transfer/.test(String(paidNote.body)) && !/instead of/.test(String(paidNote.body)),
+  JSON.stringify(paidNotes));
+const lessNote = paidNotes.find((n) => /EXP-00232/.test(String(n.body)));
+check("…and, paid less, what was paid instead of what was claimed",
+  !!lessNote && /AED 300\.00, instead of the AED 400\.00 you claimed/.test(String(lessNote.body)), JSON.stringify(lessNote));
+check("…one notice per claim paid, a retry adds none", paidNotes.length === 3, String(paidNotes.length));
 const refusedNote = await Notification.findOne({ user: staff._id, title: /not approved by finance/ }).lean();
 check("the employee is told finance refused, and why", !!refusedNote && /Receipt can't be read/.test(String(refusedNote.body)), JSON.stringify(refusedNote));
 const finHistory = adapterFor("reimbursement")!.decided.outcome((await Reimbursement.findById(toRefuse!._id).lean()) as never);

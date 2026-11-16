@@ -1325,6 +1325,8 @@ export interface Reimbursement extends WorkflowState {
   payslip?: string | null;
   /** Who refused it — HR here, or finance. */
   rejectedBy?: "hr" | "finance" | null;
+  /** What was claimed, when finance paid a different amount — `amount` is then what was paid. */
+  requestedAmount?: number | null;
   /** Finance's half: its expense number, when and how it paid, its note. */
   financeRef?: string;
   paidOn?: string | null;

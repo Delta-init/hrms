@@ -152,7 +152,11 @@ export default function ReimbursementsPage() {
                   <td className="px-4 py-3">{REIMBURSEMENT_CATEGORY_LABELS[r.category]}</td>
                   <td className="px-4 py-3">{fmtDate(r.expenseDate)}</td>
                   <td className="px-4 py-3">{r.month}</td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums">{money(r.amount, e?.currency)}</td>
+                  <td className="px-4 py-3 text-right font-medium tabular-nums">
+                    {money(r.amount, e?.currency)}
+                    {/* Finance paid a different amount (2026-11-16): what was claimed, under it. */}
+                    {r.requestedAmount != null && <p className="text-[11px] font-normal text-muted-foreground">of {money(r.requestedAmount, e?.currency)} claimed</p>}
+                  </td>
                   <td className="px-4 py-3">
                     <StatusBadge claim={r} />
                     {r.status === "pending" && workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}

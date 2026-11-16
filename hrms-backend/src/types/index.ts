@@ -1809,6 +1809,8 @@ export interface IReimbursement extends Document {
   payslip?: Types.ObjectId | null;
   /** Who refused it, when it was refused — HR here, or finance in the finance system. */
   rejectedBy?: "hr" | "finance" | null;
+  /** What was claimed, when finance paid a different amount — `amount` is then what was paid. */
+  requestedAmount?: number | null;
   /** Finance's half (REIMBURSEMENT_FINANCE_STEP=on): its expense number, when and how it paid, its note and person. */
   financeRef?: string;
   paidOn?: Date | null;

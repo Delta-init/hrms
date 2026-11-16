@@ -68,6 +68,9 @@ function forFinance(r: Record<string, unknown>) {
     title: String(r.title ?? ""),
     category: String(r.category ?? "other"),
     amount: r2(Number(r.amount ?? 0)),
+    // What was claimed, when finance paid a different amount (2026-11-16) — null when paid as claimed. Always sent:
+    // it also tells finance this HRMS takes a changed amount.
+    requestedAmount: r.requestedAmount == null ? null : r2(Number(r.requestedAmount)),
     // A claim has no currency of its own: it is the employee's pay currency.
     currency: String(emp?.currency || "AED").toUpperCase(),
     expenseDate: ymd(r.expenseDate),
@@ -254,7 +257,11 @@ export class ReimbursementService {
    * Finance's decision. Paying it makes the claim "paid", with finance's expense number, date and method; refusing it
    * "rejected" by finance, with its reason. A repeat of the decision finance already made — a retry after a lost
    * answer — answers with the claim rather than refusing, so finance can safely send again. Anything else not waiting
-   * on finance is a 409. `amount`, when sent, must be the claim's: finance pays what was claimed.
+   * on finance is a 409.
+   *
+   * Finance may pay a different amount than was claimed (the user, 2026-11-16: "finance can edit the amount… it will
+   * show in HRMS also"): `amount` becomes what was paid and the claimed one is kept as `requestedAmount`. More than
+   * was claimed needs a note saying why.
    */
   async recordFinanceDecision(
     organization: string,
@@ -274,8 +281,16 @@ export class ReimbursementService {
       // The employee is told why.
       if (!approve && String(input.note ?? "").trim().length < 3) throw new ClaimError("Say why finance refuses this claim", 400);
       if (approve) {
-        if (input.amount != null && input.amount !== "" && r2(Number(input.amount)) !== r2(record.amount)) {
-          throw new ClaimError(`This claim is for ${r2(record.amount).toFixed(2)}, not ${Number(input.amount).toFixed(2)} — reload and try again`, 409);
+        if (input.amount != null && input.amount !== "") {
+          const paid = r2(Number(input.amount));
+          if (!Number.isFinite(paid) || paid <= 0) throw new ClaimError("The amount paid must be more than 0", 400);
+          if (paid !== r2(record.amount)) {
+            if (paid > record.amount && !String(input.note ?? "").trim()) {
+              throw new ClaimError(`Paying more than the ${r2(record.amount).toFixed(2)} claimed needs a note saying why`, 400);
+            }
+            record.requestedAmount = record.requestedAmount ?? record.amount;
+            record.amount = paid;
+          }
         }
         const paidOn = input.paidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) ? input.paidOn : new Date().toISOString().slice(0, 10);
         record.status = "paid";
@@ -305,7 +320,9 @@ async function announceFinanceDecision(id: unknown, organization: string) {
   const r = await Reimbursement.findById(id).populate([{ path: "employee", select: "currency" }]).lean<Record<string, unknown> | null>();
   if (!r?.user) return;
   const currency = String((r.employee as { currency?: string } | null)?.currency || "AED").toUpperCase();
-  const what = `${String(r.title ?? "Your claim")} — ${money(Number(r.amount ?? 0), currency)}`;
+  const what = `${String(r.title ?? "Your claim")} — ${money(Number(r.amount ?? 0), currency)}`
+    // Paid at another amount than claimed: say so.
+    + (r.status === "paid" && r.requestedAmount != null ? `, instead of the ${money(Number(r.requestedAmount), currency)} you claimed` : "");
   const paid = r.status === "paid";
   const title = paid ? "Your reimbursement has been paid" : "Your reimbursement was not approved by finance";
   const paidLine = paid

@@ -35,6 +35,8 @@ const reimbursementSchema = new Schema<IReimbursement>(
     ...workflowStateFields,
     payslip: { type: Schema.Types.ObjectId, ref: "Payslip", default: null },
     rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
+    /** What was claimed, when finance paid a different amount (2026-11-16) — `amount` is then what was paid. */
+    requestedAmount: { type: Number, min: 0, default: null },
     // Finance's half, from the finance system — never a user here.
     financeRef: { type: String, trim: true, maxlength: 120, default: "" },
     paidOn: { type: Date, default: null },
