@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
 import { DOC_ACCEPT, VIDEO_ACCEPT, checkFile } from "@/components/firstDays/AddHomeworkDialog";
-import { FileLink, UploadButton } from "@/components/firstDays/FirstDaysFiles";
-import { useSetHomeworkQuestion, useSubmitWriteUp } from "@/hooks/useFirstDays";
+import { FileLink, MAX_FILES, PickedFiles, UploadButton } from "@/components/firstDays/FirstDaysFiles";
+import { addDocs } from "@/components/firstDays/AddHomeworkDialog";
+import { useRemoveAnswerFile, useSetHomeworkQuestion, useSubmitWriteUp } from "@/hooks/useFirstDays";
 import { toast } from "@/lib/toast";
 import type { FirstDaysHomework, FirstDaysView, VimeoVideo } from "@/types";
 
@@ -43,11 +44,11 @@ export function VideoHomeworkBody({ item: h, view }: { item: FirstDaysHomework; 
               <ExternalLink className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Vimeo{length}: {h.vimeo.name}</span>
             </a>
           )}
-          {h.answer && <FileLink file={h.answer} label="Their file" />}
+          {h.answers.map((f) => <FileLink key={f.key} file={f} label="Their file" />)}
           {can("replaceQuestion") && (
             <>
               <UploadButton label={h.vimeo ? "Upload an MP4 instead" : "Replace the video"} busy={replace.isPending} accept={VIDEO_ACCEPT}
-                onFile={(file) => {
+                onFiles={([file]) => {
                   const bad = checkFile("video", file);
                   if (bad) { toast.error(bad); return; }
                   replace.mutate({ employeeId: view.employee._id, itemId: h.id, file, kind: "video" });
@@ -106,15 +107,20 @@ function WatchBar({ percent }: { percent: number }) {
   );
 }
 
-/** What they learned — required — and a file, if they want to add one. */
+/** What they learned — required — and files, if they want to add some. */
 function WriteUp({ item: h }: { item: FirstDaysHomework }) {
   const submit = useSubmitWriteUp();
+  const remove = useRemoveAnswerFile();
   const handedIn = !!h.notes;
   const [editing, setEditing] = useState(!handedIn);
   const [draft, setDraft] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const text = draft ?? h.notes ?? "";
+  const kept = h.answers;
+  const room = MAX_FILES - kept.length - files.length;
 
   if (!editing) {
     return (
@@ -122,7 +128,7 @@ function WriteUp({ item: h }: { item: FirstDaysHomework }) {
         <p className="text-xs font-medium text-muted-foreground">What you learned</p>
         <p className="whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-sm">{h.notes}</p>
         <div className="flex flex-wrap items-center gap-2">
-          {h.answer && <FileLink file={h.answer} label="Your file" />}
+          {kept.map((f) => <FileLink key={f.key} file={f} />)}
           <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Change your answer</Button>
         </div>
       </div>
@@ -135,29 +141,40 @@ function WriteUp({ item: h }: { item: FirstDaysHomework }) {
       <label className="text-sm font-medium" htmlFor={`wu-${h.id}`}>What did you learn from it?</label>
       <Textarea id={`wu-${h.id}`} rows={4} maxLength={4000} value={text} onChange={(e) => setDraft(e.target.value)}
         placeholder="The main points, what surprised you, and what you'll do differently on your own calls." />
-      <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT}
-        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setFile(f); }} />
+      <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT} multiple
+        onChange={(e) => {
+          const picked = Array.from(e.target.files ?? []); e.target.value = "";
+          if (!picked.length) return;
+          if (picked.length > room) { setFileError(`Up to ${MAX_FILES} files in all.`); return; }
+          const next = addDocs(files, picked);
+          setFiles(next.files); setFileError(next.error);
+        }} />
+      {kept.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {kept.map((f) => (
+            <FileLink key={f.key} file={f} removing={removing === f.key}
+              onRemove={() => { setRemoving(f.key); remove.mutate({ itemId: h.id, key: f.key }, { onSettled: () => setRemoving(null) }); }} />
+          ))}
+        </div>
+      )}
+      <PickedFiles files={files} disabled={submit.isPending} onRemove={(i) => setFiles((fs) => fs.filter((_, j) => j !== i))} />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={short || submit.isPending}
-          onClick={() => submit.mutate({ itemId: h.id, notes: text.trim(), file }, {
-            onSuccess: () => { setDraft(null); setFile(null); setEditing(false); },
+          onClick={() => submit.mutate({ itemId: h.id, notes: text.trim(), files }, {
+            onSuccess: () => { setDraft(null); setFiles([]); setEditing(false); },
           })}>
           {submit.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {handedIn ? "Save changes" : "Hand in"}
         </Button>
-        {file ? (
-          <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs">
-            <FileText className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{file.name}</span>
-            <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Remove the file" onClick={() => setFile(null)}><X className="h-3.5 w-3.5" /></button>
-          </span>
-        ) : (
+        {room > 0 && (
           <Button size="sm" variant="ghost" className="h-8" onClick={() => input.current?.click()}>
-            <Paperclip className="h-3.5 w-3.5" />{h.answer ? "Replace your file" : "Attach a file (optional)"}
+            <Paperclip className="h-3.5 w-3.5" />{kept.length || files.length ? "Attach more files" : "Attach files (optional)"}
           </Button>
         )}
-        {handedIn && <Button size="sm" variant="ghost" className="h-8" onClick={() => { setDraft(null); setFile(null); setEditing(false); }}>Cancel</Button>}
+        {handedIn && <Button size="sm" variant="ghost" className="h-8" onClick={() => { setDraft(null); setFiles([]); setEditing(false); }}>Cancel</Button>}
         {short && <span className="text-[11px] text-muted-foreground">A sentence or two at least.</span>}
       </div>
+      {fileError && <p className="text-xs text-destructive">{fileError}</p>}
     </div>
   );
 }

@@ -21,6 +21,8 @@ export default function TeamFirstDaysPage() {
   const [sending, setSending] = useState(false);
   // Shown when this person can set homework for more than one joiner here.
   const canSend = data.filter((v) => v.homework?.canAdd).length > 1;
+  // Folder names in use on any of these guides, offered when setting or moving homework.
+  const folders = Array.from(new Set(data.flatMap((v) => v.homework?.folders ?? [])));
 
   return (
     <div className="space-y-6">
@@ -63,7 +65,7 @@ export default function TeamFirstDaysPage() {
                     </span>
                   )}
                 </button>
-                {isOpen && <div className="border-t border-border p-4"><FirstDaysSteps view={v} /></div>}
+                {isOpen && <div className="border-t border-border p-4"><FirstDaysSteps view={v} folderOptions={folders} /></div>}
               </Card>
             );
           })}

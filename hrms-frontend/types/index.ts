@@ -3373,6 +3373,8 @@ export type FirstDaysStepStatus = "done" | "todo" | "waiting" | "overdue";
 export interface HomeworkSendResult { employeeId: string; name: string; ok: boolean; message: string }
 
 export interface FirstDaysFile { name: string; url: string; at: string | null }
+/** A file in a list — with its key, which is what removing that one sends back. */
+export interface FirstDaysListedFile extends FirstDaysFile { key: string }
 
 export interface FirstDaysStep {
   key: FirstDaysStepKey;
@@ -3421,8 +3423,14 @@ export interface FirstDaysHomework {
   status: FirstDaysStepStatus;
   /** Answered, but after the due day. */
   late: boolean;
-  /** The question document — or the uploaded video. */
+  /** The folder it's grouped under; "" for none. */
+  folder: string;
+  /** The question document — or the uploaded video. The first of `questions`. */
   question: FirstDaysFile | null;
+  /** Every question file (one for a video). */
+  questions: FirstDaysListedFile[];
+  /** Every answer file — a document's answer, or a video write-up's attachments. */
+  answers: FirstDaysListedFile[];
   /** A video from the company's Vimeo folder. The link is for heads and HR; joiners watch in HRMS. */
   vimeo: { name: string; link: string } | null;
   /** The answer file — optional alongside a video's write-up. */
@@ -3439,7 +3447,10 @@ export interface FirstDaysHomework {
   opensAt: string | null;
   /** An answer kept from before questions were required. */
   missingQuestion: boolean;
-  /** Joiner: answer | replaceAnswer (document), watch | writeUp (video). Head or HR: add (stand-in) | replaceQuestion | attachQuestion. */
+  /**
+   * Joiner: answer | addAnswer (document; replaceAnswer on the old fixed slots), watch | writeUp (video).
+   * Head or HR: add (stand-in) | addFiles | replaceQuestion | attachQuestion | move.
+   */
   can: string[];
 }
 
@@ -3449,15 +3460,16 @@ export interface FirstDaysExtra {
   title: string;
   day: string;
   dayNumber: number;
-  /** Uploaded to HRMS… */
-  video: FirstDaysFile | null;
-  /** …or linked: Google Drive, YouTube or Vimeo. */
-  link: { url: string; host: string } | null;
+  /** The joiner's own folder it's grouped under; "" for none. */
+  folder: string;
+  /** Uploaded to HRMS: videos, and slides or documents… */
+  files: (FirstDaysListedFile & { isVideo: boolean })[];
+  /** …and links: Google Drive, YouTube or Vimeo. */
+  links: { url: string; host: string }[];
   addedAt: string | null;
   updatedAt: string | null;
-  versions: number;
   feedback: { text: string; byName: string; at: string | null }[];
-  /** Joiner: newVersion. Head or HR: feedback. */
+  /** Joiner: addFiles | remove | move. Head or HR: feedback. */
   can: string[];
 }
 
@@ -3486,9 +3498,11 @@ export interface FirstDaysView {
     canAdd: boolean;
     /** The days a homework can be set for; empty when canAdd is false. */
     days: { key: string; number: number }[];
+    /** The folders in use on this guide. */
+    folders: string[];
   };
   /** The joiner's own additional homework. canAdd: the joiner, during the fifteen days. */
-  extras: { items: FirstDaysExtra[]; canAdd: boolean };
+  extras: { items: FirstDaysExtra[]; canAdd: boolean; folders: string[] };
   /** Steps and homework together. */
   doneCount: number;
   totalCount: number;

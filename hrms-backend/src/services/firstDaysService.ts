@@ -18,7 +18,7 @@ import {
   addDays, dayNumber, isChatGptShareLink, joiningDayKey, lastRedDay, workingDayKeys,
 } from "../utils/firstDays.js";
 import { applyBeat, watchProgress, type WatchState } from "../utils/watchSpans.js";
-import { MIN_WRITE_UP, canAnswer, canWriteUp, hasQuestion, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
+import { MAX_FILES, MIN_WRITE_UP, canAnswer, canWriteUp, fileList, hasQuestion, homeworkEntries, homeworkStatus, type HomeworkKind } from "../utils/homework.js";
 import { vimeoEmbedUrl } from "../utils/vimeo.js";
 import { videoLink } from "../utils/videoLink.js";
 import { env } from "../config/env.js";
@@ -67,13 +67,26 @@ export type VimeoRef = { id: string; hash: string; name: string };
  * A new homework: a document's question, an uploaded video with its length
  * read from the file, or a video from Vimeo with its length from Vimeo.
  */
-type NewHomework = { title: string; day: string; file?: StoredFile; vimeo?: VimeoRef; kind?: HomeworkKind; videoSeconds?: number };
+type NewHomework = {
+  title: string; day: string; folder?: string;
+  /** A document's question files, or an uploaded video (one). */
+  files?: StoredFile[];
+  vimeo?: VimeoRef; kind?: HomeworkKind; videoSeconds?: number;
+};
 /** What replaces a homework's question: a document, or a video — uploaded, or from Vimeo. */
 type NewQuestion = { file?: StoredFile; video?: { seconds: number; vimeo?: VimeoRef } };
 const vimeoLink = (v: { id: string; hash: string }) => `https://vimeo.com/${v.id}${v.hash ? `/${v.hash}` : ""}`;
 
 /** An additional homework's video: uploaded, or a link to it elsewhere. */
-type ExtraSource = { video?: StoredFile; link?: string };
+type ExtraSource = { files?: StoredFile[]; link?: string };
+
+/** A folder's name as stored: trimmed, single-spaced, short. "" means no folder. */
+const folderName = (raw: string | null | undefined) => (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+/** The distinct folders in a list, in the order they first appear. */
+const foldersOf = (items: { folder: string }[]) => Array.from(new Set(items.map((i) => i.folder).filter(Boolean)));
+const stamp = (f: StoredFile, userId: string, at = new Date()) => ({ key: f.key, name: f.name, at, by: userId });
+const isVideoKey = (key?: string | null) => /\.(mp4|mov|m4v|webm)$/i.test(key ?? "");
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** What the joiner is told to do with a homework, by kind. */
 const HOMEWORK_TODO: Record<HomeworkKind, string> = {
@@ -105,6 +118,8 @@ const fmtDay = (key: string) =>
   new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${key}T00:00:00Z`));
 const fileOut = (f: { key?: string | null; name?: string | null; at?: Date | null } | null | undefined) =>
   f?.key ? { name: f.name || "File", url: publicUrl(f.key), at: f.at ?? null } : null;
+/** A file in a list, with its key — what the page sends back to remove that one. */
+const listedFile = (f: { key?: string | null; name?: string | null; at?: Date | null }) => ({ ...fileOut(f)!, key: f.key ?? "" });
 
 /** The first day anyone gets this — nobody who joined before it ever does. */
 const firstDaysFrom = () => env.FIRST_DAYS_FROM;
@@ -441,10 +456,13 @@ export class FirstDaysService {
       const ahead = today < e.day;
       const video = e.kind === "video";
       const watch = video ? rec.homeworks.id(e.id)?.watch : null;
+      const hidden = viewer.isJoiner && ahead;
       return {
         id: e.id, placeholder: false, kind: e.kind, title: e.title, day: e.day, dayNumber: dayNumber(rec.startDay, e.day), dueDay: e.dueDay,
-        status: status as StepStatus, late,
-        question: viewer.isJoiner && ahead ? null : fileOut(e.question),
+        status: status as StepStatus, late, folder: e.folder,
+        question: hidden ? null : fileOut(e.question),
+        questions: hidden ? [] : e.questions.filter((f) => f.key).map(listedFile),
+        answers: e.answers.filter((f) => f.key).map(listedFile),
         // The joiner watches it in HRMS, never on vimeo.com, where nothing counts.
         vimeo: e.vimeo && !viewer.isJoiner ? { name: e.vimeo.name, link: vimeoLink(e.vimeo) } : e.vimeo ? { name: e.vimeo.name, link: "" } : null,
         answer: fileOut(e.answer),
@@ -455,21 +473,25 @@ export class FirstDaysService {
         opensAt: ahead ? zonedTimeToUtc(e.day, "00:00", tz) : null,
         // Kept from before questions were required: the answer stands, and the head can put the question with it.
         missingQuestion: !hasQuestion(e),
+        // The old fixed slots keep one file each side, replaced rather than added to.
         can: [
           ...(viewer.isJoiner && canAnswer(e, today)
             ? video
               ? ["watch", ...(canWriteUp(e, today) ? ["writeUp"] : [])]
-              : [e.answer ? "replaceAnswer" : "answer"]
+              : e.legacy ? [e.answer ? "replaceAnswer" : "answer"] : [e.answers.length ? "addAnswer" : "answer"]
             : []),
-          ...(asHead ? [hasQuestion(e) ? "replaceQuestion" : "attachQuestion"] : []),
+          ...(asHead
+            ? e.legacy ? [hasQuestion(e) ? "replaceQuestion" : "attachQuestion"]
+              : video ? ["replaceQuestion", "move"] : ["addFiles", "move"]
+            : []),
         ],
       };
     });
     if (!entries.some((e) => e.day === d1)) {
       items.unshift({
         id: "day-1", placeholder: true, kind: "document", title: "Day-1 homework", day: d1, dayNumber: 1, dueDay: d1,
-        status: (viewer.isJoiner ? "waiting" : today > d1 ? "overdue" : "todo") as StepStatus, late: false,
-        question: null, vimeo: null, answer: null, notes: null, durationSeconds: 0, watched: false, percent: 0, opensAt: null, missingQuestion: false,
+        status: (viewer.isJoiner ? "waiting" : today > d1 ? "overdue" : "todo") as StepStatus, late: false, folder: "",
+        question: null, questions: [], answers: [], vimeo: null, answer: null, notes: null, durationSeconds: 0, watched: false, percent: 0, opensAt: null, missingQuestion: false,
         can: mayAdd ? ["add"] : [],
       });
     }
@@ -483,6 +505,8 @@ export class FirstDaysService {
       canAdd: mayAdd,
       /** The days a homework can be set for — empty for anyone who can't set one now. */
       days,
+      /** The folders in use on this guide, for picking one again. */
+      folders: foldersOf(entries),
     };
   }
 
@@ -494,16 +518,19 @@ export class FirstDaysService {
     const asHead = viewer.isHead || viewer.isHr;
     const items = [...(rec.extras ?? [])]
       .sort((a, b) => (a.addedAt?.getTime() ?? 0) - (b.addedAt?.getTime() ?? 0))
-      .map((x) => ({
-        id: String(x._id), title: x.title, day: x.day, dayNumber: dayNumber(rec.startDay, x.day),
-        video: fileOut(x.video),
-        link: x.link ? { url: x.link, host: videoLink(x.link)?.host ?? "Link" } : null,
-        addedAt: x.addedAt ?? null, updatedAt: x.updatedAt ?? null, versions: x.versions ?? 1,
-        feedback: (x.feedback ?? []).map((f) => ({ text: f.text, byName: f.byName || "Department head", at: f.at ?? null })),
-        can: [...(viewer.isJoiner ? ["newVersion"] : []), ...(asHead ? ["feedback"] : [])],
-      }));
-    // Added during the fifteen days; a new version of one already there, any time.
-    return { items, canAdd: viewer.isJoiner && today >= rec.startDay && today <= rec.endDay };
+      .map((x) => {
+        const { files, links } = FirstDaysService.extraContents(x);
+        return {
+          id: String(x._id), title: x.title, day: x.day, dayNumber: dayNumber(rec.startDay, x.day), folder: x.folder ?? "",
+          files: files.filter((f) => f.key).map((f) => ({ ...listedFile(f), isVideo: isVideoKey(f.key) })),
+          links: links.map((url) => ({ url, host: videoLink(url)?.host ?? "Link" })),
+          addedAt: x.addedAt ?? null, updatedAt: x.updatedAt ?? null,
+          feedback: (x.feedback ?? []).map((f) => ({ text: f.text, byName: f.byName || "Department head", at: f.at ?? null })),
+          can: [...(viewer.isJoiner ? ["addFiles", "remove", "move"] : []), ...(asHead ? ["feedback"] : [])],
+        };
+      });
+    // Added during the fifteen days; added to, any time.
+    return { items, canAdd: viewer.isJoiner && today >= rec.startDay && today <= rec.endDay, folders: foldersOf(items) };
   }
 
   // ── The joiner's own steps ─────────────────────────────────────────────────
@@ -543,37 +570,70 @@ export class FirstDaysService {
     return this.mineView(userId);
   }
 
-  /**
-   * The joiner's answer to one homework, or a new version of it. Only once its
-   * question is on file and its day has come; late is accepted, and marked.
-   */
-  async answerHomework(userId: string, itemId: string, file: StoredFile) {
+  /** One of the joiner's own homework, open to them today — refused otherwise, saying why. */
+  private async myOpenHomework(userId: string, itemId: string) {
     const { rec, emp } = await this.mineOrFail(userId);
     const today = todayInTz(rec.timeZone);
     const entry = homeworkEntries(rec, rec.timeZone).find((e) => e.id === itemId);
     if (!entry) throw fail("That homework isn't in your guide", 404);
-    if (entry.kind === "video") throw fail("This homework is a video — watch it, then write what you learned");
     if (!hasQuestion(entry)) throw fail("Your department head hasn't added the question for this homework yet");
     if (!canAnswer(entry, today)) throw fail(`This homework opens on ${fmtDay(entry.day)}`);
-    const again = !!entry.answer;
+    return { rec, emp, entry, today };
+  }
+
+  /**
+   * The joiner's answer to a document homework: one or more files, added to
+   * what they already handed in. Only once its question is on file and its
+   * day has come; late is accepted, and marked by when the first file came.
+   * The two old fixed slots take one file, which replaces the last.
+   */
+  async answerHomework(userId: string, itemId: string, files: StoredFile[]) {
+    const { rec, emp, entry, today } = await this.myOpenHomework(userId, itemId);
+    if (entry.kind === "video") throw fail("This homework is a video — watch it, then write what you learned");
+    if (!files.length) throw fail("Attach your answer");
+    const again = entry.answers.length > 0;
     const now = new Date();
-    const stored = { key: file.key, name: file.name, at: now, by: userId };
     if (entry.legacy) {
-      rec.set(entry.legacy === 1 ? "homeworkResult" : "homework2Result", stored);
+      if (files.length > 1) throw fail("This homework takes one file");
+      rec.set(entry.legacy === 1 ? "homeworkResult" : "homework2Result", stamp(files[0], userId, now));
     } else {
+      const all = [...entry.answers, ...files.map((f) => stamp(f, userId, now))];
+      if (all.length > MAX_FILES) throw fail(`An answer can have up to ${MAX_FILES} files — remove one first`);
       const h = rec.homeworks.id(itemId)!;
-      h.set("answer", stored);
+      h.set("answerFiles", all);
+      h.set("answer", all[0]);
       if (!h.answeredAt) h.set("answeredAt", now);
     }
     await rec.save();
+    const names = files.map((f) => f.name).join(", ");
     await notify({
       users: (await headContactsFor(userId)).map((h) => h.userId),
       kind: "reminder",
-      title: `${emp.name ?? "Your new joiner"} ${again ? "handed in a new version of" : "answered"} “${entry.title}”`,
-      body: today > entry.dueDay && !again ? `${file.name} · late — it was due ${fmtDay(entry.dueDay)}` : file.name,
+      title: again
+        ? `${emp.name ?? "Your new joiner"} added ${plural(files.length, "file")} to their answer for “${entry.title}”`
+        : `${emp.name ?? "Your new joiner"} answered “${entry.title}”`,
+      body: today > entry.dueDay && !again ? `${names} · late — it was due ${fmtDay(entry.dueDay)}` : names,
       href: "/first-days/team",
       actor: userId,
     });
+    return this.mineView(userId);
+  }
+
+  /**
+   * Take one of their answer files back. A document's answer keeps at least
+   * one file — add the right one, then remove the wrong one; a video
+   * write-up's attachments are optional, so they can all go.
+   */
+  async removeAnswerFile(userId: string, itemId: string, key: string) {
+    const { rec, entry } = await this.myOpenHomework(userId, itemId);
+    if (entry.legacy) throw fail("Upload the new file instead — it replaces this one");
+    const left = entry.answers.filter((f) => f.key !== key);
+    if (left.length === entry.answers.length) throw fail("That file isn't in your answer", 404);
+    if (entry.kind === "document" && !left.length) throw fail("Keep at least one file — add the new one first, then remove this one");
+    const h = rec.homeworks.id(itemId)!;
+    h.set("answerFiles", left);
+    h.set("answer", left[0] ?? null);
+    await rec.save();
     return this.mineView(userId);
   }
 
@@ -638,9 +698,9 @@ export class FirstDaysService {
    * The joiner's write-up of a video homework — what they learned — with a
    * file if they want one. Opens once the video has been watched to the end;
    * handing it in is what completes the homework. It can be changed after;
-   * a file sent with the change replaces the last one, none keeps it.
+   * files sent with it are added to any already there.
    */
-  async submitWriteUp(userId: string, itemId: string, notes: string, file: StoredFile | null) {
+  async submitWriteUp(userId: string, itemId: string, notes: string, files: StoredFile[]) {
     const { rec, emp, entry, h, today } = await this.myVideoHomework(userId, itemId);
     if (!canWriteUp(entry, today)) throw fail("Watch the video to the end first — then write what you learned");
     const text = notes.trim();
@@ -648,7 +708,12 @@ export class FirstDaysService {
     const again = entry.handedIn;
     const now = new Date();
     h.set("notes", text.slice(0, 4000));
-    if (file) h.set("answer", { key: file.key, name: file.name, at: now, by: userId });
+    if (files.length) {
+      const all = [...entry.answers, ...files.map((f) => stamp(f, userId, now))];
+      if (all.length > MAX_FILES) throw fail(`A write-up can have up to ${MAX_FILES} files — remove one first`);
+      h.set("answerFiles", all);
+      h.set("answer", all[0]);
+    }
     if (!h.answeredAt) h.set("answeredAt", now);
     await rec.save();
     await notify({
@@ -664,54 +729,110 @@ export class FirstDaysService {
 
   // ── Additional homework — the joiner's own presentation videos ─────────────
 
-  /** The video as it will be stored: the uploaded file, or a link we accept. */
-  private extraSource(input: ExtraSource, userId: string) {
-    if (input.video) return { video: { key: input.video.key, name: input.video.name, at: new Date(), by: userId }, link: "" };
-    const link = videoLink(input.link ?? "");
-    if (!link) throw fail("Paste a Google Drive, YouTube or Vimeo link to the video");
-    return { video: null, link: link.url };
+  /** An additional homework's files and links, as lists — one video or link from before reads as a list of one. */
+  private static extraContents(x: { files?: unknown; video?: unknown; links?: unknown; link?: string | null }) {
+    const files = fileList(x.files as StoredFile[] | null, x.video as StoredFile | null) as (StoredFile & { at?: Date | null })[];
+    const stored = ((x.links as string[] | null | undefined) ?? []).filter(Boolean);
+    const links = stored.length ? stored : x.link ? [x.link] : [];
+    return { files, links };
   }
 
-  /** Their head and HR, told a presentation came in. */
-  private async announceExtra(userId: string, name: string, title: string, again: boolean) {
+  /** What the joiner is adding: their files, stamped, and a link we accept. */
+  private extraAdditions(input: ExtraSource, userId: string) {
+    const files = (input.files ?? []).map((f) => stamp(f, userId));
+    let link: string | null = null;
+    if (input.link !== undefined) {
+      const ok = videoLink(input.link);
+      if (!ok) throw fail("Paste a Google Drive, YouTube or Vimeo link to the video");
+      link = ok.url;
+    }
+    if (!files.length && !link) throw fail("Choose a file, or paste a link");
+    return { files, link };
+  }
+
+  /** Their head and HR, told something came in. */
+  private async announceExtra(userId: string, name: string, title: string, added: number | null) {
     const heads = (await headContactsFor(userId)).map((h) => String(h.userId));
     const hr = (await watchersFor("onboardingTasks", undefined, "edit")).map(String);
     const users = Array.from(new Set([...heads, ...hr])).filter((u) => u !== String(userId));
     if (!users.length) return;
     await notify({
       users, kind: "reminder",
-      title: `${name} ${again ? "uploaded a new version of" : "handed in"} additional homework`,
+      title: added === null ? `${name} handed in additional homework` : `${name} added ${plural(added, "file")} to their additional homework`,
       body: title,
       href: "/first-days/team",
       actor: userId,
     });
   }
 
-  /** A new additional homework, on any day of the fifteen: a title and their video. */
-  async addExtra(userId: string, title: string, input: ExtraSource) {
+  /**
+   * A new additional homework, on any day of the fifteen: a title, a folder if
+   * they like, and its first file or link. The rest of a batch is added after,
+   * one file at a time, so a handful of large videos never sit in memory at once.
+   */
+  async addExtra(userId: string, title: string, folder: string, input: ExtraSource) {
     const { rec, emp } = await this.mineOrFail(userId);
     const today = todayInTz(rec.timeZone);
     if (today > rec.endDay) throw fail(`Additional homework is added during your first fifteen days — they ended on ${fmtDay(rec.endDay)}`);
+    const { files, link } = this.extraAdditions(input, userId);
     const name = title.trim().slice(0, 160) || "Presentation";
     const now = new Date();
-    rec.extras.push({ title: name, day: today, ...this.extraSource(input, userId), addedAt: now, updatedAt: now, versions: 1 });
+    rec.extras.push({ title: name, day: today, folder: folderName(folder), files, links: link ? [link] : [], addedAt: now, updatedAt: now });
     await rec.save();
-    await this.announceExtra(userId, emp.name ?? "Your new joiner", name, false);
-    return this.mineView(userId);
+    await this.announceExtra(userId, emp.name ?? "Your new joiner", name, null);
+    const added = rec.extras[rec.extras.length - 1];
+    return { view: await this.mineView(userId), extraId: String(added._id) };
   }
 
-  /** A new version of one — the new video replaces the old; the feedback on it stays. */
-  async newExtraVersion(userId: string, extraId: string, input: ExtraSource) {
+  /**
+   * More files or a link for one already handed in — any time. `quiet` is for
+   * the rest of a batch the joiner sent together: they're told about once.
+   */
+  async addToExtra(userId: string, extraId: string, input: ExtraSource, quiet = false) {
     const { rec, emp } = await this.mineOrFail(userId);
     const x = (rec.extras ?? []).find((e) => String(e._id) === extraId);
     if (!x) throw fail("That additional homework isn't in your guide", 404);
-    const src = this.extraSource(input, userId);
-    x.set("video", src.video);
-    x.set("link", src.link);
+    const { files, link } = this.extraAdditions(input, userId);
+    const now = FirstDaysService.extraContents(x);
+    const nextFiles = [...now.files, ...files];
+    const nextLinks = link ? [...now.links, link] : now.links;
+    if (nextFiles.length + nextLinks.length > MAX_FILES) throw fail(`An additional homework can have up to ${MAX_FILES} files and links — remove one first`);
+    x.set("files", nextFiles);
+    x.set("links", nextLinks);
+    x.set("video", null);
+    x.set("link", "");
     x.set("updatedAt", new Date());
-    x.set("versions", (x.versions ?? 1) + 1);
     await rec.save();
-    await this.announceExtra(userId, emp.name ?? "Your new joiner", x.title, true);
+    if (!quiet) await this.announceExtra(userId, emp.name ?? "Your new joiner", x.title, files.length + (link ? 1 : 0));
+    return this.mineView(userId);
+  }
+
+  /** Take a file or link back out. One always stays — add the right one, then remove the wrong one. */
+  async removeFromExtra(userId: string, extraId: string, what: { key?: string; link?: string }) {
+    const { rec } = await this.mineOrFail(userId);
+    const x = (rec.extras ?? []).find((e) => String(e._id) === extraId);
+    if (!x) throw fail("That additional homework isn't in your guide", 404);
+    const now = FirstDaysService.extraContents(x);
+    const files = what.key ? now.files.filter((f) => f.key !== what.key) : now.files;
+    const links = what.link ? now.links.filter((l) => l !== what.link) : now.links;
+    if (files.length === now.files.length && links.length === now.links.length) throw fail("That isn't in this additional homework", 404);
+    if (!files.length && !links.length) throw fail("Keep at least one file or link — add the new one first, then remove this one");
+    x.set("files", files);
+    x.set("links", links);
+    x.set("video", null);
+    x.set("link", "");
+    x.set("updatedAt", new Date());
+    await rec.save();
+    return this.mineView(userId);
+  }
+
+  /** Put one of their additional homework in a folder — "" takes it out of any. */
+  async moveExtra(userId: string, extraId: string, folder: string) {
+    const { rec } = await this.mineOrFail(userId);
+    const x = (rec.extras ?? []).find((e) => String(e._id) === extraId);
+    if (!x) throw fail("That additional homework isn't in your guide", 404);
+    x.set("folder", folderName(folder));
+    await rec.save();
     return this.mineView(userId);
   }
 
@@ -878,14 +999,19 @@ export class FirstDaysService {
   async addHomework(employeeId: string, userId: string, isHr: boolean, input: NewHomework) {
     const { rec, emp, viewer } = await this.mayAddHomework(employeeId, userId, isHr, input.day);
     const kind: HomeworkKind = input.kind === "video" ? "video" : "document";
-    if (!input.file && !(kind === "video" && input.vimeo)) throw fail(kind === "video" ? "Choose the video" : "Attach the question document");
+    const files = input.files ?? [];
+    if (!files.length && !(kind === "video" && input.vimeo)) throw fail(kind === "video" ? "Choose the video" : "Attach the question document");
+    if (kind === "video" && files.length > 1) throw fail("A video homework holds one video — put the others in their own homework, in the same folder");
+    if (files.length > MAX_FILES) throw fail(`A homework can have up to ${MAX_FILES} question files`);
     const title = input.title.trim().slice(0, 160) || "Homework";
     const now = new Date();
     const opensNow = input.day <= todayInTz(rec.timeZone);
+    const stamped = files.map((f) => stamp(f, userId, now));
     rec.homeworks.push({
-      title, kind, day: input.day,
-      question: input.file ? { key: input.file.key, name: input.file.name, at: now, by: userId } : null,
-      vimeo: kind === "video" && !input.file && input.vimeo ? input.vimeo : null,
+      title, kind, day: input.day, folder: folderName(input.folder),
+      question: stamped[0] ?? null,
+      questionFiles: kind === "document" ? stamped : [],
+      vimeo: kind === "video" && !files.length && input.vimeo ? input.vimeo : null,
       videoSeconds: kind === "video" ? Math.round(input.videoSeconds ?? 0) : 0,
       watch: kind === "video" ? emptyWatch() : null,
       addedAt: now, addedBy: userId, notifiedAt: opensNow ? now : null,
@@ -936,8 +1062,10 @@ export class FirstDaysService {
       rec.set(entry.legacy === 1 ? "homework" : "homework2", stored);
     } else {
       const h = rec.homeworks.id(itemId)!;
-      // An uploaded video replaces a Vimeo one, or the other way round.
+      // An uploaded video replaces a Vimeo one, or the other way round. A
+      // document's question files become just this one.
       h.set("question", stored);
+      if (!video) h.set("questionFiles", stored ? [stored] : []);
       h.set("vimeo", video?.vimeo && !stored ? video.vimeo : null);
       // A new video is a different film: it is watched from the start. What
       // they handed in for the old one still counts.
@@ -956,6 +1084,59 @@ export class FirstDaysService {
         href: "/first-days", actor: userId,
       });
     }
+    return this.view(rec, emp, viewer);
+  }
+
+  /** One of the list's document homework, for the head or HR to change — refused otherwise, saying why. */
+  private async reviewerDocument(employeeId: string, itemId: string, userId: string, isHr: boolean) {
+    const found = await this.forReviewer(employeeId, userId, isHr);
+    const entry = homeworkEntries(found.rec, found.rec.timeZone).find((e) => e.id === itemId);
+    if (!entry) throw fail("That homework isn't in their guide", 404);
+    if (entry.legacy) throw fail("This homework takes one question file — replace it instead");
+    return { ...found, entry };
+  }
+
+  /** More question files for a document homework, at any time; the joiner is told if it's open. */
+  async addHomeworkFiles(employeeId: string, itemId: string, userId: string, isHr: boolean, files: StoredFile[]) {
+    const { rec, emp, viewer, entry } = await this.reviewerDocument(employeeId, itemId, userId, isHr);
+    if (entry.kind !== "document") throw fail("A video homework holds one video — put another video in its own homework, in the same folder");
+    if (!files.length) throw fail("Choose the files");
+    const all = [...entry.questions, ...files.map((f) => stamp(f, userId))];
+    if (all.length > MAX_FILES) throw fail(`A homework can have up to ${MAX_FILES} question files — remove one first`);
+    const h = rec.homeworks.id(itemId)!;
+    h.set("questionFiles", all);
+    h.set("question", all[0]);
+    await rec.save();
+    if (todayInTz(rec.timeZone) >= entry.day) {
+      await notify({
+        users: [rec.user], kind: "reminder",
+        title: `More for “${entry.title}”`,
+        body: `${plural(files.length, "new file")} from your department head: ${files.map((f) => f.name).join(", ")}`,
+        href: "/first-days", actor: userId,
+      });
+    }
+    return this.view(rec, emp, viewer);
+  }
+
+  /** Take a question file back out. One always stays — add the right one, then remove the wrong one. */
+  async removeHomeworkFile(employeeId: string, itemId: string, userId: string, isHr: boolean, key: string) {
+    const { rec, emp, viewer, entry } = await this.reviewerDocument(employeeId, itemId, userId, isHr);
+    if (entry.kind !== "document") throw fail("Replace the video instead");
+    const left = entry.questions.filter((f) => f.key !== key);
+    if (left.length === entry.questions.length) throw fail("That file isn't in this homework", 404);
+    if (!left.length) throw fail("Keep at least one question file — add the new one first, then remove this one");
+    const h = rec.homeworks.id(itemId)!;
+    h.set("questionFiles", left);
+    h.set("question", left[0]);
+    await rec.save();
+    return this.view(rec, emp, viewer);
+  }
+
+  /** Put a homework in a folder — "" takes it out of any. Folders only group the page. */
+  async moveHomework(employeeId: string, itemId: string, userId: string, isHr: boolean, folder: string) {
+    const { rec, emp, viewer } = await this.reviewerDocument(employeeId, itemId, userId, isHr);
+    rec.homeworks.id(itemId)!.set("folder", folderName(folder));
+    await rec.save();
     return this.view(rec, emp, viewer);
   }
 

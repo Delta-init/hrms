@@ -9,7 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DOC_ACCEPT, KindPicker, MAX_VIDEO_MB, VIDEO_ACCEPT, checkFile } from "@/components/firstDays/AddHomeworkDialog";
+import { DOC_ACCEPT, KindPicker, MAX_VIDEO_MB, VIDEO_ACCEPT, addDocs, checkFile } from "@/components/firstDays/AddHomeworkDialog";
+import { MAX_DOC_MB, MAX_FILES, PickedFiles } from "@/components/firstDays/FirstDaysFiles";
+import { FolderField } from "@/components/firstDays/Folders";
 import { useAddHomeworkToMany, type HomeworkKind } from "@/hooks/useFirstDays";
 import { VideoSourceToggle, VimeoPicker, type VideoSource } from "@/components/firstDays/VimeoPicker";
 import type { FirstDaysView, HomeworkSendResult, VimeoVideo } from "@/types";
@@ -58,6 +60,10 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   const [title, setTitle] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [file, setFile] = useState<File | null>(null);
+  const [docs, setDocs] = useState<File[]>([]);
+  const [folder, setFolder] = useState("");
+  // Folder names in use on any of these joiners' guides.
+  const folders = useMemo(() => Array.from(new Set(joiners.flatMap((v) => v.homework?.folders ?? []))), [joiners]);
   const [results, setResults] = useState<HomeworkSendResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -66,7 +72,7 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setKind("document"); setSource("upload"); setVimeo(null); setSentPct(null); setDay(today); setTitle(""); setFile(null); setResults(null); setError(null);
+    setKind("document"); setSource("upload"); setVimeo(null); setSentPct(null); setDay(today); setTitle(""); setFile(null); setDocs([]); setFolder(""); setResults(null); setError(null);
     // Only on opening: a refresh behind the form must not reset it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -85,15 +91,20 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
   const allOn = eligible.length > 0 && eligible.every((v) => picked.has(v.employee._id));
   const chosen = eligible.filter((v) => picked.has(v.employee._id)).map((v) => v.employee._id);
 
-  const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setError(null); } };
+  const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setDocs([]); setError(null); } };
   const submit = () => {
     setError(null);
     if (!title.trim()) { setError("Give the homework a title"); return; }
     if (!chosen.length) { setError("Pick at least one new joiner"); return; }
-    if (fromVimeo ? !vimeo : !file) { setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question document"); return; }
-    setSentPct(fromVimeo ? null : 0);
+    if (fromVimeo ? !vimeo : kind === "video" ? !file : !docs.length) {
+      setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question documents"); return;
+    }
+    setSentPct(kind === "video" && !fromVimeo ? 0 : null);
     // All sent: done, and the toast says so. Any refused: stay open and say who and why.
-    send.mutate({ employeeIds: chosen, title: title.trim(), day, kind, ...(fromVimeo ? { vimeoId: vimeo!.id } : { file, onProgress: setSentPct }) }, {
+    send.mutate({
+      employeeIds: chosen, title: title.trim(), day, kind, folder: folder.trim(),
+      ...(fromVimeo ? { vimeoId: vimeo!.id } : kind === "video" ? { file, onProgress: setSentPct } : { files: docs }),
+    }, {
       onSuccess: ({ results: r }) => { if (r.every((x) => x.ok)) onOpenChange(false); else setResults(r); },
       onSettled: () => setSentPct(null),
     });
@@ -112,6 +123,8 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
             <Label htmlFor="hw-many-title">Title</Label>
             <Input id="hw-many-title" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Objection handling — fees" />
           </div>
+
+          <FolderField value={folder} onChange={setFolder} options={folders} disabled={send.isPending} />
 
           <div className="space-y-1.5">
             <Label>For which day</Label>
@@ -175,10 +188,26 @@ export function SendHomeworkDialog({ open, onOpenChange, joiners }: Props) {
           {fromVimeo ? (
             <VimeoPicker value={vimeo} disabled={send.isPending}
               onPick={(v) => { setVimeo(v); setError(null); setResults(null); if (!title.trim()) setTitle(v.name.slice(0, 160)); }} />
+          ) : kind === "document" ? (
+          <div className="space-y-1.5">
+            <Label>Question files</Label>
+            <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT} multiple
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []); e.target.value = "";
+                if (!picked.length) return;
+                const next = addDocs(docs, picked);
+                setDocs(next.files); setError(next.error); setResults(null);
+              }} />
+            <PickedFiles files={docs} disabled={send.isPending} onRemove={(i) => setDocs((d) => d.filter((_, j) => j !== i))} />
+            <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()} disabled={send.isPending || docs.length >= MAX_FILES}>
+              <Upload className="h-3.5 w-3.5" />{docs.length ? "Add more files" : "Choose files"}
+            </Button>
+            <p className="text-xs text-muted-foreground">Up to {MAX_FILES} — documents, sheets, slides or images, {MAX_DOC_MB} MB each.</p>
+          </div>
           ) : (
           <div className="space-y-2">
-            <Label>{kind === "video" ? `Video (MP4, up to ${MAX_VIDEO_MB} MB)` : "Question document"}</Label>
-            <input ref={input} type="file" className="hidden" accept={kind === "video" ? VIDEO_ACCEPT : DOC_ACCEPT}
+            <Label>{`Video (MP4, up to ${MAX_VIDEO_MB} MB)`}</Label>
+            <input ref={input} type="file" className="hidden" accept={VIDEO_ACCEPT}
               onChange={(e) => {
                 const f = e.target.files?.[0]; e.target.value = "";
                 if (!f) return;

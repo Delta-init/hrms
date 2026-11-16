@@ -46,10 +46,17 @@ const watchSchema = new Schema(
 const homeworkSchema = new Schema({
   title: { type: String, trim: true, maxlength: 160, required: true },
   kind: { type: String, enum: ["document", "video"], default: "document" },
+  /** The folder it is grouped under on the page; "" for none. */
+  folder: { type: String, trim: true, maxlength: 80, default: "" },
   /** "YYYY-MM-DD" in the joiner's zone. Answers open on it; on time means by it. */
   day: { type: String, required: true },
   /** The question document — or, for a video homework, the uploaded MP4. Empty for a Vimeo video. */
   question: { type: fileSchema, default: null },
+  /**
+   * A document homework's question files, when it has several. `question`
+   * stays the first of them; homework from before kept only `question`.
+   */
+  questionFiles: { type: [fileSchema], default: [] },
   /** A video from the company's Vimeo folder: its id, the unlisted hash if any, and its name there. */
   vimeo: {
     type: new Schema({ id: { type: String, required: true }, hash: { type: String, default: "" }, name: { type: String, default: "" } }, { _id: false }),
@@ -62,6 +69,8 @@ const homeworkSchema = new Schema({
   notes: { type: String, trim: true, maxlength: 4000, default: "" },
   /** The answer file — required for a document homework, optional with a video's write-up. */
   answer: { type: fileSchema, default: null },
+  /** Every answer file, when there are several; `answer` stays the first. */
+  answerFiles: { type: [fileSchema], default: [] },
   /** The first answer's time — replacing it later doesn't make it late. */
   answeredAt: { type: Date, default: null },
   addedAt: { type: Date, default: Date.now },
@@ -81,6 +90,12 @@ const extraSchema = new Schema({
   title: { type: String, trim: true, maxlength: 160, required: true },
   /** The day it was added, "YYYY-MM-DD" in the joiner's zone. */
   day: { type: String, required: true },
+  /** The joiner's own folder it is grouped under; "" for none. */
+  folder: { type: String, trim: true, maxlength: 80, default: "" },
+  /** Its files — videos, and slides or documents — and links, several of each. */
+  files: { type: [fileSchema], default: [] },
+  links: { type: [{ type: String, trim: true, maxlength: 500 }], default: [] },
+  /** From before several were allowed: one video, or one link. Read as lists of one. */
   video: { type: fileSchema, default: null },
   link: { type: String, trim: true, maxlength: 500, default: "" },
   addedAt: { type: Date, default: Date.now },

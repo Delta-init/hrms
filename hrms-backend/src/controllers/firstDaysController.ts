@@ -5,7 +5,7 @@ import { FirstDaysService } from "../services/firstDaysService.js";
 import { folderVideo, folderVideos, vimeoConnected } from "../services/vimeoService.js";
 import { departmentsHeadedBy } from "../services/departmentHeadService.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
-import { clipExt, documentExt } from "../middleware/upload.js";
+import { documentExt, extraExt, uploadedFiles } from "../middleware/upload.js";
 import { mp4Duration } from "./agreementController.js";
 import { hasPermission } from "../middleware/permissions.js";
 import { getOrgId } from "../utils/orgContext.js";
@@ -21,12 +21,25 @@ const route = (fn: Handler) => async (req: AuthenticatedRequest, res: Response, 
   try { await fn(req, res); } catch (e) { next(e); }
 };
 
+/**
+ * A unique stamp for a stored file's key. Keys are named by the millisecond,
+ * and several files stored in one request share one — so each takes the next.
+ */
+let lastStamp = 0;
+const nextStamp = () => (lastStamp = Math.max(Date.now(), lastStamp + 1));
+
 /** A homework file into storage, under the joiner it belongs to. */
-async function storeDocument(req: AuthenticatedRequest, employeeOrUser: string) {
-  const file = req.file!;
-  const key = attachmentKey(getOrgId(), employeeOrUser, "first-days", documentExt(file.mimetype), Date.now());
+async function storeDocument(req: AuthenticatedRequest, employeeOrUser: string, file: Express.Multer.File = req.file!) {
+  const key = attachmentKey(getOrgId(), employeeOrUser, "first-days", documentExt(file.mimetype), nextStamp());
   await putObject(key, file.buffer, file.mimetype);
   return { key, name: (file.originalname || "File").slice(0, 200) };
+}
+
+/** Every document an upload carried, stored, in the order they were chosen. */
+async function storeDocuments(req: AuthenticatedRequest, employeeOrUser: string) {
+  const out = [];
+  for (const file of uploadedFiles(req)) out.push(await storeDocument(req, employeeOrUser, file));
+  return out;
 }
 
 /**
@@ -37,7 +50,7 @@ async function storeVideo(req: AuthenticatedRequest, employeeOrUser: string) {
   const file = req.file!;
   const seconds = mp4Duration(file.buffer);
   if (!seconds || seconds < 1) return null;
-  const key = attachmentKey(getOrgId(), employeeOrUser, "first-days", "mp4", Date.now());
+  const key = attachmentKey(getOrgId(), employeeOrUser, "first-days", "mp4", nextStamp());
   await putObject(key, file.buffer, "video/mp4");
   return { file: { key, name: (file.originalname || "video.mp4").slice(0, 200) }, seconds: Math.round(seconds) };
 }
@@ -48,6 +61,7 @@ function homeworkFields(req: AuthenticatedRequest) {
   const parsed = z.object({
     title: z.string().trim().max(160).default(""),
     day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    folder: z.string().max(80).default(""),
   }).safeParse(req.body ?? {});
   return parsed.success ? parsed.data : null;
 }
@@ -63,8 +77,16 @@ export const confirmMySession = route(async (req, res) => {
 });
 
 export const answerMyHomework = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach your answer as a file", 400); return; }
-  sendSuccess(res, "Answer handed in", await service.answerHomework(req.user!.userId, req.params.itemId, await storeDocument(req, req.user!.userId)));
+  if (!uploadedFiles(req).length) { sendError(res, "Attach your answer as a file", 400); return; }
+  sendSuccess(res, "Answer handed in", await service.answerHomework(req.user!.userId, req.params.itemId, await storeDocuments(req, req.user!.userId)));
+});
+
+const fileKey = z.object({ key: z.string().min(1).max(300) });
+
+export const removeMyAnswerFile = route(async (req, res) => {
+  const parsed = fileKey.safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Say which file", 400); return; }
+  sendSuccess(res, "File removed", await service.removeAnswerFile(req.user!.userId, req.params.itemId, parsed.data.key));
 });
 
 export const startMyHomeworkVideo = route(async (req, res) => {
@@ -81,44 +103,64 @@ export const myHomeworkVideoBeat = route(async (req, res) => {
 export const submitMyWriteUp = route(async (req, res) => {
   const parsed = z.object({ notes: z.string().max(4000) }).safeParse(req.body ?? {});
   if (!parsed.success) { sendError(res, "Write what you learned", 400); return; }
-  const file = req.file ? await storeDocument(req, req.user!.userId) : null;
-  sendSuccess(res, "Write-up handed in", await service.submitWriteUp(req.user!.userId, req.params.itemId, parsed.data.notes, file));
+  sendSuccess(res, "Write-up handed in", await service.submitWriteUp(req.user!.userId, req.params.itemId, parsed.data.notes, await storeDocuments(req, req.user!.userId)));
 });
 
 // ── Additional homework — the joiner's own presentation videos ──────────────
 
-const extraTitle = z.object({ title: z.string().trim().min(1, "Give it a title").max(160) });
+const extraTitle = z.object({
+  title: z.string().trim().min(1, "Give it a title").max(160),
+  folder: z.string().max(80).default(""),
+});
 
-/** The joiner's own recording into storage, as the format it came in. */
-async function storeClip(req: AuthenticatedRequest) {
+/** One of the joiner's own files into storage — a video or a document — as the format it came in. */
+async function storeExtraFile(req: AuthenticatedRequest) {
   const file = req.file!;
-  const key = attachmentKey(getOrgId(), req.user!.userId, "first-days", clipExt(file.mimetype), Date.now());
+  const key = attachmentKey(getOrgId(), req.user!.userId, "first-days", extraExt(file.mimetype), nextStamp());
   await putObject(key, file.buffer, file.mimetype);
-  return { key, name: (file.originalname || "presentation").slice(0, 200) };
+  return { key, name: (file.originalname || "file").slice(0, 200) };
 }
 
-export const addMyExtraVideo = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Choose your video", 400); return; }
+/** A new additional homework with its first file; the rest of the batch follows one by one. */
+export const addMyExtraFile = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Choose a file", 400); return; }
   const t = extraTitle.safeParse(req.body ?? {});
   if (!t.success) { sendError(res, "Give it a title", 400); return; }
-  sendSuccess(res, "Handed in", await service.addExtra(req.user!.userId, t.data.title, { video: await storeClip(req) }));
+  const { view, extraId } = await service.addExtra(req.user!.userId, t.data.title, t.data.folder, { files: [await storeExtraFile(req)] });
+  sendSuccess(res, "Handed in", { ...view, createdExtraId: extraId });
 });
 
 export const addMyExtraLink = route(async (req, res) => {
   const parsed = extraTitle.extend({ link: z.string().trim().min(1).max(500) }).safeParse(req.body ?? {});
   if (!parsed.success) { sendError(res, parsed.error.issues[0]?.message ?? "Give it a title and paste the link", 400); return; }
-  sendSuccess(res, "Handed in", await service.addExtra(req.user!.userId, parsed.data.title, { link: parsed.data.link }));
+  const { view, extraId } = await service.addExtra(req.user!.userId, parsed.data.title, parsed.data.folder, { link: parsed.data.link });
+  sendSuccess(res, "Handed in", { ...view, createdExtraId: extraId });
 });
 
-export const myExtraVideo = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Choose your video", 400); return; }
-  sendSuccess(res, "New version handed in", await service.newExtraVersion(req.user!.userId, req.params.extraId, { video: await storeClip(req) }));
+/** One more file for one already there. `?quiet=1` for the rest of a batch — they're told once. */
+export const addToMyExtraFile = route(async (req, res) => {
+  if (!req.file) { sendError(res, "Choose a file", 400); return; }
+  sendSuccess(res, "Added", await service.addToExtra(req.user!.userId, req.params.extraId, { files: [await storeExtraFile(req)] }, req.query.quiet === "1"));
 });
 
-export const myExtraLink = route(async (req, res) => {
+export const addToMyExtraLink = route(async (req, res) => {
   const parsed = z.object({ link: z.string().trim().min(1).max(500) }).safeParse(req.body ?? {});
   if (!parsed.success) { sendError(res, "Paste the link", 400); return; }
-  sendSuccess(res, "New version handed in", await service.newExtraVersion(req.user!.userId, req.params.extraId, { link: parsed.data.link }));
+  sendSuccess(res, "Added", await service.addToExtra(req.user!.userId, req.params.extraId, { link: parsed.data.link }, req.query.quiet === "1"));
+});
+
+export const removeFromMyExtra = route(async (req, res) => {
+  const parsed = z.object({ key: z.string().max(300).optional(), link: z.string().max(500).optional() }).safeParse(req.body ?? {});
+  if (!parsed.success || (!parsed.data.key && !parsed.data.link)) { sendError(res, "Say which file or link", 400); return; }
+  sendSuccess(res, "Removed", await service.removeFromExtra(req.user!.userId, req.params.extraId, parsed.data));
+});
+
+const folderBody = z.object({ folder: z.string().max(80) });
+
+export const moveMyExtra = route(async (req, res) => {
+  const parsed = folderBody.safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Name the folder", 400); return; }
+  sendSuccess(res, "Moved", await service.moveExtra(req.user!.userId, req.params.extraId, parsed.data.folder));
 });
 
 export const giveExtraFeedback = route(async (req, res) => {
@@ -165,11 +207,31 @@ export const confirmSessionAsHead = route(async (req, res) => {
 });
 
 export const addHomework = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach the question document", 400); return; }
+  if (!uploadedFiles(req).length) { sendError(res, "Attach the question document", 400); return; }
   const fields = homeworkFields(req);
   if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
-  const file = await storeDocument(req, req.params.employeeId);
-  sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), { ...fields, file }));
+  await service.mayAddHomework(req.params.employeeId, req.user!.userId, isHr(req), fields.day);
+  const files = await storeDocuments(req, req.params.employeeId);
+  sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), { ...fields, files }));
+});
+
+/** More question files for a document homework. */
+export const addHomeworkFiles = route(async (req, res) => {
+  if (!uploadedFiles(req).length) { sendError(res, "Choose the files", 400); return; }
+  const files = await storeDocuments(req, req.params.employeeId);
+  sendSuccess(res, "Files added", await service.addHomeworkFiles(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), files));
+});
+
+export const removeHomeworkFile = route(async (req, res) => {
+  const parsed = fileKey.safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Say which file", 400); return; }
+  sendSuccess(res, "File removed", await service.removeHomeworkFile(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), parsed.data.key));
+});
+
+export const moveHomework = route(async (req, res) => {
+  const parsed = folderBody.safeParse(req.body ?? {});
+  if (!parsed.success) { sendError(res, "Name the folder", 400); return; }
+  sendSuccess(res, "Moved", await service.moveHomework(req.params.employeeId, req.params.itemId, req.user!.userId, isHr(req), parsed.data.folder));
 });
 
 /** A video homework: checked before the video is stored, since it can be 250 MB. */
@@ -181,7 +243,7 @@ export const addVideoHomework = route(async (req, res) => {
   const stored = await storeVideo(req, req.params.employeeId);
   if (!stored) { sendError(res, NOT_MP4, 400); return; }
   sendSuccess(res, "Homework sent", await service.addHomework(req.params.employeeId, req.user!.userId, isHr(req), {
-    ...fields, kind: "video", file: stored.file, videoSeconds: stored.seconds,
+    ...fields, kind: "video", files: [stored.file], videoSeconds: stored.seconds,
   }));
 });
 
@@ -265,15 +327,15 @@ export const addVimeoHomeworkToMany = route(async (req, res) => {
  * list; the file is stored once and every joiner's guide points at the same copy.
  */
 export const addHomeworkToMany = route(async (req, res) => {
-  if (!req.file) { sendError(res, "Attach the question document", 400); return; }
+  if (!uploadedFiles(req).length) { sendError(res, "Attach the question document", 400); return; }
   let ids: unknown;
   try { ids = JSON.parse(String((req.body as { employeeIds?: unknown }).employeeIds ?? "[]")); } catch { ids = null; }
   const parsed = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(100).safeParse(ids);
   if (!parsed.success) { sendError(res, "Pick at least one new joiner", 400); return; }
   const fields = homeworkFields(req);
   if (!fields) { sendError(res, "Pick the day the homework is for", 400); return; }
-  const file = await storeDocument(req, req.user!.userId);
-  const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), { ...fields, file });
+  const files = await storeDocuments(req, req.user!.userId);
+  const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), { ...fields, files });
   const sent = results.filter((r) => r.ok).length;
   sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);
 });
@@ -290,7 +352,7 @@ export const addVideoHomeworkToMany = route(async (req, res) => {
   const stored = await storeVideo(req, req.user!.userId);
   if (!stored) { sendError(res, NOT_MP4, 400); return; }
   const results = await service.addHomeworkToMany(parsed.data, req.user!.userId, isHr(req), {
-    ...fields, kind: "video", file: stored.file, videoSeconds: stored.seconds,
+    ...fields, kind: "video", files: [stored.file], videoSeconds: stored.seconds,
   });
   const sent = results.filter((r) => r.ok).length;
   sendSuccess(res, sent === results.length ? `Homework sent to ${sent}` : `Sent to ${sent} of ${results.length}`, results);

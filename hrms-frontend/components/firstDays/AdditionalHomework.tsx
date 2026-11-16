@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, Link2, Loader2, MessageSquare, PlayCircle, Plus, Upload, Video, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Download, ExternalLink, FileText, Link2, Loader2, MessageSquare, PlayCircle, Plus, Upload, Video, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
 } from "@/components/ui/responsive-dialog";
@@ -9,21 +9,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MAX_VIDEO_MB } from "@/components/firstDays/AddHomeworkDialog";
-import { useAddExtra, useExtraFeedback, useExtraNewVersion } from "@/hooks/useFirstDays";
+import { MAX_FILES, PickedFiles } from "@/components/firstDays/FirstDaysFiles";
+import { FolderField, FolderHeading, MoveToFolder, groupByFolder } from "@/components/firstDays/Folders";
+import { useAddExtra, useAddToExtra, useExtraFeedback, useMoveExtra, useRemoveFromExtra } from "@/hooks/useFirstDays";
 import { cn } from "@/lib/utils";
 import type { FirstDaysExtra, FirstDaysView } from "@/types";
 
-/** What phones record in: MP4, an iPhone's MOV, WebM. */
-const CLIP_ACCEPT = "video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm";
+/** What phones record in — MP4, an iPhone's MOV, WebM — and the slides or documents that go with it. */
+const EXTRA_ACCEPT = "video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.m4v,.webm,.pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.txt,image/*";
 const fmtDate = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "";
 const withDownload = (url: string) => `${url}${url.includes("?") ? "&" : "?"}download`;
 
 /**
- * Additional homework: the joiner's own presentation videos, handed in on any
- * day of their fifteen — uploaded, or linked from Google Drive, YouTube or
- * Vimeo. Optional, so never counted. Their head and HR watch it and can leave
- * feedback; the joiner can hand in a new version.
+ * Additional homework: the joiner's own presentation videos — and the slides
+ * that go with them — handed in on any day of their fifteen, several files and
+ * links to each, grouped in folders of their own. Optional, so never counted.
+ * Their head and HR watch it and can leave feedback.
  */
 export function AdditionalHomework({ view }: { view: FirstDaysView }) {
   const extras = view.extras;
@@ -41,21 +43,38 @@ export function AdditionalHomework({ view }: { view: FirstDaysView }) {
       {extras.items.length === 0 ? (
         <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
           {extras.canAdd
-            ? "Optional — hand in your presentation video here on any day, and your department head can give you feedback."
+            ? "Optional — hand in your presentation videos and slides here on any day, and your department head can give you feedback."
             : "Nothing handed in."}
         </p>
-      ) : extras.items.map((x) => <ExtraRow key={x.id} item={x} view={view} />)}
-      {adding && <ExtraForm onClose={() => setAdding(false)} />}
+      ) : groupByFolder(extras.items).map((g) => (
+        <div key={g.folder || "-"} className="space-y-2">
+          {g.folder && <FolderHeading name={g.folder} count={g.items.length} />}
+          {g.items.map((x) => <ExtraRow key={x.id} item={x} view={view} />)}
+        </div>
+      ))}
+      {adding && <ExtraForm folders={extras.folders} onClose={() => setAdding(false)} />}
     </section>
   );
 }
 
 function ExtraRow({ item: x, view }: { item: FirstDaysExtra; view: FirstDaysView }) {
   const joiner = view.viewer.isJoiner;
-  const [watching, setWatching] = useState(false);
+  const remove = useRemoveFromExtra();
+  const move = useMoveExtra();
+  const [watching, setWatching] = useState<string | null>(null);
   const [unplayable, setUnplayable] = useState(false);
-  const [versioning, setVersioning] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
   const given = x.feedback.length > 0;
+  const count = x.files.length + x.links.length;
+  // One always stays: the last file or link can't be taken out.
+  const canTrim = x.can.includes("remove") && count > 1;
+  const playing = x.files.find((f) => f.key === watching);
+  const take = (what: { key?: string; link?: string }, id: string) => {
+    setRemoving(id);
+    remove.mutate({ extraId: x.id, ...what }, { onSettled: () => setRemoving(null) });
+  };
+
   return (
     <div className="rounded-xl border border-border p-4">
       <div className="flex flex-wrap items-start gap-2">
@@ -66,7 +85,10 @@ function ExtraRow({ item: x, view }: { item: FirstDaysExtra; view: FirstDaysView
             <span className="font-normal text-muted-foreground"> · Day {x.dayNumber}</span>
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {x.versions > 1 ? `Version ${x.versions}, handed in ${fmtDate(x.updatedAt)}` : `Handed in ${fmtDate(x.addedAt)}`}
+            {/* A batch's files arrive a moment apart; only a later addition counts as "added to". */}
+            {x.updatedAt && x.addedAt && Date.parse(x.updatedAt) - Date.parse(x.addedAt) > 5 * 60 * 1000
+              ? `Handed in ${fmtDate(x.addedAt)} · last added to ${fmtDate(x.updatedAt)}`
+              : `Handed in ${fmtDate(x.addedAt)}`}
           </p>
         </div>
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium",
@@ -76,34 +98,51 @@ function ExtraRow({ item: x, view }: { item: FirstDaysExtra; view: FirstDaysView
       </div>
 
       <div className="mt-3 space-y-3 pl-6">
-        {x.video && (watching ? (
+        {playing && (
           <div className="space-y-1.5">
-            <video src={x.video.url} controls autoPlay playsInline preload="metadata" className="max-h-96 w-full rounded-lg bg-black"
+            <video key={playing.key} src={playing.url} controls autoPlay playsInline preload="metadata" className="max-h-96 w-full rounded-lg bg-black"
               onError={() => setUnplayable(true)} />
-            {unplayable && <p className="text-xs text-muted-foreground">This browser can&apos;t play this format — download it to watch.</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" className="h-7" onClick={() => { setWatching(null); setUnplayable(false); }}><X className="h-3.5 w-3.5" />Close the video</Button>
+              {unplayable && <span className="text-xs text-muted-foreground">This browser can&apos;t play this format — download it to watch.</span>}
+            </div>
           </div>
-        ) : null)}
-        <div className="flex flex-wrap items-center gap-2">
-          {x.video && (
-            <>
-              <Button size="sm" variant={watching ? "outline" : "default"} onClick={() => setWatching((w) => !w)}>
-                {watching ? <><X className="h-3.5 w-3.5" />Close the video</> : <><PlayCircle className="h-3.5 w-3.5" />Watch</>}
-              </Button>
-              <a href={withDownload(x.video.url)} className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 text-xs hover:bg-muted">
-                <Download className="h-3.5 w-3.5" />Download
-              </a>
-            </>
-          )}
-          {x.link && (
-            <a href={x.link.url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 text-xs text-primary hover:bg-muted">
-              <ExternalLink className="h-3.5 w-3.5" />Open on {x.link.host}
-            </a>
-          )}
-          {x.can.includes("newVersion") && (
-            <Button size="sm" variant="outline" onClick={() => setVersioning(true)}><Upload className="h-3.5 w-3.5" />Upload a new version</Button>
-          )}
-        </div>
+        )}
+        <ul className="space-y-1.5">
+          {x.files.map((f) => (
+            <li key={f.key} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              {f.isVideo ? <Video className="h-4 w-4 shrink-0 text-muted-foreground" /> : <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />}
+              <span className="min-w-0 flex-1 truncate">{f.name}</span>
+              {f.isVideo
+                ? <Button size="sm" variant="ghost" className="h-7" onClick={() => { setWatching(f.key); setUnplayable(false); }}><PlayCircle className="h-3.5 w-3.5" />Watch</Button>
+                : <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-primary hover:bg-muted"><ExternalLink className="h-3.5 w-3.5" />Open</a>}
+              <a href={withDownload(f.url)} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs hover:bg-muted"><Download className="h-3.5 w-3.5" />Download</a>
+              {canTrim && (
+                <button type="button" onClick={() => take({ key: f.key }, f.key)} disabled={removing === f.key} aria-label={`Remove ${f.name}`}
+                  className="text-muted-foreground hover:text-destructive">{removing === f.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}</button>
+              )}
+            </li>
+          ))}
+          {x.links.map((l) => (
+            <li key={l.url} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-primary hover:underline">Open on {l.host}</a>
+              {canTrim && (
+                <button type="button" onClick={() => take({ link: l.url }, l.url)} disabled={removing === l.url} aria-label="Remove the link"
+                  className="text-muted-foreground hover:text-destructive">{removing === l.url ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}</button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {x.can.includes("addFiles") && (
+          <div className="flex flex-wrap items-center gap-1">
+            {count < MAX_FILES && <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Upload className="h-3.5 w-3.5" />Add files or a link</Button>}
+            {x.can.includes("move") && (
+              <MoveToFolder current={x.folder} options={view.extras.folders} busy={move.isPending}
+                onMove={(folder, done) => move.mutate({ extraId: x.id, folder }, { onSuccess: done })} />
+            )}
+          </div>
+        )}
 
         {given && (
           <ul className="space-y-1.5">
@@ -118,7 +157,7 @@ function ExtraRow({ item: x, view }: { item: FirstDaysExtra; view: FirstDaysView
         )}
         {x.can.includes("feedback") && <FeedbackBox employeeId={view.employee._id} extraId={x.id} />}
       </div>
-      {versioning && <ExtraForm extra={x} onClose={() => setVersioning(false)} />}
+      {adding && <ExtraForm extra={x} folders={view.extras.folders} onClose={() => setAdding(false)} />}
     </div>
   );
 }
@@ -138,88 +177,79 @@ function FeedbackBox({ employeeId, extraId }: { employeeId: string; extraId: str
   );
 }
 
-/** Hand in a presentation, or a new version of one: an uploaded video, or a link to it. */
-function ExtraForm({ extra, onClose }: { extra?: FirstDaysExtra; onClose: () => void }) {
+/**
+ * Hand in an additional homework — title, folder, files and/or a link — or
+ * add files or a link to one already there. Files go up one at a time.
+ */
+function ExtraForm({ extra, folders, onClose }: { extra?: FirstDaysExtra; folders: string[]; onClose: () => void }) {
   const add = useAddExtra();
-  const version = useExtraNewVersion();
-  const busy = add.isPending || version.isPending;
+  const addTo = useAddToExtra();
+  const busy = add.isPending || addTo.isPending;
   const [title, setTitle] = useState("");
-  const [mode, setMode] = useState<"upload" | "link">("upload");
-  const [file, setFile] = useState<File | null>(null);
+  const [folder, setFolder] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pct, setPct] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { setError(null); }, [mode]);
+  const already = extra ? extra.files.length + extra.links.length : 0;
+  const room = MAX_FILES - already - files.length - (link.trim() ? 1 : 0);
 
-  const pick = (f: File) => {
-    if (f.size > MAX_VIDEO_MB * 1024 * 1024) { setError(`That video is over ${MAX_VIDEO_MB} MB — put it on Google Drive, YouTube or Vimeo and paste the link instead.`); return; }
-    setError(null); setFile(f);
+  const pick = (picked: File[]) => {
+    const big = picked.find((f) => f.size > MAX_VIDEO_MB * 1024 * 1024);
+    if (big) { setError(`“${big.name}” is over ${MAX_VIDEO_MB} MB — put it on Google Drive, YouTube or Vimeo and paste the link instead.`); return; }
+    if (picked.length > room) { setError(`Up to ${MAX_FILES} files and links in all.`); return; }
+    setError(null); setFiles((fs) => [...fs, ...picked]);
   };
   const submit = () => {
     setError(null);
     if (!extra && !title.trim()) { setError("Give it a title"); return; }
-    if (mode === "upload" ? !file : !link.trim()) { setError(mode === "upload" ? "Choose your video" : "Paste the link"); return; }
-    const input = mode === "upload" ? { file, onProgress: setPct } : { link: link.trim() };
-    setPct(mode === "upload" ? 0 : null);
+    if (!files.length && !link.trim()) { setError("Choose a file, or paste a link"); return; }
+    const input = { files, link: link.trim() || undefined, onProgress: files.length ? setPct : undefined };
+    setPct(files.length ? 0 : null);
     const done = { onSuccess: onClose, onSettled: () => setPct(null) };
-    if (extra) version.mutate({ extraId: extra.id, ...input }, done);
-    else add.mutate({ title: title.trim(), ...input }, done);
+    if (extra) addTo.mutate({ extraId: extra.id, ...input }, done);
+    else add.mutate({ title: title.trim(), folder: folder.trim(), ...input }, done);
   };
 
   return (
     <ResponsiveDialog open onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <ResponsiveDialogContent desktopClassName="max-w-md">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>{extra ? `New version of “${extra.title}”` : "Add additional homework"}</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>{extra ? `Add to “${extra.title}”` : "Add additional homework"}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
         <div className="min-w-0 space-y-4 px-4 sm:px-0">
           {!extra && (
-            <div className="space-y-1.5">
-              <Label htmlFor="extra-title">Title</Label>
-              <Input id="extra-title" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. My sales pitch presentation" />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="extra-title">Title</Label>
+                <Input id="extra-title" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. My sales pitch presentation" />
+              </div>
+              <FolderField value={folder} onChange={setFolder} options={folders} disabled={busy} />
+            </>
           )}
           <div className="space-y-1.5">
-            <Label>Your presentation video</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {([["upload", "Upload a video", Upload], ["link", "Paste a link", Link2]] as const).map(([m, label, Icon]) => (
-                <button key={m} type="button" disabled={busy} onClick={() => setMode(m)}
-                  className={cn("flex items-center gap-1.5 rounded-lg border px-3 py-2 text-left text-sm transition", mode === m ? "border-primary bg-primary/5 text-primary" : "hover:bg-muted/50")}>
-                  <Icon className="h-4 w-4" />{label}
-                </button>
-              ))}
-            </div>
+            <Label>Files</Label>
+            <input ref={input} type="file" className="hidden" accept={EXTRA_ACCEPT} multiple
+              onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ""; if (fs.length) pick(fs); }} />
+            <PickedFiles files={files} disabled={busy} onRemove={(i) => setFiles((fs) => fs.filter((_, j) => j !== i))} />
+            <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()} disabled={busy || room <= 0}>
+              <Upload className="h-3.5 w-3.5" />{files.length ? "Add more files" : "Choose files"}
+            </Button>
+            <p className="text-xs text-muted-foreground">Videos (MP4 or MOV from your phone, up to {MAX_VIDEO_MB} MB each) and slides or documents.</p>
           </div>
-          {mode === "upload" ? (
-            <div className="space-y-1.5">
-              <input ref={input} type="file" className="hidden" accept={CLIP_ACCEPT}
-                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) pick(f); }} />
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()} disabled={busy}>
-                  <Upload className="h-3.5 w-3.5" />{file ? "Choose another" : "Choose video"}
-                </Button>
-                {file && <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm">
-                  <Video className="h-4 w-4 shrink-0" /><span className="truncate">{file.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(file.size < 10 * 1024 * 1024 ? 1 : 0)} MB</span>
-                </span>}
-              </div>
-              <p className="text-xs text-muted-foreground">MP4 or MOV from your phone, up to {MAX_VIDEO_MB} MB. Bigger? Put it on Google Drive or YouTube (unlisted) and paste the link.</p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://drive.google.com/file/d/…" inputMode="url" />
-              <p className="text-xs text-muted-foreground">A Google Drive, YouTube or Vimeo link. Make sure anyone with the link can view it.</p>
-            </div>
-          )}
-          {extra && <p className="text-xs text-muted-foreground">The new video replaces the old one. Feedback already given stays.</p>}
+          <div className="space-y-1.5">
+            <Label htmlFor="extra-link">Or a link <span className="font-normal text-muted-foreground">(optional)</span></Label>
+            <Input id="extra-link" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://drive.google.com/file/d/…" inputMode="url" disabled={busy} />
+            <p className="text-xs text-muted-foreground">Google Drive, YouTube or Vimeo — for a video too big to upload. Make sure anyone with the link can view it.</p>
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button onClick={submit} disabled={busy}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {busy && pct !== null && pct < 100 ? `Uploading ${pct}%` : "Hand in"}
+            {busy && pct !== null && pct < 100 ? `Uploading ${pct}%` : extra ? "Add" : "Hand in"}
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

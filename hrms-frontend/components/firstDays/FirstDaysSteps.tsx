@@ -9,12 +9,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TeamVideoPlayer } from "@/components/firstDays/TeamVideoPlayer";
 import { AddHomeworkDialog } from "@/components/firstDays/AddHomeworkDialog";
-import { FileLink, UploadButton } from "@/components/firstDays/FirstDaysFiles";
+import { DOC_ACCEPT, FileLink, MAX_DOC_MB, MAX_FILES, UploadButton } from "@/components/firstDays/FirstDaysFiles";
+import { FolderHeading, MoveToFolder, groupByFolder } from "@/components/firstDays/Folders";
 import { VideoHomeworkBody } from "@/components/firstDays/VideoHomework";
 import { AdditionalHomework } from "@/components/firstDays/AdditionalHomework";
 import {
-  useAnswerHomework, useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead,
-  useSetHomeworkQuestion, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
+  useAddHomeworkFiles, useAnswerHomework, useAssignClients, useCallsDone, useConfirmMySession, useConfirmSessionAsHead,
+  useMoveHomework, useRemoveAnswerFile, useRemoveHomeworkFile, useSetHomeworkQuestion, useSetToolAccess, useSubmitRolePlay, useSubmitCallNotes,
 } from "@/hooks/useFirstDays";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,11 @@ export const actionsFor = (v: FirstDaysView) =>
  * and HR see the same steps; each sees only the buttons the server says are
  * theirs (`can`), so this never decides who may do what.
  */
-export function FirstDaysSteps({ view }: { view: FirstDaysView }) {
+/**
+ * `folderOptions`: folder names in use elsewhere — on the other joiners a head
+ * looks after — offered when setting or moving a homework.
+ */
+export function FirstDaysSteps({ view, folderOptions = [] }: { view: FirstDaysView; folderOptions?: string[] }) {
   return (
     <div className="space-y-5">
       {[1, 2, 3].map((day) => {
@@ -67,7 +72,7 @@ export function FirstDaysSteps({ view }: { view: FirstDaysView }) {
           </section>
         );
       })}
-      <HomeworkSection view={view} />
+      <HomeworkSection view={view} folderOptions={folderOptions} />
       <AdditionalHomework view={view} />
     </div>
   );
@@ -78,8 +83,9 @@ export function FirstDaysSteps({ view }: { view: FirstDaysView }) {
  * by side. The joiner answers from the homework's day, once its question is
  * on file; the head or HR sets new ones during the fifteen days.
  */
-function HomeworkSection({ view }: { view: FirstDaysView }) {
+function HomeworkSection({ view, folderOptions }: { view: FirstDaysView; folderOptions: string[] }) {
   const hw = view.homework;
+  const folders = Array.from(new Set([...(hw?.folders ?? []), ...folderOptions]));
   // The day the add form opens on; null while it is closed.
   const [adding, setAdding] = useState<string | null>(null);
   if (!hw) return null;
@@ -96,9 +102,14 @@ function HomeworkSection({ view }: { view: FirstDaysView }) {
       </div>
       {hw.items.length === 0
         ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No homework yet.</p>
-        : hw.items.map((h) => <HomeworkRow key={h.id} item={h} view={view} onAdd={setAdding} />)}
+        : groupByFolder(hw.items).map((g) => (
+          <div key={g.folder || "-"} className="space-y-2">
+            {g.folder && <FolderHeading name={g.folder} count={g.items.length} />}
+            {g.items.map((h) => <HomeworkRow key={h.id} item={h} view={view} onAdd={setAdding} folders={folders} />)}
+          </div>
+        ))}
       {hw.canAdd && (
-        <AddHomeworkDialog view={view} day={adding} onClose={() => setAdding(null)} />
+        <AddHomeworkDialog view={view} day={adding} onClose={() => setAdding(null)} folderOptions={folders} />
       )}
     </section>
   );
@@ -133,9 +144,8 @@ function homeworkDetail(h: FirstDaysHomework, view: FirstDaysView) {
   return joiner ? `Answer it ${by} — upload what you did as a file.` : `Due ${due}.`;
 }
 
-function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: FirstDaysView; onAdd: (day: string) => void }) {
-  const answer = useAnswerHomework();
-  const question = useSetHomeworkQuestion();
+function HomeworkRow({ item: h, view, onAdd, folders }: { item: FirstDaysHomework; view: FirstDaysView; onAdd: (day: string) => void; folders: string[] }) {
+  const move = useMoveHomework();
   const can = (a: string) => h.can.includes(a);
   const st = STATUS[h.status];
   const chip = h.status === "done" && h.late ? LATE : h.status === "done" ? { ...st, label: "Answered" } : st;
@@ -154,23 +164,79 @@ function HomeworkRow({ item: h, view, onAdd }: { item: FirstDaysHomework; view: 
         </div>
         <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", chip.tone)}>{chip.label}</span>
       </div>
-      {h.kind === "video" && !h.placeholder ? <VideoHomeworkBody item={h} view={view} /> : (
-      <div className="mt-3 flex flex-wrap items-center gap-2 pl-6">
-        {h.question && <FileLink file={h.question} label="Question" />}
-        {h.answer && <FileLink file={h.answer} label={joiner ? "Your answer" : "Answer"} />}
-        {!joiner && !h.placeholder && !h.answer && h.status !== "waiting" && <span className="text-xs text-muted-foreground">Not answered yet.</span>}
-        {(can("answer") || can("replaceAnswer")) && (
-          <UploadButton label={can("replaceAnswer") ? "Upload again" : "Upload your answer"} busy={answer.isPending}
-            onFile={(file) => answer.mutate({ itemId: h.id, file })} />
-        )}
-        {(can("replaceQuestion") || can("attachQuestion")) && (
-          <UploadButton label={can("attachQuestion") ? "Attach the question" : "Replace the question"} busy={question.isPending}
-            onFile={(file) => question.mutate({ employeeId: view.employee._id, itemId: h.id, file, kind: "document" })} />
-        )}
-        {can("add") && (
-          <Button size="sm" onClick={() => onAdd(h.day)}><Plus className="h-3.5 w-3.5" />Add the day-1 homework</Button>
-        )}
-      </div>
+      {h.kind === "video" && !h.placeholder ? <VideoHomeworkBody item={h} view={view} /> : <DocumentBody item={h} view={view} onAdd={onAdd} />}
+      {can("move") && (
+        <div className="mt-1 pl-6">
+          <MoveToFolder current={h.folder} options={folders} busy={move.isPending}
+            onMove={(folder, done) => move.mutate({ employeeId: view.employee._id, itemId: h.id, folder }, { onSuccess: done })} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A document homework's files: the head's question files and the joiner's
+ * answer files, each side added to and — while more than one is left —
+ * trimmed. The two old fixed slots keep one file a side, replaced instead.
+ */
+function DocumentBody({ item: h, view, onAdd }: { item: FirstDaysHomework; view: FirstDaysView; onAdd: (day: string) => void }) {
+  const answer = useAnswerHomework();
+  const question = useSetHomeworkQuestion();
+  const addQuestions = useAddHomeworkFiles();
+  const removeQuestion = useRemoveHomeworkFile();
+  const removeAnswer = useRemoveAnswerFile();
+  const [removing, setRemoving] = useState<string | null>(null);
+  const can = (a: string) => h.can.includes(a);
+  const joiner = view.viewer.isJoiner;
+  const employeeId = view.employee._id;
+  const tooBig = (fs: File[]) => {
+    const big = fs.find((f) => f.size > MAX_DOC_MB * 1024 * 1024);
+    if (big) toast.error(`“${big.name}” is over ${MAX_DOC_MB} MB`);
+    return !!big;
+  };
+  const trimQuestions = can("addFiles") && h.questions.length > 1;
+  const trimAnswers = joiner && can("addAnswer") && h.answers.length > 1;
+
+  return (
+    <div className="mt-3 space-y-2 pl-6">
+      {h.questions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {h.questions.map((f) => (
+            <FileLink key={f.key} file={f} label={h.questions.length > 1 ? undefined : "Question"} removing={removing === f.key}
+              onRemove={trimQuestions ? () => { setRemoving(f.key); removeQuestion.mutate({ employeeId, itemId: h.id, key: f.key }, { onSettled: () => setRemoving(null) }); } : undefined} />
+          ))}
+          {can("addFiles") && h.questions.length < MAX_FILES && (
+            <UploadButton label="Add files" busy={addQuestions.isPending} multiple accept={DOC_ACCEPT}
+              onFiles={(files) => { if (!tooBig(files)) addQuestions.mutate({ employeeId, itemId: h.id, files }); }} />
+          )}
+        </div>
+      )}
+      {(h.answers.length > 0 || !h.placeholder) && (
+        <div className="space-y-1">
+          {h.answers.length > 0 && <p className="text-xs text-muted-foreground">{joiner ? "Your answer" : "Their answer"}{h.answers.length > 1 ? ` · ${h.answers.length} files` : ""}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            {h.answers.map((f) => (
+              <FileLink key={f.key} file={f} removing={removing === f.key}
+                onRemove={trimAnswers ? () => { setRemoving(f.key); removeAnswer.mutate({ itemId: h.id, key: f.key }, { onSettled: () => setRemoving(null) }); } : undefined} />
+            ))}
+            {!joiner && !h.placeholder && !h.answers.length && h.status !== "waiting" && <span className="text-xs text-muted-foreground">Not answered yet.</span>}
+            {(can("answer") || can("addAnswer")) && h.answers.length < MAX_FILES && (
+              <UploadButton label={can("addAnswer") ? "Add files" : "Upload your answer"} busy={answer.isPending} multiple variant={can("answer") ? "default" : "outline"}
+                onFiles={(files) => { if (!tooBig(files)) answer.mutate({ itemId: h.id, files }); }} />
+            )}
+            {can("replaceAnswer") && (
+              <UploadButton label="Upload again" busy={answer.isPending} onFiles={(files) => answer.mutate({ itemId: h.id, files: files.slice(0, 1) })} />
+            )}
+          </div>
+        </div>
+      )}
+      {(can("replaceQuestion") || can("attachQuestion")) && (
+        <UploadButton label={can("attachQuestion") ? "Attach the question" : "Replace the question"} busy={question.isPending}
+          onFiles={(files) => question.mutate({ employeeId, itemId: h.id, file: files[0], kind: "document" })} />
+      )}
+      {can("add") && (
+        <Button size="sm" onClick={() => onAdd(h.day)}><Plus className="h-3.5 w-3.5" />Add the day-1 homework</Button>
       )}
     </div>
   );

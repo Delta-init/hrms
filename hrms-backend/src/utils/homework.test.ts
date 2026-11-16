@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { canAnswer, canWriteUp, homeworkEntries, homeworkStatus } from "./homework.js";
+import { canAnswer, canWriteUp, fileList, homeworkEntries, homeworkStatus } from "./homework.js";
 
 const TZ = "Asia/Dubai";
 const f = (name: string, at = "2026-11-12T10:00:00Z") => ({ key: `k/${name}`, name, at: new Date(at) });
@@ -49,7 +49,9 @@ describe("homeworkStatus", () => {
       id: "a", title: "T", day: "2026-11-16", dueDay: "2026-11-16", legacy: 0 as const, kind: "document" as const,
       videoSeconds: 0, notes: null, watched: false, vimeo: null, question: f("q.docx"), answer: null, answeredAt: null, ...over,
     };
-    return { ...e, handedIn: "handedIn" in over ? !!over.handedIn : !!e.answer };
+    const questions = e.question ? [e.question] : [];
+    const answers = e.answer ? [e.answer as ReturnType<typeof f>] : [];
+    return { ...e, questions, answers, folder: "", handedIn: "handedIn" in over ? !!over.handedIn : !!e.answer };
   };
 
   it("waits for its day, then is to do that day, then overdue", () => {
@@ -110,5 +112,38 @@ describe("video homework from Vimeo", () => {
       homeworks: [{ _id: "v", title: "Refund call", day: "2026-11-16", kind: "video", videoSeconds: 62, question: null, vimeo: { id: "76979871", hash: "", name: "Refund call training" } }],
     }, TZ);
     expect([e.question, e.vimeo?.id, canAnswer(e, "2026-11-16"), homeworkStatus(e, "2026-11-16", TZ).status]).toEqual([null, "76979871", true, "todo"]);
+  });
+});
+
+describe("several files and folders", () => {
+  it("reads a single stored file as a list of one, and a list as it is", () => {
+    expect(fileList(null, f("one.pdf")).map((x) => x.name)).toEqual(["one.pdf"]);
+    expect(fileList([f("a.pdf"), f("b.pdf")], f("a.pdf")).map((x) => x.name)).toEqual(["a.pdf", "b.pdf"]);
+    expect(fileList([], null)).toEqual([]);
+  });
+
+  it("keeps every question and answer file of a document homework, and its folder", () => {
+    const [e] = homeworkEntries({
+      startDay: "2026-11-12",
+      homeworks: [{
+        _id: "d", title: "Fees", day: "2026-11-16", folder: " Week 1 ",
+        question: f("brief.docx"), questionFiles: [f("brief.docx"), f("fees.xlsx"), f("chat.png")],
+        answer: f("p1.jpg"), answerFiles: [f("p1.jpg", "2026-11-16T09:00:00Z"), f("p2.jpg", "2026-11-16T09:01:00Z")],
+      }],
+    }, TZ);
+    expect([e.folder, e.questions.length, e.answers.length, e.question?.name, e.handedIn]).toEqual(["Week 1", 3, 2, "brief.docx", true]);
+    expect(homeworkStatus(e, "2026-11-20", TZ)).toEqual({ status: "done", late: false });
+  });
+
+  it("is not handed in with no answer files, and a video keeps its one MP4", () => {
+    const [d, v] = homeworkEntries({
+      startDay: "2026-11-12",
+      homeworks: [
+        { _id: "d", title: "Doc", day: "2026-11-16", questionFiles: [f("q.docx")], answerFiles: [] },
+        { _id: "v", title: "Vid", day: "2026-11-17", kind: "video", videoSeconds: 30, question: f("v.mp4"), questionFiles: [f("ignored.pdf")], answerFiles: [f("notes.pdf")] },
+      ],
+    }, TZ);
+    expect([d.handedIn, d.questions.length]).toEqual([false, 1]);
+    expect([v.questions.map((x) => x.name), v.answers.length, v.handedIn]).toEqual([["v.mp4"], 1, false]);
   });
 });

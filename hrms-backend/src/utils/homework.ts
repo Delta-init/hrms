@@ -16,11 +16,29 @@ import { todayInTz } from "./schedule.js";
  * like. The write-up is the hand-in. The video is either an uploaded MP4 or
  * one from the company's Vimeo folder.
  *
+ * A document homework can carry several question files, and the joiner can
+ * hand in several answer files (so can a video's write-up). Each homework can
+ * sit in a named folder, which only groups it on the page.
+ *
  * Two fixed slots came before the list — the day-1 homework (handed back on
  * day 2) and a day-2 one (handed back on day 3). Records that used them keep
  * them, read here as the first entries of the list with the due days their
  * joiners were told, so nothing stored has to change.
  */
+
+/** How many files one homework (or one side of it) can hold. */
+export const MAX_FILES = 10;
+
+/**
+ * The record's files for one side of a homework, as a list. Homework from
+ * before several files were allowed kept one file in a single field; that file
+ * is read as a list of one, so nothing stored has to change.
+ */
+export function fileList(many: HomeworkFile[] | null | undefined, one: HomeworkFile | null | undefined): HomeworkFile[] {
+  const list = (many ?? []).filter((f) => f?.key);
+  if (list.length) return list;
+  return one?.key ? [one] : [];
+}
 
 export interface HomeworkFile { key?: string | null; name?: string | null; at?: Date | null }
 
@@ -38,8 +56,16 @@ export interface HomeworkEntry {
   day: string;
   /** The last day an answer is on time. */
   dueDay: string;
+  /** The first question file (the MP4, for an uploaded video) — kept for the single-file rules. */
   question: HomeworkFile | null;
+  /** The first answer file. */
   answer: HomeworkFile | null;
+  /** Every question file: one for a video or an old homework, up to MAX_FILES for a document. */
+  questions: HomeworkFile[];
+  /** Every answer file the joiner handed in — a document's answer, or a video write-up's attachments. */
+  answers: HomeworkFile[];
+  /** The folder it is grouped under on the page; "" for none. */
+  folder: string;
   /** When the first answer came in — replacing it later doesn't make it late. */
   answeredAt: Date | null;
   /** 1 or 2 for the old fixed slots; 0 for the list. */
@@ -67,6 +93,7 @@ export interface HomeworkRecordLike {
   homeworks?: Array<{
     _id?: unknown; title?: string | null; day: string; kind?: string | null; videoSeconds?: number | null;
     question?: HomeworkFile | null; answer?: HomeworkFile | null; notes?: string | null;
+    questionFiles?: HomeworkFile[] | null; answerFiles?: HomeworkFile[] | null; folder?: string | null;
     watch?: { completedAt?: Date | null } | null;
     vimeo?: { id?: string | null; hash?: string | null; name?: string | null } | null;
     answeredAt?: Date | null; addedAt?: Date | null;
@@ -89,6 +116,7 @@ export function homeworkEntries(rec: HomeworkRecordLike, tz: string): HomeworkEn
     out.push({
       id: LEGACY_IDS[1], title: "Homework", day: d1, dueDay: d2, legacy: 1, kind: "document", videoSeconds: 0, notes: null, watched: false, vimeo: null,
       question: file(rec.homework), answer: file(rec.homeworkResult), answeredAt: rec.homeworkResult?.at ?? null,
+      questions: fileList(null, rec.homework), answers: fileList(null, rec.homeworkResult), folder: "",
       handedIn: !!rec.homeworkResult?.key,
     });
   }
@@ -96,6 +124,7 @@ export function homeworkEntries(rec: HomeworkRecordLike, tz: string): HomeworkEn
     out.push({
       id: LEGACY_IDS[2], title: "Day-2 homework", day: d2, dueDay: d3, legacy: 2, kind: "document", videoSeconds: 0, notes: null, watched: false, vimeo: null,
       question: file(rec.homework2), answer: file(rec.homework2Result), answeredAt: rec.homework2Result?.at ?? null,
+      questions: fileList(null, rec.homework2), answers: fileList(null, rec.homework2Result), folder: "",
       handedIn: !!rec.homework2Result?.key,
     });
   }
@@ -103,12 +132,15 @@ export function homeworkEntries(rec: HomeworkRecordLike, tz: string): HomeworkEn
     const setOn = h.addedAt ? todayInTz(tz, h.addedAt) : h.day;
     const video = h.kind === "video";
     const notes = h.notes?.trim() || null;
+    // A video's "question" is its one MP4; a document's can be several files.
+    const questions = video ? fileList(null, h.question) : fileList(h.questionFiles, h.question);
+    const answers = fileList(h.answerFiles, h.answer);
     out.push({
       id: String(h._id), title: h.title?.trim() || "Homework", day: h.day, dueDay: setOn > h.day ? setOn : h.day, legacy: 0,
       kind: video ? "video" : "document", videoSeconds: video ? h.videoSeconds ?? 0 : 0, notes,
-      question: file(h.question), answer: file(h.answer),
-      answeredAt: h.answeredAt ?? (video ? null : h.answer?.at ?? null),
-      handedIn: video ? !!notes : !!h.answer?.key,
+      question: questions[0] ?? null, answer: answers[0] ?? null, questions, answers, folder: h.folder?.trim() ?? "",
+      answeredAt: h.answeredAt ?? (video ? null : answers[0]?.at ?? null),
+      handedIn: video ? !!notes : answers.length > 0,
       watched: video && !!h.watch?.completedAt,
       vimeo: video && h.vimeo?.id ? { id: h.vimeo.id, hash: h.vimeo.hash ?? "", name: h.vimeo.name ?? "" } : null,
     });

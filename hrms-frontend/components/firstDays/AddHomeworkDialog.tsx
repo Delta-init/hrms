@@ -13,7 +13,9 @@ import { VideoSourceToggle, VimeoPicker, type VideoSource } from "@/components/f
 import { cn } from "@/lib/utils";
 import type { FirstDaysView, VimeoVideo } from "@/types";
 
-export const DOC_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,image/*";
+import { DOC_ACCEPT, MAX_DOC_MB, MAX_FILES, PickedFiles } from "@/components/firstDays/FirstDaysFiles";
+import { FolderField } from "@/components/firstDays/Folders";
+export { DOC_ACCEPT };
 export const VIDEO_ACCEPT = "video/mp4,.mp4";
 /** The server's limit for a homework video. */
 export const MAX_VIDEO_MB = 250;
@@ -60,20 +62,37 @@ interface Props {
   /** The day the form opens on; null keeps it closed. */
   day: string | null;
   onClose: () => void;
+  /** Folder names to offer — those on this guide, and on the others this person sees. */
+  folderOptions?: string[];
+}
+
+/**
+ * Documents chosen for a homework, added to those already picked: up to the
+ * cap, each within the size limit. Returns the new list, or the reason not.
+ */
+export function addDocs(current: File[], picked: File[]): { files: File[]; error: string | null } {
+  const big = picked.find((f) => f.size > MAX_DOC_MB * 1024 * 1024);
+  if (big) return { files: current, error: `“${big.name}” is over ${MAX_DOC_MB} MB.` };
+  const files = [...current, ...picked];
+  if (files.length > MAX_FILES) return { files: current, error: `Up to ${MAX_FILES} files.` };
+  return { files, error: null };
 }
 
 /**
  * A homework for one joiner: a document or a video, a title, which of their
- * fifteen days it is for, and the file — required, since there is nothing to
- * answer without it. A video is uploaded, or picked from the company's Vimeo
- * folder.
+ * fifteen days it is for, a folder if it belongs in one, and the files —
+ * required, since there is nothing to answer without them. A document
+ * homework takes several question files; a video is one, uploaded or picked
+ * from the company's Vimeo folder.
  */
-export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
+export function AddHomeworkDialog({ view, day: openOn, onClose, folderOptions = [] }: Props) {
   const add = useAddHomework();
   const [kind, setKind] = useState<HomeworkKind>("document");
   const [title, setTitle] = useState("");
   const [day, setDay] = useState(view.today);
   const [file, setFile] = useState<File | null>(null);
+  const [docs, setDocs] = useState<File[]>([]);
+  const [folder, setFolder] = useState("");
   const [source, setSource] = useState<VideoSource>("upload");
   const [vimeo, setVimeo] = useState<VimeoVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,18 +103,24 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
 
   useEffect(() => {
     if (openOn === null) return;
-    setKind("document"); setTitle(""); setDay(openOn); setFile(null); setSource("upload"); setVimeo(null); setError(null); setSent(null);
+    setKind("document"); setTitle(""); setDay(openOn); setFile(null); setDocs([]); setFolder(""); setSource("upload"); setVimeo(null); setError(null); setSent(null);
   }, [openOn]);
+  const folders = Array.from(new Set([...view.homework.folders, ...folderOptions]));
 
-  const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setError(null); } };
+  const pickKind = (k: HomeworkKind) => { if (k !== kind) { setKind(k); setFile(null); setDocs([]); setError(null); } };
   const pickVimeo = (v: VimeoVideo) => { setVimeo(v); setError(null); if (!title.trim()) setTitle(v.name.slice(0, 160)); };
   const submit = () => {
     setError(null);
     if (!title.trim()) { setError("Give the homework a title"); return; }
-    if (fromVimeo ? !vimeo : !file) { setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question document"); return; }
-    setSent(fromVimeo ? null : 0);
+    if (fromVimeo ? !vimeo : kind === "video" ? !file : !docs.length) {
+      setError(fromVimeo ? "Pick a video from the Vimeo folder" : kind === "video" ? "Choose the video" : "Choose the question documents"); return;
+    }
+    setSent(kind === "video" && !fromVimeo ? 0 : null);
     add.mutate(
-      { employeeId: view.employee._id, title: title.trim(), day, kind, ...(fromVimeo ? { vimeoId: vimeo!.id } : { file, onProgress: setSent }) },
+      {
+        employeeId: view.employee._id, title: title.trim(), day, kind, folder: folder.trim(),
+        ...(fromVimeo ? { vimeoId: vimeo!.id } : kind === "video" ? { file, onProgress: setSent } : { files: docs }),
+      },
       { onSuccess: onClose, onSettled: () => setSent(null) }
     );
   };
@@ -113,6 +138,7 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
             <Label htmlFor="hw-title">Title</Label>
             <Input id="hw-title" maxLength={160} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Objection handling — fees" />
           </div>
+          <FolderField value={folder} onChange={setFolder} options={folders} disabled={add.isPending} />
           <div className="space-y-1.5">
             <Label>For which day</Label>
             <Select value={day} onValueChange={setDay}>
@@ -138,10 +164,26 @@ export function AddHomeworkDialog({ view, day: openOn, onClose }: Props) {
               <VimeoPicker value={vimeo} onPick={pickVimeo} disabled={add.isPending} />
               <p className="text-xs text-muted-foreground">{first} watches it inside HRMS and can go back but not skip ahead; once it&apos;s watched to the end, they write what they learned.</p>
             </div>
+          ) : kind === "document" ? (
+          <div className="space-y-1.5">
+            <Label>Question files</Label>
+            <input ref={input} type="file" className="hidden" accept={DOC_ACCEPT} multiple
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []); e.target.value = "";
+                if (!picked.length) return;
+                const next = addDocs(docs, picked);
+                setDocs(next.files); setError(next.error);
+              }} />
+            <PickedFiles files={docs} disabled={add.isPending} onRemove={(i) => setDocs((d) => d.filter((_, j) => j !== i))} />
+            <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()} disabled={add.isPending || docs.length >= MAX_FILES}>
+              <Upload className="h-3.5 w-3.5" />{docs.length ? "Add more files" : "Choose files"}
+            </Button>
+            <p className="text-xs text-muted-foreground">Up to {MAX_FILES} — documents, sheets, slides or images, {MAX_DOC_MB} MB each.</p>
+          </div>
           ) : (
           <div className="space-y-1.5">
-            <Label>{kind === "video" ? `Video (MP4, up to ${MAX_VIDEO_MB} MB)` : "Question document"}</Label>
-            <input ref={input} type="file" className="hidden" accept={kind === "video" ? VIDEO_ACCEPT : DOC_ACCEPT}
+            <Label>{`Video (MP4, up to ${MAX_VIDEO_MB} MB)`}</Label>
+            <input ref={input} type="file" className="hidden" accept={VIDEO_ACCEPT}
               onChange={(e) => {
                 const f = e.target.files?.[0]; e.target.value = "";
                 if (!f) return;
