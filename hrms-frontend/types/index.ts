@@ -1297,13 +1297,14 @@ export interface DeductionRemovalRequest {
 // ─── Reimbursement claim ──────────────────────────────────────────────────────
 export type ReimbursementCategory =
   | "travel" | "food" | "accommodation" | "medical" | "communication" | "fuel" | "supplies" | "other";
-export type ReimbursementStatus = "pending" | "approved" | "rejected" | "paid";
+/** hr_approved: HR approved it and it waits on finance, which pays it or refuses it (2026-11-16). */
+export type ReimbursementStatus = "pending" | "hr_approved" | "approved" | "rejected" | "paid";
 export const REIMBURSEMENT_CATEGORY_LABELS: Record<ReimbursementCategory, string> = {
   travel: "Travel", food: "Food", accommodation: "Accommodation", medical: "Medical",
   communication: "Communication", fuel: "Fuel", supplies: "Supplies", other: "Other",
 };
 export const REIMBURSEMENT_STATUS_LABELS: Record<ReimbursementStatus, string> = {
-  pending: "Pending", approved: "Approved", rejected: "Rejected", paid: "Paid",
+  pending: "Pending", hr_approved: "Waiting for finance", approved: "Approved", rejected: "Rejected", paid: "Paid",
 };
 export interface Reimbursement extends WorkflowState {
   _id: string;
@@ -1320,6 +1321,16 @@ export interface Reimbursement extends WorkflowState {
   reviewedBy?: { _id: string; name: string } | string | null;
   reviewedAt?: string;
   reviewNote?: string;
+  /** Paid out in this payslip (HR's approval final). */
+  payslip?: string | null;
+  /** Who refused it — HR here, or finance. */
+  rejectedBy?: "hr" | "finance" | null;
+  /** Finance's half: its expense number, when and how it paid, its note. */
+  financeRef?: string;
+  paidOn?: string | null;
+  paymentMethod?: string;
+  financeNote?: string;
+  financeReviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

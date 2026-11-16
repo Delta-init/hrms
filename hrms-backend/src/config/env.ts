@@ -224,6 +224,14 @@ const envSchema = z.object({
    */
   HIRING_FINANCE_STEP: z.string().default(""),
   /**
+   * "on" sends a reimbursement claim to finance once HR gives it the last approval (the user, 2026-11-16: "employee
+   * request => HR approval => finance approval (paid status)"): it waits as `hr_approved` until finance pays it — the
+   * claim is then "paid", with finance's expense number — or refuses it, over the integration API. Such a claim never
+   * goes into a payslip. Anything else — the default — leaves HR's approval final: the claim is paid in the payslip of
+   * its payout month, as it always was. Only the exact value "on" counts.
+   */
+  REIMBURSEMENT_FINANCE_STEP: z.string().default(""),
+  /**
    * Where the finance API lives, and the pair HRMS signs with when it asks finance something — only the wallet page
    * (2026-11-04): what payroll has paid somebody, and their commission. The same pair finance accepts from its other
    * callers (its INBOUND_CLIENT_ID / INBOUND_INTEGRATION_SECRET). Unset, the wallet shows HRMS's own figures and says

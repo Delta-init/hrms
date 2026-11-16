@@ -8,6 +8,7 @@ import {
   listProcurementRequests, approveProcurementRequest, rejectProcurementRequest,
   listSalaryAdvances, approveSalaryAdvance, rejectSalaryAdvance,
   listOneTimePayments, markOneTimePaymentPaid, rejectOneTimePayment,
+  listReimbursements, approveReimbursement, rejectReimbursement,
   listHiringRequisitions, approveHiringRequisition, rejectHiringRequisition, getWalletByEmail, getFirstDaysByEmail,
 } from "../controllers/integrationController.js";
 import { serviceOrgScope } from "../middleware/serviceOrgScope.js";
@@ -66,6 +67,10 @@ router.post("/procurement/requests/:id/reject", serviceOrgScope, rejectProcureme
 router.get("/advances/requests", serviceOrgScope, listSalaryAdvances);
 router.post("/advances/requests/:id/approve", serviceOrgScope, approveSalaryAdvance);
 router.post("/advances/requests/:id/reject", serviceOrgScope, rejectSalaryAdvance);
+// Reimbursement claims HR has approved (REIMBURSEMENT_FINANCE_STEP=on); finance pays them or refuses them.
+router.get("/reimbursements/requests", serviceOrgScope, listReimbursements);
+router.post("/reimbursements/requests/:id/approve", serviceOrgScope, approveReimbursement);
+router.post("/reimbursements/requests/:id/reject", serviceOrgScope, rejectReimbursement);
 // One-time payments HR sent to finance to pay directly (never on a payslip).
 router.get("/one-time-payments/requests", serviceOrgScope, listOneTimePayments);
 router.post("/one-time-payments/requests/:id/paid", serviceOrgScope, markOneTimePaymentPaid);

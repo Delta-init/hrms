@@ -177,6 +177,16 @@ const reviewedDecision = (approvedWhen: string[]): Omit<DecidedConfig, "filter">
   }),
 });
 
+/** HR's decision on a claim. One finance refused was an approval here — finance's refusal is its own. */
+const reimbursementHr = reviewedDecision(["approved", "paid", "hr_approved"]);
+const reimbursementDecided: Omit<DecidedConfig, "filter"> = {
+  ...reimbursementHr,
+  outcome: (d): Decision => {
+    const o = reimbursementHr.outcome(d);
+    return d.rejectedBy === "finance" ? { ...o, outcome: "approved" } : o;
+  },
+};
+
 export const ADAPTERS: Adapter[] = [
   {
     module: "agreement",
@@ -282,10 +292,11 @@ export const ADAPTERS: Adapter[] = [
     raisedField: "createdAt",
     pendingFilter: { status: "pending" },
     populate: [{ path: "user", select: "name email" }],
-    // "Paid" is downstream of approval, so it belongs in the history too.
+    // "Paid" is downstream of approval, so it belongs in the history too — and so is
+    // "hr_approved", HR's approval passed on to finance (REIMBURSEMENT_FINANCE_STEP).
     decided: {
-      filter: { status: { $in: ["approved", "rejected", "paid"] } },
-      ...reviewedDecision(["approved", "paid"]),
+      filter: { status: { $in: ["approved", "rejected", "paid", "hr_approved"] } },
+      ...reimbursementDecided,
     },
     toRow: (d) => ({
       id: String(d._id),

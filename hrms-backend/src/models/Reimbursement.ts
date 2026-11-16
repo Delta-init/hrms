@@ -4,7 +4,11 @@ import { workflowStateFields } from "./approvalWorkflowFields.js";
 
 /** An employee expense-reimbursement claim. Submitted by the employee, reviewed
  *  by HR/a manager, and — once approved — paid out through a payslip, at which
- *  point its status becomes "paid" and it is linked to that payslip. */
+ *  point its status becomes "paid" and it is linked to that payslip.
+ *
+ *  With REIMBURSEMENT_FINANCE_STEP=on (2026-11-16) HR's approval passes it to
+ *  finance instead ("hr_approved"), and finance pays it directly: "paid", with
+ *  finance's expense number and no payslip. */
 const reimbursementSchema = new Schema<IReimbursement>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -22,12 +26,22 @@ const reimbursementSchema = new Schema<IReimbursement>(
     month: { type: String, required: [true, "Month is required"], match: /^\d{4}-\d{2}$/ },
     description: { type: String, trim: true, maxlength: 500 },
     receiptUrl: { type: String, trim: true, maxlength: 500 },
-    status: { type: String, enum: ["pending", "approved", "rejected", "paid"], default: "pending", index: true },
+    /** hr_approved: HR approved it and it waits on finance, which pays it ("paid") or refuses it
+     *  (REIMBURSEMENT_FINANCE_STEP=on). approved: HR's approval was final — paid in a payslip. */
+    status: { type: String, enum: ["pending", "hr_approved", "approved", "rejected", "paid"], default: "pending", index: true },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },
     ...workflowStateFields,
     payslip: { type: Schema.Types.ObjectId, ref: "Payslip", default: null },
+    rejectedBy: { type: String, enum: ["hr", "finance", null], default: null },
+    // Finance's half, from the finance system — never a user here.
+    financeRef: { type: String, trim: true, maxlength: 120, default: "" },
+    paidOn: { type: Date, default: null },
+    paymentMethod: { type: String, trim: true, maxlength: 40, default: "" },
+    financeNote: { type: String, trim: true, maxlength: 500, default: "" },
+    financeReviewedBy: { type: String, trim: true, maxlength: 120, default: "" },
+    financeReviewedAt: { type: Date, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true, versionKey: false }

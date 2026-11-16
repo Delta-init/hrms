@@ -7,6 +7,7 @@ import { ProcurementService, FINANCE_PROCUREMENT_STATUSES, type FinanceProcureme
 import { SalaryAdvanceService, FINANCE_ADVANCE_STATUSES, type FinanceAdvanceStatus } from "../services/salaryAdvanceService.js";
 import { OneTimeAdjustmentService, FINANCE_ONE_TIME_STATUSES, type FinanceOneTimeStatus } from "../services/oneTimeAdjustmentService.js";
 import { JobRequisitionService } from "../services/jobRequisitionService.js";
+import { ReimbursementService, FINANCE_REIMBURSEMENT_STATUSES, type FinanceReimbursementStatus } from "../services/reimbursementService.js";
 import { payrollBatchService } from "../services/payrollBatchService.js";
 import { financeAdjustmentService, type FinanceAdjustmentInput } from "../services/financeAdjustmentService.js";
 import { payrollPaymentService, type PaymentLine, type FinanceSettle } from "../services/payrollPaymentService.js";
@@ -447,6 +448,46 @@ export const rejectSalaryAdvance = asyncRoute(async (req, res) => {
     note: req.body?.note ?? null,
   });
   sendSuccess(res, "Salary advance rejected", record);
+});
+
+// ── Reimbursement claims finance pays (REIMBURSEMENT_FINANCE_STEP=on) ─────────
+
+const reimbursementService = new ReimbursementService();
+
+/** ?status= — none: finance's queue (HR approved, waiting); paid | rejected | all: finance's record. */
+export const listReimbursements = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId);
+  const status = String(req.query.status ?? "hr_approved");
+  if (!(FINANCE_REIMBURSEMENT_STATUSES as readonly string[]).includes(status)) {
+    sendError(res, `status must be one of ${FINANCE_REIMBURSEMENT_STATUSES.join(", ")}`, 400);
+    return;
+  }
+  sendSuccess(res, "Reimbursements retrieved", await reimbursementService.listForFinance(organizationId, status as FinanceReimbursementStatus));
+});
+
+/** Finance paid it: the claim is "paid", with finance's expense number. */
+export const approveReimbursement = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await reimbursementService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "approve",
+    note: req.body?.note ?? null,
+    reference: req.body?.reference ?? null,
+    paidOn: req.body?.paidOn ?? null,
+    method: req.body?.method ?? null,
+    by: req.body?.by ?? null,
+    amount: req.body?.amount ?? null,
+  });
+  sendSuccess(res, "Reimbursement paid", record);
+});
+
+export const rejectReimbursement = asyncRoute(async (req, res) => {
+  const organizationId = String(req.query.organizationId ?? req.body?.organizationId);
+  const record = await reimbursementService.recordFinanceDecision(organizationId, String(req.params.id), {
+    decision: "reject",
+    note: req.body?.note ?? null,
+    by: req.body?.by ?? null,
+  });
+  sendSuccess(res, "Reimbursement refused", record);
 });
 
 // ── One-time payments finance pays directly ──────────────────────────────────

@@ -20,6 +20,7 @@ import { REIMBURSEMENT_CATEGORY_LABELS, REIMBURSEMENT_STATUS_LABELS, type Reimbu
 const ALL = "__all__";
 const statusStyles: Record<ReimbursementStatus, string> = {
   pending: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  hr_approved: "bg-violet-500/10 text-violet-600 border-violet-500/20",
   approved: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   rejected: "bg-red-500/10 text-red-600 border-red-500/20",
   paid: "bg-sky-500/10 text-sky-600 border-sky-500/20",
@@ -28,8 +29,44 @@ const empOf = (r: Reimbursement) => (r.employee && typeof r.employee === "object
 const fmtDate = (s?: string) => (s ? new Date(s).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const money = (n: number, c?: string) => `${c ? c + " " : ""}${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function StatusBadge({ status }: { status: ReimbursementStatus }) {
-  return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[status])}>{REIMBURSEMENT_STATUS_LABELS[status]}</span>;
+function StatusBadge({ claim }: { claim: Reimbursement }) {
+  const status = claim.status;
+  const label = status === "rejected" && claim.rejectedBy === "finance" ? "Refused by finance" : REIMBURSEMENT_STATUS_LABELS[status];
+  return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[status])}>{label}</span>;
+}
+
+const METHOD_WORDS: Record<string, string> = { bank_transfer: "Bank transfer", cash: "Cash", card: "Card", cheque: "Cheque" };
+const methodWord = (m?: string) => (m ? METHOD_WORDS[m] ?? m.replace(/_/g, " ") : "");
+const reviewerName = (r: Reimbursement) => (r.reviewedBy && typeof r.reviewedBy === "object" ? r.reviewedBy.name : "");
+
+/**
+ * Where a claim is, under its status (2026-11-16: "employee request => HR approval => finance approval (paid
+ * status)"): asked › HR approved › finance, for one that went to finance; how it was paid; why it was refused.
+ */
+function ClaimProgress({ claim: r }: { claim: Reimbursement }) {
+  const byFinance = r.status === "hr_approved" || !!r.financeReviewedAt;
+  const dot = (state: "done" | "now" | "no") => (
+    <span className={cn("inline-block h-2 w-2 rounded-full",
+      state === "done" ? "bg-emerald-500" : state === "no" ? "bg-red-500" : "border border-muted-foreground/60")} />
+  );
+  const hr = reviewerName(r);
+  return (
+    <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+      {byFinance && (
+        <div className="flex flex-wrap items-center gap-1">
+          {dot("done")}Asked<span>›</span>
+          {dot("done")}HR approved{hr ? ` (${hr})` : ""}<span>›</span>
+          {dot(r.status === "paid" ? "done" : r.status === "rejected" ? "no" : "now")}Finance
+        </div>
+      )}
+      {r.status === "paid" && r.financeRef && (
+        <p>By finance · {r.financeRef}{r.paidOn ? ` · ${fmtDate(r.paidOn)}` : ""}{r.paymentMethod ? ` · ${methodWord(r.paymentMethod)}` : ""}</p>
+      )}
+      {r.status === "paid" && !r.financeRef && r.payslip && <p>In the payslip for {r.month}</p>}
+      {r.financeNote && <p className="max-w-[260px] whitespace-normal">Finance: “{r.financeNote}”</p>}
+      {r.status === "rejected" && r.rejectedBy !== "finance" && r.reviewNote && <p className="max-w-[260px] whitespace-normal">HR: “{r.reviewNote}”</p>}
+    </div>
+  );
 }
 
 export default function ReimbursementsPage() {
@@ -117,8 +154,9 @@ export default function ReimbursementsPage() {
                   <td className="px-4 py-3">{r.month}</td>
                   <td className="px-4 py-3 text-right font-medium tabular-nums">{money(r.amount, e?.currency)}</td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={r.status} />
-                    {workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+                    <StatusBadge claim={r} />
+                    {r.status === "pending" && workflowStepLabel(r) && <span className="ml-1.5 text-[11px] text-muted-foreground">{workflowStepLabel(r)}</span>}
+                    <ClaimProgress claim={r} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -149,7 +187,7 @@ export default function ReimbursementsPage() {
     <div>
       <PageHeader
         title="Reimbursements"
-        description="Submit expense claims and get them approved and paid through payroll."
+        description="Submit expense claims: HR approves them, then they are paid — by finance, or in your payslip."
         icon={Receipt}
         action={canCreate && <Button onClick={openNew} className="shadow-sm"><Plus className="h-4 w-4" />New Claim</Button>}
       />

@@ -167,6 +167,14 @@ Or set an absolute interpreter path in `hrms-backend/ecosystem.config.cjs`
   `/api/v1/integrations/hiring/requisitions`. Unset (the default) keeps HR's
   approval final. Deploy this backend and the finance side first, then set it
   to `on` and `pm2 startOrReload ecosystem.config.cjs --update-env`.
+- `REIMBURSEMENT_FINANCE_STEP` (backend `.env`, see `.env.example`): `on` sends a
+  reimbursement claim to finance after HR's last approval — it waits as "Waiting
+  for finance" until finance pays it (Paid, with the expense number; never in a
+  payslip) or refuses it over `/api/v1/integrations/reimbursements/requests`.
+  Unset (the default) keeps HR's approval final and the payslip pays it. Claims
+  HR approved before it was set stay on the payslip. Deploy the finance API and
+  website first, then set it to `on` and
+  `pm2 startOrReload ecosystem.config.cjs --update-env`.
 - `FINANCE_API_URL`, `FINANCE_CLIENT_ID`, `FINANCE_INTEGRATION_SECRET` (backend
   `.env`): what My Wallet uses to ask finance what it has paid somebody and
   where their commission stands (`POST /api/v1/integrations/hrms/wallet`). The

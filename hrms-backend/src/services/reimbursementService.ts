@@ -9,6 +9,11 @@ import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import { beginWorkflowState, resolveReviewOutcome } from "./approvalWorkflowService.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
+import { Types } from "mongoose";
+import { User } from "../models/User.js";
+import { notify } from "./notificationService.js";
+import { sendMail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 
 interface ReimbursementQuery extends PaginationQuery {
   employee?: string;
@@ -26,6 +31,74 @@ const POP = [
 
 /** Label a reimbursement earning line for a payslip. */
 export const REIMBURSE_PREFIX = "Reimbursement";
+
+/**
+ * Finance decides the claims HR approves (the user, 2026-11-16: "employee request => HR approval => finance approval
+ * (paid status)"): HR's last approval leaves a claim `hr_approved`, finance pays it from the finance system — it is
+ * then "paid", with finance's expense number, and never goes into a payslip — or refuses it. Off unless exactly "on":
+ * HR's approval stays final and the payslip pays the claim, as before.
+ */
+export const reimbursementFinanceStepOn = () => env.REIMBURSEMENT_FINANCE_STEP === "on";
+
+/** Which claims finance asks for: its queue (hr_approved, the default), or its record — paid or refused by it, or all
+ *  that reached it. */
+export const FINANCE_REIMBURSEMENT_STATUSES = ["hr_approved", "paid", "rejected", "all"] as const;
+export type FinanceReimbursementStatus = (typeof FINANCE_REIMBURSEMENT_STATUSES)[number];
+
+const STATUS_WORDS: Record<string, string> = {
+  pending: "still with HR", approved: "approved for the payslip", rejected: "refused", paid: "paid",
+};
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const money = (n: number, c: string) => `${c} ${Number(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ymd = (d: unknown) => (d ? new Date(d as string).toISOString().slice(0, 10) : null);
+
+class ClaimError extends Error {
+  statusCode: number;
+  constructor(message: string, statusCode = 400) { super(message); this.statusCode = statusCode; }
+}
+
+/** One claim as finance reads it — the integration contract. */
+function forFinance(r: Record<string, unknown>) {
+  const emp = (r.employee ?? null) as { _id?: unknown; name?: string; employeeCode?: string; designation?: string; currency?: string; department?: { _id?: unknown; name?: string } | null } | null;
+  const who = (r.user ?? null) as { name?: string; email?: string } | null;
+  const hr = (r.reviewedBy ?? null) as { name?: string } | null;
+  return {
+    _id: String(r._id),
+    title: String(r.title ?? ""),
+    category: String(r.category ?? "other"),
+    amount: r2(Number(r.amount ?? 0)),
+    // A claim has no currency of its own: it is the employee's pay currency.
+    currency: String(emp?.currency || "AED").toUpperCase(),
+    expenseDate: ymd(r.expenseDate),
+    month: String(r.month ?? ""),
+    description: String(r.description ?? ""),
+    receiptUrl: String(r.receiptUrl ?? ""),
+    status: String(r.status),
+    employee: emp ? {
+      _id: String(emp._id ?? ""), name: emp.name ?? "", employeeCode: emp.employeeCode ?? "", designation: emp.designation ?? "",
+      department: emp.department && typeof emp.department === "object" ? { _id: String(emp.department._id ?? ""), name: emp.department.name ?? "" } : null,
+    } : null,
+    user: who ? { name: who.name ?? "", email: who.email ?? "" } : null,
+    hrReviewedBy: hr ? { name: hr.name ?? "" } : null,
+    hrReviewedAt: r.reviewedAt ?? null,
+    hrNote: String(r.reviewNote ?? ""),
+    createdAt: r.createdAt ?? null,
+    rejectedBy: (r.rejectedBy as string | null) ?? null,
+    financeRef: String(r.financeRef ?? ""),
+    paidOn: ymd(r.paidOn),
+    paymentMethod: String(r.paymentMethod ?? ""),
+    financeNote: String(r.financeNote ?? ""),
+    financeReviewedBy: String(r.financeReviewedBy ?? ""),
+    financeReviewedAt: r.financeReviewedAt ?? null,
+  };
+}
+
+const FINANCE_POP = [
+  { path: "employee", select: "name employeeCode designation currency department", populate: { path: "department", select: "name" } },
+  { path: "user", select: "name email" },
+  { path: "reviewedBy", select: "name" },
+];
 
 export class ReimbursementService {
   /**
@@ -113,6 +186,11 @@ export class ReimbursementService {
     if (!record) throw Object.assign(new Error("Reimbursement not found"), { statusCode: 404 });
     if (record.status === "paid")
       throw Object.assign(new Error("This claim has already been paid out"), { statusCode: 400 });
+    // Past HR: finance pays it or refuses it, in the finance system.
+    if (record.status === "hr_approved")
+      throw Object.assign(new Error("This claim is with finance now — finance pays it or refuses it"), { statusCode: 409 });
+    if (record.rejectedBy === "finance")
+      throw Object.assign(new Error("Finance refused this claim — it can't be decided again here; file a new claim"), { statusCode: 409 });
     if (input.reviewNote !== undefined) record.reviewNote = input.reviewNote ?? undefined;
 
     const outcome = resolveReviewOutcome(
@@ -122,7 +200,11 @@ export class ReimbursementService {
     if (outcome.advance) {
       record.workflowStep = (record.workflowStep ?? 1) + 1;
     } else {
-      record.status = input.status;
+      // HR's last word. With the finance step on, an approval passes it to finance, which pays it — never the
+      // payslip. One already approved for the payslip (before the step) stays on that road.
+      const toFinance = input.status === "approved" && reimbursementFinanceStepOn() && record.status !== "approved";
+      record.status = toFinance ? "hr_approved" : input.status;
+      record.rejectedBy = input.status === "rejected" ? "hr" : null;
       record.reviewedBy = reviewerId as never;
       record.reviewedAt = new Date();
     }
@@ -135,10 +217,125 @@ export class ReimbursementService {
     if (!record) throw Object.assign(new Error("Reimbursement not found"), { statusCode: 404 });
     if (record.status === "paid")
       throw Object.assign(new Error("A paid-out claim cannot be deleted"), { statusCode: 400 });
+    // Finance may be paying it this minute; it refuses it if it shouldn't be paid.
+    if (record.status === "hr_approved")
+      throw Object.assign(new Error("This claim is with finance — it can't be deleted while finance has it"), { statusCode: 409 });
     await Reimbursement.deleteOne({ _id: record._id });
     return { message: "Reimbursement deleted successfully" };
   }
+
+  // ── Finance integration ────────────────────────────────────────────────────
+  // Finance never logs in here: its half arrives over the integration API, the organization named outright because a
+  // machine request has no user to take it from — the same way salary advances and procurement work.
+
+  /**
+   * Claims for finance. By default its queue — HR approved, finance not yet decided — oldest HR approval first. With
+   * a status, its record, newest first, the latest 500: "paid" paid by finance, "rejected" refused by finance, "all"
+   * every claim that reached finance.
+   */
+  async listForFinance(organization: string, status: FinanceReimbursementStatus = "hr_approved") {
+    if (!Types.ObjectId.isValid(organization)) return [];
+    const org = new Types.ObjectId(organization);
+    const decided = { financeReviewedAt: { $ne: null } };
+    const filter =
+      status === "hr_approved" ? { organization: org, status: "hr_approved" }
+      : status === "paid" ? { organization: org, status: "paid", ...decided }
+      : status === "rejected" ? { organization: org, status: "rejected", rejectedBy: "finance" }
+      : { organization: org, $or: [{ status: "hr_approved" }, decided] };
+    const rows = await Reimbursement.find(filter)
+      .populate(FINANCE_POP)
+      .sort(status === "hr_approved" ? { reviewedAt: 1, createdAt: 1 } : { financeReviewedAt: -1, reviewedAt: -1 })
+      .limit(status === "hr_approved" ? 0 : 500)
+      .lean();
+    return rows.map((r) => forFinance(r as unknown as Record<string, unknown>));
+  }
+
+  /**
+   * Finance's decision. Paying it makes the claim "paid", with finance's expense number, date and method; refusing it
+   * "rejected" by finance, with its reason. A repeat of the decision finance already made — a retry after a lost
+   * answer — answers with the claim rather than refusing, so finance can safely send again. Anything else not waiting
+   * on finance is a 409. `amount`, when sent, must be the claim's: finance pays what was claimed.
+   */
+  async recordFinanceDecision(
+    organization: string,
+    id: string,
+    input: { decision: "approve" | "reject"; note?: string | null; reference?: string | null; paidOn?: string | null; method?: string | null; by?: string | null; amount?: number | string | null }
+  ) {
+    if (!Types.ObjectId.isValid(organization) || !Types.ObjectId.isValid(id)) throw new ClaimError("Claim not found", 404);
+    const record = await Reimbursement.findOne({ _id: id, organization });
+    if (!record) throw new ClaimError("Claim not found", 404);
+    const approve = input.decision === "approve";
+    const repeat = !!record.financeReviewedAt
+      && ((approve && record.status === "paid") || (!approve && record.status === "rejected" && record.rejectedBy === "finance"));
+    if (!repeat) {
+      if (record.status !== "hr_approved") {
+        throw new ClaimError(`Only a claim HR has approved is waiting on finance — this one is ${STATUS_WORDS[record.status] ?? record.status}`, 409);
+      }
+      // The employee is told why.
+      if (!approve && String(input.note ?? "").trim().length < 3) throw new ClaimError("Say why finance refuses this claim", 400);
+      if (approve) {
+        if (input.amount != null && input.amount !== "" && r2(Number(input.amount)) !== r2(record.amount)) {
+          throw new ClaimError(`This claim is for ${r2(record.amount).toFixed(2)}, not ${Number(input.amount).toFixed(2)} — reload and try again`, 409);
+        }
+        const paidOn = input.paidOn && /^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) ? input.paidOn : new Date().toISOString().slice(0, 10);
+        record.status = "paid";
+        record.financeRef = String(input.reference ?? "").trim().slice(0, 120);
+        record.paidOn = new Date(`${paidOn}T00:00:00.000Z`);
+        record.paymentMethod = String(input.method ?? "").trim().slice(0, 40);
+      } else {
+        record.status = "rejected";
+        record.rejectedBy = "finance";
+      }
+      record.financeReviewedAt = new Date();
+      record.financeNote = String(input.note ?? "").trim().slice(0, 500);
+      record.financeReviewedBy = String(input.by ?? "").trim().slice(0, 120);
+      await record.save();
+      // Finance is waiting on this answer; the notice can follow it.
+      announceFinanceDecision(record._id, organization).catch((err) =>
+        console.error(`reimbursements: could not announce finance's decision on ${record._id}:`, err instanceof Error ? err.message : err)
+      );
+    }
+    const r = await Reimbursement.findById(record._id).populate(FINANCE_POP).lean();
+    return forFinance(r as unknown as Record<string, unknown>);
+  }
 }
+
+/** Tell the employee what finance did, in-app and by mail. Never throws. */
+async function announceFinanceDecision(id: unknown, organization: string) {
+  const r = await Reimbursement.findById(id).populate([{ path: "employee", select: "currency" }]).lean<Record<string, unknown> | null>();
+  if (!r?.user) return;
+  const currency = String((r.employee as { currency?: string } | null)?.currency || "AED").toUpperCase();
+  const what = `${String(r.title ?? "Your claim")} — ${money(Number(r.amount ?? 0), currency)}`;
+  const paid = r.status === "paid";
+  const title = paid ? "Your reimbursement has been paid" : "Your reimbursement was not approved by finance";
+  const paidLine = paid
+    ? `Paid on ${new Date(r.paidOn as Date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}`
+      + `${r.paymentMethod ? ` by ${String(r.paymentMethod).replace(/_/g, " ")}` : ""}${r.financeRef ? ` (${String(r.financeRef)})` : ""}.`
+    : "";
+  const note = r.financeNote ? String(r.financeNote) : "";
+  const body = [what + ".", paidLine, note ? `Finance: ${note}` : ""].filter(Boolean).join(" ");
+  try {
+    await notify({ users: [String(r.user)], kind: "payroll", tone: paid ? "positive" : "negative", title, body, href: "/reimbursements", organization });
+  } catch { /* the mail below */ }
+  try {
+    const who = await User.findById(r.user).select("email").lean<{ email?: string } | null>();
+    if (!who?.email) return;
+    const link = `${env.CLIENT_URL}/reimbursements`;
+    await sendMail({
+      to: who.email,
+      organization,
+      subject: title,
+      text: `${title}\n\n${body}\n\n${link}\n`,
+      html:
+        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:auto">` +
+        `<h2 style="color:#4f46e5;margin-bottom:4px">${esc(title)}</h2><p style="color:#555">${esc(what)}.${paidLine ? `<br>${esc(paidLine)}` : ""}${note ? `<br><br>${esc(note)}` : ""}</p>` +
+        `<p><a href="${link}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open reimbursements</a></p>` +
+        `<p style="color:#999;font-size:12px;margin-top:20px">Sent automatically by Delta HRMS.</p></div>`,
+    });
+  } catch { /* the decision stands whether or not the mail got out */ }
+}
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
 /**
  * Approved-but-unpaid reimbursements for an employee's payout month, as payslip

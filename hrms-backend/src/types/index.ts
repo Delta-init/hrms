@@ -1781,7 +1781,8 @@ export interface ISalaryStructureAssignment extends Document {
 // ─── Reimbursement claim ─────────────────────────────────────────────────────
 export type ReimbursementCategory =
   | "travel" | "food" | "accommodation" | "medical" | "communication" | "fuel" | "supplies" | "other";
-export type ReimbursementStatus = "pending" | "approved" | "rejected" | "paid";
+/** hr_approved: HR approved it and it waits on finance (REIMBURSEMENT_FINANCE_STEP=on). */
+export type ReimbursementStatus = "pending" | "hr_approved" | "approved" | "rejected" | "paid";
 export interface IReimbursement extends Document {
   _id: Types.ObjectId;
   organization?: Types.ObjectId | IOrganization | null;
@@ -1806,6 +1807,15 @@ export interface IReimbursement extends Document {
   approvalTrail?: IApprovalTrailEntry[];
   /** Set when the approved claim has been paid out through a payslip. */
   payslip?: Types.ObjectId | null;
+  /** Who refused it, when it was refused — HR here, or finance in the finance system. */
+  rejectedBy?: "hr" | "finance" | null;
+  /** Finance's half (REIMBURSEMENT_FINANCE_STEP=on): its expense number, when and how it paid, its note and person. */
+  financeRef?: string;
+  paidOn?: Date | null;
+  paymentMethod?: string;
+  financeNote?: string;
+  financeReviewedBy?: string;
+  financeReviewedAt?: Date | null;
   createdBy?: Types.ObjectId | IUser | null;
   createdAt: Date;
   updatedAt: Date;
