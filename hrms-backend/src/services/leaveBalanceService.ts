@@ -5,7 +5,7 @@ import type { CreateLeavePolicyInput, UpdateLeavePolicyInput } from "../validati
 import type { ILeaveBalance } from "../types/index.js";
 import { scoped, orgFilter, getOrgId } from "../utils/orgContext.js";
 import {
-  leavePolicyIndex, scheduleIdFor, accruedFor, usedInPeriod, carriedForward, leaveLabel, eligibilityFor,
+  leavePolicyIndex, scheduleIdFor, accruedFor, usedInPeriod, carriedForward, carriedIntoMonth, leaveLabel, eligibilityFor,
 } from "./leavePolicyResolver.js";
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -97,7 +97,8 @@ export class LeaveBalanceService {
    * Every policy in force for `userId`, with what it has granted so far.
    *
    * A monthly policy is reported for the month in progress; a yearly one for
-   * `year`. Carry-forward looks back exactly one year, never compounded.
+   * `year`. Carry-forward looks back exactly one year, never compounded — or,
+   * for remote staff's casual leave, one month.
    */
   async computeBalances(userId: string, year = new Date().getUTCFullYear()): Promise<ILeaveBalance[]> {
     const [index, scheduleId, employee, adjustments] = await Promise.all([
@@ -132,10 +133,12 @@ export class LeaveBalanceService {
       const eligibility = eligibilityFor(policy, joiningDate, on);
       const used = await usedInPeriod(userId, policy.type, policy.period, on);
 
+      // Yearly: last year's unused, to the policy's limit. Monthly: last month's,
+      // for the one policy that carries (remote staff's casual leave).
       const carried = policy.period === "year"
         ? carriedForward(policy, joiningDate, year,
             await usedInPeriod(userId, policy.type, "year", new Date(Date.UTC(year - 1, 0, 1))))
-        : 0;
+        : await carriedIntoMonth(policy, userId, joiningDate, on);
 
       const adjustment = adjustedBy.get(policy.type) ?? 0;
 

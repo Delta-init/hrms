@@ -289,6 +289,64 @@ export async function usedInPeriod(
   return round(rows.reduce((a, r) => a + (r.days || 0), 0));
 }
 
+// ── Carrying into next month ─────────────────────────────────────────────────
+
+/**
+ * Remote staff's casual leave carries into the next month.
+ *
+ * A monthly allowance otherwise lapses at the month's end. For this one policy
+ * — casual leave for work-from-home staff — last month's unused allowance can
+ * still be taken this month, and no more than that: one month's allowance at
+ * most, so it never builds up. Days carried in are used first, since they are
+ * the ones that would lapse, which leaves this month's own allowance to carry
+ * on in turn. It starts afresh every January.
+ *
+ * Fixed here rather than set on the policy: it was decided for this policy
+ * alone. October 2026 is the first month whose unused days carry (into
+ * November), the month it was backdated to.
+ */
+export const MONTHLY_CARRY = { type: "casual", workMode: "wfh" as WorkMode, firstFromYear: 2026, firstFromMonth: 9 } as const;
+
+export const carriesIntoNextMonth = (policy: Pick<EffectivePolicy, "type" | "period" | "workMode">) =>
+  policy.period === "month" && policy.type === MONTHLY_CARRY.type && policy.workMode === MONTHLY_CARRY.workMode;
+
+/**
+ * What one month leaves for the next: its own allowance less what was taken
+ * from it — days carried in having gone first — capped at one month's allowance.
+ */
+export function carryOver(accrued: number, used: number, carriedIn: number, cap: number): number {
+  const fromOwn = Math.max(0, used - carriedIn);
+  return round(Math.min(cap, Math.max(0, accrued - fromOwn)));
+}
+
+/**
+ * Days carried into the month containing `on`, for a policy that carries.
+ * Walked forward from the first month that counts — January, or October 2026
+ * in the year it began — since each month's carry depends on the one before.
+ * Pending requests count as taken, so a day is never promised twice.
+ */
+export async function carriedIntoMonth(
+  policy: EffectivePolicy,
+  userId: unknown,
+  joiningDate: Date | null,
+  on: Date
+): Promise<number> {
+  if (!carriesIntoNextMonth(policy)) return 0;
+  const year = on.getUTCFullYear();
+  const month = on.getUTCMonth();
+  if (year < MONTHLY_CARRY.firstFromYear) return 0;
+  const from = year === MONTHLY_CARRY.firstFromYear ? MONTHLY_CARRY.firstFromMonth : 0;
+  let carried = 0;
+  for (let m = from; m < month; m++) {
+    // Read each past month as of its last moment, as the balance reads the month in progress as of now.
+    const lastMoment = new Date(Date.UTC(year, m + 1, 1) - 1);
+    const accrued = accruedFor(policy, joiningDate, lastMoment);
+    const used = await usedInPeriod(userId, policy.type, "month", lastMoment, { includePending: true });
+    carried = carryOver(accrued, used, carried, policy.days);
+  }
+  return carried;
+}
+
 /** Unused days brought forward from last year. Yearly policies only. */
 export function carriedForward(
   policy: Pick<

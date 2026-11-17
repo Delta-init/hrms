@@ -38,7 +38,7 @@ import { env } from "../config/env.js";
 import type { ReviewerRole } from "./approvalWorkflowService.js";
 import { parsePagination } from "../utils/query.js";
 import {
-  policiesForUser, accruedFor, usedInPeriod, carriedForward, periodWindow, leaveLabel, eligibilityFor,
+  policiesForUser, accruedFor, usedInPeriod, carriedForward, carriedIntoMonth, periodWindow, leaveLabel, eligibilityFor,
   type EffectivePolicy,
 } from "./leavePolicyResolver.js";
 
@@ -89,7 +89,7 @@ async function remainingFor(
   userId: unknown,
   startDate: Date,
   excludeId: string | null
-): Promise<{ remaining: number; used: number; accrued: number }> {
+): Promise<{ remaining: number; used: number; accrued: number; carried: number }> {
   const joiningDate = await joiningDateFor(userId);
   const accrued = accruedFor(policy, joiningDate, startDate);
   // Pending requests count: two requests that each fit would otherwise both be
@@ -98,11 +98,12 @@ async function remainingFor(
     includePending: true,
     excludeId,
   });
+  // The same carry the balance card shows — yearly, or last month's for remote casual leave.
   const carried = policy.period === "year"
     ? carriedForward(policy, joiningDate, startDate.getUTCFullYear(),
         await usedInPeriod(userId, policy.type, "year", new Date(Date.UTC(startDate.getUTCFullYear() - 1, 0, 1))))
-    : 0;
-  return { remaining: Math.round((accrued + carried - used) * 100) / 100, used, accrued };
+    : await carriedIntoMonth(policy, userId, joiningDate, startDate);
+  return { remaining: Math.round((accrued + carried - used) * 100) / 100, used, accrued, carried };
 }
 
 /**
@@ -183,13 +184,15 @@ async function assertLeaveAllowed(
   }
 
   if (UNLIMITED.has(type)) return;
-  const { remaining, used } = await remainingFor(policy, userId, startDate, excludeId);
+  const { remaining, used, carried } = await remainingFor(policy, userId, startDate, excludeId);
   if (days > remaining) {
     const per = policy.period === "month" ? "this month" : "this year";
+    // Name the carried days too, or "1/month, 2 already booked" reads as a mistake.
+    const from = policy.period === "month" ? "carried from last month" : "carried from last year";
     throw Object.assign(
       new Error(
         `Only ${remaining} day${remaining === 1 ? "" : "s"} of ${policy.label} left ${per} ` +
-        `(${policy.days}/${policy.period}, ${used} already booked)`
+        `(${policy.days}/${policy.period}${carried > 0 ? ` + ${carried} ${from}` : ""}, ${used} already booked)`
       ),
       { statusCode: 400 }
     );

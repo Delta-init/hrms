@@ -40,6 +40,19 @@ function policyTarget(p: LeavePolicy): string {
   return "All employees";
 }
 
+
+/**
+ * Remote staff's monthly casual leave carries last month's unused days into this
+ * month — the server's rule (leavePolicyResolver's carriesIntoNextMonth), shown here.
+ */
+const carriesIntoNextMonth = (p: { type: string; period: string; workMode?: string | null }) =>
+  p.period === "month" && p.type === "casual" && p.workMode === "wfh";
+/** A monthly balance is for the month in progress; what it carried in came from the one before. */
+const lastMonthName = () => {
+  const d = new Date();
+  return new Intl.DateTimeFormat("en-GB", { month: "long" }).format(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+};
+
 export function LeaveBalances({ canManage }: Props) {
   const { data: policies, isLoading: policiesLoading } = useLeavePolicies(canManage);
   const { data: balances, isLoading: balancesLoading } = useMyLeaveBalances();
@@ -83,6 +96,7 @@ export function LeaveBalances({ canManage }: Props) {
                       {p.eligibleAfterMonths > 0 && ` · after ${monthsLabel(p.eligibleAfterMonths)}`}
                     </p>
                     {p.carryForwardLimit > 0 && <p className="text-xs text-muted-foreground">Carries up to {p.carryForwardLimit}d forward</p>}
+                    {carriesIntoNextMonth(p) && <p className="text-xs text-muted-foreground">Unused days carry into the next month (resets each January)</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setSelected(p); setDialogOpen(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
@@ -115,7 +129,12 @@ export function LeaveBalances({ canManage }: Props) {
                       allowance resets, a yearly one runs to December. */}
                   <div className="flex justify-between"><span>Allowance</span><span className="tabular-nums">{b.days}d {b.period === "month" ? "a month" : "a year"}</span></div>
                   <div className="flex justify-between"><span>{b.period === "month" ? "This month" : "Granted"}</span><span className="tabular-nums">{b.accrued}</span></div>
-                  {b.carriedForward > 0 && <div className="flex justify-between"><span>Carried forward</span><span className="tabular-nums">+{b.carriedForward}</span></div>}
+                  {b.carriedForward > 0 && (
+                    <div className="flex justify-between">
+                      <span>{b.period === "month" ? `Carried from ${lastMonthName()}` : "Carried forward"}</span>
+                      <span className="tabular-nums text-emerald-600">+{b.carriedForward}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between"><span>Used</span><span className="tabular-nums">−{b.used}</span></div>
                 </div>
                 {/* A zero with no explanation is what sends people to support. */}
