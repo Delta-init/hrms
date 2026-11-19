@@ -2242,6 +2242,46 @@ export interface SettlementLine {
   label: string;
   amount: number;
 }
+// ─── CRM handover at final settlement ───────────────────────────────────────
+export interface CrmHandoverLogEntry {
+  crm: string;
+  name?: string;
+  action: "handed_over" | "handled_outside" | "outside_cleared";
+  crmUser?: { name?: string; email?: string };
+  moved?: number;
+  targets?: Array<{ name: string; count: number }>;
+  transferId?: string;
+  openAfter?: number;
+  reason?: string;
+  byName?: string;
+  at?: string;
+}
+export interface CrmHandoverCandidate { id: string; name: string; email: string; team: string | null }
+export interface CrmHandoverSystem {
+  key: string;
+  name: string;
+  outside: { reason: string; byName: string; at: string | null } | null;
+  log: CrmHandoverLogEntry[];
+  reachable: boolean;
+  found: boolean;
+  /** Clear for the settlement: no account, or no open leads and the login off, or noted as handled outside. */
+  ready: boolean;
+  error?: string;
+  user?: { id: string; name: string; email: string; status: string };
+  open?: number;
+  closed?: number;
+  lost?: number;
+  loginOff?: boolean;
+  candidates?: CrmHandoverCandidate[];
+}
+export interface CrmHandoverStatus {
+  employee: { name: string; emails: string[] };
+  configured: boolean;
+  systems: CrmHandoverSystem[];
+  ready: boolean;
+  settled: boolean;
+}
+
 export interface FinalSettlement {
   computedAt?: string;
   basic: number;

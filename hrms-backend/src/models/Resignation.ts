@@ -53,6 +53,32 @@ const clearanceItemSchema = new Schema(
 const ratingField = { type: Number, min: 1, max: 5, default: null };
 
 /** Structured exit interview, recorded once by HR. */
+/**
+ * What was done in each CRM for the leaver at final settlement (2026-11-19) — a log, newest last: their open leads
+ * handed over and login turned off from here, or HR noting it was handled outside HRMS (with why), or taking that
+ * note back. The CRM itself keeps the lead-by-lead record and its Undo.
+ */
+const crmHandoverSchema = new Schema(
+  {
+    crm: { type: String, required: true, trim: true, maxlength: 40 },
+    name: { type: String, trim: true, maxlength: 60 },
+    action: { type: String, enum: ["handed_over", "handled_outside", "outside_cleared"], required: true },
+    /** Their account there, as the CRM named it. */
+    crmUser: { name: { type: String, trim: true }, email: { type: String, trim: true } },
+    moved: { type: Number, default: 0 },
+    targets: { type: [new Schema({ name: String, count: Number }, { _id: false })], default: [] },
+    /** The CRM's transfer id — what its Undo works from. */
+    transferId: { type: String, default: "" },
+    /** Still open there afterwards — a lead that reached them while theirs moved. */
+    openAfter: { type: Number, default: 0 },
+    reason: { type: String, trim: true, maxlength: 300 },
+    by: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    byName: { type: String, trim: true, maxlength: 120 },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const exitInterviewSchema = new Schema(
   {
     conductedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
@@ -116,6 +142,7 @@ const resignationSchema = new Schema<IResignation>(
     // ── Exit clearance & interview ──
     clearance: { type: [clearanceItemSchema], default: [] },
     exitInterview: { type: exitInterviewSchema, default: null },
+    crmHandover: { type: [crmHandoverSchema], default: [] },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewedAt: { type: Date, default: null },
     reviewNote: { type: String, trim: true, maxlength: 500 },

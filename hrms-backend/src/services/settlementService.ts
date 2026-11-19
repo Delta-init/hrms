@@ -1,4 +1,5 @@
 import { Resignation } from "../models/Resignation.js";
+import { handoverBlockers } from "./crmHandoverService.js";
 import { Employee } from "../models/Employee.js";
 import { Loan } from "../models/Loan.js";
 import { Reimbursement } from "../models/Reimbursement.js";
@@ -159,6 +160,12 @@ export class SettlementService {
       throw Object.assign(new Error("Compute and save the settlement before finalising it"), { statusCode: 400 });
     if (resig.settlement.settled)
       throw Object.assign(new Error("This settlement has already been finalised"), { statusCode: 400 });
+    // Their CRM work first (2026-11-19): open leads handed over and login off in every CRM, or noted as handled
+    // outside HRMS. Checked live, so a lead given to them since is caught here.
+    const blockers = await handoverBlockers(resignationId);
+    if (blockers.length) {
+      throw Object.assign(new Error(`Hand over their CRM work first. ${blockers.join(" · ")}`), { statusCode: 409, blockers });
+    }
 
     const employeeId = String(resig.employee);
     const sources = await collectSettlementSources(employeeId);

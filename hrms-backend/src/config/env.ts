@@ -240,7 +240,44 @@ const envSchema = z.object({
   FINANCE_API_URL: z.string().default(""),
   FINANCE_CLIENT_ID: z.string().default(""),
   FINANCE_INTEGRATION_SECRET: z.string().default(""),
+
+  /*
+   * The CRMs a leaver is handed over in at final settlement (2026-11-19): their open leads moved to someone else and
+   * their login turned off, before the settlement can be finalised. A JSON list, one entry per CRM:
+   *
+   *   [{"key":"dubai-sales","name":"Sales CRM (Dubai)","url":"https://api.example.com","secret":"<64 hex>"}]
+   *
+   * `secret` is that CRM's HRMS_HANDOVER_SECRET — its own, never INTEGRATION_SECRET, which every caller of this
+   * server shares. Empty, there is no CRM step and finalising works as it always has.
+   */
+  CRM_HANDOVER_LINKS: z.string().default("").transform((raw, ctx) => {
+    if (!raw.trim()) return [] as CrmLink[];
+    let list: unknown;
+    try { list = JSON.parse(raw); } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CRM_HANDOVER_LINKS must be a JSON list" });
+      return z.NEVER;
+    }
+    const link = z.object({
+      key: z.string().regex(/^[a-z0-9-]{2,40}$/, "key: lowercase letters, digits and dashes"),
+      name: z.string().min(1).max(60),
+      url: z.string().url(),
+      secret: z.string().min(32, "secret must be at least 32 characters"),
+    });
+    const parsedLinks = z.array(link).max(10).safeParse(list);
+    if (!parsedLinks.success) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `CRM_HANDOVER_LINKS: ${parsedLinks.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}` });
+      return z.NEVER;
+    }
+    if (new Set(parsedLinks.data.map((l) => l.key)).size !== parsedLinks.data.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CRM_HANDOVER_LINKS: each key once" });
+      return z.NEVER;
+    }
+    return parsedLinks.data as CrmLink[];
+  }),
 });
+
+/** One CRM a leaver is handed over in — see CRM_HANDOVER_LINKS. */
+export interface CrmLink { key: string; name: string; url: string; secret: string }
 
 const parsed = envSchema.safeParse(process.env);
 

@@ -1511,6 +1511,7 @@ export interface IResignation extends Document {
   // ── Exit clearance & interview ──
   clearance?: IClearanceItem[];
   exitInterview?: IExitInterview | null;
+  crmHandover?: IResignationCrmHandover[];
   reviewedBy?: Types.ObjectId | IUser | null;
   reviewedAt?: Date | null;
   reviewNote?: string;
@@ -1600,6 +1601,22 @@ export interface IFinalSettlement {
   settled: boolean;
   settledAt?: Date | null;
   notes?: string;
+}
+
+/** One step of a leaver's handover in a CRM — see Resignation's crmHandoverSchema. */
+export interface IResignationCrmHandover {
+  crm: string;
+  name?: string;
+  action: "handed_over" | "handled_outside" | "outside_cleared";
+  crmUser?: { name?: string; email?: string };
+  moved?: number;
+  targets?: Array<{ name: string; count: number }>;
+  transferId?: string;
+  openAfter?: number;
+  reason?: string;
+  by?: Types.ObjectId | null;
+  byName?: string;
+  at?: Date;
 }
 
 // ─── Loan ────────────────────────────────────────────────────────────────────

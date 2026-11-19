@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { usePreviewSettlement, useSaveSettlement, useFinaliseSettlement } from "@/hooks/useResignations";
+import { usePreviewSettlement, useSaveSettlement, useFinaliseSettlement, useCrmHandover } from "@/hooks/useResignations";
+import { CrmHandoverCard } from "@/components/resignations/CrmHandoverCard";
 import { useAuth } from "@/hooks/useAuth";
 import { printSettlement } from "@/components/resignations/printSettlement";
 import type { Resignation, FinalSettlement, SettlementLine } from "@/types";
@@ -31,6 +32,9 @@ export function SettlementDialog({ open, onOpenChange, resignation: r }: Props) 
   const { mutate: preview, isPending: previewing } = usePreviewSettlement();
   const { mutate: save, isPending: saving } = useSaveSettlement();
   const { mutate: finalise, isPending: finalising } = useFinaliseSettlement();
+  // Their CRM work comes first: finalising waits until every CRM is clear (the server checks again).
+  const { data: handover, refetch: recheckHandover } = useCrmHandover(r._id, open);
+  const handoverPending = !!handover?.configured && !handover.ready;
 
   const [result, setResult] = useState<FinalSettlement | null>(null);
   const [leaveDays, setLeaveDays] = useState("0");
@@ -71,7 +75,10 @@ export function SettlementDialog({ open, onOpenChange, resignation: r }: Props) 
 
   const recalc = () => preview({ id: r._id, data: buildInput() }, { onSuccess: setResult });
   const onSave = () => save({ id: r._id, data: buildInput() }, { onSuccess: setResult });
-  const onFinalise = () => finalise(r._id, { onSuccess: (s) => { setResult(s); setConfirmSettle(false); } });
+  const onFinalise = () => finalise(r._id, {
+    onSuccess: (s) => { setResult(s); setConfirmSettle(false); },
+    onError: () => { setConfirmSettle(false); void recheckHandover(); },
+  });
 
   const emp = empOf(r);
   const cur = result?.currency ?? "AED";
@@ -162,6 +169,8 @@ export function SettlementDialog({ open, onOpenChange, resignation: r }: Props) 
               <Textarea rows={2} placeholder="Optional settlement notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
           )}
+
+          {open && <CrmHandoverCard resignationId={r._id} settled={settled} />}
         </div>
 
         <ResponsiveDialogFooter className="flex-wrap gap-2">
@@ -169,7 +178,14 @@ export function SettlementDialog({ open, onOpenChange, resignation: r }: Props) 
           <div className="flex-1" />
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
           {!settled && canEdit && <Button variant="outline" onClick={onSave} disabled={saving || previewing}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save draft</Button>}
-          {!settled && canApprove && <Button onClick={() => setConfirmSettle(true)} disabled={finalising || previewing}><CheckCircle2 className="h-4 w-4" />Finalise</Button>}
+          {!settled && canApprove && (
+            <Button
+              onClick={() => setConfirmSettle(true)} disabled={finalising || previewing || handoverPending}
+              title={handoverPending ? "Hand over their CRM work first" : undefined}
+            >
+              <CheckCircle2 className="h-4 w-4" />Finalise
+            </Button>
+          )}
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
 

@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, Resignation, FinalSettlement } from "@/types";
+import type { ApiResponse, Resignation, FinalSettlement, CrmHandoverStatus } from "@/types";
 
 const KEY = ["resignations"] as const;
 function errMsg(e: unknown, f: string) {
@@ -149,5 +149,50 @@ export const useSaveExitInterview = () => {
       (await api.put<ApiResponse<Resignation>>(`/resignations/${id}/exit-interview`, data)).data.data!,
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); toast.success("Exit interview saved"); },
     onError: (e) => toast.error(errMsg(e, "Failed to save exit interview")),
+  });
+};
+
+// ── CRM handover before finalising (2026-11-19) ──
+const HANDOVER = (id: string) => [...KEY, id, "crm-handover"] as const;
+
+/** Each CRM: what the leaver holds there and whether it's clear for the settlement. Checked live. */
+export const useCrmHandover = (id: string, enabled = true) =>
+  useQuery({
+    queryKey: HANDOVER(id),
+    queryFn: async () => (await api.get<ApiResponse<CrmHandoverStatus>>(`/resignations/${id}/crm-handover`)).data.data!,
+    enabled: !!id && enabled,
+    staleTime: 0,
+  });
+
+export interface HandoverTarget { userId: string; count?: number | null }
+
+/** Turn their login off in that CRM and move their open leads as chosen. */
+export const useHandOverCrm = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, crm, targets }: { id: string; crm: string; targets: HandoverTarget[] }) =>
+      (await api.post<ApiResponse<CrmHandoverStatus>>(`/resignations/${id}/crm-handover/${crm}`, { targets }, { timeout: 150_000 })).data.data!,
+    onSuccess: (data, v) => { qc.setQueryData(HANDOVER(v.id), data); toast.success("Handed over"); },
+    onError: (e) => toast.error(errMsg(e, "Couldn't hand over")),
+  });
+};
+
+export const useMarkCrmOutside = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, crm, reason }: { id: string; crm: string; reason: string }) =>
+      (await api.post<ApiResponse<CrmHandoverStatus>>(`/resignations/${id}/crm-handover/${crm}/outside`, { reason })).data.data!,
+    onSuccess: (data, v) => { qc.setQueryData(HANDOVER(v.id), data); toast.success("Noted as handled outside HRMS"); },
+    onError: (e) => toast.error(errMsg(e, "Couldn't save the note")),
+  });
+};
+
+export const useClearCrmOutside = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, crm }: { id: string; crm: string }) =>
+      (await api.delete<ApiResponse<CrmHandoverStatus>>(`/resignations/${id}/crm-handover/${crm}/outside`)).data.data!,
+    onSuccess: (data, v) => { qc.setQueryData(HANDOVER(v.id), data); toast.success("Note removed"); },
+    onError: (e) => toast.error(errMsg(e, "Couldn't remove the note")),
   });
 };

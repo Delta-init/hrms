@@ -4,6 +4,7 @@ import {
   reviewResignation, withdrawResignation, relieveResignation, deleteResignation, runRelieveDue,
   setExitDetails, previewSettlement, saveSettlement, finaliseSettlement,
   startClearance, setClearance, updateClearanceItem, saveExitInterview,
+  getCrmHandover, previewCrmHandover, doCrmHandover, markCrmOutside, clearCrmOutside,
 } from "../controllers/resignationController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -25,6 +26,12 @@ router.patch("/:id/exit", checkPermission("resignations", "edit"), setExitDetail
 router.post("/:id/settlement/preview", checkPermission("resignations", "view"), previewSettlement);
 router.put("/:id/settlement", checkPermission("resignations", "edit"), saveSettlement);
 router.post("/:id/settlement/settle", checkPermission("resignations", "approve"), finaliseSettlement);
+// Their CRM work before finalising (2026-11-19): leads handed over and login off in each CRM.
+router.get("/:id/crm-handover", checkPermission("resignations", "view"), getCrmHandover);
+router.post("/:id/crm-handover/:crm/preview", checkPermission("resignations", "approve"), previewCrmHandover);
+router.post("/:id/crm-handover/:crm", checkPermission("resignations", "approve"), doCrmHandover);
+router.post("/:id/crm-handover/:crm/outside", checkPermission("resignations", "approve"), markCrmOutside);
+router.delete("/:id/crm-handover/:crm/outside", checkPermission("resignations", "approve"), clearCrmOutside);
 // Exit clearance & interview.
 router.post("/:id/clearance/start", checkPermission("resignations", "edit"), startClearance);
 router.put("/:id/clearance", checkPermission("resignations", "edit"), setClearance);
