@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useAllOrganizations } from "@/hooks/useOrganizations";
 import { useDepartmentsSimple } from "@/hooks/useDepartments";
 import { useApprovalInbox, useApprovalSummary, useDecideApproval, useBulkDecideApprovals } from "@/hooks/useApprovalInbox";
 import { ApprovalRowCard } from "@/components/approvals/ApprovalRowCard";
@@ -27,7 +26,9 @@ type View = "pending" | "decided";
 type Intent = { approve: boolean; row?: ApprovalRow; bulk?: boolean };
 
 /**
- * Everything waiting on management, across every organisation.
+ * Everything waiting on management in one organisation — for a Super Admin,
+ * the one picked in the sidebar's switcher, so Bangalore's requests are seen
+ * in Bangalore and Dubai's in Dubai.
  *
  * There is deliberately no "waiting on me" view. This console is open to Super
  * Admins only, who hold every step of every chain, so the distinction would
@@ -47,8 +48,6 @@ export default function ApprovalsPage() {
 function ApprovalsConsole() {
   const { user, hasPermission } = useAuth();
   const role = user?.role;
-  // Cross-organisation is a Super Admin's view alone; everybody else who can
-  // reach this page sees one organisation, or one department within it.
   const isSuperAdmin = !!role?.isSystemRole && role.roleName === "Super Admin";
   // Whether this person has anything here at all is the server's answer, not a
   // guess from the role: a department head holds no permission that would say
@@ -63,7 +62,6 @@ function ApprovalsConsole() {
   const [module, setModule] = useState<ApprovalModule | "">(
     (params0.get("module") as ApprovalModule | null) ?? ""
   );
-  const [org, setOrg] = useState("");
   // Arriving from a department's own page opens on that department, so
   // "Approvals — Sales" is one click rather than a filter to find and set.
   const [dept, setDept] = useState(params0.get("department") ?? "");
@@ -76,14 +74,12 @@ function ApprovalsConsole() {
   const [intent, setIntent] = useState<Intent | null>(null);
 
   const params: Record<string, string> = { view };
-  if (org) params.organization = org;
   if (dept) params.department = dept;
   if (debounced.trim()) params.search = debounced.trim();
   if (range.from) params.from = range.from;
   if (range.to) params.to = range.to;
 
   const { data, isLoading } = useApprovalInbox(params);
-  const { data: orgs } = useAllOrganizations(isSuperAdmin);
   // Gated on the permission that actually serves the list — a department head
   // holds no `departments` permission, so asking on their behalf would only
   // earn them a 403 for a filter that offers them their one department.
@@ -184,7 +180,7 @@ function ApprovalsConsole() {
     <div className="space-y-6">
       <PageHeader
         title="Approvals"
-        description="Everything waiting on you, across every organisation."
+        description="Everything waiting on you in this organisation."
         icon={ShieldCheck}
       />
 
@@ -203,22 +199,10 @@ function ApprovalsConsole() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by person, title or organisation…"
+            placeholder="Search by person or title…"
             className="h-9 pl-9"
           />
         </div>
-
-        {/* Only where there is more than one organisation to choose between —
-            for everybody else the filter is a control with a single setting. */}
-        {isSuperAdmin && (
-          <Select value={org || ALL} onValueChange={(v) => setOrg(v === ALL ? "" : v)}>
-            <SelectTrigger className="h-9 w-[190px]"><SelectValue placeholder="All organisations" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All organisations</SelectItem>
-              {(orgs ?? []).map((o) => <SelectItem key={o._id} value={o._id}>{o.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
 
         {(departments?.length ?? 0) > 1 && (
           <Select value={dept || ALL} onValueChange={(v) => setDept(v === ALL ? "" : v)}>
@@ -274,7 +258,7 @@ function ApprovalsConsole() {
       {!!data?.capped?.length && (
         <p className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
           <Info className="h-3.5 w-3.5 shrink-0" />
-          Showing the first {data.limit} of {data.capped.join(", ")} — narrow by department{isSuperAdmin ? ", organisation" : ""} or date to see the rest.
+          Showing the first {data.limit} of {data.capped.join(", ")} — narrow by department or date to see the rest.
         </p>
       )}
 
@@ -325,10 +309,10 @@ function ApprovalsConsole() {
           <p className="mt-1 text-xs text-muted-foreground">
             {view !== "pending"
               ? "Widen the date range, or clear the filters."
-              : dept || org || debounced.trim() || range.from || range.to
+              : dept || debounced.trim() || range.from || range.to
                 ? "Nothing matches these filters. Clear them to see the rest."
                 : isSuperAdmin
-                  ? "Every request across every organisation has been dealt with."
+                  ? "Every request in this organisation has been dealt with."
                   : "Every request waiting on you has been dealt with."}
           </p>
         </div>

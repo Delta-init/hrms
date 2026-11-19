@@ -31,7 +31,8 @@ import { employeeIdsOf } from "./jobRequisitionService.js";
 /**
  * Which queues somebody may see, and whose requests within them.
  *
- * Three answers, narrowing: a Super Admin sees everything; somebody holding a
+ * Three answers, narrowing: a Super Admin sees every queue in the
+ * organisation they have switched to; somebody holding a
  * module's `approve` permission sees that queue across their own organisation;
  * a department head sees leave and corrections from their own department and
  * nothing else at all.
@@ -40,9 +41,15 @@ import { employeeIdsOf } from "./jobRequisitionService.js";
  * also heads a department loses nothing by heading it.
  */
 export interface InboxScope {
-  /** Super Admin. Every organisation, every module, no filter. */
+  /**
+   * Super Admin (and the system). Every module, no permission filter — within
+   * the organisation in `orgId` when there is one, every organisation when not.
+   */
   everything: boolean;
-  /** The one organisation everybody else is confined to. */
+  /**
+   * The organisation the view is confined to: everybody's own, and for a
+   * Super Admin the one picked in the sidebar's organisation switcher.
+   */
   orgId: string | null;
   /** Modules whose `approve` permission this person holds. */
   approve: Set<ApprovalModule>;
@@ -175,7 +182,11 @@ export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Recor
 }
 
 function baseScopeFilter(scope: InboxScope, module: ApprovalModule): Record<string, unknown> | null {
-  if (scope.everything) return {};
+  // A Super Admin sees the organisation they have switched to — Bangalore's
+  // requests while in Bangalore, Dubai's while in Dubai — not every
+  // organisation's at once. Only the system's own scope (no organisation, a
+  // scheduled digest) reads across all of them.
+  if (scope.everything) return scope.orgId ? { organization: new mongoose.Types.ObjectId(scope.orgId) } : {};
   // No organisation resolved means no safe way to narrow, so nothing is shown.
   if (!scope.orgId) return null;
   const org = { organization: new mongoose.Types.ObjectId(scope.orgId) };
