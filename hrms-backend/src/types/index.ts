@@ -1620,8 +1620,29 @@ export interface ILoan extends Document {
   /** "advance" when it recovers an approved salary advance. */
   kind?: "loan" | "advance";
   advance?: Types.ObjectId | null;
+  monthPlans?: ILoanMonthPlan[];
+  directPayments?: ILoanDirectPayment[];
   createdAt: Date;
   updatedAt: Date;
+}
+/** 0 skips the month; a smaller amount takes that much. */
+export interface ILoanMonthPlan {
+  month: string;
+  amount: number;
+  reason?: string;
+  by?: Types.ObjectId | null;
+  at?: Date;
+}
+export type LoanPaymentMethod = "cash" | "bank_transfer" | "cheque" | "other";
+export interface ILoanDirectPayment {
+  _id: Types.ObjectId;
+  amount: number;
+  date: Date;
+  method: LoanPaymentMethod;
+  reference?: string;
+  note?: string;
+  by?: Types.ObjectId | null;
+  at?: Date;
 }
 
 // ─── One-time payment / deduction ────────────────────────────────────────────

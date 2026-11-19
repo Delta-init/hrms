@@ -2289,8 +2289,68 @@ export interface Loan {
   amountRepaid: number;
   status: LoanStatus;
   notes?: string;
+  /** "advance" when it recovers an approved salary advance. */
+  kind?: "loan" | "advance";
+  /** Months HR skipped (amount 0) or took less in. */
+  monthPlans?: LoanMonthPlan[];
+  /** Money repaid outside payroll. */
+  directPayments?: LoanDirectPayment[];
   createdAt: string;
   updatedAt: string;
+}
+export interface LoanMonthPlan { month: string; amount: number; reason?: string; at?: string }
+export type LoanPaymentMethod = "cash" | "bank_transfer" | "cheque" | "other";
+export const LOAN_PAYMENT_METHOD_LABELS: Record<LoanPaymentMethod, string> = {
+  cash: "Cash",
+  bank_transfer: "Bank transfer",
+  cheque: "Cheque",
+  other: "Other",
+};
+export interface LoanDirectPayment {
+  _id: string;
+  amount: number;
+  date: string;
+  method: LoanPaymentMethod;
+  reference?: string;
+  note?: string;
+  at?: string;
+}
+export type LoanHistoryKind =
+  | "opening" | "salary" | "partial" | "skipped" | "waived" | "short" | "none" | "direct" | "correction" | "upcoming";
+export interface LoanHistoryRow {
+  kind: LoanHistoryKind;
+  month: string | null;
+  /** The normal instalment for the month. */
+  planned: number;
+  /** Taken, paid, or — upcoming — to be taken. */
+  amount: number;
+  /** Left to pay after this row. */
+  balance: number;
+  payslipStatus?: "draft" | "issued" | "paid" | null;
+  imported?: boolean;
+  plan?: { amount: number; reason?: string; at?: string } | null;
+  payment?: { id: string; date: string; method: LoanPaymentMethod; reference?: string; note?: string } | null;
+  /** HR may still skip or change this month. */
+  changeable?: boolean;
+}
+export interface LoanHistory {
+  loan: Loan;
+  summary: {
+    amount: number;
+    instalment: number;
+    repaid: number;
+    outstanding: number;
+    viaPayroll: number;
+    viaDirect: number;
+    /** Repaid before the payslips on record. */
+    before: number;
+    startMonth: string | null;
+    monthsLeft: number;
+    endMonth: string | null;
+    next: { month: string; amount: number } | null;
+    skippedMonths: number;
+  };
+  rows: LoanHistoryRow[];
 }
 
 // ─── Salary increment ─────────────────────────────────────────────────────────

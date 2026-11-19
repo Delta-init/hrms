@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
-import { Banknote, Plus, Pencil, Trash2 } from "lucide-react";
+import { Banknote, Plus, Pencil, Trash2, History } from "lucide-react";
 import { useLoans, useDeleteLoan } from "@/hooks/useLoans";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LoanDialog } from "@/components/loans/LoanDialog";
+import { LoanDetailDialog } from "@/components/loans/LoanDetailDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { LOAN_STATUS_LABELS, type Loan, type LoanStatus } from "@/types";
@@ -33,6 +34,7 @@ export function EmployeeLoans({ employee }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Loan | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
+  const [historyOf, setHistoryOf] = useState<Loan | null>(null);
 
   const money = (n: number) => `${employee.currency ? employee.currency + " " : ""}${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
@@ -60,12 +62,13 @@ export function EmployeeLoans({ employee }: Props) {
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">{money(l.amount)}</span>
+                      <span className="font-semibold">{l.kind === "advance" ? "Salary advance · " : ""}{money(l.amount)}</span>
                       <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", statusStyles[l.status])}>{LOAN_STATUS_LABELS[l.status]}</span>
                     </div>
                     {l.purpose && <p className="text-xs text-muted-foreground">{l.purpose}</p>}
                   </div>
                   <div className="flex items-center gap-1">
+                    <Button size="sm" variant="ghost" className="h-8" onClick={() => setHistoryOf({ ...l, employee: l.employee && typeof l.employee === "object" ? l.employee : employee })}><History className="h-4 w-4" />History</Button>
                     {canEdit && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setSelected(l); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>}
                     {canDelete && <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setDeleteTarget(l)}><Trash2 className="h-4 w-4" /></Button>}
                   </div>
@@ -83,6 +86,7 @@ export function EmployeeLoans({ employee }: Props) {
       )}
 
       <LoanDialog open={dialogOpen} onOpenChange={setDialogOpen} loan={selected} employee={selected ? null : employee} />
+      <LoanDetailDialog loan={historyOf} onOpenChange={(o) => !o && setHistoryOf(null)} />
       <ConfirmDialog
         open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}
         title="Delete loan" description="This loan record will be permanently removed." isPending={deleting}

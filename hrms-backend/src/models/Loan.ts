@@ -1,6 +1,37 @@
 import mongoose, { Schema } from "mongoose";
 import type { ILoan } from "../types/index.js";
 
+/**
+ * HR's change to one month of the schedule: 0 skips the month, a smaller
+ * amount takes that much. The instalment itself never changes, so what the
+ * month did not take moves to the end of the loan.
+ */
+const monthPlanSchema = new Schema(
+  {
+    month: { type: String, required: true, match: /^\d{4}-\d{2}$/ },
+    amount: { type: Number, required: true, min: 0 },
+    reason: { type: String, trim: true, maxlength: 300 },
+    by: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+/** Money the employee paid back outside payroll — cash, a transfer, a cheque. */
+const directPaymentSchema = new Schema(
+  {
+    amount: { type: Number, required: true, min: 0.01 },
+    date: { type: Date, required: true },
+    method: { type: String, enum: ["cash", "bank_transfer", "cheque", "other"], default: "cash" },
+    /** Receipt or transaction number. */
+    reference: { type: String, trim: true, maxlength: 120 },
+    note: { type: String, trim: true, maxlength: 300 },
+    by: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const loanSchema = new Schema<ILoan>(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
@@ -29,6 +60,10 @@ const loanSchema = new Schema<ILoan>(
     kind: { type: String, enum: ["loan", "advance"], default: "loan" },
     /** The salary advance request it came from, when `kind` is "advance". */
     advance: { type: Schema.Types.ObjectId, ref: "SalaryAdvance", default: null },
+    /** Months HR skipped or took less in — one entry per month at most. */
+    monthPlans: { type: [monthPlanSchema], default: [] },
+    /** Repaid directly; counted in `amountRepaid` like a payslip's recovery. */
+    directPayments: { type: [directPaymentSchema], default: [] },
   },
   { timestamps: true, versionKey: false }
 );

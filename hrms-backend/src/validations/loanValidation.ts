@@ -25,5 +25,24 @@ export const updateLoanSchema = z.object({
   notes: z.string().max(500).optional().nullable(),
 });
 
+export const monthParam = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Month must be YYYY-MM");
+
+/** Skip a month (0) or take less in it. */
+export const planMonthSchema = z.object({
+  amount: z.coerce.number().min(0, "Amount cannot be negative"),
+  reason: z.string().trim().max(300).optional(),
+});
+
+/** Money repaid outside payroll. */
+export const directPaymentSchema = z.object({
+  amount: z.coerce.number().positive("Enter the amount paid"),
+  date: z.coerce.date(),
+  method: z.enum(["cash", "bank_transfer", "cheque", "other"]).default("cash"),
+  reference: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+
 export type CreateLoanInput = z.infer<typeof createLoanSchema>;
 export type UpdateLoanInput = z.infer<typeof updateLoanSchema>;
+export type PlanMonthInput = z.infer<typeof planMonthSchema>;
+export type DirectPaymentInput = z.infer<typeof directPaymentSchema>;

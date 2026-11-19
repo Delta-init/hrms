@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { Banknote, Plus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Banknote, Plus, MoreHorizontal, Pencil, Trash2, History } from "lucide-react";
 import { useLoans, useDeleteLoan } from "@/hooks/useLoans";
 import { useAuth } from "@/hooks/useAuth";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { LoanDialog } from "@/components/loans/LoanDialog";
+import { LoanDetailDialog } from "@/components/loans/LoanDetailDialog";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +42,7 @@ export default function LoansPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Loan | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
+  const [historyOf, setHistoryOf] = useState<Loan | null>(null);
 
   if (!canView) {
     return (
@@ -57,10 +59,10 @@ export default function LoansPage() {
       render: (l) => {
         const e = empOf(l);
         return (
-          <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setHistoryOf(l)} className="flex items-center gap-3 text-left" title="Month-by-month history">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{getInitials(e?.name ?? "?")}</div>
-            <div className="min-w-0"><p className="truncate font-medium">{e?.name ?? "—"}</p><p className="truncate text-xs text-muted-foreground">{e?.employeeCode ?? ""}</p></div>
-          </div>
+            <div className="min-w-0"><p className="truncate font-medium hover:underline">{e?.name ?? "—"}</p><p className="truncate text-xs text-muted-foreground">{l.kind === "advance" ? "Salary advance" : "Loan"}{e?.employeeCode ? ` · ${e.employeeCode}` : ""}</p></div>
+          </button>
         );
       },
     },
@@ -85,15 +87,14 @@ export default function LoansPage() {
     {
       id: "actions", label: "", alwaysVisible: true, align: "right",
       render: (l) => (
-        (canEdit || canDelete) ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setHistoryOf(l)} className="cursor-pointer"><History className="mr-2 h-4 w-4" />History{canEdit ? " · skip, reduce, pay" : ""}</DropdownMenuItem>
               {canEdit && <DropdownMenuItem onClick={() => { setSelected(l); setDialogOpen(true); }} className="cursor-pointer"><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
               {canDelete && <DropdownMenuItem onClick={() => setDeleteTarget(l)} className="cursor-pointer text-destructive focus:text-destructive"><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];
@@ -135,6 +136,7 @@ export default function LoansPage() {
       />
 
       <LoanDialog open={dialogOpen} onOpenChange={setDialogOpen} loan={selected} />
+      <LoanDetailDialog loan={historyOf} onOpenChange={(o) => !o && setHistoryOf(null)} />
       <ConfirmDialog
         open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}
         title="Delete loan" description="This loan record will be permanently removed." isPending={deleting}

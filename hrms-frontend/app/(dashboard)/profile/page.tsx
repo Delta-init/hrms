@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { AvatarUploader } from "@/components/shared/AvatarUploader";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
 import { MyDocumentsCard } from "@/components/visa/MyDocumentsCard";
+import { MyLoansCard } from "@/components/loans/MyLoansCard";
 import { EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, TITLE_LABELS, type Employee, type EmployeeStatus } from "@/types";
 
 const statusStyles: Record<EmployeeStatus, string> = {
@@ -74,6 +75,11 @@ export default function MyProfilePage() {
           to send a renewed visa before the reminders get insistent. */}
       <div className="mb-6 empty:hidden">
         <MyDocumentsCard employee={e} />
+      </div>
+
+      {/* Your own loans and salary advances, month by month — read-only. */}
+      <div className="mb-6 empty:hidden">
+        <MyLoansCard />
       </div>
 
       {/* Your own face is yours to set up. It sat only on the admin's view of
