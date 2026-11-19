@@ -3,12 +3,12 @@ import { cronSetting } from "../utils/cronSetting.js";
 import { env } from "../config/env.js";
 import { LeaveRequest } from "../models/LeaveRequest.js";
 import { notify } from "../services/notificationService.js";
-import { CERTIFIED_SICK } from "../services/leaveService.js";
+import { CERTIFIED_SICK, CERTIFICATE_HOURS } from "../services/leaveService.js";
 
 /**
  * Certified Sick Leave's deadline.
  *
- * A request still without its medical certificate when the five hours are up
+ * A request still without its medical certificate when its hours are up
  * becomes unpaid leave — still leave, not an absence, just not paid — and the
  * employee is told. An hour before that, they get one reminder.
  */
@@ -40,7 +40,7 @@ export async function runCertifiedSickDeadlines(now = new Date()) {
       { _id: r._id, ...base },
       { $set: {
         status: "approved", type: "unpaid", convertedFrom: CERTIFIED_SICK, conversionReason: "no_certificate",
-        reviewedAt: now, reviewNote: "No medical certificate within 5 hours — counted as unpaid leave.",
+        reviewedAt: now, reviewNote: `No medical certificate within ${CERTIFICATE_HOURS} hours — counted as unpaid leave.`,
       } }
     );
     if (!done.modifiedCount) continue;
@@ -48,7 +48,7 @@ export async function runCertifiedSickDeadlines(now = new Date()) {
     await notify({
       users: [String(r.user)], organization: r.organization, kind: "leave", tone: "negative",
       title: "Certified sick leave became unpaid leave",
-      body: "No medical certificate was uploaded within 5 hours.",
+      body: `No medical certificate was uploaded within ${CERTIFICATE_HOURS} hours.`,
       href: "/leave",
     }).catch(() => null);
   }

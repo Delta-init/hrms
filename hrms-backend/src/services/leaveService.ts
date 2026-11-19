@@ -21,12 +21,14 @@ import { signedFileUrl } from "../utils/fileUrl.js";
 
 /**
  * Certified Sick Leave — sick leave with no allowance, held to a medical
- * certificate. Applied for today only; the certificate is due five hours
- * after applying. None by then and it becomes unpaid leave; with one, the
+ * certificate. Applied for today only; the certificate is due nine hours
+ * after applying (five until 19 November 2026 — a working day is nine). None by then and it becomes unpaid leave; with one, the
  * usual approvers decide — approved is paid, rejected is unpaid.
  */
 export const CERTIFIED_SICK = "certified_sick";
-export const CERTIFICATE_WINDOW_MS = 5 * 3600_000;
+/** Hours to upload the certificate. Every message about it reads this, so they can't disagree. */
+export const CERTIFICATE_HOURS = 9;
+export const CERTIFICATE_WINDOW_MS = CERTIFICATE_HOURS * 3600_000;
 /** Types with no allowance to run out of. */
 const UNLIMITED = new Set([CERTIFIED_SICK]);
 
@@ -312,7 +314,7 @@ export class LeaveService {
         users: [String(input.user)],
         kind: "leave",
         title: `Upload your medical certificate by ${due}`,
-        body: "Certified Sick Leave needs a medical certificate within 5 hours — without it, the day becomes unpaid leave.",
+        body: `Certified Sick Leave needs a medical certificate within ${CERTIFICATE_HOURS} hours — without it, the day becomes unpaid leave.`,
         href: "/leave",
       });
       return withCertificateLink((await LeaveRequest.findById(leave._id).populate("user", "name email designation").lean())!);
@@ -438,7 +440,7 @@ export class LeaveService {
     if (record.type !== CERTIFIED_SICK) throw Object.assign(new Error("Only Certified Sick Leave takes a medical certificate"), { statusCode: 400 });
     if (record.status !== "pending") throw Object.assign(new Error("This request has already been decided"), { statusCode: 400 });
     if (record.certificateDueAt && record.certificateDueAt.getTime() < Date.now()) {
-      throw Object.assign(new Error("The 5 hours for the certificate have passed"), { statusCode: 400 });
+      throw Object.assign(new Error(`The ${CERTIFICATE_HOURS} hours for the certificate have passed`), { statusCode: 400 });
     }
     const safe = (file.originalname || "certificate").replace(/[^\w.-]+/g, "_").slice(-120);
     const key = `${String(getOrgId() ?? "global")}/leave-certificates/${String(record._id)}/${Date.now()}-${safe}`;

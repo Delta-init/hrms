@@ -264,7 +264,7 @@ export function LeaveDialog({ open, onOpenChange, leave, lockToUserId }: Props) 
             <div className="col-span-2 flex gap-2.5 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs leading-relaxed text-sky-800 dark:text-sky-300">
               <Stethoscope className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                <strong>Certified Sick Leave</strong> is for today, with no limit on how often. Upload a <strong>medical certificate within 5 hours</strong> of
+                <strong>Certified Sick Leave</strong> is for today, with no limit on how often. Upload a <strong>medical certificate within 9 hours</strong> of
                 applying (open the request under Leave). With the certificate it goes for approval — <strong>approved is paid leave</strong>, rejected
                 is unpaid. Without it, the day becomes <strong>unpaid leave</strong> automatically.
               </p>

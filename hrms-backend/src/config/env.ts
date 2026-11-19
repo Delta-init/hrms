@@ -148,7 +148,7 @@ const envSchema = z.object({
   MEETING_REMINDER_CRON: z.string().default("* * * * *"),
   /** Replies to offers, read from the HR mailbox (read-only). "off" stops it. */
   OFFER_INBOX_CRON: z.string().default("*/5 * * * *"),
-  /** Certified Sick Leave: certificates past their 5 hours become unpaid leave. */
+  /** Certified Sick Leave: requests past their certificate deadline (9 hours) become unpaid leave. */
   CERTIFIED_SICK_CRON: z.string().default("*/5 * * * *"),
   /**
    * Frequent enough that a reminder's 30-minute and 5-minute stages land
