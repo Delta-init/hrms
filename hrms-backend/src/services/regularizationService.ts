@@ -267,11 +267,29 @@ export class RegularizationService {
     const dayStr = new Date(reg.date).toISOString().slice(0, 10);
     const dayStart = zonedTimeToUtc(dayStr, "00:00", reg.timeZone);
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-    let att = await Attendance.findOne(scoped({ user: reg.user, date: { $gte: dayStart, $lt: dayEnd } }));
+    // By the day itself, never by this zone's 24 hours of it. A punch filed
+    // under another zone sits at that zone's midnight: Kolkata's for the 13th
+    // is 18:30 UTC on the 12th, inside Dubai's span of the 12th — so a span
+    // match could take the next day's record and rewrite it as this one, while
+    // the day's own Kolkata punch, outside the span, stayed beside a new
+    // record that pay counted with it. The span is kept only for records from
+    // before every record carried its day.
+    let [att] = await Attendance.find(scoped({
+      user: reg.user,
+      $or: [
+        { localDay: dayStr },
+        { date: dayStart },
+        { localDay: null, date: { $gte: dayStart, $lt: dayEnd } },
+      ],
+    })).sort({ updatedAt: -1 }).limit(1);
     if (!att) {
       att = new Attendance({ organization: getOrgId(), user: reg.user, date: dayStart, timeZone: reg.timeZone, status: reg.resultingStatus ?? "present" });
+    } else if (att.timeZone !== reg.timeZone && !(await Attendance.exists({ user: reg.user, date: dayStart, _id: { $ne: att._id } }))) {
+      // Re-filed under the correction's zone, at that zone's midnight of the
+      // same day — the zone alone would slide it back to the evening before.
+      att.timeZone = reg.timeZone;
+      att.date = dayStart;
     }
-    att.timeZone = reg.timeZone;
     if (reg.requestedCheckIn) {
       att.sessions = [{ checkIn: reg.requestedCheckIn, checkOut: reg.requestedCheckOut ?? null }] as never;
     } else if (reg.requestedCheckOut && att.sessions.length > 0) {

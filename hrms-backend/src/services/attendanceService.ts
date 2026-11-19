@@ -298,6 +298,42 @@ export class AttendanceService {
     return { key: shift.dateMidnightUtc, timeZone: schedule.timeZone };
   }
 
+  /**
+   * This person's record for one day, wherever it was filed.
+   *
+   * `key` is the day's midnight in `timeZone`. A record filed under another
+   * zone has a different stored date for the same day — Kolkata's midnight is
+   * ninety minutes before Dubai's — so the day itself (`localDay`) is matched
+   * too. Matching the stored date alone is how a correction made in Dubai time
+   * added a second record beside a punch filed in Kolkata time, and pay
+   * counted both. If there are several, the one changed last is the one that
+   * counts — see utils/attendanceDay.
+   */
+  private async findDay(userId: unknown, key: Date, timeZone: string, opts: { scope?: boolean; excludeId?: unknown } = {}) {
+    const filter: Record<string, unknown> = { user: userId, $or: [{ date: key }, { localDay: localDayKey(key, timeZone) }] };
+    if (opts.excludeId) filter._id = { $ne: opts.excludeId };
+    const [found] = await Attendance.find(opts.scope === false ? filter : scoped(filter)).sort({ updatedAt: -1 }).limit(1);
+    return found ?? null;
+  }
+
+  /**
+   * File a record under `timeZone` without moving it to another day.
+   *
+   * Setting the zone alone re-reads the stored midnight in the new zone — a
+   * Kolkata midnight read in Dubai is 22:30 the evening before — and the
+   * record slides back a day. So the stored date moves to the new zone's
+   * midnight of the same day. Left where it is if another record already sits
+   * there, which is only ever an old duplicate waiting to be merged.
+   */
+  private async fileUnder(att: InstanceType<typeof Attendance>, timeZone: string) {
+    if (att.timeZone === timeZone) return;
+    const day = att.localDay || localDayKey(att.date, att.timeZone || "Asia/Dubai");
+    const date = zonedTimeToUtc(day, "00:00", timeZone);
+    if (await Attendance.exists({ user: att.user, date, _id: { $ne: att._id } })) return;
+    att.timeZone = timeZone;
+    att.date = date;
+  }
+
   async create(input: CreateAttendanceInput) {
     // Scope the user to the caller's org so a record can't reference another tenant's user.
     const user = await User.findOne(scoped({ _id: input.user }));
@@ -309,9 +345,9 @@ export class AttendanceService {
     // is amended rather than duplicated. Two records for one day would be
     // counted twice by every total that follows, pay included, and the old
     // guard could not see a clock-in at all because it compared the raw date.
-    const existing = await Attendance.findOne(scoped({ user: input.user, date: key }));
+    const existing = await this.findDay(input.user, key, timeZone);
     if (existing) {
-      existing.timeZone = input.timeZone ?? timeZone;
+      await this.fileUnder(existing, input.timeZone ?? timeZone);
       existing.status = input.status;
       existing.lateMinutes = input.lateMinutes ?? 0;
       if (input.note !== undefined) existing.note = input.note;
@@ -501,7 +537,7 @@ export class AttendanceService {
       // Through the same rule as create, so editing a record's date cannot
       // file it where its owner will not find it.
       const { key, timeZone } = await this.dayKeyFor(String(record.user), input.date);
-      const clash = await Attendance.findOne(scoped({ user: record.user, date: key, _id: { $ne: record._id } }));
+      const clash = await this.findDay(record.user, key, timeZone, { excludeId: record._id });
       if (clash) {
         throw Object.assign(
           new Error("This user already has a record on that day"),
@@ -587,9 +623,10 @@ export class AttendanceService {
       const userId = String(emp.user);
       const { key, timeZone } = await this.dayKeyFor(userId, new Date(`${date}T00:00:00.000Z`));
 
-      const existing = await Attendance.findOne(scoped({ user: userId, date: key }));
+      const existing = await this.findDay(userId, key, timeZone);
 
       if (existing) {
+        await this.fileUnder(existing, timeZone);
         await this.applyStatusTimes(existing, userId, status);
         if (note !== undefined) existing.note = note;
         await existing.save();
@@ -933,7 +970,7 @@ export class AttendanceService {
     const shift = resolveShift(schedule, new Date());
     await this.closeStaleDays(userId, shift.dateMidnightUtc);
     const [attendance, policy] = await Promise.all([
-      Attendance.findOne({ user: userId, date: shift.dateMidnightUtc }).lean(),
+      this.findDay(userId, shift.dateMidnightUtc, schedule.timeZone, { scope: false }).then((d) => d?.toObject() ?? null),
       this.selfPunchPolicy(userId),
     ]);
 
@@ -997,7 +1034,7 @@ export class AttendanceService {
     }
 
     await this.closeStaleDays(userId, shift.dateMidnightUtc);
-    let att = await Attendance.findOne({ user: userId, date: shift.dateMidnightUtc });
+    let att = await this.findDay(userId, shift.dateMidnightUtc, schedule.timeZone, { scope: false });
     if (att && att.checkIn) {
       throw Object.assign(new Error("You have already clocked in today"), { statusCode: 409 });
     }
@@ -1009,7 +1046,7 @@ export class AttendanceService {
     const lateMinutes = status === "present" ? 0 : Math.max(0, Math.round((now.getTime() - shift.shiftStart.getTime()) / 60000));
 
     if (!att) att = new Attendance({ organization: getOrgId(), user: userId, date: shift.dateMidnightUtc, timeZone: schedule.timeZone });
-    att.timeZone = schedule.timeZone;
+    else await this.fileUnder(att, schedule.timeZone);
     att.status = status;
     att.lateMinutes = lateMinutes;
     att.sessions = [{ checkIn: now, checkOut: null, checkInSource: source ?? null }] as never;

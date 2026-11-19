@@ -24,6 +24,7 @@ import { computeOvertime, markOvertimeApplied, releaseOvertime } from "./overtim
 import { resolveSalaryBreakup } from "./salaryStructureService.js";
 import { getAttendancePenaltyPolicy, computeLatePenaltyDays, chargesUnrecorded } from "./attendancePenaltyService.js";
 import { zonedTimeToUtc, DEFAULT_WORK_DAYS } from "../utils/schedule.js";
+import { onePerDay } from "../utils/attendanceDay.js";
 import { STANDARD_MONTH_DAYS, dayValue, dailyRate } from "../utils/payMonth.js";
 import { policiesForUser, leaveLabel } from "./leavePolicyResolver.js";
 import { holidayScope, workModeOfUser, scheduleIdOfUser } from "../utils/holidayScope.js";
@@ -974,7 +975,11 @@ export class PayslipService {
     if (!userId) return base;
 
     const [att, approvedLeave, anyApproved, holidays] = await Promise.all([
-      Attendance.find({ user: userId, date: { $gte: start, $lt: end } }).select("status date timeZone").lean(),
+      // One record per day — the one changed last. Two records for one day
+      // (a punch and the correction filed under another zone) were both
+      // counted, and the corrected half day still cost half a day's pay.
+      Attendance.find({ user: userId, date: { $gte: start, $lt: end } })
+        .select("status date timeZone localDay createdAt updatedAt").lean().then(onePerDay),
       LeaveRequest.find({ user: userId, status: "approved", startDate: { $lt: end }, endDate: { $gte: start } }).select("type days startDate endDate halfDay").lean(),
       // Any approved leave counts as accounted for, paid or not — the day is
       // explained, which is what the coverage check is asking about.

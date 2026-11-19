@@ -3,6 +3,7 @@ import { Payslip } from "../models/Payslip.js";
 import { PayrollMute } from "../models/PayrollMute.js";
 import { PayrollBatch } from "../models/PayrollBatch.js";
 import { Attendance } from "../models/Attendance.js";
+import { onePerDay } from "../utils/attendanceDay.js";
 import { OneTimeAdjustment } from "../models/OneTimeAdjustment.js";
 import { PayslipService, LOP_PREFIX, PENALTY_PREFIX, EARLY_OUT_PENALTY_PREFIX, type SummaryTrace } from "./payslipService.js";
 import { buildWalletDays, monthDays, type WalletDay, type WalletReconcile, type WalletDeductionKind } from "./walletDays.js";
@@ -178,8 +179,9 @@ export class WalletService {
       Payslip.findOne(scoped({ employee: emp._id, month })).lean(),
       PayrollMute.findOne(scoped({ employee: emp._id, month })).select("reason").lean(),
       emp.user && trace.start
+        // One record per day, the one changed last — as the payslip counts them.
         ? Attendance.find({ user: emp.user._id, date: { $gte: trace.start, $lt: trace.end } })
-          .select("status date timeZone checkIn checkOut lateMinutes workedMinutes").lean()
+          .select("status date timeZone localDay checkIn checkOut lateMinutes workedMinutes createdAt updatedAt").lean().then(onePerDay)
         : Promise.resolve([]),
       OneTimeAdjustment.find(scoped({ employee: emp._id, month, kind: "payment", payVia: "finance", financeStatus: { $in: ["with_finance", "paid", "rejected"] } }))
         .select("label amount financeStatus paidOn paymentMethod paymentRef financeNote").lean(),
