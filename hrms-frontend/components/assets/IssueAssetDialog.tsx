@@ -15,7 +15,7 @@ import { AsyncSelect } from "@/components/ui/async-select";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { issueAssetFormSchema, type IssueAssetFormValues } from "@/lib/validations/assetSchema";
-import { useAssets, useAssetHolders, useIssueAsset } from "@/hooks/useAssets";
+import { useAssets, useAssetHolders, useBulkIssueAssets, useIssueAsset } from "@/hooks/useAssets";
 import { ASSET_CONDITION_LABELS, type Asset, type AssetCondition } from "@/types";
 
 interface Props {
@@ -25,6 +25,10 @@ interface Props {
   asset: Asset | null;
   /** Issuing to this person: the person/department choice is not shown. */
   employee?: { _id: string; name: string } | null;
+  /** Several at once (bulk select on All Assets): all go to the one holder, each keeps its own condition. */
+  assets?: Asset[];
+  /** After a bulk issue goes through — the page clears its selection. */
+  onDone?: () => void;
 }
 
 type To = "person" | "department";
@@ -60,10 +64,13 @@ function HolderPicker({ to, value, onChange, enabled }: { to: To; value: string;
  * picked — a person or a department; from someone's profile the person is known
  * and the asset is picked from what is available.
  */
-export function IssueAssetDialog({ open, onOpenChange, asset, employee = null }: Props) {
-  const { mutate: issue, isPending } = useIssueAsset();
+export function IssueAssetDialog({ open, onOpenChange, asset, employee = null, assets = [], onDone }: Props) {
+  const { mutate: issueOne, isPending: issuingOne } = useIssueAsset();
+  const { mutate: issueMany, isPending: issuingMany } = useBulkIssueAssets();
+  const isPending = issuingOne || issuingMany;
+  const bulk = assets.length > 0;
   const [picked, setPicked] = useState("");
-  const pickFromStock = !asset;
+  const pickFromStock = !asset && !bulk;
   const { data: stock, isLoading: stockLoading } = useAssets(open && pickFromStock ? { status: "available", limit: "200", sortBy: "name", sortOrder: "asc" } : undefined);
   const available = stock?.data ?? [];
 
@@ -84,20 +91,31 @@ export function IssueAssetDialog({ open, onOpenChange, asset, employee = null }:
   };
 
   const onSubmit = (data: IssueAssetFormValues) => {
-    const id = asset?._id ?? picked;
-    if (!id) return;
     const holder = employee
       ? { employee: employee._id }
       : data.to === "department" ? { department: data.holder } : { employee: data.holder };
-    issue({ id, data: { ...holder, condition: data.condition, notes: data.notes } }, { onSuccess: () => onOpenChange(false) });
+    if (bulk) {
+      issueMany({ ids: assets.map((a) => a._id), ...holder, notes: data.notes || undefined }, {
+        onSuccess: () => { onOpenChange(false); onDone?.(); },
+      });
+      return;
+    }
+    const id = asset?._id ?? picked;
+    if (!id) return;
+    issueOne({ id, data: { ...holder, condition: data.condition, notes: data.notes } }, { onSuccess: () => onOpenChange(false) });
   };
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-sm">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Issue Asset</ResponsiveDialogTitle>
-          {asset && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">{asset.name} · {asset.assetTag}</ResponsiveDialogDescription>}
+          <ResponsiveDialogTitle>{bulk ? `Issue ${assets.length} asset${assets.length === 1 ? "" : "s"}` : "Issue Asset"}</ResponsiveDialogTitle>
+          {bulk && (
+            <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">
+              {assets.slice(0, 6).map((a) => a.assetTag).join(", ")}{assets.length > 6 ? ` and ${assets.length - 6} more` : ""} — all to the same holder.
+            </ResponsiveDialogDescription>
+          )}
+          {asset && !bulk && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">{asset.name} · {asset.assetTag}</ResponsiveDialogDescription>}
           {!asset && employee && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">To {employee.name}</ResponsiveDialogDescription>}
         </ResponsiveDialogHeader>
 
@@ -142,7 +160,7 @@ export function IssueAssetDialog({ open, onOpenChange, asset, employee = null }:
             </div>
           )}
 
-          <div className="space-y-1.5">
+          {!bulk && <div className="space-y-1.5">
             <Label>Condition at issue</Label>
             <Controller name="condition" control={control} render={({ field }) => (
               <Select value={field.value} onValueChange={field.onChange}>
@@ -152,7 +170,7 @@ export function IssueAssetDialog({ open, onOpenChange, asset, employee = null }:
                 </SelectContent>
               </Select>
             )} />
-          </div>
+          </div>}
 
           <div className="space-y-1.5">
             <Label htmlFor="notes">Notes</Label>

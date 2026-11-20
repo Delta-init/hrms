@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Check, ChevronsUpDown, Loader2, Search, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -82,7 +82,10 @@ export function AsyncSelect({
   const display = current ? [current.label, current.sub].filter(Boolean).join(" · ") : selectedLabel;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // Modal, so the list scrolls inside a dialog: a dialog locks scrolling everywhere outside its own box, and this
+    // list is drawn on a layer outside it — open in the Issue Asset dialog, the department list wouldn't scroll
+    // (2026-11-20). A modal popover takes the scroll lock for itself while it's open.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -112,17 +115,18 @@ export function AsyncSelect({
 
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
         <Command shouldFilter={false}>
-          <div className="flex items-center border-b border-border px-3">
-            <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+          {/* CommandInput brings its own search icon and rule; this only adds the spinner beside it. */}
+          <div className="relative">
             <CommandInput
               value={search}
               onValueChange={onSearchChange}
               placeholder={searchPlaceholder}
-              className="border-0"
+              className="pr-7"
             />
-            {loading && <Loader2 className="ml-2 h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+            {loading && <Loader2 className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />}
           </div>
-          <CommandList className="max-h-64">
+          {/* Never taller than the room left on screen, so the last rows can always be scrolled to. */}
+          <CommandList className="max-h-[min(16rem,calc(var(--radix-popover-content-available-height)-3.5rem))] overflow-y-auto overscroll-contain">
             {!loading && options.length === 0 && <CommandEmpty>{emptyText}</CommandEmpty>}
             <CommandGroup>
               {options.map((o) => (

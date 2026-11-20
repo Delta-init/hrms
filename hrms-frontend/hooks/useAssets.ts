@@ -105,6 +105,17 @@ export const useIssueAsset = () => {
   });
 };
 
+/** Several available assets to one person or department — all or nothing. */
+export const useBulkIssueAssets = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { ids: string[]; employee?: string; department?: string; notes?: string }) =>
+      (await api.post<ApiResponse<{ issued: number }>>("/assets/bulk-issue", data)).data.data!,
+    onSuccess: (d) => { invalidate(qc); toast.success(`${d.issued} asset${d.issued === 1 ? "" : "s"} issued`); },
+    onError: (e) => toast.error(errMsg(e, "Failed to issue assets")),
+  });
+};
+
 export const useReturnAsset = () => {
   const qc = useQueryClient();
   return useMutation({

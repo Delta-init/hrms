@@ -3,7 +3,7 @@ import { Asset } from "../models/Asset.js";
 import { Employee } from "../models/Employee.js";
 import { Department } from "../models/Department.js";
 import type {
-  CreateAssetInput, UpdateAssetInput, IssueAssetInput, ReturnAssetInput, HolderQuery,
+  CreateAssetInput, UpdateAssetInput, IssueAssetInput, BulkIssueAssetInput, ReturnAssetInput, HolderQuery,
 } from "../validations/assetValidation.js";
 import type { PaginationQuery } from "../types/index.js";
 import { buildPagination } from "../utils/response.js";
@@ -192,38 +192,72 @@ export class AssetService {
     return { message: "Asset deleted successfully" };
   }
 
+  /** The person or department an issue names, checked: one that exists here, and a person still on the books. */
+  private async resolveHolder(input: { employee?: string; department?: string }) {
+    if (input.department) {
+      const department = await Department.findOne(scoped({ _id: input.department, status: { $ne: "inactive" } })).select("_id");
+      if (!department) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
+      return { employee: null as unknown, department: department._id as unknown };
+    }
+    const employee = await Employee.findOne(scoped({ _id: input.employee })).select("_id status");
+    if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
+    if (LEFT.includes(String(employee.status))) throw Object.assign(new Error("They have left — choose someone still here"), { statusCode: 400 });
+    return { employee: employee._id as unknown, department: null as unknown };
+  }
+
+  /** Hand one loaded asset over, with its history entry. The caller saves it. */
+  private applyIssue(
+    record: InstanceType<typeof Asset>, holder: { employee: unknown; department: unknown },
+    input: { condition?: IssueAssetInput["condition"]; notes?: string }, actorId: string, now: Date
+  ) {
+    record.assignedTo = holder.employee as never;
+    record.assignedDepartment = holder.department as never;
+    record.assignedDate = now;
+    record.status = "assigned";
+    if (input.condition) record.condition = input.condition;
+    record.history.push({
+      action: "issued", employee: holder.employee as never, department: holder.department as never, date: now,
+      condition: input.condition ?? record.condition, notes: input.notes, by: actorId as never,
+    });
+  }
+
   /** Issue an available asset to a person or to a department. */
   async issue(id: string, input: IssueAssetInput, actorId: string) {
     const record = await Asset.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Asset not found"), { statusCode: 404 });
     if (record.status !== "available")
       throw Object.assign(new Error(`This asset is ${record.status} and cannot be issued`), { statusCode: 400 });
-
-    let employeeId: unknown = null;
-    let departmentId: unknown = null;
-    if (input.department) {
-      const department = await Department.findOne(scoped({ _id: input.department, status: { $ne: "inactive" } })).select("_id");
-      if (!department) throw Object.assign(new Error("Department not found"), { statusCode: 404 });
-      departmentId = department._id;
-    } else {
-      const employee = await Employee.findOne(scoped({ _id: input.employee })).select("_id status");
-      if (!employee) throw Object.assign(new Error("Employee not found"), { statusCode: 404 });
-      if (LEFT.includes(String(employee.status))) throw Object.assign(new Error("They have left — choose someone still here"), { statusCode: 400 });
-      employeeId = employee._id;
-    }
-
-    const now = new Date();
-    record.assignedTo = employeeId as never;
-    record.assignedDepartment = departmentId as never;
-    record.assignedDate = now;
-    record.status = "assigned";
-    if (input.condition) record.condition = input.condition;
-    record.history.push({
-      action: "issued", employee: employeeId as never, department: departmentId as never, date: now,
-      condition: input.condition ?? record.condition, notes: input.notes, by: actorId as never,
-    });
+    const holder = await this.resolveHolder(input);
+    this.applyIssue(record, holder, input, actorId, new Date());
     await record.save();
     return Asset.findById(id).populate(POP);
+  }
+
+  /**
+   * Issue several at once to one person or one department (2026-11-20 — "bulk select, issue").
+   *
+   * All or nothing: every asset is checked before any is touched, so a batch never ends half-issued with the
+   * reason buried in a count. Each one keeps its own condition and gets its own history entry.
+   */
+  async bulkIssue(input: BulkIssueAssetInput, actorId: string) {
+    const ids = [...new Set(input.ids)];
+    const records = await Asset.find(scoped({ _id: { $in: ids } }));
+    if (records.length !== ids.length) {
+      const missing = ids.length - records.length;
+      throw Object.assign(new Error(`${missing} of these asset${missing === 1 ? " wasn't" : "s weren't"} found — refresh and try again`), { statusCode: 404 });
+    }
+    const busy = records.filter((r) => r.status !== "available");
+    if (busy.length) {
+      const list = busy.slice(0, 8).map((r) => `${r.assetTag} (${r.status})`).join(", ");
+      throw Object.assign(new Error(`Nothing was issued — not available: ${list}${busy.length > 8 ? ` and ${busy.length - 8} more` : ""}`), { statusCode: 400 });
+    }
+    const holder = await this.resolveHolder(input);
+    const now = new Date();
+    for (const r of records) {
+      this.applyIssue(r, holder, { notes: input.notes }, actorId, now);
+      await r.save();
+    }
+    return { issued: records.length };
   }
 
   /** Return a currently-assigned asset, optionally routing it to maintenance. */

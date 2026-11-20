@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip, BookOpen, PackageCheck,
+  Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, Eye, ListChecks, ShoppingCart, X, Paperclip, BookOpen, PackageCheck,
   Building2,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { AssetViewDialog, ASSET_STATUS_STYLES, ASSET_CONDITION_STYLES } from "@/components/assets/AssetViewDialog";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -13,9 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle,
-} from "@/components/ui/responsive-dialog";
 import { useProcurements, useProcurementSummary, useDeleteProcurement, useReviewProcurement } from "@/hooks/useProcurements";
 import { AssetDialog } from "@/components/assets/AssetDialog";
 import { ProcurementDialog } from "@/components/procurement/ProcurementDialog";
@@ -40,16 +39,8 @@ const procurementStatusStyles: Record<ProcurementStatus, string> = {
   received: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   cancelled: "bg-muted text-muted-foreground border-border",
 };
-const statusStyles: Record<AssetStatus, string> = {
-  available: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-  assigned: "bg-sky-500/10 text-sky-600 border-sky-500/20",
-  maintenance: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  retired: "bg-muted text-muted-foreground border-border",
-};
-const conditionStyles: Record<string, string> = {
-  new: "text-emerald-600", good: "text-emerald-600", fair: "text-amber-600",
-  poor: "text-red-500", damaged: "text-red-600",
-};
+const statusStyles = ASSET_STATUS_STYLES;
+const conditionStyles = ASSET_CONDITION_STYLES;
 /**
  * The holder the imported register named, for anything not yet matched.
  *
@@ -107,7 +98,21 @@ export default function AssetsPage() {
   const [selected, setSelected] = useState<Asset | null>(null);
   const [issueTarget, setIssueTarget] = useState<Asset | null>(null);
   const [returnTarget, setReturnTarget] = useState<Asset | null>(null);
-  const [historyTarget, setHistoryTarget] = useState<Asset | null>(null);
+  const [viewTarget, setViewTarget] = useState<Asset | null>(null);
+  /** Ticked available assets, for issuing several at once. Cleared when the filters change. */
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const filterKey = JSON.stringify(params);
+  useEffect(() => { setChecked(new Set()); }, [filterKey]);
+  const selectable = canEdit ? rows.filter((a) => a.status === "available") : [];
+  const tickedCount = selectable.filter((a) => checked.has(a._id)).length;
+  const allTicked = selectable.length > 0 && tickedCount === selectable.length;
+  const toggle = (id: string) => setChecked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setChecked(allTicked ? new Set() : new Set(selectable.map((a) => a._id)));
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [retireTarget, setRetireTarget] = useState<Asset | null>(null);
 
@@ -151,7 +156,7 @@ export default function AssetsPage() {
   /** What can be done to one asset — the same buttons on the table row and the phone card. */
   const rowActions = (a: Asset, wrap = false) => (
     <div className={cn("flex items-center gap-1", wrap ? "flex-wrap" : "justify-end")}>
-      <Button size="icon" variant="ghost" className="h-8 w-8" title="History" aria-label="History" onClick={() => setHistoryTarget(a)}><History className="h-4 w-4" /></Button>
+      <Button size="icon" variant="ghost" className="h-8 w-8" title="View details and history" aria-label="View" onClick={() => setViewTarget(a)}><Eye className="h-4 w-4" /></Button>
       {canEdit && <Button size="sm" variant="outline" onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-3.5 w-3.5" />Edit</Button>}
       {canEdit && a.status === "available" && <Button size="sm" variant="outline" onClick={() => setIssueTarget(a)}><Send className="h-3.5 w-3.5" />Issue</Button>}
       {canEdit && a.status === "assigned" && <Button size="sm" variant="outline" onClick={() => setReturnTarget(a)}><Undo2 className="h-3.5 w-3.5" />Return</Button>}
@@ -190,13 +195,14 @@ export default function AssetsPage() {
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Condition</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="w-12 px-4 py-3"><span className="sr-only">View</span></th>
                 </tr>
               </thead>
               <tbody>
                 {mineLoading ? (
-                  <tr><td colSpan={4} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                  <tr><td colSpan={5} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                 ) : !mine?.length ? (
-                  <tr><td colSpan={4} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets currently assigned to you.</td></tr>
+                  <tr><td colSpan={5} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets currently assigned to you.</td></tr>
                 ) : mine.map((a) => (
                   <tr key={a._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3">
@@ -207,6 +213,9 @@ export default function AssetsPage() {
                     <td className={cn("px-4 py-3 font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</td>
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", statusStyles[a.status])}>{ASSET_STATUS_LABELS[a.status]}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="View details and history" aria-label="View" onClick={() => setViewTarget(a)}><Eye className="h-4 w-4" /></Button>
                     </td>
                   </tr>
                 ))}
@@ -277,6 +286,28 @@ export default function AssetsPage() {
             </div>
           </Card>
 
+          {/* Several at once (2026-11-20 — "bulk select, issue"): only available assets can be ticked. */}
+          {canEdit && selectable.length > 0 && (
+            <div className={cn(
+              "flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm",
+              tickedCount ? "border-primary/30 bg-primary/5" : "border-dashed border-border text-muted-foreground"
+            )}>
+              <label className="flex cursor-pointer items-center gap-2 md:hidden">
+                <Checkbox checked={allTicked ? true : tickedCount ? "indeterminate" : false} onCheckedChange={toggleAll} aria-label="Select all available" />
+                <span>All available</span>
+              </label>
+              <span className={cn("tabular-nums", tickedCount && "font-medium text-foreground")}>
+                {tickedCount ? `${tickedCount} selected` : "Tick available assets to issue several at once"}
+              </span>
+              {tickedCount > 0 && (
+                <div className="ml-auto flex items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setChecked(new Set())}>Clear</Button>
+                  <Button size="sm" onClick={() => setBulkOpen(true)}><Send className="h-3.5 w-3.5" />Issue {tickedCount}</Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Phones: a card per asset, so its buttons are never off the side of a table. */}
           <div className="space-y-2 md:hidden">
             {isLoading || isFetching ? (
@@ -287,9 +318,12 @@ export default function AssetsPage() {
               const assignee = assigneeOf(a);
               const dept = departmentOf(a);
               return (
-                <Card key={a._id} className="space-y-2 p-3">
+                <Card key={a._id} className={cn("space-y-2 p-3", checked.has(a._id) && "border-primary/40 bg-primary/5")}>
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                    {canEdit && a.status === "available" && (
+                      <Checkbox className="mt-1" checked={checked.has(a._id)} onCheckedChange={() => toggle(a._id)} aria-label={`Select ${a.assetTag}`} />
+                    )}
+                    <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-2 truncate font-medium">
                         {a.name}
                         {(a.quantity ?? 1) > 1 && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">×{a.quantity}</span>}
@@ -316,6 +350,15 @@ export default function AssetsPage() {
               <table className="w-full min-w-[880px] text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    {canEdit && (
+                      <th className="w-10 py-3 pl-4">
+                        <Checkbox
+                          checked={allTicked ? true : tickedCount ? "indeterminate" : false}
+                          onCheckedChange={toggleAll} disabled={!selectable.length}
+                          aria-label="Select all available" title="Select all available"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 font-medium">Asset</th>
                     <th className="px-4 py-3 font-medium">Category</th>
                     <th className="px-4 py-3 font-medium">Where</th>
@@ -327,14 +370,21 @@ export default function AssetsPage() {
                 </thead>
                 <tbody>
                   {isLoading || isFetching ? (
-                    <tr><td colSpan={7} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
+                    <tr><td colSpan={canEdit ? 8 : 7} className="py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={7} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</td></tr>
+                    <tr><td colSpan={canEdit ? 8 : 7} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</td></tr>
                   ) : rows.map((a) => {
                     const assignee = assigneeOf(a);
                     const dept = departmentOf(a);
                     return (
-                      <tr key={a._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
+                      <tr key={a._id} className={cn("border-b border-border/60 last:border-0 hover:bg-muted/30", checked.has(a._id) && "bg-primary/5")}>
+                        {canEdit && (
+                          <td className="w-10 py-3 pl-4">
+                            {a.status === "available" && (
+                              <Checkbox checked={checked.has(a._id)} onCheckedChange={() => toggle(a._id)} aria-label={`Select ${a.assetTag}`} />
+                            )}
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <p className="flex items-center gap-2 font-medium">
                             {a.name}
@@ -555,33 +605,12 @@ export default function AssetsPage() {
       <IssueAssetDialog open={!!issueTarget} onOpenChange={(o) => !o && setIssueTarget(null)} asset={issueTarget} />
       <ReturnAssetDialog open={!!returnTarget} onOpenChange={(o) => !o && setReturnTarget(null)} asset={returnTarget} />
 
-      <ResponsiveDialog open={!!historyTarget} onOpenChange={(o) => !o && setHistoryTarget(null)}>
-        <ResponsiveDialogContent desktopClassName="max-w-md max-h-[80vh] overflow-y-auto">
-          <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>{historyTarget?.name} — History</ResponsiveDialogTitle>
-          </ResponsiveDialogHeader>
-          <div className="space-y-2 px-4 pb-4 sm:px-0">
-            {!historyTarget?.history.length ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No history yet.</p>
-            ) : [...historyTarget.history].reverse().map((h, i) => {
-              const emp = h.employee && typeof h.employee === "object" ? h.employee.name
-                : h.department && typeof h.department === "object" ? `${h.department.name} (department)` : null;
-              return (
-                <div key={i} className="rounded-lg border border-border p-2.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium capitalize">{h.action.replace(/_/g, " ")}</span>
-                    <span className="text-xs text-muted-foreground">{fmtDate(h.date)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {[emp, h.condition ? ASSET_CONDITION_LABELS[h.condition] : null].filter(Boolean).join(" · ") || "—"}
-                  </p>
-                  {h.notes && <p className="mt-1 text-xs text-muted-foreground">{h.notes}</p>}
-                </div>
-              );
-            })}
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
+      <IssueAssetDialog
+        open={bulkOpen} onOpenChange={setBulkOpen} asset={null}
+        assets={rows.filter((a) => checked.has(a._id) && a.status === "available")}
+        onDone={() => setChecked(new Set())}
+      />
+      <AssetViewDialog asset={viewTarget} onOpenChange={(o) => !o && setViewTarget(null)} />
 
       <ProcurementDialog open={procDialogOpen} onOpenChange={setProcDialogOpen} procurement={selectedProc} />
       <ReceiveProcurementDialog procurement={receiveTarget} onClose={() => setReceiveTarget(null)} />

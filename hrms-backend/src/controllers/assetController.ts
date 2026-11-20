@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { AssetService } from "../services/assetService.js";
 import {
-  createAssetSchema, updateAssetSchema, issueAssetSchema, returnAssetSchema, holderQuerySchema,
+  createAssetSchema, updateAssetSchema, issueAssetSchema, bulkIssueAssetSchema, returnAssetSchema, holderQuerySchema,
 } from "../validations/assetValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -69,6 +69,15 @@ export const issueAsset = async (req: AuthenticatedRequest, res: Response, next:
     const parsed = issueAssetSchema.safeParse(req.body);
     if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
     sendSuccess(res, "Asset issued", await service.issue(req.params.id, parsed.data, req.user!.userId));
+  } catch (error) { next(error); }
+};
+
+export const bulkIssueAssets = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = bulkIssueAssetSchema.safeParse(req.body);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    const done = await service.bulkIssue(parsed.data, req.user!.userId);
+    sendSuccess(res, `${done.issued} asset${done.issued === 1 ? "" : "s"} issued`, done);
   } catch (error) { next(error); }
 };
 

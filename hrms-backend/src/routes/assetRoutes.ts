@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createAsset, getAssets, getAssetFacets, getAssetHolders, getMyAssets, getAssetById, updateAsset, deleteAsset,
-  issueAsset, returnAsset, markAssetAvailable, retireAsset,
+  issueAsset, bulkIssueAssets, returnAsset, markAssetAvailable, retireAsset,
 } from "../controllers/assetController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -18,6 +18,7 @@ router.get("/facets", checkPermission("assets", "view"), getAssetFacets);
 // People and departments an asset can go to — for whoever issues assets, without needing the Employees module.
 router.get("/holders", checkPermission("assets", "edit"), getAssetHolders);
 router.post("/", checkPermission("assets", "create"), createAsset);
+router.post("/bulk-issue", checkPermission("assets", "edit"), bulkIssueAssets);
 router.get("/:id", checkPermission("assets", "view"), getAssetById);
 router.put("/:id", checkPermission("assets", "edit"), updateAsset);
 router.patch("/:id/issue", checkPermission("assets", "edit"), issueAsset);

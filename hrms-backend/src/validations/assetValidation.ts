@@ -51,6 +51,19 @@ export const issueAssetSchema = z
     path: ["employee"],
   });
 
+/** Several available assets to one person or one department; each keeps its own condition. */
+export const bulkIssueAssetSchema = z
+  .object({
+    ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i, "Not an asset id")).min(1, "Choose at least one asset").max(100, "At most 100 at a time"),
+    employee: z.string().trim().optional(),
+    department: z.string().trim().optional(),
+    notes: z.string().max(300).optional(),
+  })
+  .refine((v) => !!v.employee !== !!v.department, {
+    message: "Choose a person or a department",
+    path: ["employee"],
+  });
+
 /** Who an asset can be issued to, for the Issue dialog's pickers. */
 export const holderQuerySchema = z.object({
   kind: z.enum(["person", "department"]).default("person"),
@@ -68,4 +81,5 @@ export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 export type IssueAssetInput = z.infer<typeof issueAssetSchema>;
 export type HolderQuery = z.infer<typeof holderQuerySchema>;
+export type BulkIssueAssetInput = z.infer<typeof bulkIssueAssetSchema>;
 export type ReturnAssetInput = z.infer<typeof returnAssetSchema>;

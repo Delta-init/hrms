@@ -27,6 +27,19 @@ interface InstallEvent extends Event {
 }
 
 const DISMISSED = "hrms_install_dismissed";
+/**
+ * Set once this device is known to have the app: it was opened as the app, the browser reported the install, or
+ * the browser says the app is there. The banner then stays away in the browser tab too (2026-11-20: "remove this
+ * banner once he has installed the app"). Chrome and Edge share storage between the app and the tab, so opening
+ * the app once is enough. Cleared again whenever the browser offers to install — it only offers when it isn't.
+ */
+const INSTALLED = "hrms_app_installed";
+const remember = (key: string, on: boolean) => {
+  try { if (on) localStorage.setItem(key, "1"); else localStorage.removeItem(key); } catch { /* private mode */ }
+};
+const recall = (key: string) => {
+  try { return !!localStorage.getItem(key); } catch { return false; }
+};
 
 const isIos = () =>
   /iphone|ipad|ipod/i.test(navigator.userAgent) ||
@@ -50,33 +63,49 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
 
   useEffect(() => {
     setIsIosDevice(isIos());
-    // Nothing to offer once it is already running as an app.
-    if (isStandalone()) { setInstalled(true); return; }
+    // Nothing to offer once it is already running as an app — and the browser tab on this device should know.
+    if (isStandalone()) { remember(INSTALLED, true); setInstalled(true); return; }
+    if (recall(INSTALLED)) { setInstalled(true); }
     // A past dismissal is only remembered where the banner arrives uninvited.
-    if (!persistent && localStorage.getItem(DISMISSED)) return;
+    if (!persistent && recall(DISMISSED)) return;
     setDismissed(false);
 
+    // The browser saying it's done, from the banner's own button or from its own menu.
+    const onInstalled = () => { remember(INSTALLED, true); setInstalled(true); };
+    window.addEventListener("appinstalled", onInstalled);
+    // Chrome can say whether this app is installed on the device (manifest `related_applications`).
+    const nav = navigator as Navigator & { getInstalledRelatedApps?: () => Promise<unknown[]> };
+    nav.getInstalledRelatedApps?.().then((apps) => { if (apps.length) onInstalled(); }).catch(() => {});
+
     // iOS never fires this, so it gets instructions instead of a button.
-    if (isIos()) { setShowIosHelp(true); return; }
+    if (isIos()) {
+      setShowIosHelp(true);
+      return () => window.removeEventListener("appinstalled", onInstalled);
+    }
+
+    // The browser only offers to install an app that isn't installed — so an offer also means a remembered
+    // install is stale (it was removed since), and the banner comes back.
+    const offered = (e: InstallEvent) => { remember(INSTALLED, false); setInstalled(false); setEvent(e); };
 
     // Usually already caught: the script in the document head listens before
     // React exists, because Chrome fires this once and fires it early — long
     // before an effect could be listening.
     const stashed = (window as { __hrmsInstallEvent?: InstallEvent }).__hrmsInstallEvent;
-    if (stashed) setEvent(stashed);
+    if (stashed) offered(stashed);
 
     const onPrompt = (e: Event) => {
       // Chrome shows its own bar otherwise, and two offers is worse than one.
       e.preventDefault();
-      setEvent(e as InstallEvent);
+      offered(e as InstallEvent);
     };
     const onStashed = () => {
       const e = (window as { __hrmsInstallEvent?: InstallEvent }).__hrmsInstallEvent;
-      if (e) setEvent(e);
+      if (e) offered(e);
     };
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("hrms:installready", onStashed);
     return () => {
+      window.removeEventListener("appinstalled", onInstalled);
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("hrms:installready", onStashed);
     };
@@ -96,7 +125,7 @@ export function InstallPrompt({ persistent = false }: { persistent?: boolean } =
     // A page kept for this purpose does not close itself; it just stops having
     // a button once the browser has spent the prompt.
     setEvent(null);
-    if (outcome === "accepted") setInstalled(true);
+    if (outcome === "accepted") { remember(INSTALLED, true); setInstalled(true); }
     else if (!persistent) close();
   };
 
