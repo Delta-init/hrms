@@ -242,12 +242,14 @@ export function RequisitionDialog({ open, onOpenChange, headMode = false, requis
                         {team.map((e) => (
                           <SelectItem key={e._id} value={e._id}>
                             {e.name}{e.employeeCode ? ` · ${e.employeeCode}` : ""}{e.designation ? ` — ${e.designation}` : ""}
+                            {e.status === "terminated" ? " — left" : e.status === "resigned" ? " — resigned" : e.status === "notice_period" ? " — on notice" : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Who is leaving?" allowClear />
+                    // Leavers too, tagged: the person being replaced has often already gone (2026-11-20).
+                    <EmployeeSelect value={field.value} onChange={field.onChange} placeholder="Who is leaving?" allowClear activeOnly={false} showStatus />
                   )
                 )} />
                 {errors.replacing && <p className="text-xs text-destructive">Say who is being replaced</p>}

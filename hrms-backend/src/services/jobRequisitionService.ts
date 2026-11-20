@@ -15,7 +15,7 @@ import { notifyReviewed } from "./reviewNotifier.js";
 import { departmentsHeadedBy } from "./departmentHeadService.js";
 import { watchersFor } from "./watchers.js";
 import { notify } from "./notificationService.js";
-import { stillHere } from "../utils/employeeStatus.js";
+import { LEFT_STATUSES } from "../utils/employeeStatus.js";
 import { env } from "../config/env.js";
 
 /**
@@ -220,15 +220,21 @@ export class JobRequisitionService {
     return heads;
   }
 
-  /** The people a head could be replacing: everyone still here in the departments they run. */
+  /**
+   * The people a head could be replacing: everyone in the departments they run, those who have left included —
+   * the person being replaced has often already gone (the user, 2026-11-20). Current staff first, then leavers;
+   * each carries their status so the list can say who has left.
+   */
   async replaceableFor(headUserId: string) {
     const heads = await departmentsHeadedBy(headUserId);
     if (!heads.length) return [];
-    return Employee.find(scoped({ department: { $in: heads }, status: stillHere() }))
-      .select("name employeeCode designation department")
+    const people = await Employee.find(scoped({ department: { $in: heads } }))
+      .select("name employeeCode designation department status")
       .populate("department", "name")
       .sort({ name: 1 })
-      .lean();
+      .lean<Array<{ status?: string }>>();
+    const gone = (p: { status?: string }) => (LEFT_STATUSES as readonly string[]).includes(String(p.status));
+    return [...people.filter((p) => !gone(p)), ...people.filter(gone)];
   }
 
   async create(input: CreateRequisitionInput, raisedBy: string, headOnly = false) {

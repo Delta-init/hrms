@@ -78,7 +78,7 @@ export const useReplaceable = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "replaceable"],
     queryFn: async () =>
-      (await api.get<ApiResponse<Array<{ _id: string; name: string; employeeCode?: string; designation?: string; department?: { _id: string; name: string } | null }>>>("/hiring/requisitions/replaceable")).data.data ?? [],
+      (await api.get<ApiResponse<Array<{ _id: string; name: string; employeeCode?: string; designation?: string; status?: string; department?: { _id: string; name: string } | null }>>>("/hiring/requisitions/replaceable")).data.data ?? [],
     enabled,
     staleTime: 5 * 60 * 1000,
   });

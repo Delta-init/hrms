@@ -48,9 +48,21 @@ function usePickerState(decorate?: BaseProps["decorate"]) {
   return { search, setSearch, debounced, apply };
 }
 
+/** A tag for anyone not simply at work, when a picker lists leavers too. */
+const STATUS_BADGE: Partial<Record<string, { label: string; tone: "warn" | "info" }>> = {
+  terminated: { label: "Left", tone: "warn" },
+  resigned: { label: "Resigned", tone: "warn" },
+  notice_period: { label: "Notice period", tone: "info" },
+};
+
 export function EmployeeSelect({
-  placeholder = "Select employee…", decorate, activeOnly = true, ...rest
-}: BaseProps & { /** Hide leavers. On by default — you rarely pick one. */ activeOnly?: boolean }) {
+  placeholder = "Select employee…", decorate, activeOnly = true, showStatus = false, ...rest
+}: BaseProps & {
+  /** Hide leavers. On by default — you rarely pick one. */
+  activeOnly?: boolean;
+  /** Tag people who have left or are on notice — for pickers that list them (e.g. who a hire replaces). */
+  showStatus?: boolean;
+}) {
   const { search, setSearch, debounced, apply } = usePickerState(decorate);
   const { data, isFetching } = useEmployees({
     limit: PAGE,
@@ -58,7 +70,10 @@ export function EmployeeSelect({
     ...(debounced ? { search: debounced } : {}),
   });
   const options = apply(
-    (data?.data ?? []).map((e) => ({ value: e._id, label: e.name, sub: e.employeeCode }))
+    (data?.data ?? []).map((e) => ({
+      value: e._id, label: e.name, sub: e.employeeCode,
+      ...(showStatus && STATUS_BADGE[e.status] ? { badge: STATUS_BADGE[e.status] } : {}),
+    }))
   );
   return (
     <AsyncSelect
