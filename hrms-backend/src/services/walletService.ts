@@ -37,7 +37,10 @@ interface FinanceWallet {
     payments: Array<{ paymentId: string; paidOn: string | null; method: string; account: string; reference: string; amount: number; reversed: boolean; reversalReason: string; finished: boolean }>;
   }>;
   crm: Array<{
-    crm: string; crmName: string; currency: string; earned: number; payable: number | null; percent: number | null; level: string | null;
+    crm: string; crmName: string;
+    /** "inr" (2026-11-20): the part earned on what clients paid in rupees — its own row in INR, beside the AED one. */
+    part?: "inr";
+    currency: string; earned: number; payable: number | null; percent: number | null; level: string | null;
     sales: number; waiting: number; state: "earned" | "approved" | "paid"; approved: number | null;
     payrollRunNumber: string; paidOn: string | null; paymentMethod: string; reference: string;
   }>;
@@ -308,7 +311,7 @@ export class WalletService {
         c.waiting > 0 ? `${money(c.waiting, c.currency)} more once clients pay in full` : null,
       ].filter(Boolean);
       commissionRow({
-        source: "crm", name: `${c.crmName || c.crm} commission · ${monthLabel(month)}`, detail: parts.join(" · ") || null,
+        source: "crm", name: `${c.crmName || c.crm} commission${c.part === "inr" ? " in rupees" : ""} · ${monthLabel(month)}`, detail: parts.join(" · ") || null,
         currency: c.currency, amount, earnedState: c.state, payrollRunNumber: c.payrollRunNumber, paidOn: c.paidOn,
         method: c.paymentMethod, reference: c.reference, waiting: c.waiting,
       });
