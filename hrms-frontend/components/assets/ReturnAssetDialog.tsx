@@ -22,7 +22,10 @@ interface Props {
   asset: Asset | null;
 }
 
-const empName = (a: Asset | null) => (a?.assignedTo && typeof a.assignedTo === "object" ? a.assignedTo.name : "");
+/** Who it's coming back from: the person, or the department holding it. */
+const empName = (a: Asset | null) =>
+  a?.assignedTo && typeof a.assignedTo === "object" ? a.assignedTo.name
+    : a?.assignedDepartment && typeof a.assignedDepartment === "object" ? a.assignedDepartment.name : "";
 
 export function ReturnAssetDialog({ open, onOpenChange, asset }: Props) {
   const { mutate: returnAsset, isPending } = useReturnAsset();

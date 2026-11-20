@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthenticatedRequest } from "../types/index.js";
 import { AssetService } from "../services/assetService.js";
 import {
-  createAssetSchema, updateAssetSchema, issueAssetSchema, returnAssetSchema,
+  createAssetSchema, updateAssetSchema, issueAssetSchema, returnAssetSchema, holderQuerySchema,
 } from "../validations/assetValidation.js";
 import { sendSuccess, sendError } from "../utils/response.js";
 
@@ -33,6 +33,14 @@ export const getAssets = async (req: AuthenticatedRequest, res: Response, next: 
 export const getAssetFacets = async (_req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     sendSuccess(res, "Asset facets retrieved", await service.facets());
+  } catch (error) { next(error); }
+};
+
+export const getAssetHolders = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = holderQuerySchema.safeParse(req.query);
+    if (!parsed.success) { sendError(res, "Validation failed", 400, parsed.error.flatten().fieldErrors); return; }
+    sendSuccess(res, "Holders retrieved", await service.holders(parsed.data));
   } catch (error) { next(error); }
 };
 

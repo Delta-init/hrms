@@ -19,11 +19,18 @@ export const assetFormSchema = z.object({
 });
 export type AssetFormValues = z.infer<typeof assetFormSchema>;
 
-export const issueAssetFormSchema = z.object({
-  employee: z.string().min(1, "Select an employee"),
-  condition: z.enum(CONDITIONS).optional(),
-  notes: z.string().max(300).optional(),
-});
+/** To a person or to a department; `to` says which picker the holder came from. */
+export const issueAssetFormSchema = z
+  .object({
+    to: z.enum(["person", "department"]),
+    holder: z.string(),
+    condition: z.enum(CONDITIONS).optional(),
+    notes: z.string().max(300).optional(),
+  })
+  .refine((v) => !!v.holder, {
+    path: ["holder"],
+    message: "Choose who gets it",
+  });
 export type IssueAssetFormValues = z.infer<typeof issueAssetFormSchema>;
 
 export const returnAssetFormSchema = z.object({

@@ -6,6 +6,8 @@ const assetHistorySchema = new Schema(
   {
     action: { type: String, enum: ["issued", "returned", "sent_to_maintenance", "retired"], required: true },
     employee: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+    /** Set instead of `employee` when the asset went to, or came back from, a department. */
+    department: { type: Schema.Types.ObjectId, ref: "Department", default: null },
     date: { type: Date, required: true },
     condition: { type: String, enum: ["new", "good", "fair", "poor", "damaged"], default: undefined },
     notes: { type: String, trim: true, maxlength: 300 },
@@ -37,6 +39,12 @@ const assetSchema = new Schema<IAsset>(
     condition: { type: String, enum: ["new", "good", "fair", "poor", "damaged"], default: "new" },
     status: { type: String, enum: ["available", "assigned", "maintenance", "retired"], default: "available", index: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+    /**
+     * The department holding it, when it is a department's rather than one person's — the Accounts cabin's printer,
+     * the CMA team's shared number (the user, 2026-11-20: "two types of assign, department-wise and member-wise").
+     * One or the other, never both: `status` is "assigned" when either is set, and returning clears both.
+     */
+    assignedDepartment: { type: Schema.Types.ObjectId, ref: "Department", default: null },
     assignedDate: { type: Date, default: null },
     /** Which office holds it — 410, 710, Hyatt. */
     branch: { type: String, trim: true, maxlength: 60, default: "", index: true },
@@ -60,5 +68,6 @@ const assetSchema = new Schema<IAsset>(
 assetSchema.index({ organization: 1, assetTag: 1 }, { unique: true });
 assetSchema.index({ organization: 1, status: 1 });
 assetSchema.index({ organization: 1, assignedTo: 1 });
+assetSchema.index({ organization: 1, assignedDepartment: 1 });
 
 export const Asset = mongoose.model<IAsset>("Asset", assetSchema);

@@ -1386,6 +1386,8 @@ export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
 export interface AssetHistoryEntry {
   action: "issued" | "returned" | "sent_to_maintenance" | "retired";
   employee?: { _id: string; name: string; employeeCode?: string } | string | null;
+  /** Set instead of `employee` when it went to, or came back from, a department. */
+  department?: { _id: string; name: string; code?: string } | string | null;
   date: string;
   condition?: AssetCondition;
   notes?: string;
@@ -1568,6 +1570,8 @@ export interface Asset {
   condition: AssetCondition;
   status: AssetStatus;
   assignedTo?: { _id: string; name: string; employeeCode?: string; designation?: string } | string | null;
+  /** The department holding it, when it's a department's rather than one person's. Never set with `assignedTo`. */
+  assignedDepartment?: { _id: string; name: string; code?: string } | string | null;
   assignedDate?: string | null;
   /** Office or site the thing lives at, as the register spells it. */
   branch?: string;

@@ -38,10 +38,24 @@ export const createAssetSchema = z.object({
 
 export const updateAssetSchema = createAssetSchema.partial();
 
-export const issueAssetSchema = z.object({
-  employee: z.string().min(1, "Employee is required"),
-  condition: z.enum(CONDITIONS).optional(),
-  notes: z.string().max(300).optional(),
+/** To a person or to a department — exactly one. */
+export const issueAssetSchema = z
+  .object({
+    employee: z.string().trim().optional(),
+    department: z.string().trim().optional(),
+    condition: z.enum(CONDITIONS).optional(),
+    notes: z.string().max(300).optional(),
+  })
+  .refine((v) => !!v.employee !== !!v.department, {
+    message: "Choose a person or a department",
+    path: ["employee"],
+  });
+
+/** Who an asset can be issued to, for the Issue dialog's pickers. */
+export const holderQuerySchema = z.object({
+  kind: z.enum(["person", "department"]).default("person"),
+  search: z.string().trim().max(60).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
 });
 
 export const returnAssetSchema = z.object({
@@ -53,4 +67,5 @@ export const returnAssetSchema = z.object({
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>;
 export type IssueAssetInput = z.infer<typeof issueAssetSchema>;
+export type HolderQuery = z.infer<typeof holderQuerySchema>;
 export type ReturnAssetInput = z.infer<typeof returnAssetSchema>;

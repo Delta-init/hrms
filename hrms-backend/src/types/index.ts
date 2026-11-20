@@ -1440,6 +1440,8 @@ export interface IProcurementIssue extends Document {
 export interface IAssetHistoryEntry {
   action: "issued" | "returned" | "sent_to_maintenance" | "retired";
   employee?: Types.ObjectId | IEmployee | null;
+  /** Set instead of `employee` when it went to, or came back from, a department. */
+  department?: Types.ObjectId | IDepartment | null;
   date: Date;
   condition?: AssetCondition;
   notes?: string;
@@ -1457,8 +1459,10 @@ export interface IAsset extends Document {
   purchaseCost?: number;
   condition: AssetCondition;
   status: AssetStatus;
-  /** Currently-holding employee, if assigned. */
+  /** Currently-holding employee, if assigned to a person. */
   assignedTo?: Types.ObjectId | IEmployee | null;
+  /** Currently-holding department, if assigned to a department. Never set together with `assignedTo`. */
+  assignedDepartment?: Types.ObjectId | IDepartment | null;
   assignedDate?: Date | null;
   /** Which office holds it, and where inside it. */
   branch?: string;

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import {
   Boxes, Plus, Pencil, Trash2, Loader2, Send, Undo2, CheckCircle2, Archive, History, ListChecks, ShoppingCart, X, Paperclip, BookOpen, PackageCheck,
+  Building2,
 } from "lucide-react";
 import { useAssets, useAssetFacets, useMyAssets, useDeleteAsset, useMarkAssetAvailable, useRetireAsset } from "@/hooks/useAssets";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,6 +59,8 @@ const conditionStyles: Record<string, string> = {
  */
 const sheetHolder = (a: Asset) => a.notes?.match(/Sheet says held by:\s*(.+)/)?.[1]?.trim() ?? "";
 const assigneeOf = (a: Asset) => (a.assignedTo && typeof a.assignedTo === "object" ? a.assignedTo : null);
+/** The department holding it, when a department does rather than a person. */
+const departmentOf = (a: Asset) => (a.assignedDepartment && typeof a.assignedDepartment === "object" ? a.assignedDepartment : null);
 const fmtDate = (iso?: string | null) => (iso ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso)) : "—");
 
 export default function AssetsPage() {
@@ -81,11 +84,15 @@ export default function AssetsPage() {
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
   const [branch, setBranch] = useState(ALL);
+  /** Held by: everyone, people only, departments only, or one department ("dept:<id>"). */
+  const [heldBy, setHeldBy] = useState(ALL);
   const [search, setSearch] = useState("");
   const params: Record<string, string> = { limit: "200" };
   if (status !== ALL) params.status = status;
   if (category !== ALL) params.category = category;
   if (branch !== ALL) params.branch = branch;
+  if (heldBy === "person" || heldBy === "department") params.holder = heldBy;
+  else if (heldBy.startsWith("dept:")) params.assignedDepartment = heldBy.slice(5);
   if (search) params.search = search;
 
   const { data, isLoading, isFetching } = useAssets(canView ? params : undefined);
@@ -254,6 +261,20 @@ export default function AssetsPage() {
                 </Select>
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Held by</Label>
+              <Select value={heldBy} onValueChange={setHeldBy}>
+                <SelectTrigger className="h-9 w-[170px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Anyone</SelectItem>
+                  <SelectItem value="person">People</SelectItem>
+                  <SelectItem value="department">Departments</SelectItem>
+                  {(facets?.departments ?? []).map((d) => (
+                    <SelectItem key={d.value} value={`dept:${d.value}`}>{d.label} ({d.count})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </Card>
 
           {/* Phones: a card per asset, so its buttons are never off the side of a table. */}
@@ -264,6 +285,7 @@ export default function AssetsPage() {
               <Card className="py-16 text-center text-sm text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</Card>
             ) : rows.map((a) => {
               const assignee = assigneeOf(a);
+              const dept = departmentOf(a);
               return (
                 <Card key={a._id} className="space-y-2 p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -278,7 +300,9 @@ export default function AssetsPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     <span className={cn("font-medium", conditionStyles[a.condition])}>{ASSET_CONDITION_LABELS[a.condition]}</span>
-                    {assignee ? <> · <span className="text-foreground">{assignee.name}</span></> : sheetHolder(a) ? ` · ${sheetHolder(a)} (unmatched)` : ""}
+                    {assignee ? <> · <span className="text-foreground">{assignee.name}</span></>
+                      : dept ? <> · <Building2 className="mb-0.5 inline h-3 w-3" aria-hidden /> <span className="text-foreground">{dept.name}</span></>
+                      : sheetHolder(a) ? ` · ${sheetHolder(a)} (unmatched)` : ""}
                     {a.branch || a.location ? ` · ${[a.branch, a.location].filter(Boolean).join(", ")}` : ""}
                   </p>
                   {rowActions(a, true)}
@@ -308,6 +332,7 @@ export default function AssetsPage() {
                     <tr><td colSpan={7} className="py-16 text-center text-muted-foreground"><Boxes className="mx-auto mb-2 h-7 w-7" />No assets match these filters.</td></tr>
                   ) : rows.map((a) => {
                     const assignee = assigneeOf(a);
+                    const dept = departmentOf(a);
                     return (
                       <tr key={a._id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
                         <td className="px-4 py-3">
@@ -334,6 +359,14 @@ export default function AssetsPage() {
                             <div className="flex items-center gap-2">
                               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{getInitials(assignee.name)}</div>
                               <span className="truncate">{assignee.name}</span>
+                            </div>
+                          ) : dept ? (
+                            <div className="flex items-center gap-2" title="Held by the department">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground"><Building2 className="h-3.5 w-3.5" aria-hidden /></div>
+                              <div className="min-w-0">
+                                <p className="truncate">{dept.name}</p>
+                                <p className="text-xs text-muted-foreground">Department</p>
+                              </div>
                             </div>
                           ) : sheetHolder(a) ? (
                             <span className="text-xs text-muted-foreground" title="From the imported register — not yet matched to an employee">
@@ -531,7 +564,8 @@ export default function AssetsPage() {
             {!historyTarget?.history.length ? (
               <p className="py-6 text-center text-sm text-muted-foreground">No history yet.</p>
             ) : [...historyTarget.history].reverse().map((h, i) => {
-              const emp = h.employee && typeof h.employee === "object" ? h.employee.name : null;
+              const emp = h.employee && typeof h.employee === "object" ? h.employee.name
+                : h.department && typeof h.department === "object" ? `${h.department.name} (department)` : null;
               return (
                 <div key={i} className="rounded-lg border border-border p-2.5 text-sm">
                   <div className="flex items-center justify-between">

@@ -29,8 +29,30 @@ export const useAssetFacets = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "facets"],
     queryFn: async () =>
-      (await api.get<ApiResponse<{ categories: { value: string; count: number }[]; branches: { value: string; count: number }[] }>>("/assets/facets")).data.data!,
+      (await api.get<ApiResponse<{
+        categories: { value: string; count: number }[];
+        branches: { value: string; count: number }[];
+        /** Departments that hold something. */
+        departments?: { value: string; label: string; count: number }[];
+      }>>("/assets/facets")).data.data!,
     enabled,
+  });
+
+/**
+ * People or departments an asset can be issued to.
+ *
+ * Its own endpoint under Assets, not the employee directory: whoever issues assets may hold Assets without
+ * Employees (the Business Administrator does), and then the directory answers nothing.
+ */
+export const useAssetHolders = (kind: "person" | "department", search: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "holders", kind, search],
+    queryFn: async () =>
+      (await api.get<ApiResponse<{ _id: string; name: string; sub: string }[]>>("/assets/holders", {
+        params: { kind, limit: "25", ...(search ? { search } : {}) },
+      })).data.data ?? [],
+    enabled,
+    placeholderData: (prev) => prev,
   });
 
 /** Self-service — assets currently assigned to the caller. */
