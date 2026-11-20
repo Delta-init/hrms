@@ -31,9 +31,11 @@ export function Header() {
   const { toggleSidebarCollapsed } = useUiStore();
   const pathname = usePathname();
 
-  const currentNav = navItems.find(
-    (item) => pathname === item.href || pathname.startsWith(item.href + "/")
-  );
+  // The longest matching link names the page, as in the sidebar: /dgo-points/wallet
+  // is "My Points", not the "/dgo-points" entry it also starts with.
+  const currentNav = navItems
+    .filter((item) => pathname === item.href || pathname.startsWith(item.href + "/"))
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const pageName =
     currentNav?.label ??
     (pathname.split("/")[1]

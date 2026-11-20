@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import { navItems } from "@/components/layout/Sidebar";
+import { useDgoMe, dgoAllows } from "@/hooks/useDgoPoints";
 import { cn } from "@/lib/utils";
 import type { SearchHit } from "@/types";
 
@@ -39,6 +40,7 @@ export function GlobalSearch() {
   const [query, setQuery] = useState("");
   const router = useRouter();
   const { hasPermission, user, isKioskOnly } = useAuth();
+  const { data: dgoMe } = useDgoMe(!isKioskOnly);
   const debounced = useDebouncedValue(query, 250);
   const { data: hits = [], isFetching } = useGlobalSearch(debounced);
 
@@ -65,8 +67,10 @@ export function GlobalSearch() {
    */
   const pages = useMemo(
     () =>
-      navItems.filter(({ permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment, headLandsOnOwnDepartment, href }) => {
+      navItems.filter(({ permModule, permAction, superAdminOnly, approvalsOnly, orHeadsADepartment, headLandsOnOwnDepartment, href, dgo }) => {
         if (isKioskOnly) return href === "/kiosk";
+        // DGO Points pages are drawn on the server's word, exactly as in the sidebar.
+        if (dgo) return dgoAllows(dgo, dgoMe);
         if (superAdminOnly) return isSuperAdmin;
         // Approvals is decided by the server; the sidebar knows, this does not,
         // so it is offered and the page itself explains if there is nothing.
@@ -78,7 +82,7 @@ export function GlobalSearch() {
         if (orHeadsADepartment && !headLandsOnOwnDepartment) return !!user?.isDepartmentHead;
         return permModule === null;
       }),
-    [hasPermission, isKioskOnly, isSuperAdmin, user?.isDepartmentHead]
+    [hasPermission, isKioskOnly, isSuperAdmin, user?.isDepartmentHead, dgoMe]
   );
 
   const grouped = useMemo<Array<[string, SearchHit[]]>>(() => {

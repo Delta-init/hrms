@@ -59,6 +59,7 @@ import faceRoutes from "./faceRoutes.js";
 import kioskRoutes from "./kioskRoutes.js";
 import integrationRoutes from "./integrationRoutes.js";
 import portalRoutes from "./portalRoutes.js";
+import dgoRoutes from "./dgoRoutes.js";
 
 const router = Router();
 
@@ -83,6 +84,7 @@ router.use("/salary-increments", salaryIncrementRoutes);
 router.use("/payroll-checklist", payrollChecklistRoutes);
 router.use("/one-time-adjustments", oneTimeAdjustmentRoutes);
 router.use("/wallet", walletRoutes);
+router.use("/dgo-points", dgoRoutes);
 router.use("/salary-structures", salaryStructureRoutes);
 router.use("/reimbursements", reimbursementRoutes);
 router.use("/overtime", overtimeRoutes);

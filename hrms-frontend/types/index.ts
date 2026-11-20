@@ -60,6 +60,12 @@ export const HRMS_MODULES = [
   "organizations",
   "users",
   "roles",
+  // DGO Points. Employees need none of these for their own points; these are
+  // the HR, finance, configuration and audit sides of the module.
+  "dgoApprovals",
+  "dgoBudgets",
+  "dgoSettings",
+  "dgoAudit",
   "settings",
 ] as const;
 
@@ -102,6 +108,10 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   organizations: "Organizations",
   users: "Users",
   roles: "Roles & Permissions",
+  dgoApprovals: "DGO Points · Approvals",
+  dgoBudgets: "DGO Points · Budgets & Finance",
+  dgoSettings: "DGO Points · Rules & Settings",
+  dgoAudit: "DGO Points · Audit",
   settings: "Settings",
 };
 
@@ -3764,3 +3774,5 @@ export interface VisaOutstanding {
   counts: { total: number; upToDate: number; waiting: number; outstanding: number; exempt: number };
   rows: { _id: string; name: string; employeeCode: string; department: string; reason: VisaGateReason | null; expiryDate: string | null; hasCopy: boolean }[];
 }
+
+export * from "./dgo";

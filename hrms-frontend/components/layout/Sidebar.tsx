@@ -41,6 +41,7 @@ import {
   Briefcase,
   Coins,
   ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen, Sprout, UserPlus,
+  Gem, Trophy, BadgeCheck, PiggyBank, SlidersHorizontal,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ import { actionsFor } from "@/components/firstDays/FirstDaysSteps";
 import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { useMyDepartments } from "@/hooks/useDepartments";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
+import { useDgoMe, dgoAllows, type DgoNavFlag } from "@/hooks/useDgoPoints";
 
 export const navItems: {
   href: string;
@@ -90,6 +92,14 @@ export const navItems: {
    * scope themselves to the head (Hiring) keep their own address.
    */
   headLandsOnOwnDepartment?: boolean;
+  /**
+   * A DGO Points page. Drawn on the server's word (`/dgo-points/me`), because
+   * whether points are open to employees, and who heads a department, are
+   * things only the server knows.
+   */
+  dgo?: DgoNavFlag;
+  /** A small heading drawn above this entry when the labels show. */
+  section?: string;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
   { href: "/first-days", label: "My First 15 Days", icon: Sprout, permModule: null, joinerOnly: true },
@@ -113,6 +123,14 @@ export const navItems: {
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
   // Everyone's own: salary a day at a time, deductions with their reasons, commission and what finance paid.
   { href: "/wallet", label: "My Wallet", icon: WalletCards, permModule: null },
+  // DGO Points: earned for verified work and recognition, redeemed for rewards.
+  // Named "My Points" so nobody confuses it with the salary wallet above.
+  { href: "/dgo-points", label: "Points Overview", icon: Gem, permModule: null, dgo: "use", section: "DGO Points" },
+  { href: "/dgo-points/wallet", label: "My Points", icon: Coins, permModule: null, dgo: "use" },
+  { href: "/dgo-points/earn", label: "Earn Points", icon: Trophy, permModule: null, dgo: "use" },
+  { href: "/dgo-points/approvals", label: "Points Approvals", icon: BadgeCheck, permModule: null, dgo: "approvals" },
+  { href: "/dgo-points/budgets", label: "Points Budgets", icon: PiggyBank, permModule: null, dgo: "budgets" },
+  { href: "/dgo-points/settings", label: "Points Rules", icon: SlidersHorizontal, permModule: null, dgo: "settings" },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   /**
    * Registering a tablet, rotating its pairing token, deactivating it — all
@@ -189,6 +207,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   const { data: newJoiners = [] } = useTeamFirstDays(!isKioskOnly);
   // Visas employees sent in, waiting on whoever may approve them.
   const { data: visaPending = 0 } = useVisaPendingCount(!isKioskOnly && hasPermission("employees", "edit"));
+  // Asked of everybody: whether DGO Points is open, and what this person may do there.
+  const { data: dgoMe } = useDgoMe(!isKioskOnly);
   /** What waits behind each link, for the badge. Absent means no badge. */
   // The approvals summary already counts every queue that waits on this
   // person, by module — so each section's link carries its own share of it.
@@ -218,7 +238,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment, dgo, section }) => {
         // The longest link that matches wins, so /hiring/ad-spend lights up
         // Ad Spend and not Hiring as well.
         const isActive = activeHref === href;
@@ -228,6 +248,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
         // for a tablet by the door, which is nobody: it gets the kiosk alone.
         const allowed = isKioskOnly
           ? href === "/kiosk"
+          : dgo
+            ? dgoAllows(dgo, dgoMe)
           : superAdminOnly
             ? isSuperAdmin
             : approvalsOnly
@@ -308,11 +330,18 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
           </Link>
         );
 
-        return (
+        const tip = (
           <Tooltip key={href}>
             <TooltipTrigger asChild>{linkEl}</TooltipTrigger>
             {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
           </Tooltip>
+        );
+        if (!section || collapsed) return tip;
+        return (
+          <React.Fragment key={href}>
+            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{section}</p>
+            {tip}
+          </React.Fragment>
         );
       })}
     </nav>
