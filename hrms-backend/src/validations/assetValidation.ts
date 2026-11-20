@@ -54,7 +54,8 @@ export const issueAssetSchema = z
 /** Several available assets to one person or one department; each keeps its own condition. */
 export const bulkIssueAssetSchema = z
   .object({
-    ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i, "Not an asset id")).min(1, "Choose at least one asset").max(100, "At most 100 at a time"),
+    // Above the 200 rows All Assets loads, so "select all" always fits (2026-11-20: 100 refused a select-all).
+    ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i, "Not an asset id")).min(1, "Choose at least one asset").max(500, "At most 500 at a time"),
     employee: z.string().trim().optional(),
     department: z.string().trim().optional(),
     notes: z.string().max(300).optional(),
