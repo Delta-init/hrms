@@ -221,3 +221,107 @@ export async function redeemPoints(s: Spend, held: Holding[], actor: Actor, sess
   await DgoWallet.updateOne({ employee: s.employee }, { $inc: { reserved: -s.points, redeemed: s.points } }, { session });
   return true;
 }
+
+/* ───────────── Adjustments and expiry (Phase 3) ───────────── */
+
+export interface Movement {
+  organization: unknown;
+  employee: unknown;
+  points: number;          // positive
+  key: string;             // the ledger row's unique key
+  description: string;
+  today: string;
+  expiryMonths?: number;   // for added points
+}
+
+/** Add points outside any rule (an approved adjustment): a new batch expiring like any credit. Once per key. */
+export async function addPoints(m: Movement, actor: Actor, session?: ClientSession): Promise<boolean> {
+  if (await DgoLedgerEntry.exists({ idempotencyKey: m.key }).session(session ?? null)) return false;
+  const lotId = new mongoose.Types.ObjectId();
+  await DgoLedgerEntry.create([{
+    organization: m.organization, employee: m.employee, delta: m.points, type: "adjust", lot: lotId,
+    day: m.today, month: m.today.slice(0, 7), description: m.description, idempotencyKey: m.key,
+    createdBy: actor.userId, createdByName: actor.name,
+  }], { session });
+  await DgoPointLot.create([{
+    _id: lotId, organization: m.organization, employee: m.employee, issued: m.points, remaining: m.points, reserved: 0,
+    issuedOn: m.today, expiresOn: addMonthsToDay(m.today, m.expiryMonths ?? 12), ruleCode: "ADJUSTMENT", description: m.description,
+  }], { session });
+  await DgoWallet.updateOne({ employee: m.employee }, { $inc: { available: m.points }, $setOnInsert: { organization: m.organization } }, { upsert: true, session });
+  return true;
+}
+
+/**
+ * Take spendable points away (an approved adjustment): the wallet first, by a
+ * conditional update that can't take it below zero, then the batches that
+ * expire first. Held points are never touched. Null when there aren't enough.
+ */
+export async function removePoints(m: Movement, actor: Actor, session?: ClientSession): Promise<boolean | null> {
+  if (await DgoLedgerEntry.exists({ idempotencyKey: m.key }).session(session ?? null)) return false;
+  const w = await DgoWallet.updateOne({ employee: m.employee, available: { $gte: m.points } }, { $inc: { available: -m.points } }, { session });
+  if (w.modifiedCount !== 1) return null;
+  const taken: Holding[] = [];
+  try {
+    let need = m.points;
+    for (let pass = 0; need > 0 && pass < 5; pass++) {
+      const lots = await DgoPointLot.find({ employee: m.employee, $expr: { $gt: ["$remaining", "$reserved"] } })
+        .sort({ expiresOn: 1, _id: 1 }).session(session ?? null).lean<Array<{ _id: Types.ObjectId; remaining: number; reserved: number }>>();
+      if (!lots.length) break;
+      for (const lot of lots) {
+        if (need <= 0) break;
+        const take = Math.min(need, lot.remaining - lot.reserved);
+        if (take <= 0) continue;
+        const r = await DgoPointLot.updateOne(
+          { _id: lot._id, $expr: { $gte: [{ $subtract: ["$remaining", "$reserved"] }, take] } },
+          { $inc: { remaining: -take } },
+          { session }
+        );
+        if (r.modifiedCount !== 1) continue;
+        taken.push({ lot: lot._id, points: take });
+        need -= take;
+      }
+    }
+    if (need > 0) throw httpError("Their points don't add up right now, so nothing was taken. Recount the wallet first.", 409);
+    await DgoLedgerEntry.create([{
+      organization: m.organization, employee: m.employee, delta: -m.points, type: "adjust",
+      day: m.today, month: m.today.slice(0, 7), description: m.description, idempotencyKey: m.key,
+      createdBy: actor.userId, createdByName: actor.name,
+    }], { session });
+    return true;
+  } catch (e) {
+    if (!session) {
+      for (const h of taken) await DgoPointLot.updateOne({ _id: h.lot }, { $inc: { remaining: h.points } });
+      await DgoWallet.updateOne({ employee: m.employee }, { $inc: { available: m.points } });
+    }
+    throw e;
+  }
+}
+
+/**
+ * Expire what is spendable in one batch: everything but the part held for a
+ * redemption in progress, which is kept until that redemption ends (if it is
+ * cancelled, the points come back to the batch and expire on the next run).
+ * The batch moves first, conditionally on what was read, so two runs can't
+ * expire the same points; the ledger row's key carries what was there.
+ */
+export async function expireLot(
+  lot: { _id: Types.ObjectId; organization: unknown; employee: unknown; remaining: number; reserved: number; description?: string },
+  today: string, why: string, actor: Actor, session?: ClientSession,
+): Promise<number> {
+  const x = lot.remaining - lot.reserved;
+  if (x <= 0) return 0;
+  const moved = await DgoPointLot.updateOne(
+    { _id: lot._id, remaining: lot.remaining, reserved: lot.reserved },
+    { $set: { remaining: lot.reserved } },
+    { session }
+  );
+  if (moved.modifiedCount !== 1) return 0;
+  await DgoLedgerEntry.create([{
+    organization: lot.organization, employee: lot.employee, delta: -x, type: "expire", lot: lot._id,
+    day: today, month: today.slice(0, 7), description: `${why}${lot.description ? `: ${lot.description}` : ""}`.slice(0, 300),
+    idempotencyKey: `EXPIRE:${lot._id}:${lot.remaining}`, createdBy: actor.userId, createdByName: actor.name,
+  }], { session });
+  await DgoWallet.updateOne({ employee: lot.employee }, { $inc: { available: -x, expired: x } }, { session });
+  return x;
+}
+

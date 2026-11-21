@@ -41,7 +41,7 @@ import {
   Briefcase,
   Coins,
   ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen, Sprout, UserPlus,
-  Gem, Trophy, BadgeCheck, PiggyBank, SlidersHorizontal, HeartHandshake, Gift, Medal,
+  Gem, Trophy, BadgeCheck, PiggyBank, SlidersHorizontal, HeartHandshake, Gift, Medal, Scale, ScrollText,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -142,6 +142,9 @@ export const navItems: {
   { href: "/dgo-points/achievers", label: "Monthly Achievers", icon: Medal, permModule: null, dgo: "use", hidden: true, lightsUp: "/dgo-points/leaderboard" },
   { href: "/dgo-points/approvals", label: "Points Approvals", icon: BadgeCheck, permModule: null, dgo: "approvals" },
   { href: "/dgo-points/budgets", label: "Points Budgets", icon: PiggyBank, permModule: null, dgo: "budgets" },
+  // Month by month, reconciliation against the wallets, and hand adjustments (finance, management, audit).
+  { href: "/dgo-points/reports", label: "Points Reports", icon: Scale, permModule: null, dgo: "reports" },
+  { href: "/dgo-points/audit", label: "Points Audit", icon: ScrollText, permModule: null, dgo: "audit" },
   { href: "/dgo-points/settings", label: "Points Rules", icon: SlidersHorizontal, permModule: null, dgo: "settings" },
   { href: "/work-schedules", label: "Work Schedules", icon: Clock, permModule: "workSchedules" },
   /**

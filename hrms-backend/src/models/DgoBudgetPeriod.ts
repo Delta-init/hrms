@@ -50,6 +50,17 @@ const dgoBudgetPeriodSchema = new Schema(
     history: { type: [historySchema], default: [] },
     closedAt: { type: Date, default: null },
     closedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    closedByName: { type: String, default: null },
+    /** Month close (Phase 3): one finance person asks (status review), a second closes it. */
+    closeRequestedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    closeRequestedByName: { type: String, default: null },
+    closeRequestedAt: { type: Date, default: null },
+    closeRequestNote: { type: String, default: null },
+    /** The month's totals as they stood when it closed. Never changed afterwards. */
+    snapshot: { type: Schema.Types.Mixed, default: null },
+    /** Where the entered collections figure came from, and finance's breakdown when it came from finance. */
+    collectionsSource: { type: String, enum: ["typed", "finance", null], default: null },
+    collectionsBreakdown: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true, versionKey: false }
 );

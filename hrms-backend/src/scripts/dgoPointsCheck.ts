@@ -22,6 +22,13 @@
  * people, prizes paid once from the elite pool); outstanding = issued −
  * redeemed − reversed.
  *
+ * And Phase 3 (sections 21–27): the reconciliation equation and wallets against
+ * the log; adjustments and allowance overrides by two finance people; month
+ * close (asked by one, closed by another, locked, later corrections in the
+ * current month); reward purchases through finance; the nightly job (expiry
+ * with held points kept, leavers, warnings, nudges, wallet recount); reports,
+ * CSV exports and the audit filters.
+ *
  * Refuses anything but a local scratch database. Run it twice: on a replica set
  * (transactions) and on a plain mongod (DGO_NO_TXN=1), since both must hold.
  *
@@ -437,7 +444,8 @@ check("the colleague picker leaves Sam out", col.length > 3 && !col.some((c) => 
 
 /* ------------------------------------------------------------------ */
 console.log("\n16. The rewards catalogue");
-const base = { description: "", category: "Voucher", photoKey: null, costAed: 40, stockMode: "unlimited" as const, stock: null, status: "active" as const };
+// Bought from stock in these Phase 2 checks; section 25 tries the purchase-per-redemption path.
+const base = { description: "", category: "Voucher", photoKey: null, costAed: 40, stockMode: "unlimited" as const, stock: null, status: "active" as const, buyPerRedemption: false };
 check("an employee can't add rewards", (await refused(inOrg(() => rewardsSvc.createReward(vSam, { ...base, name: "Free lunch", points: 1000 })), /can't add/)) === "");
 check("nothing below the 1,000-point minimum", (await refused(inOrg(() => rewardsSvc.createReward(vRhea, { ...base, name: "Pen", points: 500 })), /at least 1,000/)) === "");
 check("a photo must be a rewards upload", (await refused(inOrg(() => rewardsSvc.createReward(vRhea, { ...base, name: "Mug", points: 1000, photoKey: `${orgId}/receipts/x.jpg` })), /photo again/)) === "");
@@ -661,6 +669,238 @@ check(`issued ${issued} − redeemed ${redeemed} − reversed ${reversed} = outs
 const heldNow = (await DgoWallet.aggregate<{ s: number }>([{ $group: { _id: null, s: { $sum: "$reserved" } } }]))[0]?.s ?? 0;
 const heldLots = (await DgoPointLot.aggregate<{ s: number }>([{ $group: { _id: null, s: { $sum: "$reserved" } } }]))[0]?.s ?? 0;
 check(`points held in wallets (${heldNow}) = points held in batches (${heldLots}) = open redemptions`, heldNow === heldLots && heldNow === 1000, { heldNow, heldLots });
+
+/* ================================ Phase 3 ================================ */
+const closingSvc = await import("../services/dgo/dgoCloseService.js");
+const control = await import("../services/dgo/dgoControlService.js");
+const reportsSvc = await import("../services/dgo/dgoReportService.js");
+const daily = await import("../services/dgo/dgoDailyService.js");
+const { ProcurementService } = await import("../services/procurementService.js");
+const procurementService = new ProcurementService();
+const { procurementLedgerService } = await import("../services/procurementLedgerService.js");
+const { Procurement } = await import("../models/Procurement.js");
+const { DgoAdjustment } = await import("../models/DgoAdjustment.js");
+const vFin1b = await as(fin1);
+const vFin2b = await as(fin2);
+const outstandingNow = async () => (await DgoWallet.aggregate<{ s: number }>([{ $group: { _id: null, s: { $sum: { $add: ["$available", "$reserved"] } } } }]))[0]?.s ?? 0;
+const ledgerOk = async () => {
+  const r = await inOrg(() => reportsSvc.reconciliation(vFin1b, month));
+  return r.equationHolds && r.wallets.matches;
+};
+
+/* ------------------------------------------------------------------ */
+console.log("\n21. Reconciliation: opening + issued − spent − reversed − expired + adjusted = closing");
+const rec0 = await inOrg(() => reportsSvc.reconciliation(vFin1b, month));
+check("this month adds up", rec0.equationHolds, rec0.totals);
+check("…and every wallet equals the points log", rec0.wallets.matches && rec0.wallets.ledgerOutstanding === (await outstandingNow()), rec0.wallets);
+check("closing = everything outstanding now (spendable + held)", rec0.totals.closing === (await outstandingNow()), { closing: rec0.totals.closing, out: await outstandingNow() });
+const recM1 = await inOrg(() => reportsSvc.reconciliation(vFin1b, previousMonth(month)));
+check("last month adds up, and its closing is this month's opening", recM1.equationHolds && recM1.totals.closing === rec0.totals.opening, { m1: recM1.totals, now: rec0.totals.opening });
+check("the people table sums to the totals", rec0.people.reduce((s, p) => s + p.closing, 0) === rec0.totals.closing);
+check("an employee can't read reports", (await refused(inOrg(() => reportsSvc.reconciliation(vSam, month)), /can't see/)) === "");
+
+/* ------------------------------------------------------------------ */
+console.log("\n22. Adjustments: two finance people, never your own");
+const omarBefore = await wallet(omar);
+check("an employee can't propose one", (await refused(inOrg(() => control.proposeAdjustment(vSam, { employeeId: omar.emp, points: 50, reason: "x", requestId: rid() })), /Only finance/)) === "");
+check("finance can't adjust their own points", (await refused(inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: fin1.emp, points: 50, reason: "x", requestId: rid() })), /your own points/)) === "");
+const adjReq = rid();
+const adj1 = await inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: omar.emp, points: 500, reason: "Missed award for the campaign launch", requestId: adjReq }));
+check("Fin1 proposes +500 for Omar: pending, nothing moves", adj1.adjustment.status === "pending" && (await wallet(omar)) === omarBefore);
+check("the same request again is the same proposal", (await inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: omar.emp, points: 500, reason: "x", requestId: adjReq }))).adjustment.id === adj1.adjustment.id);
+check("Fin1 can't approve what Fin1 proposed", (await refused(inOrg(() => control.decideAdjustment(vFin1b, adj1.adjustment.id, true)), /You proposed it/)) === "");
+check("…refused and audited", (await DgoAuditEntry.countDocuments({ action: "adjustment_refused" })) >= 2);
+const [ad1, ad2] = await Promise.all([
+  inOrg(() => control.decideAdjustment(vFin2b, adj1.adjustment.id, true)).catch((e: Error) => ({ message: e.message, adjustment: null })),
+  inOrg(() => control.decideAdjustment(vFin2b, adj1.adjustment.id, true)).catch((e: Error) => ({ message: e.message, adjustment: null })),
+]);
+check("Fin2 approves (two clicks at once): +500 once", (await wallet(omar)) === omarBefore + 500 && (await DgoLedgerEntry.countDocuments({ type: "adjust", employee: omar.emp })) === 1, [ad1.message, ad2.message]);
+check("…as a new batch that expires in 12 months", (await DgoPointLot.countDocuments({ employee: omar.emp, ruleCode: "ADJUSTMENT", expiresOn: addMonthsToDay(today, 12) })) === 1);
+const samAll = await wallet(sam);
+const tooMuchAdj = await inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: sam.emp, points: -(samAll + 1), reason: "Refund after close", requestId: rid() }));
+check("removing more than someone can spend is refused, nothing moves", (await refused(inOrg(() => control.decideAdjustment(vFin2b, tooMuchAdj.adjustment.id, true)), /doesn't have/)) === "" && (await DgoAdjustment.findById(tooMuchAdj.adjustment.id).lean<{ status: string }>())?.status === "pending" && (await wallet(sam)) === samAll);
+await inOrg(() => control.decideAdjustment(vFin2b, tooMuchAdj.adjustment.id, false, "Wrong amount"));
+const samB = await wallet(sam), samHeld = await held(sam);
+const minus = await inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: sam.emp, points: -100, reason: "=HYPERLINK(\"x\") refunded sale", requestId: rid() }));
+await inOrg(() => control.decideAdjustment(vFin2b, minus.adjustment.id, true));
+check("−100 for Sam: from what he can spend, held points untouched", (await wallet(sam)) === samB - 100 && (await held(sam)) === samHeld);
+const small = await inOrg(() => control.proposeAdjustment(vFin1b, { employeeId: sam.emp, points: 5, reason: "x", requestId: rid() }));
+check("an adjustment needs a reason to reject", (await refused(inOrg(() => control.decideAdjustment(vFin2b, small.adjustment.id, false)), /Say why/)) === "");
+await inOrg(() => control.decideAdjustment(vFin2b, small.adjustment.id, false, "Not needed"));
+const recAdj = await inOrg(() => reportsSvc.reconciliation(vFin1b, month));
+check("this month shows +400 adjusted, and still adds up", recAdj.totals.adjusted === 400 && recAdj.equationHolds && recAdj.wallets.matches, recAdj.totals);
+
+/* ------------------------------------------------------------------ */
+console.log("\n23. Allowance overrides: two finance people, kept when recounted");
+const mRow = await rowOf(media);
+const ovReq = rid();
+check("not below what Media has already used", (await refused(inOrg(() => control.proposeOverride(vFin1b, month, { departmentId: String(media._id), allocationAed: (mRow.committedFils - 100) / 100, reason: "x", requestId: rid() })), /can't go below/)) === "");
+const ov = await inOrg(() => control.proposeOverride(vFin1b, month, { departmentId: String(media._id), allocationAed: 999, reason: "Campaign month", requestId: ovReq }));
+check("proposed: nothing changes yet", ov.override.status === "pending" && (await rowOf(media)).allocationFils === mRow.allocationFils);
+check("Fin1 can't approve it", (await refused(inOrg(() => control.decideOverride(vFin1b, ov.override.id, true)), /You proposed it/)) === "");
+const ovOk = await inOrg(() => control.decideOverride(vFin2b, ov.override.id, true));
+check("Fin2 approves: Media's allowance is AED 999", ovOk.override.status === "approved" && (await rowOf(media)).allocationFils === 99_900);
+await inOrg(() => budget.recountBudget(vFin1b, month));
+check("recounting the allowances keeps the override", (await rowOf(media)).allocationFils === 99_900);
+const bv = await inOrg(() => budget.budgetView(vFin1b, month));
+check("the budget page shows it", bv.departments.find((d) => d.name === "Media")?.overrideAed === 999 && bv.overrides.some((o) => o.id === ov.override.id));
+
+/* ------------------------------------------------------------------ */
+console.log("\n24. Month close: asked by one, closed by another, locked for good");
+const m1c = previousMonth(month);
+check("this month can't be closed yet", (await inOrg(() => budget.budgetView(vFin1b, month))).close.blockers.includes("The month isn't over yet"));
+const lateM1 = await inOrg(() => earning.recordEarning(vHana2, { employeeId: sam.emp, ruleCode: "TEAM_SUPPORT", day: `${m1c}-25`, reason: "Late entry for last month", requestId: rid() }));
+const blockers = (await inOrg(() => budget.budgetView(vFin1b, m1c))).close.blockers;
+check(`${m1c}: a request still waiting blocks the close`, blockers.some((b) => /still wait/.test(b)), blockers);
+check("…so it can't be asked", (await refused(inOrg(() => closingSvc.requestClose(vFin1b, m1c)), /can't be closed yet/)) === "");
+await inOrg(() => earning.decide(vHira, String(lateM1.event._id), true));
+check("decided: nothing blocks it", (await inOrg(() => budget.budgetView(vFin1b, m1c))).close.blockers.length === 0, (await inOrg(() => budget.budgetView(vFin1b, m1c))).close.blockers);
+check("an employee can't close a month", (await refused(inOrg(() => closingSvc.requestClose(vSam, m1c)), /Only finance/)) === "");
+await inOrg(() => closingSvc.requestClose(vFin1b, m1c, "Reconciled"));
+check("asked: under review", (await inOrg(() => budget.budgetView(vFin1b, m1c))).close.status === "review");
+check("nothing more can be recorded into it", (await refused(inOrg(() => earning.recordEarning(vHana2, { employeeId: sam.emp, ruleCode: "TEAM_SUPPORT", day: `${m1c}-26`, reason: "x", requestId: rid() })), /being closed/)) === "");
+check("…and its collections can't change", (await refused(inOrg(() => budget.enterCollections(vFin1b, m1c, 1)), /being closed/)) === "");
+await inOrg(() => closingSvc.cancelClose(vFin2b, m1c, "One more late receipt to check"));
+check("sent back: open again", (await inOrg(() => budget.budgetView(vFin1b, m1c))).close.status === "open");
+await inOrg(() => closingSvc.requestClose(vFin1b, m1c));
+check("whoever asked can't close it", (await refused(inOrg(() => closingSvc.approveClose(vFin1b, m1c)), /someone else closes/)) === "");
+check("…refused and audited", (await DgoAuditEntry.countDocuments({ action: "close_self_approve_refused" })) === 1);
+const recBefore = await inOrg(() => reportsSvc.reconciliation(vFin1b, m1c));
+await inOrg(() => closingSvc.approveClose(vFin2b, m1c, "Agreed"));
+const closedView = await inOrg(() => budget.budgetView(vFin1b, m1c));
+const snap = closedView.close.snapshot!;
+check(`${m1c} closed, with a snapshot equal to its reconciliation`, closedView.close.status === "closed" && JSON.stringify(snap.points) === JSON.stringify(recBefore.totals), { snap: snap.points, rec: recBefore.totals });
+check("…the snapshot has the liability in AED and the elite prizes", snap.liabilityAed === Math.round(snap.points.closing * snap.pointValueAed * 100) / 100 && snap.elitePaidAed === 7500, snap);
+check("closing again says so", (await inOrg(() => closingSvc.approveClose(vFin2b, m1c))).message === "Already closed");
+check("closed: nothing can be recorded into it", (await refused(inOrg(() => earning.recordEarning(vHana2, { employeeId: sam.emp, ruleCode: "TEAM_SUPPORT", day: `${m1c}-27`, reason: "x", requestId: rid() })), /is closed/)) === "");
+check("…nor nominated", (await refused(inOrg(() => earning.nominate(vOmar, { employeeId: sam.emp, ruleCode: "TEAM_SUPPORT", day: `${m1c}-27`, reason: "x", requestId: rid() })), /is closed/)) === "");
+check("…its achievers can't change", (await refused(inOrg(() => achieversSvc.fetchAchievers(vAdmin, m1c)), /send it back|is closed/)) === "");
+check("…its allowances can't be overridden", (await refused(inOrg(() => control.proposeOverride(vFin1b, m1c, { departmentId: String(sales._id), allocationAed: 5000, reason: "x", requestId: rid() })), /is closed/)) === "");
+const salesM1 = await DgoDepartmentBudget.findOne({ month: m1c, department: sales._id }).lean<{ committedFils: number }>();
+await inOrg(() => earning.reverseEarning(vFin1b, String(lateM1.event._id), "Refund after the month closed"));
+const recAfter = await inOrg(() => reportsSvc.reconciliation(vFin1b, m1c));
+check("a correction after close lands in this month; the closed month still equals its snapshot", recAfter.snapshotMatches === true && (await DgoLedgerEntry.findOne({ earningEvent: lateM1.event._id, type: "reverse" }).lean<{ month: string }>())?.month === month);
+check("…and the closed month's allowance isn't given back", (await DgoDepartmentBudget.findOne({ month: m1c, department: sales._id }).lean<{ committedFils: number }>())?.committedFils === salesM1?.committedFils);
+check("everything still adds up", await ledgerOk());
+
+/* ------------------------------------------------------------------ */
+console.log("\n25. Reward purchases: HR's approval sends a purchase request to finance");
+const dflt = await inOrg(() => rewardsSvc.createReward(vRhea, { description: "", category: "Voucher", photoKey: null, costAed: 10, stockMode: "unlimited", stock: null, status: "hidden", name: "Default test", points: 1000 }));
+const dfltNoCost = await inOrg(() => rewardsSvc.createReward(vRhea, { description: "", category: "Time off", photoKey: null, costAed: null, stockMode: "unlimited", stock: null, status: "hidden", name: "Half day off", points: 1000 }));
+check("a reward with a cost is bought per redemption by default; one without isn't", dflt.buyPerRedemption === true && dfltNoCost.buyPerRedemption === false);
+const hp = (await DgoReward.findOne({ name: "Headphones" }).lean<{ _id: unknown }>())!;
+await inOrg(() => rewardsSvc.updateReward(vRhea, String(hp._id), { ...base, name: "Headphones", points: 1500, category: "Gadget", buyPerRedemption: true }));
+const hpR = await inOrg(() => rewardsSvc.redeem(vHana2, { rewardId: String(hp._id), requestId: rid() }));
+const hpA = await inOrg(() => rewardsSvc.approveRedemption(vRhea, hpR.redemption.id));
+const proc = await Procurement.findOne({ dgoRedemption: hpR.redemption.id }).lean<{ _id: unknown; status: string; category: string; estimatedCost: number; kind: string }>();
+check("approved: a purchase request is with finance (hr_approved, AED 40)", hpA.redemption.purchase.status === "waiting_finance" && proc?.status === "hr_approved" && proc.category === "DGO reward" && proc.estimatedCost === 40 && proc.kind === "new", { r: hpA.redemption.purchase, proc });
+check("…it can't be handed over before finance approves", !hpA.redemption.canFulfil && (await refused(inOrg(() => rewardsSvc.fulfilRedemption(vRhea, hpR.redemption.id)), /Finance hasn't approved/)) === "");
+check("…approving again raises no second request", (await inOrg(() => rewardsSvc.approveRedemption(vRhea, hpR.redemption.id))).message === "Already done" && (await Procurement.countDocuments({ dgoRedemption: hpR.redemption.id })) === 1);
+await procurementService.recordFinanceDecision(orgId, String(proc!._id), { decision: "approve", purchaseOrderRef: "EXP-00099" });
+const afterFin = (await inOrg(() => rewardsSvc.redemptionsView(vRhea, "queue"))).items.find((i) => i.id === hpR.redemption.id)!;
+check("finance approves (EXP-00099): ready to hand over", afterFin.purchase.status === "approved" && afterFin.purchase.ref === "EXP-00099" && afterFin.canFulfil, afterFin.purchase);
+await inOrg(() => rewardsSvc.fulfilRedemption(vRhea, hpR.redemption.id, "Bought and handed over"));
+check("delivered: the purchase request is received", (await Procurement.findById(proc!._id).lean<{ status: string }>())?.status === "received");
+const shelf = await inOrg(() => procurementLedgerService.summary());
+check("…and never counts as stock", !JSON.stringify(shelf).includes("DGO reward"));
+await inOrg(() => rewardsSvc.updateReward(vRhea, String(mug.id), { ...base, name: "Mug", points: 1000, buyPerRedemption: true }));
+const hanaPts = await wallet(hana);
+const mugR = await inOrg(() => rewardsSvc.redeem(vHana2, { rewardId: mug.id, requestId: rid() }));
+await inOrg(() => rewardsSvc.approveRedemption(vRhea, mugR.redemption.id));
+const mugProc = await Procurement.findOne({ dgoRedemption: mugR.redemption.id }).lean<{ _id: unknown }>();
+await procurementService.recordFinanceDecision(orgId, String(mugProc!._id), { decision: "reject", note: "Over budget" });
+const mugAfter = await DgoRedemption.findById(mugR.redemption.id).lean<{ status: string; purchaseStatus: string }>();
+check("finance rejects the purchase: redemption rejected, points back once", mugAfter?.status === "rejected" && mugAfter.purchaseStatus === "rejected" && (await wallet(hana)) === hanaPts && (await DgoLedgerEntry.countDocuments({ redemption: new mongoose.Types.ObjectId(mugR.redemption.id), type: "release" })) === 1);
+check("…and Hana is told", (await notes(hana, /^Not approved: Mug/)) >= 1);
+const mug2 = await inOrg(() => rewardsSvc.redeem(vHana2, { rewardId: mug.id, requestId: rid() }));
+await inOrg(() => rewardsSvc.approveRedemption(vRhea, mug2.redemption.id));
+await inOrg(() => rewardsSvc.rejectRedemption(vRhea, mug2.redemption.id, "Changed our minds"));
+check("HR rejecting while finance hasn't decided withdraws the purchase request", (await Procurement.findOne({ dgoRedemption: mug2.redemption.id }).lean<{ status: string }>())?.status === "cancelled");
+const vchR = await inOrg(() => rewardsSvc.redeem(vHana2, { rewardId: voucher.id, requestId: rid() }));
+check("a reward with no purchase needed still works as before", (await inOrg(() => rewardsSvc.approveRedemption(vBoss, vchR.redemption.id))).redemption.purchase.status === "not_needed");
+
+/* ------------------------------------------------------------------ */
+console.log("\n26. The nightly job: expiry, leavers, warnings, nudges, recount");
+const r1run = await daily.runDgoDaily(orgId);
+const r2run = await daily.runDgoDaily(orgId);
+check("runs once a day per organisation", r1run !== null && r2run === null);
+// Expiry, with part of a batch held for a redemption.
+const saraHasNow = await wallet(sara);
+const saraR = await inOrg(() => rewardsSvc.redeem(vSara, { rewardId: big.id, requestId: rid() })).catch(() => null);
+const saraLots2 = await DgoPointLot.find({ employee: sara.emp, $expr: { $gt: ["$remaining", 0] } }).lean<Array<{ _id: unknown; remaining: number; reserved: number }>>();
+await DgoPointLot.updateMany({ employee: sara.emp }, { $set: { expiresOn: yesterday } });
+const heldBefore = await held(sara);
+const run1 = await daily.runDgoDaily(orgId, { force: true });
+check("expired: everything Sara could spend, the held part kept", (await wallet(sara)) === 0 && (await held(sara)) === heldBefore && run1!.expiredPoints >= saraHasNow - heldBefore, { run: run1, wallet: await wallet(sara), held: await held(sara), heldBefore, lots: saraLots2.length });
+check("…Sara is told", (await notes(sara, /DGO Points expired/)) >= 1);
+const run1b = await daily.runDgoDaily(orgId, { force: true });
+check("…running again expires nothing more", run1b!.expiredPoints === 0);
+if (saraR) {
+  await inOrg(() => rewardsSvc.cancelRedemption(vSara, saraR.redemption.id));
+  check("cancelled after expiry: the points come back to the batch…", (await wallet(sara)) === heldBefore);
+  await daily.runDgoDaily(orgId, { force: true });
+  check("…and expire on the next run", (await wallet(sara)) === 0 && (await held(sara)) === 0);
+}
+// Warnings.
+const hanaLot = await DgoPointLot.findOne({ employee: hana.emp, $expr: { $gt: ["$remaining", "$reserved"] } }).sort({ remaining: -1 }).lean<{ _id: unknown }>();
+await DgoPointLot.updateOne({ _id: hanaLot!._id }, { $set: { expiresOn: new Date(Date.parse(`${today}T00:00:00Z`) + 20 * 86_400_000).toISOString().slice(0, 10), warned30: false, warned7: false } });
+await daily.runDgoDaily(orgId, { force: true });
+check("points expiring within 30 days: Hana is told", (await notes(hana, /DGO Points expire by/)) === 1);
+await daily.runDgoDaily(orgId, { force: true });
+check("…once", (await notes(hana, /DGO Points expire by/)) === 1);
+await DgoPointLot.updateOne({ _id: hanaLot!._id }, { $set: { expiresOn: new Date(Date.parse(`${today}T00:00:00Z`) + 5 * 86_400_000).toISOString().slice(0, 10) } });
+await daily.runDgoDaily(orgId, { force: true });
+check("…and again within 7 days", (await notes(hana, /DGO Points expire by/)) === 2);
+// Nudges.
+const slow = await inOrg(() => earning.recordEarning(vHana2, { employeeId: sam.emp, ruleCode: "TEAM_SUPPORT", day: today, reason: "Old one", requestId: rid() }));
+// createdAt is immutable through the model; the test ages it on the collection itself.
+await DgoEarningEvent.collection.updateOne({ _id: slow.event._id as never }, { $set: { createdAt: new Date(Date.now() - 3 * 86_400_000) } });
+const nudgesBefore = await notes(hira, /waiting over 2 days/);
+await daily.runDgoDaily(orgId, { force: true });
+check("waiting over 2 days: HR is nudged", (await notes(hira, /waiting over 2 days/)) === nudgesBefore + 1);
+// Leavers.
+const omarHas = await wallet(omar);
+const omarR = await inOrg(() => rewardsSvc.redeem(vOmar, { rewardId: voucher.id, requestId: rid() })).catch(() => null);
+const omarNom = await inOrg(() => earning.nominate(vSara, { employeeId: omar.emp, ruleCode: "TEAM_SUPPORT", day: today, reason: "Before he left", requestId: rid() })).catch(() => null);
+await Employee.updateOne({ _id: omar.emp }, { $set: { status: "resigned" } });
+const runL = await daily.runDgoDaily(orgId, { force: true });
+check("a leaver: every point expires, nothing held", (await wallet(omar)) === 0 && (await held(omar)) === 0 && runL!.leavers >= 1 && runL!.leaverPoints === omarHas, { runL, omarHas });
+if (omarR) check("…their open redemption is cancelled, stock back", (await DgoRedemption.findById(omarR.redemption.id).lean<{ status: string }>())?.status === "cancelled");
+if (omarNom) check("…a request still waiting for them is rejected", (await DgoEarningEvent.findById(omarNom.event._id).lean<{ status: string }>())?.status === "rejected");
+check("…audited, and the expiry says why", (await DgoAuditEntry.countDocuments({ action: "leaver_points_expired" })) >= 1 && (await DgoLedgerEntry.countDocuments({ employee: omar.emp, type: "expire", description: /^Left the company/ })) >= 1);
+check("…a reward already handed over is never taken back", (await DgoRedemption.countDocuments({ status: "fulfilled" })) >= 2);
+// Drift.
+await DgoWallet.updateOne({ employee: hana.emp }, { $inc: { available: 7 } });
+const runD = await daily.runDgoDaily(orgId, { force: true });
+check("a drifted wallet is recounted from the log and finance told", runD!.recounted === 1 && (await notes(fin2, /recounted from the points log/)) === 1 && (await DgoAuditEntry.countDocuments({ action: "wallets_recounted" })) === 1);
+check("everything adds up after the night", await ledgerOk());
+
+/* ------------------------------------------------------------------ */
+console.log("\n27. Reports, exports and the audit log");
+const ovw = await inOrg(() => reportsSvc.reportsOverview(vFin1b, month));
+check("overview: 6 months, the closed one marked, what's waiting", ovw.trend.length === 6 && ovw.trend.find((t) => t.month === m1c)?.closed === true && ovw.waiting.earnings.count >= 1 && (ovw.waiting.earnings.oldestDays ?? 0) >= 3, { trend: ovw.trend.map((t) => [t.month, t.closed]), waiting: ovw.waiting });
+check("…by department, by rule, top earners, rewards", ovw.byDepartment.length > 0 && ovw.byRule.length > 0 && ovw.topEarners.length > 0 && ovw.rewards.length > 0);
+const exportRefused = await refused(inOrg(() => reportsSvc.exportCsv(vSam, "ledger", month)), /can't export/);
+await Role.updateOne({ _id: finRole._id }, { $set: { "permissions.dgoBudgets.export": true } });
+const vFinX = await as(fin1);
+const pen = await inOrg(() => rewardsSvc.createReward(vRhea, { ...base, name: "Pen pack", points: 1000 }));
+await inOrg(() => rewardsSvc.redeem(vHana2, { rewardId: pen.id, note: "=cmd|' /C calc'!A0", requestId: rid() }));
+const led = await inOrg(() => reportsSvc.exportCsv(vFinX, "ledger", month));
+const lines = led.body.trim().split("\r\n");
+check("ledger CSV: a header and every row of the month", exportRefused === "" && lines[0].startsWith("When,Day,Employee") && lines.length - 1 === (await DgoLedgerEntry.countDocuments({ organization: orgId, month })), lines.length);
+const redCsv = await inOrg(() => reportsSvc.exportCsv(vFinX, "redemptions", month));
+check("…text a spreadsheet would run as a formula is made inert", redCsv.body.includes(",'=cmd|") && !/,=cmd/.test(redCsv.body), redCsv.body.split("\r\n").find((l) => l.includes("cmd")));
+for (const kind of ["wallets", "redemptions", "reconciliation"]) {
+  const out = await inOrg(() => reportsSvc.exportCsv(vFinX, kind, month));
+  check(`${kind} CSV downloads (${out.filename})`, out.filename === `dgo-${kind}-${month}.csv` && out.body.split("\r\n").length > 2);
+}
+const aud = await inOrg(() => read.audit(vFin1b, { action: "adjustment_approved" }));
+check("audit: filter by action", aud.rows.length === 2 && aud.rows.every((r) => r.action === "adjustment_approved") && aud.actions.includes("month_closed"), aud.rows.length);
+check("…by person and by entity", (await inOrg(() => read.audit(vFin1b, { actor: "fin2" }))).rows.every((r) => /fin2/i.test(r.actorName ?? "")) && (await inOrg(() => read.audit(vFin1b, { entity: "budget_period" }))).rows.every((r) => r.entity === "budget_period"));
+check("…by day", (await inOrg(() => read.audit(vFin1b, { from: today, to: today }))).rows.length > 0 && (await inOrg(() => read.audit(vFin1b, { to: yesterday }))).rows.length === 0);
+check("collections from finance: a clear answer when HRMS isn't connected", (await refused(inOrg(() => budget.fetchCollections(vFin1b, month)), /isn't connected to finance/)) === "");
+const meFin = await inOrg(() => read.me(vFinX));
+check("/me: finance's report and control rights", meFin.can.reportsView && meFin.can.reportsExport && meFin.can.adjustmentsPropose && meFin.can.adjustmentsApprove && !(await inOrg(() => read.me(vSam))).can.reportsView);
 
 console.log(`\n${fail ? "\x1b[31m" : "\x1b[32m"}${pass} passed, ${fail} failed\x1b[0m\n`);
 await mongoose.disconnect();

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useDgoWallet, useDgoLots, formatAed, formatPoints, dgoAed, dgoErrorMessage } from "@/hooks/useDgoPoints";
 import {
-  DgoGate, DgoPersonSelect, LedgerPoints, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
+  DgoGate, DgoPersonSelect, LedgerPoints, LedgerTypeChip, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
 } from "@/components/dgo/shared";
 import type { DgoLedgerType, DgoMe } from "@/types";
 
@@ -134,7 +134,7 @@ function WalletPage({ me }: { me: DgoMe }) {
                             <td className="whitespace-nowrap px-4 py-2 text-muted-foreground" title={dateTime(r.at)}>{shortDay(r.day)}</td>
                             <td className="min-w-[12rem] px-4 py-2">{r.description}</td>
                             <td className="whitespace-nowrap px-4 py-2 font-mono text-xs">{r.ruleCode ?? "—"}</td>
-                            <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{LEDGER_LABEL[r.type]}</td>
+                            <td className="whitespace-nowrap px-4 py-2"><LedgerTypeChip row={r} /></td>
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.byName ?? "—"}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.expiresOn ? shortDay(r.expiresOn) : "—"}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-right"><LedgerPoints row={r} /></td>

@@ -14,7 +14,10 @@ import { AsyncSelect } from "@/components/ui/async-select";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDgoMe, useDgoPeople, useDgoColleagues, useDgoUpload, dgoErrorMessage, formatPoints } from "@/hooks/useDgoPoints";
-import type { DgoEventStatus, DgoLedgerRow, DgoLedgerType, DgoMe, DgoRedemptionStatus, DgoStage, DgoTrailEntry, DgoUpload, DgoUploadKind } from "@/types";
+import type {
+  DgoEventStatus, DgoLedgerRow, DgoLedgerType, DgoMe, DgoPointTotals, DgoPurchaseStatus, DgoRedemptionStatus, DgoStage,
+  DgoTrailEntry, DgoUpload, DgoUploadKind,
+} from "@/types";
 
 /*
  * Pieces every DGO Points screen shares: the gate in front of a page, the small
@@ -162,6 +165,29 @@ export const LEDGER_LABEL: Record<DgoLedgerType, string> = {
   adjust: "Adjustment",
 };
 
+const LEDGER_TONE: Record<DgoLedgerType, string> = {
+  credit: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  reverse: "bg-red-500/10 text-red-700 dark:text-red-400",
+  expire: "bg-amber-500/10 text-amber-800 dark:text-amber-400",
+  reserve: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  release: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  redeem: "bg-muted text-muted-foreground",
+  adjust: "bg-violet-500/10 text-violet-700 dark:text-violet-400",
+};
+
+/**
+ * What kind of ledger line it is, as a small coloured label. An expiry for
+ * somebody who left says so ("Left the company") rather than just "Expired".
+ */
+export function LedgerTypeChip({ row }: { row: Pick<DgoLedgerRow, "type" | "description"> }) {
+  const leaver = row.type === "expire" && /left the company/i.test(row.description ?? "");
+  return (
+    <span className={cn("inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", LEDGER_TONE[row.type] ?? "bg-muted text-muted-foreground")}>
+      {leaver ? "Left the company" : LEDGER_LABEL[row.type] ?? row.type}
+    </span>
+  );
+}
+
 /**
  * A ledger line's points. `delta` is what it did to spendable points; a reward
  * being handed over spends points that were already held, so its delta is 0 and
@@ -176,10 +202,90 @@ export function LedgerPoints({ row, className }: { row: Pick<DgoLedgerRow, "type
       </span>
     );
   }
+  const tone =
+    row.type === "expire" ? "text-amber-700 dark:text-amber-400"
+      : row.type === "adjust" ? "text-violet-700 dark:text-violet-400"
+        : row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
   return (
-    <span className={cn("font-semibold tabular-nums", row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400", className)}>
+    <span className={cn("font-semibold tabular-nums", tone, className)}>
       {row.delta >= 0 ? "+" : "−"}{formatPoints(Math.abs(row.delta))}
     </span>
+  );
+}
+
+const PURCHASE: Record<DgoPurchaseStatus, { label: string; tone: string }> = {
+  not_needed: { label: "No purchase needed", tone: "bg-muted text-muted-foreground" },
+  waiting_finance: { label: "Waiting for finance", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  approved: { label: "Purchase approved", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+  rejected: { label: "Purchase rejected", tone: "bg-red-500/10 text-red-700 dark:text-red-400" },
+  cancelled: { label: "Purchase cancelled", tone: "bg-muted text-muted-foreground" },
+};
+
+/** Where the purchase behind a redemption stands with finance; "Approved — EXP-00012" once it has a number. */
+export function PurchasePill({ purchase }: { purchase: { status: DgoPurchaseStatus; ref: string | null } }) {
+  const s = PURCHASE[purchase.status] ?? { label: purchase.status, tone: "bg-muted text-muted-foreground" };
+  const label = purchase.status === "approved" && purchase.ref ? `Approved — ${purchase.ref}` : s.label;
+  return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold", s.tone)}>{label}</span>;
+}
+
+/**
+ * A month's points as a statement: opening, what came in and went out, closing.
+ * The badge says whether it adds up; the server checks, this only lays it out.
+ */
+export function PointsStatement({
+  totals, pointValueAed, holds, title = "Points this month",
+}: {
+  totals: DgoPointTotals;
+  pointValueAed: number;
+  holds?: boolean;
+  title?: string;
+}) {
+  const lines: Array<{ label: string; value: number; sign: "" | "+" | "−"; hint?: string }> = [
+    { label: "Opening — points outstanding", value: totals.opening, sign: "" },
+    { label: "Issued", value: totals.issued, sign: "+", hint: "credited for earnings and prizes" },
+    { label: "Spent on rewards", value: totals.spent, sign: "−", hint: "handed over" },
+    { label: "Taken back", value: totals.reversed, sign: "−", hint: "reversals" },
+    { label: "Expired", value: totals.expired, sign: "−", hint: "12 months old, or the person left" },
+    { label: "Adjustments", value: Math.abs(totals.adjusted), sign: totals.adjusted < 0 ? "−" : "+", hint: "approved by two people" },
+  ];
+  const aed = (p: number) => Math.round(p * pointValueAed * 100) / 100;
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{title}</p>
+        {holds !== undefined && (
+          <span className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+            holds ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-red-500/10 text-red-700 dark:text-red-400",
+          )}>
+            {holds ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+            {holds ? "Adds up" : "Doesn't add up"}
+          </span>
+        )}
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border text-sm">
+        {lines.map((l) => (
+          <div key={l.label} className="flex items-baseline justify-between gap-3 border-b border-border px-3 py-2 last:border-0">
+            <span>
+              {l.label}
+              {l.hint && <span className="hidden text-xs text-muted-foreground sm:inline"> · {l.hint}</span>}
+            </span>
+            <span className="whitespace-nowrap font-medium tabular-nums">
+              {l.sign && <span className="mr-1 text-muted-foreground">{l.sign}</span>}
+              {formatPoints(l.value)}
+            </span>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between gap-3 bg-muted/60 px-3 py-2 font-semibold">
+          <span>Closing — points outstanding</span>
+          <span className="whitespace-nowrap tabular-nums">
+            {formatPoints(totals.closing)}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">≈ AED {aed(totals.closing).toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+          </span>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">Outstanding means points people still hold: spendable plus held for rewards.</p>
+    </div>
   );
 }
 

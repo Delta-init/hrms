@@ -3,7 +3,9 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
 import type {
-  ApiResponse, DgoAchieversView, DgoApprovalsView, DgoAuditView, DgoBudgetView, DgoColleague, DgoDashboard,
+  ApiResponse, DgoAchieversView, DgoAdjustment, DgoAdjustmentInput, DgoAdjustmentsTab, DgoAdjustmentsView,
+  DgoAuditParams, DgoExportKind, DgoOverride, DgoOverrideInput, DgoReconciliation, DgoReportsOverview,
+  DgoApprovalsView, DgoAuditView, DgoBudgetView, DgoColleague, DgoDashboard,
   DgoEvent, DgoLeaderboardView, DgoLot, DgoMe, DgoNominateInput, DgoNominationsTab, DgoNominationsView,
   DgoPerson, DgoProgramInput, DgoRecordInput, DgoRecordResult, DgoRedeemInput, DgoRedemption,
   DgoRedemptionsTab, DgoRedemptionsView, DgoReward, DgoRewardInput, DgoRewardsView, DgoRule, DgoRuleInput,
@@ -45,7 +47,7 @@ export const useDgoMe = (enabled = true) =>
     retry: false,
   });
 
-export type DgoNavFlag = "use" | "nominate" | "approvals" | "budgets" | "settings";
+export type DgoNavFlag = "use" | "nominate" | "approvals" | "budgets" | "settings" | "reports" | "audit";
 
 /** Whether a DGO menu entry is drawn for this person. Shared by the sidebar and search. */
 export function dgoAllows(flag: DgoNavFlag, me: DgoMe | undefined): boolean {
@@ -56,6 +58,8 @@ export function dgoAllows(flag: DgoNavFlag, me: DgoMe | undefined): boolean {
     case "approvals": return me.can.approvals || me.can.recordAwards;
     case "budgets": return me.can.budgetsView;
     case "settings": return me.can.settingsView;
+    case "reports": return !!me.can.reportsView;
+    case "audit": return me.can.auditView;
   }
 }
 
@@ -157,12 +161,15 @@ export const useDgoSettings = (enabled = true) =>
     retry: false,
   });
 
-export const useDgoAudit = (params: { page: number; limit: number; action?: string }, enabled = true) =>
+export const useDgoAudit = (params: DgoAuditParams, enabled = true) =>
   useQuery({
     queryKey: [...KEY, "audit", params],
     queryFn: async () => {
       const query: Record<string, string> = { page: String(params.page), limit: String(params.limit) };
-      if (params.action) query.action = params.action;
+      for (const k of ["action", "entity", "actor", "from", "to"] as const) {
+        const v = params[k]?.trim();
+        if (v) query[k] = v;
+      }
       return (await api.get<ApiResponse<DgoAuditView>>("/dgo-points/audit", { params: query })).data.data!;
     },
     enabled,
@@ -231,6 +238,36 @@ export const useDgoAchievers = (month: string | undefined, enabled = true) =>
     queryKey: [...KEY, "achievers", month ?? "default"],
     queryFn: async () =>
       (await api.get<ApiResponse<DgoAchieversView>>("/dgo-points/achievers", { params: month ? { month } : {} })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+// ─── Phase 3 reads ────────────────────────────────────────────────────────────
+
+export const useDgoAdjustments = (tab: DgoAdjustmentsTab, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "adjustments", tab],
+    queryFn: async () => (await api.get<ApiResponse<DgoAdjustmentsView>>("/dgo-points/adjustments", { params: { status: tab } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+
+export const useDgoReportsOverview = (month: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "reports", "overview", month],
+    queryFn: async () => (await api.get<ApiResponse<DgoReportsOverview>>("/dgo-points/reports/overview", { params: { month } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+export const useDgoReconciliation = (month: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "reports", "reconciliation", month],
+    queryFn: async () => (await api.get<ApiResponse<DgoReconciliation>>("/dgo-points/reports/reconciliation", { params: { month } })).data.data!,
     enabled,
     placeholderData: keepPreviousData,
     retry: false,
@@ -448,3 +485,94 @@ export const useDgoAchieverStep = () =>
     },
     "That couldn't be done",
   );
+
+// ─── Phase 3 changes ──────────────────────────────────────────────────────────
+
+/** Ask finance for the month's collections; its net figure is entered, and a second person still confirms. */
+export const useFetchDgoCollections = () =>
+  useDgoServerMutation(
+    async ({ month }: { month: string }) => withMessage(await api.post<ApiResponse<DgoBudgetView>>(`/dgo-points/budgets/${month}/collections/fetch`, {})),
+    "Finance couldn't be asked",
+  );
+
+type CloseStep = "request" | "approve" | "cancel";
+
+/** One step of closing a month. `cancel` needs a reason; the others take an optional note. */
+export const useDgoCloseStep = () =>
+  useDgoServerMutation(
+    async ({ month, step, note }: { month: string; step: CloseStep; note?: string }) =>
+      withMessage(
+        await api.post<ApiResponse<DgoBudgetView>>(
+          `/dgo-points/budgets/${month}/close/${step}`,
+          step === "cancel" ? { reason: note } : note ? { note } : {},
+        ),
+      ),
+    "That couldn't be done",
+  );
+
+export const useProposeDgoOverride = () =>
+  useDgoServerMutation(
+    async ({ month, ...body }: DgoOverrideInput) =>
+      withMessage(await api.post<ApiResponse<{ override: DgoOverride }>>(`/dgo-points/budgets/${month}/overrides`, body)),
+    "The override couldn't be proposed",
+  );
+
+/** Approve (optional note) or reject (reason) somebody else's override. */
+export const useDgoOverrideStep = () =>
+  useDgoServerMutation(
+    async ({ id, step, note }: { id: string; step: "approve" | "reject"; note?: string }) =>
+      withMessage(
+        await api.post<ApiResponse<{ override: DgoOverride }>>(`/dgo-points/overrides/${id}/${step}`, step === "reject" ? { reason: note } : note ? { note } : {}),
+      ),
+    "That couldn't be saved",
+  );
+
+export const useProposeDgoAdjustment = () =>
+  useDgoServerMutation(
+    async (input: DgoAdjustmentInput) => withMessage(await api.post<ApiResponse<{ adjustment: DgoAdjustment }>>("/dgo-points/adjustments", input)),
+    "The adjustment couldn't be proposed",
+  );
+
+/** Approve (optional note) or reject (reason) somebody else's adjustment. */
+export const useDgoAdjustmentStep = () =>
+  useDgoServerMutation(
+    async ({ id, step, note }: { id: string; step: "approve" | "reject"; note?: string }) =>
+      withMessage(
+        await api.post<ApiResponse<{ adjustment: DgoAdjustment }>>(`/dgo-points/adjustments/${id}/${step}`, step === "reject" ? { reason: note } : note ? { note } : {}),
+      ),
+    "That couldn't be saved",
+  );
+
+/** An error that came back as a file: read it as the JSON it really is. */
+async function blobErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const data = (error as { response?: { data?: unknown } })?.response?.data;
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as { message?: string };
+      if (parsed.message) return parsed.message;
+    } catch { /* not JSON */ }
+    return fallback;
+  }
+  return dgoErrorMessage(error, fallback);
+}
+
+/** Download one CSV export for a month — the server's own file and name. Nothing is cached or refreshed. */
+export const useDgoExport = () =>
+  useMutation({
+    mutationFn: async ({ kind, month }: { kind: DgoExportKind; month: string }) => {
+      const res = await api.get("/dgo-points/reports/export", { params: { kind, month }, responseType: "blob" });
+      const disposition = res.headers["content-disposition"] as string | undefined;
+      const fileName = disposition?.match(/filename="?([^";]+)"?/)?.[1] ?? `dgo-${kind}-${month}.csv`;
+      return { blob: res.data as Blob, fileName };
+    },
+    onSuccess: ({ blob, fileName }) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: async (e) => toast.error(await blobErrorMessage(e, "The export couldn't be made")),
+  });
+

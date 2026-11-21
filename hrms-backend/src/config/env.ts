@@ -149,6 +149,8 @@ const envSchema = z.object({
   HOLIDAY_REMINDER_CRON: z.string().default("0 18 * * *"),
   /** Probation: raise due confirmations, and warn the day before one completes. */
   PROBATION_CRON: z.string().default("10 0 * * *"),
+  // DGO Points nightly (expiry, leavers, warnings, nudges, wallet recount), Dubai time. "off" stops it.
+  DGO_POINTS_CRON: z.string().default("10 1 * * *"),
   /** Meeting reminders: 30 minutes before, and as it starts — every minute, so "starting now" is. */
   MEETING_REMINDER_CRON: z.string().default("* * * * *"),
   /** Replies to offers, read from the HR mailbox (read-only). "off" stops it. */

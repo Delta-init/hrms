@@ -22,6 +22,8 @@ const dgoRewardSchema = new Schema(
     /** Left in stock when limited; taken by a conditional decrement when redeemed, given back when a redemption is cancelled. */
     stock: { type: Number, default: null, min: 0 },
     status: { type: String, enum: ["active", "hidden", "archived"], default: "active" },
+    /** Bought for each redemption: HR's approval raises a purchase request that finance approves as an expense. */
+    buyPerRedemption: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     createdByName: { type: String, default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },

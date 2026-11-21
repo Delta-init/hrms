@@ -89,6 +89,7 @@ export const rewardSchema = z.object({
   stockMode: z.enum(["unlimited", "limited"]),
   stock: z.number().int().min(0).max(1_000_000).nullish(),
   status: z.enum(["active", "hidden"]),
+  buyPerRedemption: z.boolean().optional(),
 });
 
 export const redeemSchema = z.object({
@@ -108,6 +109,22 @@ const eliteCategory = z.object({
   threshold: z.number().finite().min(0).max(1_000_000_000),
   prizeAed: z.number().finite().min(0).max(10_000_000),
   active: z.boolean(),
+});
+
+/* ───────────── Phase 3 ───────────── */
+
+export const adjustmentSchema = z.object({
+  employeeId: objectId,
+  points: z.number().int().refine((n) => n !== 0, "Say how many points to add (+) or remove (−)").refine((n) => Math.abs(n) <= 1_000_000, "That's too many points"),
+  reason: z.string().trim().min(1, "Say why").max(500),
+  requestId,
+});
+
+export const overrideSchema = z.object({
+  departmentId: objectId.nullable(),
+  allocationAed: z.number().finite().min(0).max(10_000_000),
+  reason: z.string().trim().min(1, "Say why").max(500),
+  requestId,
 });
 
 export const programSchemaP2 = programSchema.extend({

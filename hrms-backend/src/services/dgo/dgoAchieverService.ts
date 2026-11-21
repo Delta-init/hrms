@@ -14,6 +14,7 @@ import { programSettings, settingsOn } from "./dgoSettingsService.js";
 import { commitElite, ensurePeriod } from "./dgoBudgetService.js";
 import { AlreadyCredited, creditEvent, type Actor } from "./dgoLedgerService.js";
 import { inTransaction } from "./dgoTxn.js";
+import { assertMonthOpen } from "./dgoCloseService.js";
 import { dgoAudit } from "./dgoAudit.js";
 import {
   assertCanUse, canApproveAchievers, canReviewAchievers, canRunAchievers, canVerifyAchievers, usersWith, type DgoViewer,
@@ -340,6 +341,7 @@ export async function fetchAchievers(v: DgoViewer, monthIn: string) {
   if (month >= dayIn(v.tz).slice(0, 7)) throw httpError("Achievers are decided once the month is over", 400);
   const existing = await DgoAchieverMonth.findOne({ organization: v.orgId, month }).lean<MonthDoc>();
   if (existing && !["provisional", "locked"].includes(existing.status)) throw httpError(`${month} is already ${existing.status === "published" ? "published" : "verified"} — send it back first`, 409);
+  await assertMonthOpen(v.orgId, month, "its achievers can't change");
 
   const figures = await fetcher(month);
   const settings = await settingsOn(v.orgId, `${month}-01`);
@@ -410,6 +412,7 @@ export async function verifyAchievers(v: DgoViewer, monthIn: string, note?: stri
   if (!doc) throw httpError("Fetch the figures first", 409);
   if (doc.status === "verified" && String(doc.verifiedBy) === v.userId) return { ...(await view(v, month)), message: "Already done" };
   if (doc.status !== "provisional") throw httpError(doc.status === "locked" ? doc.lockedReason ?? "Locked" : `Already ${doc.status}`, 409);
+  await assertMonthOpen(v.orgId, month, "its achievers can't change");
   const pool = await poolOf(v.orgId, month);
   if (pool.confirmedFils == null) throw httpError(`Finance hasn't confirmed ${month}'s collections yet (Points Budgets)`, 409);
   if (pool.eliteFils <= 0) throw httpError("The elite pool is closed this month", 409);
@@ -454,6 +457,7 @@ export async function approveAchievers(v: DgoViewer, monthIn: string, note?: str
   if (!doc) throw httpError("Fetch the figures first", 409);
   if (doc.status === "published") return { ...(await view(v, month)), message: "Already published" };
   if (doc.status !== "verified" && doc.status !== "approved") throw httpError("Finance verifies it first", 409);
+  await assertMonthOpen(v.orgId, month, "its prizes can't be paid");
   if (String(doc.verifiedBy) === v.userId) {
     await dgoAudit(v, "achievers_refused", "achiever_month", month, null, { reason: "verifier approving" });
     throw httpError("You verified it, so someone else approves", 403);

@@ -25,7 +25,7 @@ import {
   newRequestId, dgoAed, formatAed, formatPoints, dgoErrorMessage,
 } from "@/hooks/useDgoPoints";
 import {
-  DgoFileUpload, DgoGate, NoteDialog, Notice, RedemptionPill, Spinner, TableWrap, actionLabel, dateTime,
+  DgoFileUpload, DgoGate, NoteDialog, Notice, PurchasePill, RedemptionPill, Spinner, TableWrap, actionLabel, dateTime,
 } from "@/components/dgo/shared";
 import type { DgoMe, DgoRedemption, DgoRedemptionsTab, DgoReward, DgoRewardsView, DgoUpload } from "@/types";
 
@@ -279,7 +279,7 @@ function useStepDialog() {
         title={intent?.step === "approve" ? "Approve this reward" : intent?.step === "reject" ? "Reject this reward" : "Mark as delivered"}
         description={
           !intent ? undefined
-            : intent.step === "approve" ? `${intent.r.employee.name} — "${intent.r.reward.name}". The points stay held until you mark it delivered.`
+            : intent.step === "approve" ? `${intent.r.employee.name} — "${intent.r.reward.name}". The points stay held until you mark it delivered. If this reward is bought each time, a purchase request goes to finance.`
               : intent.step === "reject" ? `${formatPoints(intent.r.points)} held points go back to ${intent.r.employee.name}. They see your reason.`
                 : `${formatPoints(intent.r.points)} held points are spent. This can't be undone.`
         }
@@ -313,7 +313,11 @@ function RedemptionCard({
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-semibold">{r.reward.name}</p>
             <RedemptionPill status={r.status} />
+            {showEmployee && r.purchase && r.purchase.status !== "not_needed" && <PurchasePill purchase={r.purchase} />}
           </div>
+          {!showEmployee && r.purchase?.status === "waiting_finance" && (r.status === "approved" || r.status === "reserved") && (
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Waiting for finance to approve the purchase</p>
+          )}
           {showEmployee && (
             <p className="text-sm">{r.employee.name}{r.employee.department && <span className="text-muted-foreground"> · {r.employee.department}</span>}</p>
           )}
@@ -451,7 +455,10 @@ function CatalogueTab({ me }: { me: DgoMe }) {
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{formatPoints(r.points)}<span className="block text-xs text-muted-foreground">{formatAed(r.aed)}</span></td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{r.costAed != null ? formatAed(r.costAed) : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
+                      {r.costAed != null ? formatAed(r.costAed) : "—"}
+                      {r.buyPerRedemption && <span className="block text-xs text-muted-foreground">bought each time</span>}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{r.stockMode === "unlimited" ? "No limit" : formatPoints(r.stock ?? 0)}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{formatPoints(r.redeemedCount)}</td>
                     <td className="px-4 py-2"><span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", STATUS_TONE[r.status])}>{r.status === "active" ? "In the store" : r.status === "hidden" ? "Hidden" : "Removed"}</span></td>
@@ -511,9 +518,12 @@ function RewardDialog({
   const [stockMode, setStockMode] = useState<"unlimited" | "limited">("unlimited");
   const [stock, setStock] = useState("");
   const [active, setActive] = useState(true);
+  // Follows the cost (on when it has one) until somebody flips it by hand.
+  const [buy, setBuy] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setBuy(reward?.buyPerRedemption ?? null);
     setName(reward?.name ?? "");
     setDescription(reward?.description ?? "");
     setCategory(reward?.category ?? "");
@@ -529,6 +539,7 @@ function RewardDialog({
   const pts = int(points);
   const costNum = cost.trim() ? Number(cost.replace(/,/g, "")) : null;
   const stockNum = int(stock);
+  const buyPerRedemption = buy ?? (costNum ?? 0) > 0;
   const problem =
     name.trim().length < 2 ? "Give it a name"
       : category.trim().length < 2 ? "Pick or type a category"
@@ -552,6 +563,7 @@ function RewardDialog({
         stockMode,
         stock: stockMode === "limited" ? stockNum : null,
         status: active ? "active" : "hidden",
+        buyPerRedemption,
       },
       { onSuccess: () => onOpenChange(false) },
     );
@@ -615,6 +627,13 @@ function RewardDialog({
                 <Input id="dgo-rw-stock" inputMode="numeric" value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
               </div>
             )}
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium">Buy one for each redemption</p>
+              <p className="text-xs text-muted-foreground">HR&apos;s approval sends a purchase request to finance. Off for things already in stock or with no cost.</p>
+            </div>
+            <Switch checked={buyPerRedemption} onCheckedChange={(v) => setBuy(v)} aria-label="Buy one for each redemption" />
           </div>
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
             <div>

@@ -64,4 +64,20 @@ router.post("/achievers/:month/verify", checkPermission("dgoBudgets", "approve")
 router.post("/achievers/:month/send-back", c.postSendBackAchievers);
 router.post("/achievers/:month/approve", checkPermission("dgoSettings", "approve"), c.postApproveAchievers);
 
+// Phase 3: month close, controls (two finance people), reports.
+router.post("/budgets/:month/collections/fetch", checkPermission("dgoBudgets", "edit"), c.postFetchCollections);
+router.post("/budgets/:month/close/request", checkPermission("dgoBudgets", "edit"), c.postCloseRequest);
+router.post("/budgets/:month/close/approve", checkPermission("dgoBudgets", "approve"), c.postCloseApprove);
+router.post("/budgets/:month/close/cancel", c.postCloseCancel);
+router.post("/budgets/:month/overrides", checkPermission("dgoBudgets", "edit"), c.postOverride);
+router.post("/overrides/:id/approve", checkPermission("dgoBudgets", "approve"), c.postOverrideApprove);
+router.post("/overrides/:id/reject", checkPermission("dgoBudgets", "approve"), c.postOverrideReject);
+router.get("/adjustments", checkPermission("dgoBudgets", "view"), c.getAdjustments);
+router.post("/adjustments", checkPermission("dgoBudgets", "edit"), c.postAdjustment);
+router.post("/adjustments/:id/approve", checkPermission("dgoBudgets", "approve"), c.postAdjustmentApprove);
+router.post("/adjustments/:id/reject", checkPermission("dgoBudgets", "approve"), c.postAdjustmentReject);
+router.get("/reports/overview", c.getReportsOverview);
+router.get("/reports/reconciliation", c.getReconciliation);
+router.get("/reports/export", c.getExport);
+
 export default router;

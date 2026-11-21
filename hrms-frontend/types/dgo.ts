@@ -1,5 +1,5 @@
 /**
- * DGO Points, Phases 1–2 — the shapes hrms-backend answers with (routes under /dgo-points).
+ * DGO Points, Phases 1–3 — the shapes hrms-backend answers with (routes under /dgo-points).
  *
  * Every route is under the HRMS API base (`/api/v1`, i.e. the axios `api` instance's
  * baseURL) at `/dgo-points/...`, and answers in HRMS's usual wrapper:
@@ -54,6 +54,15 @@ export interface DgoMe {
     achieversReview?: boolean;
     /** May nominate a colleague now (has an employee record and may use DGO Points). */
     nominate?: boolean;
+    // Phase 3 — optional so an older server type-checks as "no".
+    /** Reports and reconciliation (dgoBudgets view or dgoAudit view, or Super Admin). */
+    reportsView?: boolean;
+    /** CSV exports (dgoBudgets export or dgoAudit export). */
+    reportsExport?: boolean;
+    /** Propose a points adjustment (dgoBudgets edit). */
+    adjustmentsPropose?: boolean;
+    /** Approve or reject someone else's adjustment (dgoBudgets approve). */
+    adjustmentsApprove?: boolean;
   };
   /** Who may see the points leaderboard (Phase 2). */
   leaderboardVisibility?: DgoLeaderboardVisibility;
@@ -250,6 +259,15 @@ export interface DgoApprovalsView {
 export interface DgoBudgetView {
   month: string;
   status: "open" | "review" | "finance_approved" | "closed";
+  // Phase 3 — absent on an older server.
+  /** Month close: open → asked to close → closed by a second person. Never reopened. */
+  close?: DgoMonthClose;
+  /** Allowance overrides for this month, pending first. */
+  overrides?: DgoOverride[];
+  /** Where the entered collections figure came from. */
+  collectionsSource?: "typed" | "finance" | null;
+  /** Finance's breakdown, when the figure came from finance. */
+  collectionsBreakdown?: DgoCollectionsBreakdown | null;
   pointValueAed: number;
   revenueSharePct: number;
   tiers: DgoTier[];
@@ -269,15 +287,24 @@ export interface DgoBudgetView {
     awaitingConfirmation: boolean;
   };
   groups: Array<{ group: DgoGroup; sharePct: number; shareAed: number; committedAed: number; headcount: number }>;
-  departments: Array<{ id: string | null; name: string; group: DgoGroup; headcount: number; allocationAed: number; committedAed: number; leftAed: number }>;
+  departments: Array<{
+    id: string | null; name: string; group: DgoGroup; headcount: number; allocationAed: number; committedAed: number; leftAed: number;
+    /** An approved override in force for this month (Phase 3). */
+    overrideAed?: number | null;
+  }>;
   history: Array<{ action: string; amountAed: number | null; byName: string | null; at: string; note: string | null }>;
-  can: { enter: boolean; confirm: boolean; recount: boolean };
+  can: {
+    enter: boolean; confirm: boolean; recount: boolean;
+    // Phase 3
+    fetchCollections?: boolean;
+    proposeOverride?: boolean;
+  };
 }
 /** POST /dgo-points/budgets/:month/collections body { amountAed, note? } → DgoBudgetView (dgoBudgets.edit) */
 /** POST /dgo-points/budgets/:month/collections/confirm → DgoBudgetView (dgoBudgets.approve, not the person who entered it) */
 /** POST /dgo-points/budgets/:month/recount → DgoBudgetView (dgoBudgets.edit) — re-reads headcount per department */
 
-/** GET /dgo-points/audit?page=&limit=&action= (dgoAudit.view) → { rows: Array<{ id; at; actorName; action; entity; entityId; before; after }>, pagination } */
+/** GET /dgo-points/audit?page=&limit=&action=&entity=&actor=&from=&to= (dgoAudit.view) → DgoAuditView */
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
@@ -330,6 +357,19 @@ export interface DgoAuditRow {
 export interface DgoAuditView {
   rows: DgoAuditRow[];
   pagination: { total: number; page: number; limit: number; totalPages: number };
+  /** Every action and entity in the log, for the filters (Phase 3). */
+  actions?: string[];
+  entities?: string[];
+}
+
+export interface DgoAuditParams {
+  page: number;
+  limit: number;
+  action?: string;
+  entity?: string;
+  actor?: string;
+  from?: string;
+  to?: string;
 }
 
 // ═══ Phase 2 — nominations, rewards, redemptions, leaderboard, achievers ═══════
@@ -393,6 +433,8 @@ export interface DgoReward {
   redeemedCount: number;
   createdAt: string;
   updatedAt: string;
+  /** HR's approval raises a purchase request to finance for each redemption (Phase 3; managers only). */
+  buyPerRedemption?: boolean;
 }
 
 /** GET /dgo-points/rewards?manage=1 */
@@ -415,6 +457,8 @@ export interface DgoRewardInput {
   stockMode: DgoStockMode;
   stock?: number | null;
   status: "active" | "hidden";
+  /** Phase 3: raise a purchase request to finance for each approved redemption. */
+  buyPerRedemption?: boolean;
 }
 
 export type DgoRedemptionStatus = "reserved" | "approved" | "fulfilled" | "cancelled" | "rejected";
@@ -437,7 +481,11 @@ export interface DgoRedemption {
   canReject: boolean;
   canFulfil: boolean;
   whyNot: string | null;
+  /** The purchase finance approves for this redemption (Phase 3). `ref` is finance's EXP number once approved. */
+  purchase?: { status: DgoPurchaseStatus; ref: string | null };
 }
+
+export type DgoPurchaseStatus = "not_needed" | "waiting_finance" | "approved" | "rejected" | "cancelled";
 
 /** POST /dgo-points/redemptions */
 export interface DgoRedeemInput { rewardId: string; note?: string | null; requestId: string }
@@ -523,3 +571,129 @@ export interface DgoAchieversView {
   months: Array<{ month: string; status: DgoAchieverStatus }>;
   can: { fetch: boolean; pick: boolean; verify: boolean; sendBack: boolean; approve: boolean };
 }
+
+// ═══ Phase 3 — month close, reconciliation, adjustments, overrides, reports, audit ═══
+
+/** opening + issued − spent − reversed − expired + adjusted = closing (outstanding = spendable + held). */
+export interface DgoPointTotals { opening: number; issued: number; spent: number; reversed: number; expired: number; adjusted: number; closing: number }
+
+export interface DgoMonthSnapshot {
+  takenAt: string;
+  pointValueAed: number;
+  collectionsAed: number | null;
+  tierLabel: string;
+  everydayAed: number;
+  eliteAed: number;
+  elitePaidAed: number;
+  points: DgoPointTotals;
+  liabilityAed: number;
+  departments: Array<{ name: string; group: DgoGroup; allocationAed: number; committedAed: number; overrideAed: number | null }>;
+  counts: { earningsPosted: number; nominationsPosted: number; redemptionsFulfilled: number; adjustments: number };
+}
+
+export interface DgoMonthClose {
+  status: "open" | "review" | "closed";
+  requestedByName: string | null;
+  requestedAt: string | null;
+  requestNote: string | null;
+  closedByName: string | null;
+  closedAt: string | null;
+  /** Why it can't be closed yet (empty = ready). */
+  blockers: string[];
+  snapshot: DgoMonthSnapshot | null;
+  can: { request: boolean; approve: boolean; cancel: boolean };
+}
+
+export interface DgoCollectionsBreakdown {
+  month: string;
+  currency: string;
+  grossAed: number;
+  vatAed: number;
+  netAed: number;
+  reconciledNetAed: number;
+  unreconciledNetAed: number;
+  pendingLateEntries: { count: number; netAed: number };
+  payments: number;
+  byMethod: Array<{ method: string; count: number; netAed: number }>;
+  creditNotes: { count: number; totalAed: number };
+  computedAt: string;
+}
+
+export interface DgoOverride {
+  id: string;
+  month: string;
+  department: { id: string | null; name: string };
+  fromAed: number;
+  toAed: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  proposedByName: string | null;
+  proposedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  canDecide: boolean;
+  whyNot: string | null;
+}
+
+/** POST /dgo-points/budgets/:month/overrides */
+export interface DgoOverrideInput { month: string; departmentId: string | null; allocationAed: number; reason: string; requestId: string }
+
+export interface DgoAdjustment {
+  id: string;
+  employee: { id: string; name: string; department: string | null };
+  /** Signed: +50 adds, −50 removes. */
+  points: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  proposedByName: string | null;
+  proposedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  canDecide: boolean;
+  whyNot: string | null;
+}
+
+export type DgoAdjustmentsTab = "pending" | "done";
+
+/** GET /dgo-points/adjustments?status=pending|done */
+export interface DgoAdjustmentsView { items: DgoAdjustment[]; counts: { pending: number; done: number } }
+
+/** POST /dgo-points/adjustments */
+export interface DgoAdjustmentInput { employeeId: string; points: number; reason: string; requestId: string }
+
+export interface DgoWaitingCount { count: number; oldestDays: number | null }
+
+/** GET /dgo-points/reports/overview?month= */
+export interface DgoReportsOverview {
+  month: string;
+  pointValueAed: number;
+  trend: Array<DgoPointTotals & { month: string; liabilityAed: number; closed: boolean }>;
+  byDepartment: Array<{ name: string; group: DgoGroup; allocationAed: number; committedAed: number; usedPct: number; points: number }>;
+  byRule: Array<{ code: string; name: string; count: number; points: number }>;
+  topEarners: Array<{ employeeId: string; name: string; department: string | null; points: number }>;
+  rewards: Array<{ name: string; redeemed: number; points: number }>;
+  waiting: { earnings: DgoWaitingCount; redemptions: DgoWaitingCount; adjustments: DgoWaitingCount; overrides: DgoWaitingCount };
+}
+
+/** GET /dgo-points/reports/reconciliation?month= */
+export interface DgoReconciliation {
+  month: string;
+  closed: boolean;
+  totals: DgoPointTotals;
+  liabilityAed: number;
+  equationHolds: boolean;
+  /** For a closed month: does today's recount still equal the snapshot? null while open. */
+  snapshotMatches: boolean | null;
+  wallets: {
+    ledgerOutstanding: number;
+    walletOutstanding: number;
+    matches: boolean;
+    drifted: Array<{ employeeId: string; name: string; ledger: number; wallet: number }>;
+  };
+  people: Array<{ employeeId: string; name: string; department: string | null } & DgoPointTotals>;
+}
+
+/** GET /dgo-points/reports/export?kind=&month= → text/csv */
+export type DgoExportKind = "ledger" | "wallets" | "redemptions" | "reconciliation";

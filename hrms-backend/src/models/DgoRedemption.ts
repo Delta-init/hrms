@@ -36,6 +36,12 @@ const dgoRedemptionSchema = new Schema(
     costFils: { type: Number, default: null },
     /** Took one from a limited stock, so a cancel gives it back. */
     tookStock: { type: Boolean, default: false },
+    /** Bought per redemption (copied from the reward when asked for). */
+    needsPurchase: { type: Boolean, default: false },
+    /** The HRMS purchase request raised when HR approved it, and where finance has got to with it. */
+    procurement: { type: Schema.Types.ObjectId, ref: "Procurement", default: null },
+    purchaseStatus: { type: String, enum: ["not_needed", "waiting_finance", "approved", "rejected", "cancelled"], default: "not_needed" },
+    purchaseRef: { type: String, default: null },
     /** "reserving" only while the reserve is in progress; a failed attempt is removed. */
     status: { type: String, enum: ["reserving", "reserved", "approved", "fulfilled", "cancelled", "rejected"], required: true },
     lots: { type: [{ _id: false, lot: { type: Schema.Types.ObjectId, ref: "DgoPointLot" }, points: Number }], default: [] },

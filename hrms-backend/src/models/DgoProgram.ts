@@ -34,6 +34,8 @@ const dgoProgramSchema = new Schema(
       default: [],
     },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    /** The day the nightly DGO job last ran here, so two servers never run it twice. */
+    lastDailyRun: { type: String, default: null },
   },
   { timestamps: true, versionKey: false }
 );

@@ -48,6 +48,7 @@ export interface PeriodDoc {
 }
 
 interface RowDoc {
+  overrideFils?: number | null;
   _id: Types.ObjectId;
   department: unknown;
   departmentName: string;
@@ -85,11 +86,16 @@ export async function recomputeAllocations(period: PeriodDoc): Promise<void> {
   const orgId = String(period.organization);
   const people = await headcounts(orgId, period.revenueDepartments);
   const split = splitAllocations(period.everydayFils, period.revenueSharePct, people);
+  // An approved override (two finance people) is the allowance, whatever the split says.
+  const overridden = new Map(
+    (await DgoDepartmentBudget.find({ period: period._id, overrideFils: { $ne: null } }).select("department overrideFils").lean<Array<{ department: unknown; overrideFils: number }>>())
+      .map((r) => [keyOf(r.department), r.overrideFils])
+  );
   for (const p of people) {
     await DgoDepartmentBudget.updateOne(
       { period: period._id, department: p.department },
       {
-        $set: { departmentName: p.name, group: p.group, headcount: p.headcount, allocationFils: split.get(p.key) ?? 0 },
+        $set: { departmentName: p.name, group: p.group, headcount: p.headcount, allocationFils: overridden.get(p.key) ?? split.get(p.key) ?? 0 },
         $setOnInsert: { organization: period.organization, month: period.month, committedFils: 0 },
       },
       { upsert: true }
@@ -99,7 +105,7 @@ export async function recomputeAllocations(period: PeriodDoc): Promise<void> {
   const live = new Set(people.map((p) => p.key));
   const stale = await DgoDepartmentBudget.find({ period: period._id }).lean<RowDoc[]>();
   for (const r of stale.filter((r) => !live.has(keyOf(r.department)))) {
-    await DgoDepartmentBudget.updateOne({ _id: r._id }, { $set: { headcount: 0, allocationFils: r.committedFils } });
+    await DgoDepartmentBudget.updateOne({ _id: r._id }, { $set: { headcount: 0, allocationFils: overridden.get(keyOf(r.department)) ?? r.committedFils } });
   }
 }
 
@@ -228,6 +234,9 @@ export async function budgetView(v: DgoViewer, monthIn?: string) {
   const awaiting = c.enteredFils != null && (!c.confirmedAt || (c.enteredAt != null && new Date(c.enteredAt) > new Date(c.confirmedAt)));
   const committed = rows.reduce((s, r) => s + r.committedFils, 0);
   const sorted = [...period.tiers].sort((a, b) => a.minCollections - b.minCollections);
+  const open = period.status !== "closed" && period.status !== "review";
+  // Close, overrides and where the collections came from (Phase 3), loaded late to keep the two modules apart.
+  const { canMore, ...extrasRest } = await (await import("./dgoCloseService.js")).budgetExtras(v, period as never);
   const groups = (["revenue", "other"] as const).map((g) => {
     const inGroup = rows.filter((r) => r.group === g);
     const sharePct = g === "revenue" ? period.revenueSharePct : 100 - period.revenueSharePct;
@@ -274,31 +283,38 @@ export async function budgetView(v: DgoViewer, monthIn?: string) {
       allocationAed: toAed(r.allocationFils),
       committedAed: toAed(r.committedFils),
       leftAed: toAed(Math.max(0, r.allocationFils - r.committedFils)),
+      overrideAed: r.overrideFils != null ? toAed(r.overrideFils) : null,
     })),
     history: [...period.history].reverse().map((h) => ({
       action: h.action, amountAed: h.amountFils != null ? toAed(h.amountFils) : null, byName: h.byName ?? null, at: new Date(h.at).toISOString(), note: h.note ?? null,
     })),
+    ...extrasRest,
     can: {
-      enter: period.status !== "closed" && can(v, "dgoBudgets", "edit"),
-      confirm: period.status !== "closed" && awaiting && can(v, "dgoBudgets", "approve") && String(c.enteredBy) !== v.userId,
-      recount: period.status !== "closed" && can(v, "dgoBudgets", "edit"),
+      enter: open && can(v, "dgoBudgets", "edit"),
+      confirm: open && awaiting && can(v, "dgoBudgets", "approve") && String(c.enteredBy) !== v.userId,
+      recount: open && can(v, "dgoBudgets", "edit"),
+      ...canMore,
     },
   };
 }
 
 /** Finance enters the month's eligible collections. Nothing changes until a second person confirms it. */
-export async function enterCollections(v: DgoViewer, monthIn: string, amountAed: number, note?: string) {
+export async function enterCollections(v: DgoViewer, monthIn: string, amountAed: number, note?: string, source?: { kind: "typed" | "finance"; breakdown: unknown }) {
   if (!can(v, "dgoBudgets", "edit")) throw httpError("You can't enter collections", 403);
   const month = monthOrThis(v, monthIn);
   if (!(amountAed >= 0) || !Number.isFinite(amountAed)) throw httpError("Enter the eligible collections in AED", 400);
   const period = await ensurePeriod(v.orgId, month);
   if (period.status === "closed") throw httpError(`${month} is closed`, 409);
+  if (period.status === "review") throw httpError(`${month} is being closed`, 409);
   const fils = toFils(amountAed);
   const at = new Date();
   await DgoBudgetPeriod.updateOne(
     { _id: period._id },
     {
-      $set: { "collections.enteredFils": fils, "collections.enteredBy": v.userId, "collections.enteredByName": v.name, "collections.enteredAt": at, "collections.note": note?.trim() || null },
+      $set: {
+        "collections.enteredFils": fils, "collections.enteredBy": v.userId, "collections.enteredByName": v.name, "collections.enteredAt": at, "collections.note": note?.trim() || null,
+        collectionsSource: source?.kind ?? "typed", collectionsBreakdown: source?.breakdown ?? null,
+      },
       $push: { history: { action: "collections_entered", amountFils: fils, by: v.userId, byName: v.name, note: note?.trim() || null, at } },
     }
   );
@@ -312,6 +328,7 @@ export async function confirmCollections(v: DgoViewer, monthIn: string) {
   const month = monthOrThis(v, monthIn);
   const period = await ensurePeriod(v.orgId, month);
   if (period.status === "closed") throw httpError(`${month} is closed`, 409);
+  if (period.status === "review") throw httpError(`${month} is being closed`, 409);
   const c = period.collections;
   if (c.enteredFils == null) throw httpError("Nothing has been entered to confirm", 409);
   if (String(c.enteredBy) === v.userId) {
@@ -350,7 +367,7 @@ export async function confirmCollections(v: DgoViewer, monthIn: string) {
  */
 export async function refreshGrouping(orgId: string, month: string): Promise<void> {
   const period = await DgoBudgetPeriod.findOne({ organization: orgId, month }).lean<PeriodDoc>();
-  if (!period || period.status === "closed") return;
+  if (!period || period.status === "closed" || period.status === "review") return;
   const program = await DgoProgram.findOne({ organization: orgId }).lean<{ revenueDepartments: unknown[] }>();
   await DgoBudgetPeriod.updateOne({ _id: period._id }, { $set: { revenueDepartments: program?.revenueDepartments ?? [] } });
   await recomputeAllocations({ ...period, revenueDepartments: program?.revenueDepartments ?? [] });
@@ -362,6 +379,7 @@ export async function recountBudget(v: DgoViewer, monthIn: string) {
   const month = monthOrThis(v, monthIn);
   const period = await ensurePeriod(v.orgId, month);
   if (period.status === "closed") throw httpError(`${month} is closed`, 409);
+  if (period.status === "review") throw httpError(`${month} is being closed`, 409);
   const before = await DgoDepartmentBudget.find({ period: period._id }).select("departmentName headcount allocationFils").lean();
   await refreshGrouping(v.orgId, month);
   await DgoBudgetPeriod.updateOne({ _id: period._id }, { $push: { history: { action: "recounted", amountFils: null, by: v.userId, byName: v.name, note: "Headcount re-read", at: new Date() } } });
@@ -369,3 +387,26 @@ export async function recountBudget(v: DgoViewer, monthIn: string) {
   await dgoAudit(v, "budget_recounted", "budget_period", month, before, after);
   return budgetView(v, month);
 }
+
+/**
+ * POST /budgets/:month/collections/fetch — ask finance for the month's eligible
+ * collections (every payment received in the Dubai month, net of VAT) and enter
+ * its net figure. Entering is all this does: a second person still confirms it.
+ */
+export async function fetchCollections(v: DgoViewer, monthIn: string) {
+  if (!can(v, "dgoBudgets", "edit")) throw httpError("You can't enter collections", 403);
+  const month = monthOrThis(v, monthIn);
+  const { financeConfigured, financePost } = await import("../financeClient.js");
+  if (!financeConfigured()) throw httpError("HRMS isn't connected to finance yet (FINANCE_API_URL, FINANCE_CLIENT_ID, FINANCE_INTEGRATION_SECRET)", 503);
+  let data: { netAed: number; vatAed: number; grossAed: number; currency: string; unreconciledNetAed: number; pendingLateEntries?: { count: number } };
+  try {
+    data = await financePost("/hrms/dgo-collections", { hrmsOrgId: v.orgId, month });
+  } catch (e) {
+    throw httpError((e as Error).message, 502);
+  }
+  if (!(typeof data?.netAed === "number" && data.netAed >= 0)) throw httpError("Finance's answer had no collections figure", 502);
+  if (data.currency && data.currency !== "AED") throw httpError(`Finance counts this organisation in ${data.currency}; DGO budgets are in AED, so type the figure in instead`, 409);
+  const note = `From finance: AED ${data.netAed.toFixed(2)} net of VAT (gross ${data.grossAed.toFixed(2)}, VAT ${data.vatAed.toFixed(2)}${data.unreconciledNetAed ? `, ${data.unreconciledNetAed.toFixed(2)} not yet on a bank statement` : ""})`;
+  return enterCollections(v, month, data.netAed, note.slice(0, 300), { kind: "finance", breakdown: data });
+}
+

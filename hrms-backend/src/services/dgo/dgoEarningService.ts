@@ -10,6 +10,7 @@ import { ruleOn, settingsOn } from "./dgoSettingsService.js";
 import { budgetRowFor, commitBudget, leftFor, releaseBudget, releaseElite } from "./dgoBudgetService.js";
 import { DgoDepartmentBudget } from "../../models/DgoDepartmentBudget.js";
 import { programSettings } from "./dgoSettingsService.js";
+import { assertMonthOpen } from "./dgoCloseService.js";
 import { AlreadyCredited, creditEvent, reverseEvent, type Actor } from "./dgoLedgerService.js";
 import { inTransaction } from "./dgoTxn.js";
 import { dgoAudit } from "./dgoAudit.js";
@@ -195,6 +196,7 @@ async function createEvent(
   if (!isDay(input.day) || input.day > today) throw httpError("Pick today or an earlier day", 400);
   const month = input.day.slice(0, 7);
   if (month < previousMonth(today.slice(0, 7))) throw httpError("Points can be recorded for this month or last month only", 400);
+  await assertMonthOpen(v.orgId, month, "nothing more can be recorded for it");
   const settings = await settingsOn(v.orgId, input.day);
   const rule = await ruleOn(v.orgId, input.ruleCode, input.day);
   if (!rule) throw httpError(`${input.ruleCode} isn't in force on ${input.day}`, 400);

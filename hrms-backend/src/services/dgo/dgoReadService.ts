@@ -47,6 +47,10 @@ export async function me(v: DgoViewer) {
       settingsEdit: can(v, "dgoSettings", "edit"),
       auditView: can(v, "dgoAudit", "view"),
       walletLookup: canLookUpWallets(v),
+      reportsView: can(v, "dgoBudgets", "view") || can(v, "dgoAudit", "view"),
+      reportsExport: can(v, "dgoBudgets", "export") || can(v, "dgoAudit", "export"),
+      adjustmentsPropose: can(v, "dgoBudgets", "edit"),
+      adjustmentsApprove: can(v, "dgoBudgets", "approve"),
       rewardsManage: canManageRewards(v),
       rewardsFulfil: canFulfil(v),
       rewardsView: canSeeFulfilment(v),
@@ -352,17 +356,29 @@ export async function approvals(v: DgoViewer, tabIn?: string) {
 }
 
 /** GET /dgo-points/audit */
-export async function audit(v: DgoViewer, q: { page?: number; limit?: number; action?: string }) {
+export async function audit(v: DgoViewer, q: { page?: number; limit?: number; action?: string; entity?: string; actor?: string; from?: string; to?: string }) {
   if (!can(v, "dgoAudit", "view")) throw httpError("You can't see the DGO audit log", 403);
   const page = Math.max(1, Math.floor(q.page || 1));
   const limit = Math.min(100, Math.max(10, Math.floor(q.limit || 50)));
   const filter: Record<string, unknown> = { organization: v.orgId };
   if (q.action && /^[a-z_]{2,60}$/.test(q.action)) filter.action = q.action;
-  const [rows, total] = await Promise.all([
+  if (q.entity && /^[a-z_]{2,60}$/.test(q.entity)) filter.entity = q.entity;
+  const actor = q.actor?.trim();
+  if (actor) filter.actorName = { $regex: actor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 80), $options: "i" };
+  // Days are the organisation's (Dubai) days.
+  const at: Record<string, Date> = {};
+  if (isDay(q.from)) at.$gte = new Date(Date.parse(`${q.from}T00:00:00Z`) - 4 * 3_600_000);
+  if (isDay(q.to)) at.$lt = new Date(Date.parse(`${q.to}T00:00:00Z`) + 20 * 3_600_000);
+  if (Object.keys(at).length) filter.createdAt = at;
+  const [rows, total, actions, entities] = await Promise.all([
     DgoAuditEntry.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean<Array<{ _id: unknown; createdAt: Date; actorName: string | null; action: string; entity: string; entityId: string | null; before: unknown; after: unknown }>>(),
     DgoAuditEntry.countDocuments(filter),
+    DgoAuditEntry.distinct("action", { organization: v.orgId }),
+    DgoAuditEntry.distinct("entity", { organization: v.orgId }),
   ]);
   return {
+    actions: (actions as string[]).sort(),
+    entities: (entities as string[]).sort(),
     rows: rows.map((r) => ({ id: String(r._id), at: iso(r.createdAt), actorName: r.actorName, action: r.action, entity: r.entity, entityId: r.entityId, before: r.before, after: r.after })),
     pagination: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
   };

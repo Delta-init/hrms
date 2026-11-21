@@ -4,6 +4,7 @@ import { DgoRedemption } from "../../models/DgoRedemption.js";
 import { DgoWallet } from "../../models/DgoWallet.js";
 import { Employee } from "../../models/Employee.js";
 import { Department } from "../../models/Department.js";
+import { Procurement } from "../../models/Procurement.js";
 import { publicUrl } from "../uploadService.js";
 import { notify } from "../notificationService.js";
 import { ACTIVE_EMPLOYEE_STATUSES } from "./dgoDefaults.js";
@@ -44,6 +45,7 @@ interface RewardDoc {
   stockMode: "unlimited" | "limited";
   stock: number | null;
   status: "active" | "hidden" | "archived";
+  buyPerRedemption?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -66,6 +68,7 @@ function rewardDto(r: RewardDoc, o: { manager: boolean; available: number; point
     affordable: !outOfStock && o.available >= r.points,
     short: Math.max(0, r.points - o.available),
     redeemedCount: o.manager ? o.redeemedCount ?? 0 : 0,
+    buyPerRedemption: o.manager ? Boolean(r.buyPerRedemption) : false,
     createdAt: iso(r.createdAt),
     updatedAt: iso(r.updatedAt),
   };
@@ -117,9 +120,10 @@ export interface RewardInput {
   stockMode: "unlimited" | "limited";
   stock?: number | null;
   status: "active" | "hidden";
+  buyPerRedemption?: boolean;
 }
 
-async function cleanReward(v: DgoViewer, input: RewardInput) {
+async function cleanReward(v: DgoViewer, input: RewardInput, current?: Partial<RewardDoc>) {
   const settings = await settingsOn(v.orgId, dayIn(v.tz));
   if (input.points < settings.minRedemption) throw httpError(`A reward costs at least ${settings.minRedemption.toLocaleString("en")} points (the minimum redemption)`, 400);
   const photoKey = input.photoKey?.trim() || null;
@@ -135,11 +139,14 @@ async function cleanReward(v: DgoViewer, input: RewardInput) {
     stockMode: input.stockMode,
     stock: input.stockMode === "limited" ? input.stock! : null,
     status: input.status,
+    // Bought one at a time unless said otherwise: on by default for a reward that costs the office something.
+    buyPerRedemption: input.buyPerRedemption ?? current?.buyPerRedemption ?? (input.costAed != null && input.costAed > 0),
   };
 }
 
 const auditShape = (r: Partial<RewardDoc> | null) => r && ({
   name: r.name, category: r.category, points: r.points, costFils: r.costFils ?? null, stockMode: r.stockMode, stock: r.stock ?? null, status: r.status,
+  buyPerRedemption: Boolean(r.buyPerRedemption),
 });
 
 export async function createReward(v: DgoViewer, input: RewardInput) {
@@ -156,7 +163,7 @@ export async function updateReward(v: DgoViewer, id: string, input: RewardInput)
   if (!can(v, "dgoRewards", "edit")) throw httpError("You can't change rewards", 403);
   const before = await DgoReward.findOne({ _id: id, organization: v.orgId, status: { $ne: "archived" } }).lean<RewardDoc>();
   if (!before) throw httpError("That reward isn't in the catalogue", 404);
-  const clean = await cleanReward(v, input);
+  const clean = await cleanReward(v, input, before);
   // Stock is set as typed; a redemption in the same instant may take one more — the conditional decrement keeps it at zero or above.
   const after = await DgoReward.findOneAndUpdate({ _id: id }, { $set: { ...clean, updatedBy: v.userId } }, { new: true }).lean<RewardDoc>();
   await dgoAudit(v, "reward_changed", "reward", before._id, auditShape(before), auditShape(after));
@@ -193,6 +200,10 @@ interface RedemptionDoc {
   points: number;
   costFils: number | null;
   tookStock: boolean;
+  needsPurchase?: boolean;
+  procurement?: Types.ObjectId | null;
+  purchaseStatus?: "not_needed" | "waiting_finance" | "approved" | "rejected" | "cancelled";
+  purchaseRef?: string | null;
   status: RedemptionStatus;
   lots: Holding[];
   note: string | null;
@@ -214,6 +225,7 @@ function whyCannotHandle(v: DgoViewer, r: RedemptionDoc): string | null {
 
 function redemptionDto(v: DgoViewer, r: RedemptionDoc, pointValueAed: number) {
   const why = whyCannotHandle(v, r);
+  const waitingFinance = r.status === "approved" && r.purchaseStatus === "waiting_finance";
   const own = isOwn(v, r);
   return {
     id: String(r._id),
@@ -231,8 +243,11 @@ function redemptionDto(v: DgoViewer, r: RedemptionDoc, pointValueAed: number) {
     canCancel: Boolean(own) && r.status === "reserved",
     canApprove: !why && r.status === "reserved",
     canReject: !why && (r.status === "reserved" || r.status === "approved"),
-    canFulfil: !why && r.status === "approved",
-    whyNot: (r.status === "reserved" || r.status === "approved") && canSeeFulfilment(v) ? why : null,
+    canFulfil: !why && r.status === "approved" && !waitingFinance,
+    whyNot: (r.status === "reserved" || r.status === "approved") && canSeeFulfilment(v)
+      ? why ?? (waitingFinance ? "Finance hasn't approved the purchase yet" : null)
+      : null,
+    purchase: { status: r.purchaseStatus ?? "not_needed", ref: r.purchaseRef || null },
   };
 }
 
@@ -316,6 +331,7 @@ export async function redeem(v: DgoViewer, input: { rewardId: string; note?: str
         _id: id, organization: v.orgId, employee: emp._id, user: emp.user ?? null, employeeName: emp.name, departmentName: dept?.name ?? null,
         reward: reward._id, rewardName: reward.name, rewardCategory: reward.category, photoKey: reward.photoKey ?? null,
         points: reward.points, costFils: reward.costFils ?? null, status: "reserving", note: input.note?.trim() || null,
+        needsPurchase: Boolean(reward.buyPerRedemption), purchaseStatus: "not_needed",
         trail: [trailEntry("asked", actor, input.note?.trim() || null)], idempotencyKey: key,
       }], { session });
       let tookStock = false;
@@ -363,19 +379,32 @@ export async function redeem(v: DgoViewer, input: { rewardId: string; note?: str
 
 /** Give the points (and any stock) back, once, moving the redemption from `from` to `to`. */
 async function giveBack(v: DgoViewer, r: RedemptionDoc, from: RedemptionStatus[], to: "cancelled" | "rejected", note: string | null) {
-  const today = dayIn(v.tz);
-  const actor = actorOf(v);
-  return inTransaction(async (session) => {
+  return giveBackAs(actorOf(v), dayIn(v.tz), r, from, to, note);
+}
+
+/** giveBack without a signed-in person: finance's decision, the nightly job. */
+export async function giveBackAs(
+  actor: Actor, today: string, r: { _id: Types.ObjectId }, from: RedemptionStatus[], to: "cancelled" | "rejected", note: string | null,
+  purchaseStatus?: "rejected" | "cancelled",
+): Promise<boolean> {
+  const moved = await inTransaction(async (session) => {
     const claimed = await DgoRedemption.findOneAndUpdate(
       { _id: r._id, status: { $in: from } },
-      { $set: { status: to }, $push: { trail: trailEntry(to, actor, note) } },
+      { $set: { status: to, ...(purchaseStatus ? { purchaseStatus } : {}) }, $push: { trail: trailEntry(to, actor, note) } },
       { new: true, session }
     ).lean<RedemptionDoc>();
-    if (!claimed) return false;
+    if (!claimed) return null;
     await releasePoints(spendOf(claimed, today), claimed.lots, to === "cancelled" ? "Cancelled" : "Not approved", actor, session);
     if (claimed.tookStock) await DgoReward.updateOne({ _id: claimed.reward, stockMode: "limited" }, { $inc: { stock: 1 } }, { session });
-    return true;
+    return claimed;
   });
+  if (!moved) return false;
+  // A purchase request still waiting on finance is withdrawn; one finance already approved is left for finance to void.
+  if (moved.procurement) await Procurement.updateOne({ _id: moved.procurement, status: "hr_approved" }, { $set: { status: "cancelled" } });
+  if (moved.procurement && !purchaseStatus) {
+    await DgoRedemption.updateOne({ _id: moved._id, purchaseStatus: "waiting_finance" }, { $set: { purchaseStatus: "cancelled" } });
+  }
+  return true;
 }
 
 /** POST /redemptions/:id/cancel — the employee, while it waits for HR. */
@@ -407,15 +436,76 @@ export async function approveRedemption(v: DgoViewer, id: string, note?: string 
   if (didAlready(v, r, "approved") && r.status !== "reserved") return { redemption: await dtoOf(v, r._id), message: "Already done" };
   await assertHandle(v, r, "approve");
   if (r.status !== "reserved") throw httpError(`Already ${r.status}`, 409);
+  // Bought per redemption: the purchase request goes in first (one per redemption), straight to finance.
+  const procurementId = r.needsPurchase ? await raisePurchase(v, r) : null;
   const after = await DgoRedemption.findOneAndUpdate(
     { _id: r._id, status: "reserved" },
-    { $set: { status: "approved" }, $push: { trail: trailEntry("approved", actorOf(v), note?.trim() || null) } },
+    {
+      $set: { status: "approved", ...(procurementId ? { procurement: procurementId, purchaseStatus: "waiting_finance" } : {}) },
+      $push: { trail: trailEntry("approved", actorOf(v), note?.trim() || (procurementId ? "Purchase request sent to finance" : null)) },
+    },
     { new: true }
   ).lean<RedemptionDoc>();
-  if (!after) throw httpError("It changed in the meantime — refresh", 409);
+  if (!after) {
+    if (procurementId) await Procurement.updateOne({ _id: procurementId, status: "hr_approved" }, { $set: { status: "cancelled" } });
+    throw httpError("It changed in the meantime — refresh", 409);
+  }
   await dgoAudit(v, "redemption_approved", "redemption", r._id, { status: "reserved" }, { status: "approved" });
   await notify({ users: [r.user], kind: "system", tone: "positive", organization: v.orgId, actor: v.userId, title: `Approved: ${r.rewardName}`, body: "HR will let you know when it's ready", href: "/dgo-points/rewards?tab=mine" });
-  return { redemption: await dtoOf(v, r._id), message: "Approved" };
+  return { redemption: await dtoOf(v, r._id), message: procurementId ? "Approved — the purchase request is with finance" : "Approved" };
+}
+
+/** The HRMS purchase request for one redemption's reward, already past HR (HR approved the redemption). Once per redemption. */
+async function raisePurchase(v: DgoViewer, r: RedemptionDoc): Promise<Types.ObjectId> {
+  const found = await Procurement.findOne({ dgoRedemption: r._id }).select("_id status").lean<{ _id: Types.ObjectId; status: string }>();
+  if (found && found.status !== "cancelled") return found._id;
+  const emp = await Employee.findById(r.employee).select("department").lean<{ department?: unknown }>();
+  try {
+    const doc = await Procurement.create({
+      organization: v.orgId, kind: "new", item: `DGO reward: ${r.rewardName} for ${r.employeeName}`.slice(0, 160),
+      category: "DGO reward", quantity: 1, estimatedCost: r.costFils != null ? toAed(r.costFils) : 0, currency: "AED", vendor: "",
+      department: emp?.department ?? null, requestedBy: v.userId,
+      justification: `DGO Points redemption: ${r.points.toLocaleString("en")} points spent by ${r.employeeName}. Approved by ${v.name} in DGO Points.`.slice(0, 1000),
+      status: "hr_approved", hrReviewedBy: v.userId, hrReviewedAt: new Date(), hrNote: "Approved as a DGO Points redemption",
+      dgoRedemption: r._id,
+    });
+    return doc._id as Types.ObjectId;
+  } catch (e) {
+    if (!isDuplicateKey(e)) throw e;
+    // A cancelled one from an earlier round, or another click at the same moment.
+    const again = await Procurement.findOne({ dgoRedemption: r._id }).select("_id status").lean<{ _id: Types.ObjectId; status: string }>();
+    if (again?.status === "cancelled") {
+      await Procurement.updateOne({ _id: again._id }, { $set: { status: "hr_approved", hrReviewedBy: v.userId, hrReviewedAt: new Date() } });
+    }
+    return again!._id;
+  }
+}
+
+/**
+ * Finance decided on a redemption's purchase request (called from the
+ * procurement service when finance's decision lands). Approved: HR may buy
+ * and hand it over. Rejected: the redemption is rejected and the points go back.
+ */
+export async function onPurchaseDecision(p: { _id: unknown; organization?: unknown; dgoRedemption?: unknown }, approved: boolean, note: string | null, ref: string | null) {
+  if (!p.dgoRedemption) return;
+  const r = await DgoRedemption.findById(p.dgoRedemption).lean<RedemptionDoc>();
+  if (!r) return;
+  const actor: Actor = { userId: null, name: "Finance" };
+  const orgId = String(r.organization);
+  if (approved) {
+    const done = await DgoRedemption.updateOne(
+      { _id: r._id, purchaseStatus: "waiting_finance" },
+      { $set: { purchaseStatus: "approved", purchaseRef: ref || null }, $push: { trail: trailEntry("purchase_approved", actor, ref ? `Expense ${ref}` : note) } }
+    );
+    if (!done.modifiedCount) return;
+    const hr = await usersWith(orgId, "dgoRewards", "approve").catch(() => []);
+    await notify({ users: hr, kind: "system", tone: "positive", organization: orgId, title: `Ready to buy: ${r.rewardName}`, body: `For ${r.employeeName}${ref ? ` · ${ref}` : ""}`, href: "/dgo-points/rewards?tab=fulfilment" });
+    return;
+  }
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+  const moved = await giveBackAs(actor, today, r, ["reserved", "approved"], "rejected", `Finance didn't approve the purchase${note ? `: ${note}` : ""}`, "rejected");
+  if (!moved) return;
+  await notify({ users: [r.user], kind: "system", tone: "negative", organization: orgId, title: `Not approved: ${r.rewardName}`, body: `Finance didn't approve the purchase — your ${r.points.toLocaleString("en")} points are back`, href: "/dgo-points/rewards?tab=mine" });
 }
 
 /** POST /redemptions/:id/reject — HR, before delivery: the points come back once. */
@@ -427,9 +517,13 @@ export async function rejectRedemption(v: DgoViewer, id: string, reason: string)
   if (r.status !== "reserved" && r.status !== "approved") throw httpError(`Already ${r.status}`, 409);
   const moved = await giveBack(v, r, ["reserved", "approved"], "rejected", reason.trim());
   if (!moved) throw httpError("It changed in the meantime — refresh", 409);
+  const expenseLeft = r.purchaseStatus === "approved";
   await dgoAudit(v, "redemption_rejected", "redemption", r._id, { status: r.status }, { status: "rejected", reason: reason.trim() });
   await notify({ users: [r.user], kind: "system", tone: "negative", organization: v.orgId, actor: v.userId, title: `Not approved: ${r.rewardName}`, body: `${reason.trim()} — your ${r.points.toLocaleString("en")} points are back`, href: "/dgo-points/rewards?tab=mine" });
-  return { redemption: await dtoOf(v, r._id), message: `Rejected — ${r.points.toLocaleString("en")} points went back to ${r.employeeName}` };
+  return {
+    redemption: await dtoOf(v, r._id),
+    message: `Rejected — ${r.points.toLocaleString("en")} points went back to ${r.employeeName}${expenseLeft ? `. Finance already approved its purchase${r.purchaseRef ? ` (${r.purchaseRef})` : ""}: ask finance to void that expense` : ""}`,
+  };
 }
 
 /** POST /redemptions/:id/fulfil — HR, after approval: handed over, the held points are spent. */
@@ -438,6 +532,7 @@ export async function fulfilRedemption(v: DgoViewer, id: string, note?: string |
   if (r.status === "fulfilled" && didAlready(v, r, "fulfilled")) return { redemption: await dtoOf(v, r._id), message: "Already done" };
   await assertHandle(v, r, "fulfil");
   if (r.status !== "approved") throw httpError(r.status === "reserved" ? "Approve it first" : `Already ${r.status}`, 409);
+  if (r.purchaseStatus === "waiting_finance") throw httpError("Finance hasn't approved the purchase yet", 409);
   const today = dayIn(v.tz);
   const actor = actorOf(v);
   const done = await inTransaction(async (session) => {
@@ -451,6 +546,10 @@ export async function fulfilRedemption(v: DgoViewer, id: string, note?: string |
     return true;
   });
   if (!done) throw httpError("It changed in the meantime — refresh", 409);
+  if (r.procurement) {
+    // Bought and handed over: the purchase request is done (and, being a reward, never counts as stock).
+    await Procurement.updateOne({ _id: r.procurement, status: { $in: ["approved", "ordered"] } }, { $set: { status: "received", receivedAt: new Date(), receivedQuantity: 1, receivedBy: v.userId } });
+  }
   await dgoAudit(v, "redemption_fulfilled", "redemption", r._id, { status: "approved" }, { status: "fulfilled", note: note?.trim() || null });
   await notify({ users: [r.user], kind: "system", tone: "positive", organization: v.orgId, actor: v.userId, title: `Ready: ${r.rewardName}`, body: note?.trim() || "Your reward has been handed over", href: "/dgo-points/rewards?tab=mine" });
   return { redemption: await dtoOf(v, r._id), message: "Marked delivered" };

@@ -7,8 +7,8 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useDgoDashboard, formatAed, formatPoints, dgoErrorMessage } from "@/hooks/useDgoPoints";
 import {
-  DgoGate, LedgerPoints, MonthSwitcher, Notice, Spinner, Stat, StatusPill, TableWrap, UsageBar,
-  LEDGER_LABEL, STAGE_LABEL, shortDay, dayLabel,
+  DgoGate, LedgerPoints, LedgerTypeChip, MonthSwitcher, Notice, Spinner, Stat, StatusPill, TableWrap, UsageBar,
+  STAGE_LABEL, shortDay, dayLabel,
 } from "@/components/dgo/shared";
 import type { DgoDashboard, DgoMe } from "@/types";
 
@@ -166,7 +166,7 @@ function Own({ d, own, isThisMonth }: { d: DgoDashboard; own: NonNullable<DgoDas
                   <tr key={r.id}>
                     <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{shortDay(r.day)}</td>
                     <td className="px-4 py-2">{r.description}</td>
-                    <td className="px-4 py-2 text-xs text-muted-foreground">{LEDGER_LABEL[r.type]}</td>
+                    <td className="px-4 py-2"><LedgerTypeChip row={r} /></td>
                     <td className="px-4 py-2 text-right"><LedgerPoints row={r} /></td>
                   </tr>
                 ))}

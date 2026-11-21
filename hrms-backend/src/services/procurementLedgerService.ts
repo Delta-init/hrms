@@ -40,7 +40,8 @@ const countOf = (p: Bought) => (p.status === "received" ? p.receivedQuantity ?? 
 
 export class ProcurementLedgerService {
   private async bought(key?: string) {
-    const rows = await Procurement.find({ ...orgFilter(), status: { $in: STOCK_STATES } })
+    // DGO rewards go straight to the employee who redeemed them: never stock.
+    const rows = await Procurement.find({ ...orgFilter(), status: { $in: STOCK_STATES }, dgoRedemption: null })
       .select("item category quantity status kind vendor createdAt updatedAt department receivedAt receivedQuantity")
       .populate({ path: "department", select: "name" })
       .sort({ createdAt: 1 })

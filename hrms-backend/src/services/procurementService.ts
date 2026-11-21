@@ -499,6 +499,16 @@ export class ProcurementService {
       },
     });
 
+    // A DGO Points reward bought for one redemption: finance's decision moves the
+    // redemption on (approved: HR may buy it; rejected: the points go back). Saved
+    // here before answering; a failure is logged, never turned into finance's error.
+    if (record.dgoRedemption) {
+      const { onPurchaseDecision } = await import("./dgo/dgoRewardService.js");
+      await onPurchaseDecision(record, approved, input.note ?? null, approved ? (input.purchaseOrderRef ?? null) : null).catch((err) =>
+        console.error(`procurement: could not update DGO redemption for ${record._id}:`, err instanceof Error ? err.message : err)
+      );
+    }
+
     // Finance is waiting on this answer, and the post can take a while — a mail
     // to each approver in turn, through the organization's SMTP. Waiting for it
     // ran finance past its timeout: it reported a failure for a decision that

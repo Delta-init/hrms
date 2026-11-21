@@ -17,8 +17,11 @@ import { attachmentKey, putObject, publicUrl, UploadError } from "../services/up
 import { extFromMime } from "../middleware/upload.js";
 import {
   recordEarningSchema, decisionSchema, reverseSchema, collectionsSchema, settingsSchema, ruleSchema, programSchemaP2,
-  nominateSchema, rewardSchema, redeemSchema, noteSchema, reasonSchema, pickSchema,
+  nominateSchema, rewardSchema, redeemSchema, noteSchema, reasonSchema, pickSchema, adjustmentSchema, overrideSchema,
 } from "../validations/dgoValidation.js";
+import * as closing from "../services/dgo/dgoCloseService.js";
+import * as control from "../services/dgo/dgoControlService.js";
+import * as reports from "../services/dgo/dgoReportService.js";
 
 /**
  * DGO Points routes. Thin: each builds the viewer (organisation, own employee
@@ -99,7 +102,10 @@ export const putProgram = handle(async (v, req) => {
   return { message: "Saved", data };
 });
 
-export const getAudit = handle(async (v, req) => ({ message: "Audit", data: await read.audit(v, { page: num(req.query.page), limit: num(req.query.limit), action: str(req.query.action) }) }));
+export const getAudit = handle(async (v, req) => ({
+  message: "Audit",
+  data: await read.audit(v, { page: num(req.query.page), limit: num(req.query.limit), action: str(req.query.action), entity: str(req.query.entity), actor: str(req.query.actor), from: str(req.query.from), to: str(req.query.to) }),
+}));
 
 /* ───────────── Phase 2 ───────────── */
 
@@ -166,4 +172,61 @@ export const postPickAchiever = achieverStep((v, req) => {
 export const postVerifyAchievers = achieverStep((v, req) => achievers.verifyAchievers(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
 export const postSendBackAchievers = achieverStep((v, req) => achievers.sendBackAchievers(v, String(req.params.month), parse(reasonSchema, req.body).reason));
 export const postApproveAchievers = achieverStep((v, req) => achievers.approveAchievers(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
+
+/* ───────────── Phase 3 ───────────── */
+
+/** A step that answers with the month's budget page afterwards. */
+const budgetStep = (fn: (v: DgoViewer, req: AuthenticatedRequest) => Promise<{ message: string }>) =>
+  handle(async (v, req) => {
+    const out = await fn(v, req);
+    return { message: out.message, data: await budget.budgetView(v, String(req.params.month)) };
+  });
+export const postFetchCollections = handle(async (v, req) => ({ message: "Fetched from finance — a second person confirms it", data: await budget.fetchCollections(v, String(req.params.month)) }));
+export const postCloseRequest = budgetStep((v, req) => closing.requestClose(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
+export const postCloseApprove = budgetStep((v, req) => closing.approveClose(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
+export const postCloseCancel = budgetStep((v, req) => closing.cancelClose(v, String(req.params.month), parse(reasonSchema, req.body).reason));
+
+export const postOverride = handle(async (v, req) => {
+  const out = await control.proposeOverride(v, String(req.params.month), parse(overrideSchema, req.body));
+  return { message: out.message, data: { override: out.override }, status: 201 };
+});
+export const postOverrideApprove = handle(async (v, req) => {
+  const out = await control.decideOverride(v, idParam(req), true, parse(noteSchema, req.body ?? {}).note);
+  return { message: out.message, data: { override: out.override } };
+});
+export const postOverrideReject = handle(async (v, req) => {
+  const out = await control.decideOverride(v, idParam(req), false, parse(reasonSchema, req.body).reason);
+  return { message: out.message, data: { override: out.override } };
+});
+
+export const getAdjustments = handle(async (v, req) => ({ message: "Adjustments", data: await control.adjustmentsView(v, str(req.query.status)) }));
+export const postAdjustment = handle(async (v, req) => {
+  const out = await control.proposeAdjustment(v, parse(adjustmentSchema, req.body));
+  return { message: out.message, data: { adjustment: out.adjustment }, status: 201 };
+});
+export const postAdjustmentApprove = handle(async (v, req) => {
+  const out = await control.decideAdjustment(v, idParam(req), true, parse(noteSchema, req.body ?? {}).note);
+  return { message: out.message, data: { adjustment: out.adjustment } };
+});
+export const postAdjustmentReject = handle(async (v, req) => {
+  const out = await control.decideAdjustment(v, idParam(req), false, parse(reasonSchema, req.body).reason);
+  return { message: out.message, data: { adjustment: out.adjustment } };
+});
+
+export const getReportsOverview = handle(async (v, req) => ({ message: "Reports", data: await reports.reportsOverview(v, str(req.query.month)) }));
+export const getReconciliation = handle(async (v, req) => ({ message: "Reconciliation", data: await reports.reconciliation(v, str(req.query.month)) }));
+
+/** CSV, not the JSON wrapper: a file to save. */
+export const getExport = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const v = await viewerFrom(req.user!);
+    const out = await reports.exportCsv(v, str(req.query.kind), str(req.query.month));
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${out.filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send("\uFEFF" + out.body);
+  } catch (error) {
+    next(error);
+  }
+};
 

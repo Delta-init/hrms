@@ -1414,6 +1414,8 @@ export interface IProcurement extends Document {
   hrNote?: string;
   financeReviewedAt?: Date | null;
   financeNote?: string;
+  /** The DGO Points redemption this buys a reward for, if any. */
+  dgoRedemption?: Types.ObjectId | null;
   purchaseOrderRef?: string;
   rejectedBy?: "hr" | "finance" | null;
   /** What a bought record becomes once approved (2026-10-23). */

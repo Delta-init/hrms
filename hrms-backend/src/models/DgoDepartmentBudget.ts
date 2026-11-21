@@ -17,6 +17,8 @@ const dgoDepartmentBudgetSchema = new Schema(
     headcount: { type: Number, default: 0 },
     allocationFils: { type: Number, default: 0, min: 0 },
     committedFils: { type: Number, default: 0, min: 0 },
+    /** An approved override of the allowance (two finance people): kept when allowances are recounted. */
+    overrideFils: { type: Number, default: null, min: 0 },
   },
   { timestamps: true, versionKey: false }
 );

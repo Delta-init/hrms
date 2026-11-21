@@ -35,6 +35,12 @@ const procurementSchema = new Schema<IProcurement>(
     kind: { type: String, enum: ["existing", "new"], default: "existing", index: true },
     item: { type: String, required: [true, "Item is required"], trim: true, maxlength: 160 },
     category: { type: String, trim: true, maxlength: 40, default: "other", index: true },
+    /**
+     * A DGO Points reward bought for one redemption (2026-11-21). Raised by HRMS
+     * itself when HR approves the redemption; finance's decision on it moves the
+     * redemption on. Never stock: the reward is handed straight to the employee.
+     */
+    dgoRedemption: { type: Schema.Types.ObjectId, ref: "DgoRedemption", default: null },
     quantity: { type: Number, min: 1, default: 1 },
     /**
      * What it is expected to cost, for the whole quantity.
@@ -117,5 +123,7 @@ const procurementSchema = new Schema<IProcurement>(
 
 procurementSchema.index({ organization: 1, status: 1 });
 procurementSchema.index({ organization: 1, createdAt: -1 });
+// One purchase request per DGO redemption, so a retried approval never raises two.
+procurementSchema.index({ dgoRedemption: 1 }, { unique: true, partialFilterExpression: { dgoRedemption: { $type: "objectId" } } });
 
 export const Procurement = mongoose.model<IProcurement>("Procurement", procurementSchema);

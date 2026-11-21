@@ -17,6 +17,9 @@ const dgoPointLotSchema = new Schema(
     earningEvent: { type: Schema.Types.ObjectId, ref: "DgoEarningEvent", default: null },
     ruleCode: { type: String, default: null },
     description: { type: String, default: "" },
+    /** Told the employee these points expire soon (30 and 7 days ahead), once each. */
+    warned30: { type: Boolean, default: false },
+    warned7: { type: Boolean, default: false },
   },
   { timestamps: true, versionKey: false }
 );
