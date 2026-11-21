@@ -10,6 +10,7 @@ import type {
   DgoPerson, DgoProgramInput, DgoRecordInput, DgoRecordResult, DgoRedeemInput, DgoRedemption,
   DgoRedemptionsTab, DgoRedemptionsView, DgoReward, DgoRewardInput, DgoRewardsView, DgoRule, DgoRuleInput,
   DgoRulesView, DgoSettings, DgoSettingsInput, DgoSettingsView, DgoUpload, DgoUploadKind, DgoWalletView,
+  DgoIntegrationsView, DgoKpiRunResult, DgoSuggestion, DgoSuggestionsTab, DgoSuggestionsView,
 } from "@/types";
 
 /**
@@ -47,7 +48,7 @@ export const useDgoMe = (enabled = true) =>
     retry: false,
   });
 
-export type DgoNavFlag = "use" | "nominate" | "approvals" | "budgets" | "settings" | "reports" | "audit";
+export type DgoNavFlag = "use" | "nominate" | "approvals" | "budgets" | "settings" | "reports" | "audit" | "integrations";
 
 /** Whether a DGO menu entry is drawn for this person. Shared by the sidebar and search. */
 export function dgoAllows(flag: DgoNavFlag, me: DgoMe | undefined): boolean {
@@ -60,6 +61,7 @@ export function dgoAllows(flag: DgoNavFlag, me: DgoMe | undefined): boolean {
     case "settings": return me.can.settingsView;
     case "reports": return !!me.can.reportsView;
     case "audit": return me.can.auditView;
+    case "integrations": return me.can.settingsView || me.can.budgetsView;
   }
 }
 
@@ -575,4 +577,47 @@ export const useDgoExport = () =>
     },
     onError: async (e) => toast.error(await blobErrorMessage(e, "The export couldn't be made")),
   });
+
+// ─── Phase 4: integrations and suggestions ────────────────────────────────────
+
+/** Every feed into DGO Points: when it last ran, what it brought, what failed. */
+export const useDgoIntegrations = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "integrations"],
+    queryFn: async () => (await api.get<ApiResponse<DgoIntegrationsView>>("/dgo-points/integrations")).data.data!,
+    enabled,
+    retry: false,
+  });
+
+/** Import sales KPI points from Root's daily tracker for one day, now. The toast is the server's summary. */
+export const useRunDgoKpi = () =>
+  useDgoServerMutation(
+    async (day: string) => withMessage(await api.post<ApiResponse<DgoKpiRunResult>>("/dgo-points/integrations/kpi/run", { day })),
+    "The KPI import couldn't run",
+  );
+
+/** Awards somebody may record in one click (verified 5-star student reviews). */
+export const useDgoSuggestions = (tab: DgoSuggestionsTab, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "suggestions", tab],
+    queryFn: async () =>
+      (await api.get<ApiResponse<DgoSuggestionsView>>("/dgo-points/suggestions", { params: { status: tab } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+export const useRecordDgoSuggestion = () =>
+  useDgoServerMutation(
+    async (id: string) =>
+      withMessage(await api.post<ApiResponse<{ suggestion: DgoSuggestion; event: unknown }>>(`/dgo-points/suggestions/${id}/record`, {})),
+    "That suggestion couldn't be recorded",
+  );
+
+export const useDismissDgoSuggestion = () =>
+  useDgoServerMutation(
+    async ({ id, reason }: { id: string; reason?: string }) =>
+      withMessage(await api.post<ApiResponse<{ suggestion: DgoSuggestion }>>(`/dgo-points/suggestions/${id}/dismiss`, reason ? { reason } : {})),
+    "That suggestion couldn't be dismissed",
+  );
 

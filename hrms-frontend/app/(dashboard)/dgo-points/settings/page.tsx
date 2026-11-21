@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Gift, Layers, ListChecks, Loader2, Pencil, Plus, Save, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Building2, Gift, Layers, ListChecks, Loader2, Pencil, Plus, Save, SlidersHorizontal, Trash2, Users, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
@@ -12,12 +12,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
-  useDgoSettings, useSaveDgoSettings, useSaveDgoProgram, formatAed, dgoErrorMessage,
+  useDgoSettings, useSaveDgoSettings, useSaveDgoProgram, useDgoPeople, formatAed, dgoErrorMessage,
 } from "@/hooks/useDgoPoints";
+import { AsyncSelect } from "@/components/ui/async-select";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { RuleDialog } from "@/components/dgo/RuleDialog";
 import { DgoGate, Notice, Spinner, TableWrap, STAGE_LABEL, dayLabel, dateTime } from "@/components/dgo/shared";
 import type {
-  DgoEliteCategory, DgoEliteMetric, DgoLeaderboardVisibility, DgoMe, DgoRule, DgoSettings, DgoSettingsInput, DgoSettingsView, DgoTier,
+  DgoAudience, DgoEliteCategory, DgoEliteMetric, DgoLeaderboardVisibility, DgoMe, DgoPilotPerson, DgoRule, DgoSettings, DgoSettingsInput,
+  DgoSettingsView, DgoTier,
 } from "@/types";
 
 type Tab = "general" | "rules" | "tiers" | "departments" | "recognition";
@@ -227,7 +230,9 @@ function General({
           <p className="font-semibold">Open to employees</p>
           <p className="text-sm text-muted-foreground">
             {data.program.openToEmployees
-              ? "Everyone sees DGO Points in their menu."
+              ? data.program.audience === "pilot"
+                ? "The pilot group below sees DGO Points in their menu."
+                : "Everyone sees DGO Points in their menu."
               : "Only people with a DGO permission, department heads and Super Admins see it. Switch on when the pilot starts."}
           </p>
         </div>
@@ -238,6 +243,8 @@ function General({
           aria-label="Open DGO Points to employees"
         />
       </Card>
+
+      {data.program.audience !== undefined && <Audience data={data} canEdit={canEdit} />}
 
       <Card className="space-y-4 p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -272,6 +279,201 @@ function General({
         <VersionList versions={data.history} current={data.settings.version} />
       </Card>
     </div>
+  );
+}
+
+// ─── Who it's open to (pilot) ─────────────────────────────────────────────────
+
+const AUDIENCE: Array<{ value: DgoAudience; label: string; hint: string }> = [
+  { value: "everyone", label: "Everyone", hint: "Every employee sees and earns points once it's switched on." },
+  { value: "pilot", label: "A pilot group", hint: "Only the departments and people below." },
+];
+
+/**
+ * Everyone, or a pilot group of departments and named people. Held as a draft
+ * and saved in one go, so ticking three departments isn't three saves.
+ */
+function Audience({ data, canEdit }: { data: DgoSettingsView; canEdit: boolean }) {
+  const program = useSaveDgoProgram();
+  const savedAudience: DgoAudience = data.program.audience ?? "everyone";
+  const savedDepts = data.program.pilotDepartments ?? [];
+  const savedPeople = data.program.pilotEmployees ?? [];
+  // Keyed on ids, so a background refetch doesn't wipe what is being picked.
+  const savedKey = `${savedAudience}|${[...savedDepts].sort().join(",")}|${savedPeople.map((p) => p.id).sort().join(",")}`;
+  const [audience, setAudience] = useState<DgoAudience>(savedAudience);
+  const [depts, setDepts] = useState<Set<string>>(new Set(savedDepts));
+  const [people, setPeople] = useState<DgoPilotPerson[]>(savedPeople);
+  useEffect(() => {
+    setAudience(savedAudience);
+    setDepts(new Set(savedDepts));
+    setPeople(savedPeople);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+
+  const draftKey = `${audience}|${Array.from(depts).sort().join(",")}|${people.map((p) => p.id).sort().join(",")}`;
+  const changed = draftKey !== savedKey;
+  const emptyPilot = audience === "pilot" && depts.size === 0 && people.length === 0;
+  const deptStaff = data.departments.filter((d) => depts.has(d.id)).reduce((n, d) => n + d.headcount, 0);
+
+  const save = () => program.mutate({
+    audience,
+    pilotDepartments: Array.from(depts),
+    pilotEmployees: people.map((p) => p.id),
+  });
+
+  return (
+    <Card className="space-y-4 p-4">
+      <div className="space-y-1">
+        <p className="flex items-center gap-2 font-semibold"><Users className="h-4 w-4 text-muted-foreground" /> Who it&apos;s open to</p>
+        <p className="text-sm text-muted-foreground">
+          With a pilot group, only those people see and earn points, and each month&apos;s budget is split by the pilot&apos;s headcount while it runs.
+        </p>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {AUDIENCE.map((a) => (
+          <button
+            key={a.value}
+            type="button"
+            disabled={!canEdit}
+            onClick={() => setAudience(a.value)}
+            className={cn(
+              "rounded-xl border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed",
+              audience === a.value ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:bg-muted/50",
+            )}
+            aria-pressed={audience === a.value}
+          >
+            <p className="font-medium">{a.label}</p>
+            <p className="text-xs text-muted-foreground">{a.hint}</p>
+          </button>
+        ))}
+      </div>
+
+      {audience === "pilot" && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Departments in the pilot</p>
+            <div className="flex flex-wrap gap-2">
+              {data.departments.map((d) => {
+                const on = depts.has(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    disabled={!canEdit}
+                    onClick={() => setDepts((s) => {
+                      const next = new Set(s);
+                      if (on) next.delete(d.id); else next.add(d.id);
+                      return next;
+                    })}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed",
+                      on ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                    )}
+                    aria-pressed={on}
+                  >
+                    {d.name} <span className={cn("tabular-nums", on ? "opacity-80" : "opacity-60")}>· {d.headcount}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">And these people</p>
+            <p className="text-xs text-muted-foreground">For someone in a department that isn&apos;t in the pilot.</p>
+            {canEdit && (
+              <PilotPersonPicker
+                exclude={people.map((p) => p.id)}
+                onPick={(p) => setPeople((list) => (list.some((x) => x.id === p.id) ? list : [...list, p]))}
+              />
+            )}
+            {people.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {people.map((p) => (
+                  <span key={p.id} className="inline-flex max-w-full items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs">
+                    <span className="truncate font-medium">{p.name}</span>
+                    {p.department && <span className="truncate text-muted-foreground">· {p.department}</span>}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="ml-1 rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                        onClick={() => setPeople((list) => list.filter((x) => x.id !== p.id))}
+                        aria-label={`Remove ${p.name} from the pilot`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Nobody added by name.</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            {!changed && typeof data.program.pilotHeadcount === "number" ? (
+              <span>In the pilot now: <span className="font-semibold tabular-nums">{data.program.pilotHeadcount} active staff</span></span>
+            ) : (
+              <span className="text-muted-foreground">
+                About <span className="font-semibold tabular-nums text-foreground">{deptStaff + people.length}</span> staff
+                {" "}(the exact count shows once saved)
+              </span>
+            )}
+          </div>
+          {emptyPilot && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">Pick at least one department or person, or nobody will see DGO Points.</p>
+          )}
+        </div>
+      )}
+
+      {canEdit && (
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {changed && (
+            <Button
+              variant="outline"
+              disabled={program.isPending}
+              onClick={() => { setAudience(savedAudience); setDepts(new Set(savedDepts)); setPeople(savedPeople); }}
+            >
+              Undo changes
+            </Button>
+          )}
+          <Button disabled={!changed || program.isPending} onClick={save}>
+            {program.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save who it&apos;s open to
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Search anyone active and add them to the pilot by name. */
+function PilotPersonPicker({ exclude, onPick }: { exclude: string[]; onPick: (p: DgoPilotPerson) => void }) {
+  const [search, setSearch] = useState("");
+  const debounced = useDebouncedValue(search, 250);
+  const { data = [], isFetching } = useDgoPeople(debounced.trim());
+  const options = data
+    .filter((p) => !exclude.includes(p.id))
+    .map((p) => ({ value: p.id, label: p.name, sub: [p.department, p.designation].filter(Boolean).join(" · ") || undefined }));
+  return (
+    <AsyncSelect
+      value=""
+      onChange={(id) => {
+        const p = data.find((x) => x.id === id);
+        if (p) onPick({ id: p.id, name: p.name, department: p.department });
+        setSearch("");
+      }}
+      options={options}
+      loading={isFetching}
+      search={search}
+      onSearchChange={setSearch}
+      placeholder="Add a person…"
+      searchPlaceholder="Search by name…"
+      emptyText="Nobody found."
+      className="w-full sm:max-w-sm"
+    />
   );
 }
 

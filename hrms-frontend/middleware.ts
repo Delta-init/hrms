@@ -33,5 +33,8 @@ export const config = {
     // The join link in meeting emails — a signed-out click lands on sign-in
     // and comes back here, where the location check runs.
     "/meet/:path*",
+    // DGO Points: the menu link in the CRMs, CS Portal and the LMS lands here —
+    // a signed-out click goes to sign-in and comes back.
+    "/dgo-points/:path*",
   ],
 };

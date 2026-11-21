@@ -15,6 +15,10 @@ const dgoProgramSchema = new Schema(
     /** Off until an admin opens it: until then only staff with a DGO permission, heads and Super Admins see anything. */
     openToEmployees: { type: Boolean, default: false },
     revenueDepartments: { type: [{ type: Schema.Types.ObjectId, ref: "Department" }], default: [] },
+    /** Who it is open to once switched on: everybody, or a pilot group of departments and people (Phase 4). */
+    audience: { type: String, enum: ["everyone", "pilot"], default: "everyone" },
+    pilotDepartments: { type: [{ type: Schema.Types.ObjectId, ref: "Department" }], default: [] },
+    pilotEmployees: { type: [{ type: Schema.Types.ObjectId, ref: "Employee" }], default: [] },
     /** Who sees the points leaderboard: everybody, their own department, or only managers (everyone always sees their own line). */
     leaderboardVisibility: { type: String, enum: ["everyone", "department", "managers"], default: "everyone" },
     /** Nominations one person may send in a month. */

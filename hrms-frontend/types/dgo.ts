@@ -68,6 +68,10 @@ export interface DgoMe {
   leaderboardVisibility?: DgoLeaderboardVisibility;
   /** Nominations each person may send a month (Phase 2). */
   nominationsPerMonth?: number;
+  /** Who it's open to once switched on (Phase 4). */
+  audience?: DgoAudience;
+  /** False only when DGO runs as a pilot and you're not in it (Phase 4). */
+  inPilot?: boolean;
   /** Your own employee record, or null for a login with none (then there are no own points). */
   employee: { id: string; name: string; department: string | null } | null;
   pointValueAed: number;
@@ -204,6 +208,11 @@ export interface DgoSettingsView {
     leaderboardVisibility?: DgoLeaderboardVisibility;
     nominationsPerMonth?: number;
     eliteCategories?: DgoEliteCategory[];
+    // Phase 4
+    audience?: DgoAudience;
+    pilotDepartments?: string[];
+    pilotEmployees?: DgoPilotPerson[];
+    pilotHeadcount?: number;
   };
   departments: Array<{ id: string; name: string; headcount: number; group: DgoGroup; head: string | null }>;
 }
@@ -339,6 +348,11 @@ export interface DgoProgramInput {
   leaderboardVisibility?: DgoLeaderboardVisibility;
   nominationsPerMonth?: number;
   eliteCategories?: DgoEliteCategory[];
+  // Phase 4
+  audience?: DgoAudience;
+  pilotDepartments?: string[];
+  /** Employee ids. */
+  pilotEmployees?: string[];
 }
 
 export interface DgoPerson { id: string; name: string; department: string | null; designation: string | null }
@@ -697,3 +711,75 @@ export interface DgoReconciliation {
 
 /** GET /dgo-points/reports/export?kind=&month= → text/csv */
 export type DgoExportKind = "ledger" | "wallets" | "redemptions" | "reconciliation";
+
+// ─── Phase 4 ──────────────────────────────────────────────────────────────────
+
+/** Open to everybody once switched on, or only to a pilot group. */
+export type DgoAudience = "everyone" | "pilot";
+
+export interface DgoPilotPerson { id: string; name: string; department: string | null }
+
+export type DgoSyncSource = "kpi" | "achievers" | "collections";
+
+/** One run of a feed into DGO Points. */
+export interface DgoSyncRun {
+  id: string;
+  source: DgoSyncSource;
+  /** The day (kpi), or month (achievers / collections) it was for. */
+  key: string;
+  trigger: "nightly" | "manual";
+  byName: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  ok: boolean;
+  /** kpi: facts, awarded, alreadyThere, belowTarget, notInHrms, notInPilot, monthClosed, capped, budgetBlocked, suggestions. */
+  counts: Record<string, number>;
+  unmatched: Array<{ email: string; name: string; crm: string | null; achievedPct: number | null; why: string }>;
+  errors: string[];
+  problems: string[];
+}
+
+/** GET /dgo-points/integrations (dgoSettings view or dgoBudgets view) */
+export interface DgoIntegrationsView {
+  sources: Array<{
+    key: DgoSyncSource;
+    name: string;
+    schedule: string;
+    configured: boolean;
+    configHint: string | null;
+    lastRun: DgoSyncRun | null;
+    lastOkAt: string | null;
+    failuresLast7Days: number;
+    where: string | null;
+  }>;
+  runs: DgoSyncRun[];
+  can: { runKpi: boolean };
+}
+
+/** POST /dgo-points/integrations/kpi/run */
+export interface DgoKpiRunResult { run: DgoSyncRun }
+
+export type DgoSuggestionStatus = "open" | "recorded" | "dismissed";
+
+/** An award somebody may record in one click — e.g. a verified 5-star student review. */
+export interface DgoSuggestion {
+  id: string;
+  source: "lms_review";
+  employee: { id: string; name: string; department: string | null };
+  ruleCode: string;
+  ruleName: string;
+  points: number;
+  day: string;
+  title: string;
+  detail: string;
+  status: DgoSuggestionStatus;
+  eventId: string | null;
+  decidedByName: string | null;
+  canRecord: boolean;
+}
+
+export type DgoSuggestionsTab = "open" | "done";
+
+/** GET /dgo-points/suggestions?status=open|done */
+export interface DgoSuggestionsView { items: DgoSuggestion[]; counts: { open: number; done: number } }
+

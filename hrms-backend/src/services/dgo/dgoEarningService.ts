@@ -15,7 +15,7 @@ import { AlreadyCredited, creditEvent, reverseEvent, type Actor } from "./dgoLed
 import { inTransaction } from "./dgoTxn.js";
 import { dgoAudit } from "./dgoAudit.js";
 import {
-  approverUserIds, assertCanUse, can, departmentHasHead, isOpen, oid, whyCannotDecide, whyCannotRecordFor, type DgoViewer,
+  approverUserIds, assertCanUse, audienceOf, can, departmentHasHead, inAudience, isOpen, oid, whyCannotDecide, whyCannotRecordFor, type DgoViewer,
 } from "./dgoAccess.js";
 
 /**
@@ -197,6 +197,7 @@ async function createEvent(
   const month = input.day.slice(0, 7);
   if (month < previousMonth(today.slice(0, 7))) throw httpError("Points can be recorded for this month or last month only", 400);
   await assertMonthOpen(v.orgId, month, "nothing more can be recorded for it");
+  if (!inAudience(await audienceOf(v.orgId), emp)) throw httpError(`${emp.name} isn't in the DGO Points pilot`, 403);
   const settings = await settingsOn(v.orgId, input.day);
   const rule = await ruleOn(v.orgId, input.ruleCode, input.day);
   if (!rule) throw httpError(`${input.ruleCode} isn't in force on ${input.day}`, 400);
@@ -522,3 +523,17 @@ export async function reverseEarning(v: DgoViewer, eventId: string, reason: stri
   await notify({ users: [ev.user], kind: "system", tone: "negative", organization: v.orgId, actor: v.userId, title: `−${ev.points} DGO Points`, body: `${ev.ruleName} (${ev.day}) taken back: ${reason.trim()}`, href: "/dgo-points/wallet" });
   return (await DgoEarningEvent.findById(ev._id).lean<EventDoc>())!;
 }
+
+/**
+ * A KPI day recorded by a feed (the nightly import from Root's daily tracker),
+ * as `sys` (a systemViewer). Same steps as anybody's: same idempotency key as a
+ * head recording it by hand (so the day pays once), KPI exceeded replaces met,
+ * the daily cap and the department's allowance apply, a closed month refuses.
+ */
+export async function recordAutomaticKpi(sys: DgoViewer, employeeId: string, level: "met" | "exceeded", day: string, reason: string) {
+  const emp = await activeEmployee(sys, employeeId);
+  const rules = (await (await import("./dgoSettingsService.js")).rulesOn(sys.orgId, day)).filter((r) => r.active && r.source === "kpi" && r.kpiLevel === level);
+  if (!rules.length) throw httpError(`No KPI ${level} rule is in force on ${day}`, 409);
+  return createEvent(sys, emp, await isOpen(sys.orgId), { employeeId, ruleCode: rules[0].code, day, reason, kpiKey: "daily", requestId: `auto-${day}` }, { origin: "recorded" });
+}
+

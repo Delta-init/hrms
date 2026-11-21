@@ -1,5 +1,5 @@
 import type { Types } from "mongoose";
-import { env } from "../../config/env.js";
+import { askRoot } from "./dgoRootClient.js";
 import { DgoAchieverMonth } from "../../models/DgoAchieverMonth.js";
 import { DgoBudgetPeriod } from "../../models/DgoBudgetPeriod.js";
 import { DgoEarningEvent } from "../../models/DgoEarningEvent.js";
@@ -51,30 +51,11 @@ export interface RootMetrics {
 
 type Fetcher = (month: string) => Promise<RootMetrics>;
 
-async function askRoot(month: string): Promise<RootMetrics> {
-  const base = env.ROOT_ERP_API_URL.replace(/\/+$/, "");
-  if (!base || !env.ROOT_ERP_SECRET) throw httpError("Root isn't set up on this server yet (ROOT_ERP_API_URL and ROOT_ERP_SECRET), so its figures can't be fetched", 503);
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 30_000);
-  try {
-    const res = await fetch(`${base}/api/v1/service/dgo/achiever-metrics?month=${encodeURIComponent(month)}`, {
-      headers: { "x-portal-secret": env.ROOT_ERP_SECRET, accept: "application/json" },
-      signal: ctrl.signal,
-    });
-    const body = (await res.json().catch(() => null)) as { success?: boolean; message?: string; data?: RootMetrics } | null;
-    if (!res.ok || !body?.data) throw httpError(`Root couldn't be asked: ${body?.message ?? `HTTP ${res.status}`}`, 502);
-    return body.data;
-  } catch (e) {
-    if ((e as { statusCode?: number }).statusCode) throw e;
-    throw httpError(`Root couldn't be asked: ${(e as Error).name === "AbortError" ? "it took too long" : (e as Error).message}`, 502);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const askRootMonth = (month: string) => askRoot<RootMetrics>(`achiever-metrics?month=${encodeURIComponent(month)}`);
 
-let fetcher: Fetcher = askRoot;
+let fetcher: Fetcher = askRootMonth;
 /** The check script stands Root in with fake figures. */
-export const setRootFetcherForTest = (f: Fetcher | null) => { fetcher = f ?? askRoot; };
+export const setRootFetcherForTest = (f: Fetcher | null) => { fetcher = f ?? askRootMonth; };
 
 /* ───────────── ranking ───────────── */
 
@@ -343,7 +324,14 @@ export async function fetchAchievers(v: DgoViewer, monthIn: string) {
   if (existing && !["provisional", "locked"].includes(existing.status)) throw httpError(`${month} is already ${existing.status === "published" ? "published" : "verified"} — send it back first`, 409);
   await assertMonthOpen(v.orgId, month, "its achievers can't change");
 
-  const figures = await fetcher(month);
+  const { logRun } = await import("./dgoIntegrationService.js");
+  let figures: RootMetrics;
+  try {
+    figures = await fetcher(month);
+  } catch (e) {
+    await logRun(v, "achievers", month, { ok: false, errors: [(e as Error).message] });
+    throw e;
+  }
   const settings = await settingsOn(v.orgId, `${month}-01`);
   const program = await programSettings(v.orgId);
   const emails = [
@@ -373,6 +361,10 @@ export async function fetchAchievers(v: DgoViewer, monthIn: string) {
     },
     { upsert: true }
   );
+  await logRun(v, "achievers", month, {
+    ok: true, problems: figures.problems ?? [],
+    counts: { categories: categories.length, winners: categories.filter((c) => c.winner).length, ties: categories.filter((c) => c.tie).length, people: matched.size },
+  });
   await dgoAudit(v, "achievers_fetched", "achiever_month", month, existing ? { status: existing.status } : null, { status, winners: categories.filter((c) => c.winner).map((c) => `${c.code}:${c.winner!.name}`) });
   return { ...(await view(v, month)), message: locked ? "Locked: the elite pool is closed this month" : "Figures fetched from Root" };
 }

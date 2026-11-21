@@ -80,4 +80,11 @@ router.get("/reports/overview", c.getReportsOverview);
 router.get("/reports/reconciliation", c.getReconciliation);
 router.get("/reports/export", c.getExport);
 
+// Phase 4: feeds and suggestions.
+router.get("/integrations", c.getIntegrations);
+router.post("/integrations/kpi/run", checkPermission("dgoSettings", "edit"), c.postKpiRun);
+router.get("/suggestions", c.getSuggestions);
+router.post("/suggestions/:id/record", c.postSuggestionRecord);
+router.post("/suggestions/:id/dismiss", c.postSuggestionDismiss);
+
 export default router;

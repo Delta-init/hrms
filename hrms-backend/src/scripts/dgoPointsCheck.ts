@@ -29,6 +29,12 @@
  * with held points kept, leavers, warnings, nudges, wallet recount); reports,
  * CSV exports and the audit filters.
  *
+ * And Phase 4 (sections 28–31): a pilot group (only they see, earn and count in
+ * the budget split); sales KPI points from Root's daily tracker (met/exceeded,
+ * once per day, exceeded replaces met, never taken back, closed months and
+ * people outside the pilot skipped); student review suggestions; the
+ * Integrations page and the nightly import.
+ *
  * Refuses anything but a local scratch database. Run it twice: on a replica set
  * (transactions) and on a plain mongod (DGO_NO_TXN=1), since both must hold.
  *
@@ -901,6 +907,106 @@ check("…by day", (await inOrg(() => read.audit(vFin1b, { from: today, to: toda
 check("collections from finance: a clear answer when HRMS isn't connected", (await refused(inOrg(() => budget.fetchCollections(vFin1b, month)), /isn't connected to finance/)) === "");
 const meFin = await inOrg(() => read.me(vFinX));
 check("/me: finance's report and control rights", meFin.can.reportsView && meFin.can.reportsExport && meFin.can.adjustmentsPropose && meFin.can.adjustmentsApprove && !(await inOrg(() => read.me(vSam))).can.reportsView);
+
+/* ================================ Phase 4 ================================ */
+const kpiSvc = await import("../services/dgo/dgoKpiImportService.js");
+const integ = await import("../services/dgo/dgoIntegrationService.js");
+const { DgoSuggestion } = await import("../models/DgoSuggestion.js");
+const { DgoSyncRun } = await import("../models/DgoSyncRun.js");
+
+/* ------------------------------------------------------------------ */
+console.log("\n28. A pilot group: only they see and earn points");
+await inOrg(() => settings.saveProgram(vAdmin, { audience: "pilot", pilotDepartments: [String(media._id)], pilotEmployees: [sam.emp] }));
+await inOrg(() => budget.refreshGrouping(orgId, month));
+const vSaraP = await as(sara), vSamP = await as(sam);
+const meSara = await inOrg(() => read.me(vSaraP));
+const meSamP = await inOrg(() => read.me(vSamP));
+check("Sara (Sales, not named) is outside the pilot: nothing to see", !meSara.canUse && meSara.inPilot === false, { canUse: meSara.canUse, inPilot: meSara.inPilot });
+check("Sam (named) is in it", meSamP.canUse && meSamP.inPilot === true);
+check("Hana heads Sales, which isn't a pilot department: outside too", !(await inOrg(async () => access.canUse(await as(hana)))));
+check("HR can't record points for someone outside the pilot", (await refused(inOrg(() => earning.recordEarning(vHira, { employeeId: sara.emp, ruleCode: "TEAM_SUPPORT", day: today, reason: "x", requestId: rid() })), /isn't in the DGO Points pilot/)) === "");
+check("…nor can anyone nominate them, and the picker leaves them out", (await refused(inOrg(() => earning.nominate(vSam, { employeeId: sara.emp, ruleCode: "TEAM_SUPPORT", day: today, reason: "x", requestId: rid() })), /pilot|all \d+ of your nominations/)) === "" && !(await inOrg(() => read.colleagues(vSam))).some((c) => c.name === "Sara"));
+check("the budget is split by the pilot's headcount: Sales counts Sam only", (await rowOf(sales)).headcount === 1, await rowOf(sales));
+const sv = await inOrg(() => settings.settingsView(vAdmin));
+check("the settings page shows the pilot and its size", sv.program.audience === "pilot" && sv.program.pilotEmployees.some((e) => e.name === "Sam") && sv.program.pilotHeadcount >= 1, sv.program);
+await inOrg(() => settings.saveProgram(vAdmin, { audience: "everyone" }));
+await inOrg(() => budget.refreshGrouping(orgId, month));
+check("back to everyone: Sara can use it again, Sales counts its people again", (await inOrg(async () => access.canUse(await as(sara)))) && (await rowOf(sales)).headcount >= 2);
+
+/* ------------------------------------------------------------------ */
+console.log("\n29. Sales KPI points from Root's daily tracker");
+const kday = earlierDay(3);
+let facts = {
+  date: kday,
+  people: [
+    { email: "SAM@scratch.local", name: "Sam", crm: "delta", achievedPct: 105, score: 92 },
+    { email: "sam@scratch.local", name: "Sam", crm: "draw", achievedPct: 90, score: 80 },
+    { email: "hana@scratch.local", name: "Hana", crm: "delta", achievedPct: 130, score: 100 },
+    { email: "fin1@scratch.local", name: "Fin1", crm: "remote", achievedPct: 100, score: 100 },
+    { email: "sara@scratch.local", name: "Sara", crm: "delta", achievedPct: 80, score: 70 },
+    { email: "stranger@elsewhere.test", name: "Stranger", crm: "draw", achievedPct: 150, score: 100 },
+  ],
+  reviews: [
+    { id: "rev-1", mentorEmail: "hana@scratch.local", mentorName: "Hana", rating: 5, comment: "Explained risk better than any course I took", className: "Forex basics", studentName: "Student", at: `${kday}T10:00:00Z` },
+    { id: "rev-2", mentorEmail: "sara@scratch.local", mentorName: "Sara", rating: 5, comment: "Patient and clear", className: null, studentName: null, at: `${kday}T11:00:00Z` },
+    { id: "rev-3", mentorEmail: "sara@scratch.local", mentorName: "Sara", rating: 4, comment: "Good", className: null, studentName: null, at: `${kday}T12:00:00Z` },
+    { id: "rev-4", mentorEmail: "sara@scratch.local", mentorName: "Sara", rating: 5, comment: "  ", className: null, studentName: null, at: `${kday}T12:30:00Z` },
+  ],
+  problems: ["Remote CRM was slow (test)"],
+};
+kpiSvc.setKpiFetcherForTest(async () => facts);
+const before4 = { sam: await wallet(sam), hana: await wallet(hana), fin1: await wallet(fin1), sara: await wallet(sara) };
+check("an employee can't run the import", (await refused(inOrg(() => kpiSvc.runKpiByHand(vSam, kday)), /can't run/)) === "");
+check("no future days, nothing two months back", (await refused(inOrg(() => kpiSvc.runKpiByHand(vAdmin, addMonthsToDay(today, 1))), /earlier day/)) === "" && (await refused(inOrg(() => kpiSvc.runKpiByHand(vAdmin, `${previousMonth(previousMonth(month))}-10`)), /this month or last/)) === "");
+const k1 = await inOrg(() => kpiSvc.runKpiByHand(vAdmin, kday));
+check("Sam met (his best CRM, 105%), Hana exceeded (130%), Fin1 met (exactly 100%)", (await wallet(sam)) === before4.sam + 20 && (await wallet(hana)) === before4.hana + 30 && (await wallet(fin1)) === before4.fin1 + 20, { k1, now: { sam: await wallet(sam), hana: await wallet(hana), fin1: await wallet(fin1) }, before4 });
+check("Sara under target gets nothing; the stranger isn't in HRMS", (await wallet(sara)) === before4.sara && k1.counts.belowTarget === 1 && k1.counts.notInHrms === 1 && k1.counts.awarded === 3, k1.counts);
+const autoEv = await DgoEarningEvent.findOne({ employee: hana.emp, day: kday, ruleCode: "KPI_EXCEEDED" }).lean<{ submittedByName: string; submittedBy: unknown; status: string; reason: string }>();
+check("recorded as by the Root daily tracker, posted with no approval", autoEv?.status === "posted" && autoEv.submittedByName === "Root daily tracker" && autoEv.submittedBy == null && /130\.0%/.test(autoEv.reason), autoEv);
+const k2 = await inOrg(() => kpiSvc.runKpiByHand(vAdmin, kday));
+check("running the same day again pays nothing more", k2.counts.awarded === 0 && k2.counts.alreadyThere === 3 && (await wallet(sam)) === before4.sam + 20, k2.counts);
+const byHand = await inOrg(() => earning.recordEarning(vHana2, { employeeId: sam.emp, ruleCode: "KPI_MET", day: kday, reason: "by hand", requestId: rid() }));
+check("a head recording the same KPI by hand doesn't pay twice", byHand.duplicate && (await wallet(sam)) === before4.sam + 20);
+facts = { ...facts, people: facts.people.map((p) => (p.email === "SAM@scratch.local" ? { ...p, achievedPct: 125 } : p.email === "hana@scratch.local" ? { ...p, achievedPct: 50 } : p)) };
+await inOrg(() => kpiSvc.runKpiByHand(vAdmin, kday));
+check("a late re-check lifts Sam's met to exceeded: net 30, never 50", (await wallet(sam)) === before4.sam + 30 && (await DgoEarningEvent.countDocuments({ employee: sam.emp, day: kday, status: "posted", source: "kpi" })) === 1);
+check("…and Hana's lower score later takes nothing back", (await wallet(hana)) === before4.hana + 30);
+const kClosed = await inOrg(() => kpiSvc.runKpiByHand(vAdmin, `${previousMonth(month)}-28`));
+check("a day in a closed month is skipped, not an error", kClosed.ok && kClosed.counts.monthClosed >= 1 && kClosed.counts.awarded === 0, kClosed.counts);
+await inOrg(() => settings.saveProgram(vAdmin, { audience: "pilot", pilotDepartments: [String(media._id)], pilotEmployees: [] }));
+const kPilot = await inOrg(() => kpiSvc.runKpiByHand(vAdmin, earlierDay(4)));
+check("during a pilot, people outside it are listed, not paid", kPilot.counts.awarded === 0 && kPilot.counts.notInPilot >= 2, kPilot.counts);
+await inOrg(() => settings.saveProgram(vAdmin, { audience: "everyone" }));
+
+/* ------------------------------------------------------------------ */
+console.log("\n30. Student review suggestions");
+check("one suggestion per verified 5★ review with a comment (4★ and blank ones left out)", (await DgoSuggestion.countDocuments({ organization: orgId })) === 2);
+check("…re-imports never suggest twice", (await DgoSuggestion.countDocuments({ sourceId: "rev-1" })) === 1);
+const sugHr = await inOrg(() => integ.suggestionsView(vHira));
+const hanaSug = sugHr.items.find((s) => s.employee.name === "Hana")!;
+check("HR sees both, with the review quoted and the points", sugHr.counts.open === 2 && hanaSug?.points === 20 && /Explained risk/.test(hanaSug.detail) && hanaSug.canRecord, sugHr.items);
+check("an employee can't see suggestions", (await refused(inOrg(() => integ.suggestionsView(vSam)), /can't record awards/)) === "");
+check("Hana, as head, isn't shown her own", !(await inOrg(() => integ.suggestionsView(vHana2))).items.some((s) => s.employee.name === "Hana"));
+const recS = await inOrg(() => integ.recordSuggestion(vHira, hanaSug.id));
+check("HR records it: a Student feedback request with the review as evidence", recS.suggestion.status === "recorded" && (recS.event as { status: string; ruleCode: string; evidenceNote: string }).ruleCode === "STUDENT_FEEDBACK" && /Verified LMS review/.test((recS.event as { evidenceNote: string }).evidenceNote ?? ""), recS);
+check("…recording again changes nothing", (await inOrg(() => integ.recordSuggestion(vHira, hanaSug.id))).message === "Already recorded" && (await DgoEarningEvent.countDocuments({ employee: hana.emp, ruleCode: "STUDENT_FEEDBACK" })) === 1);
+const saraSug = sugHr.items.find((s) => s.employee.name === "Sara")!;
+await inOrg(() => integ.dismissSuggestion(vHira, saraSug.id, "Already thanked"));
+check("dismissing one", (await DgoSuggestion.findById(saraSug.id).lean<{ status: string }>())?.status === "dismissed" && (await refused(inOrg(() => integ.recordSuggestion(vHira, saraSug.id)), /dismissed/)) === "");
+
+/* ------------------------------------------------------------------ */
+console.log("\n31. The Integrations page and the nightly import");
+const nightly = await kpiSvc.importKpiNightly();
+check("the nightly run does today and yesterday for each open organisation", nightly.length === 2, nightly.map((n) => n.message));
+const iv = await inOrg(() => integ.integrationsView(vAdmin));
+const kpiSrc = iv.sources.find((s) => s.key === "kpi")!;
+check("three feeds; the KPI one shows its last run and counts", iv.sources.length === 3 && kpiSrc.lastRun?.source === "kpi" && typeof kpiSrc.lastRun.counts.facts === "number", iv.sources.map((s) => [s.key, s.lastRun?.key]));
+check("…Root's own problems and the unpaid people with why", iv.runs.some((r) => r.problems.includes("Remote CRM was slow (test)")) && iv.runs.some((r) => r.unmatched.some((u) => u.why === "Not found in HRMS")));
+check("…the monthly achiever fetches from earlier are logged too", iv.sources.find((s) => s.key === "achievers")?.lastRun?.ok === true);
+check("…an employee can't see it", (await refused(inOrg(() => integ.integrationsView(vSam)), /can't see/)) === "");
+kpiSvc.setKpiFetcherForTest(null);
+check("Root not set up: a by-hand run says so, and the failure is logged", (await refused(inOrg(() => kpiSvc.runKpiByHand(vAdmin, today)), /Root isn't set up/)) === "" && (await DgoSyncRun.findOne({ source: "kpi" }).sort({ startedAt: -1 }).lean<{ ok: boolean; errors: string[] }>())?.ok === false);
+check("everything still adds up after Phase 4", await ledgerOk());
 
 console.log(`\n${fail ? "\x1b[31m" : "\x1b[32m"}${pass} passed, ${fail} failed\x1b[0m\n`);
 await mongoose.disconnect();

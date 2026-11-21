@@ -151,6 +151,8 @@ const envSchema = z.object({
   PROBATION_CRON: z.string().default("10 0 * * *"),
   // DGO Points nightly (expiry, leavers, warnings, nudges, wallet recount), Dubai time. "off" stops it.
   DGO_POINTS_CRON: z.string().default("10 1 * * *"),
+  // DGO Points sales KPI import from Root's daily tracker, Dubai time (today and yesterday). "off" stops it.
+  DGO_KPI_CRON: z.string().default("45 23 * * *"),
   /** Meeting reminders: 30 minutes before, and as it starts — every minute, so "starting now" is. */
   MEETING_REMINDER_CRON: z.string().default("* * * * *"),
   /** Replies to offers, read from the HR mailbox (read-only). "off" stops it. */

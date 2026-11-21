@@ -70,11 +70,19 @@ export function DgoGate({
     return (
       <Notice
         icon={Lock}
-        text={deniedText ?? (me.open ? "This page isn't part of your access." : "DGO Points isn't open yet. It will appear here when HR switches it on.")}
+        text={deniedText ?? deniedFor(me)}
       />
     );
   }
   return <>{children(me)}</>;
+}
+
+/** Why the person sees nothing here, in plain words: closed, a pilot they're not in, or simply not their page. */
+function deniedFor(me: DgoMe): string {
+  if (me.open && me.inPilot === false && !me.canUse) {
+    return "DGO Points is running as a pilot for some teams; it isn't open to you yet.";
+  }
+  return me.open ? "This page isn't part of your access." : "DGO Points isn't open yet. It will appear here when HR switches it on.";
 }
 
 export function Spinner({ className }: { className?: string }) {

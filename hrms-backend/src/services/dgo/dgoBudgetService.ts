@@ -9,7 +9,7 @@ import { dayIn, isMonth, previousMonth, splitAllocations, tierFor, tierLabel, to
 import { httpError, isDuplicateKey } from "./dgoErrors.js";
 import { settingsOn } from "./dgoSettingsService.js";
 import { dgoAudit } from "./dgoAudit.js";
-import { can, oid, type DgoViewer } from "./dgoAccess.js";
+import { audienceFilter, audienceOf, can, oid, type DgoViewer } from "./dgoAccess.js";
 
 /**
  * One month's DGO Points money.
@@ -64,9 +64,11 @@ const keyOf = (department: unknown) => (department ? String(department) : NO_DEP
 /** Active people per department, with names and their group. */
 async function headcounts(orgId: string, revenueDepartments: unknown[]) {
   const revenue = new Set(revenueDepartments.map(String));
+  // During a pilot only the pilot group counts, so the pool is shared among the people who can earn it.
+  const pilot = audienceFilter(await audienceOf(orgId));
   const [counts, departments] = await Promise.all([
     Employee.aggregate<{ _id: unknown; n: number }>([
-      { $match: { organization: oid(orgId), status: { $in: ACTIVE_EMPLOYEE_STATUSES } } },
+      { $match: { organization: oid(orgId), status: { $in: ACTIVE_EMPLOYEE_STATUSES }, ...pilot } },
       { $group: { _id: "$department", n: { $sum: 1 } } },
     ]),
     Department.find({ organization: orgId }).select("name").lean<Array<{ _id: unknown; name: string }>>(),
@@ -399,11 +401,14 @@ export async function fetchCollections(v: DgoViewer, monthIn: string) {
   const { financeConfigured, financePost } = await import("../financeClient.js");
   if (!financeConfigured()) throw httpError("HRMS isn't connected to finance yet (FINANCE_API_URL, FINANCE_CLIENT_ID, FINANCE_INTEGRATION_SECRET)", 503);
   let data: { netAed: number; vatAed: number; grossAed: number; currency: string; unreconciledNetAed: number; pendingLateEntries?: { count: number } };
+  const { logRun } = await import("./dgoIntegrationService.js");
   try {
     data = await financePost("/hrms/dgo-collections", { hrmsOrgId: v.orgId, month });
   } catch (e) {
+    await logRun(v, "collections", month, { ok: false, errors: [(e as Error).message] });
     throw httpError((e as Error).message, 502);
   }
+  await logRun(v, "collections", month, { ok: true, counts: { payments: (data as { payments?: number }).payments ?? 0, netAed: Math.round(data.netAed) } });
   if (!(typeof data?.netAed === "number" && data.netAed >= 0)) throw httpError("Finance's answer had no collections figure", 502);
   if (data.currency && data.currency !== "AED") throw httpError(`Finance counts this organisation in ${data.currency}; DGO budgets are in AED, so type the figure in instead`, 409);
   const note = `From finance: AED ${data.netAed.toFixed(2)} net of VAT (gross ${data.grossAed.toFixed(2)}, VAT ${data.vatAed.toFixed(2)}${data.unreconciledNetAed ? `, ${data.unreconciledNetAed.toFixed(2)} not yet on a bank statement` : ""})`;

@@ -90,6 +90,9 @@ export async function ensureDgoSetup(orgId: string, today: string): Promise<void
 export interface ProgramSettings {
   openToEmployees: boolean;
   revenueDepartments: string[];
+  audience: "everyone" | "pilot";
+  pilotDepartments: string[];
+  pilotEmployees: string[];
   leaderboardVisibility: DgoLeaderboardVisibility;
   nominationsPerMonth: number;
   eliteCategories: DgoEliteCategory[];
@@ -100,11 +103,14 @@ export interface ProgramSettings {
  * Phase 2 has none of them, and an empty category list means the defaults.
  */
 export async function programSettings(orgId: string): Promise<ProgramSettings> {
-  const p = await DgoProgram.findOne({ organization: orgId }).lean<Partial<ProgramSettings> & { revenueDepartments?: unknown[] }>();
+  const p = await DgoProgram.findOne({ organization: orgId }).lean<Partial<Omit<ProgramSettings, "revenueDepartments" | "pilotDepartments" | "pilotEmployees">> & { revenueDepartments?: unknown[]; pilotDepartments?: unknown[]; pilotEmployees?: unknown[] }>();
   const saved = new Map((p?.eliteCategories ?? []).map((c) => [c.code, c]));
   return {
     openToEmployees: Boolean(p?.openToEmployees),
     revenueDepartments: (p?.revenueDepartments ?? []).map(String),
+    audience: p?.audience === "pilot" ? "pilot" : "everyone",
+    pilotDepartments: (p?.pilotDepartments ?? []).map(String),
+    pilotEmployees: (p?.pilotEmployees ?? []).map(String),
     leaderboardVisibility: LEADERBOARD_VISIBILITIES.includes(p?.leaderboardVisibility as DgoLeaderboardVisibility) ? p!.leaderboardVisibility! : "everyone",
     nominationsPerMonth: typeof p?.nominationsPerMonth === "number" ? p.nominationsPerMonth : DEFAULT_NOMINATIONS_PER_MONTH,
     // Always all nine, in the handoff's order; what is saved overrides the defaults per code.
@@ -202,6 +208,12 @@ export async function settingsView(v: DgoViewer) {
     ]),
   ]);
   const revenue = new Set(program.revenueDepartments);
+  const pilotPeople = program.pilotEmployees.length
+    ? await Employee.find({ _id: { $in: program.pilotEmployees } }).select("name department").sort({ name: 1 }).lean<Array<{ _id: unknown; name: string; department?: unknown }>>()
+    : [];
+  const pilotHeadcount = program.audience === "pilot"
+    ? await Employee.countDocuments({ organization: v.orgId, status: { $in: ACTIVE_EMPLOYEE_STATUSES }, $or: [{ _id: { $in: program.pilotEmployees } }, { department: { $in: program.pilotDepartments } }] })
+    : 0;
   const headcount = new Map(counts.map((c) => [String(c._id), c.n]));
   const leaderIds = departments.filter((d) => d.leader).map((d) => d.leader);
   const leaders = leaderIds.length
@@ -220,6 +232,10 @@ export async function settingsView(v: DgoViewer) {
     program: {
       openToEmployees: program.openToEmployees,
       revenueDepartments: [...revenue],
+      audience: program.audience,
+      pilotDepartments: program.pilotDepartments,
+      pilotEmployees: pilotPeople.map((e) => ({ id: String(e._id), name: e.name, department: e.department ? departments.find((d) => String(d._id) === String(e.department))?.name ?? null : null })),
+      pilotHeadcount,
       leaderboardVisibility: program.leaderboardVisibility,
       nominationsPerMonth: program.nominationsPerMonth,
       eliteCategories: program.eliteCategories,
@@ -337,6 +353,9 @@ export async function saveRule(v: DgoViewer, code: string, input: RuleInput) {
 export interface ProgramInput {
   openToEmployees?: boolean;
   revenueDepartments?: string[];
+  audience?: "everyone" | "pilot";
+  pilotDepartments?: string[];
+  pilotEmployees?: string[];
   leaderboardVisibility?: DgoLeaderboardVisibility;
   nominationsPerMonth?: number;
   eliteCategories?: Array<{ code: string; name?: string; threshold: number; prizeAed: number; active: boolean }>;
@@ -356,6 +375,17 @@ export async function saveProgram(v: DgoViewer, input: ProgramInput) {
     const found = await Department.find({ organization: v.orgId, _id: { $in: input.revenueDepartments } }).select("_id").lean();
     if (found.length !== new Set(input.revenueDepartments).size) throw httpError("One of those departments isn't in this organisation", 400);
     set.revenueDepartments = found.map((d) => d._id);
+  }
+  if (input.audience) set.audience = input.audience;
+  if (input.pilotDepartments) {
+    const found = await Department.find({ organization: v.orgId, _id: { $in: input.pilotDepartments } }).select("_id").lean();
+    if (found.length !== new Set(input.pilotDepartments).size) throw httpError("One of those departments isn't in this organisation", 400);
+    set.pilotDepartments = found.map((d) => d._id);
+  }
+  if (input.pilotEmployees) {
+    const found = await Employee.find({ organization: v.orgId, _id: { $in: input.pilotEmployees } }).select("_id").lean();
+    if (found.length !== new Set(input.pilotEmployees).size) throw httpError("One of those people isn't in this organisation", 400);
+    set.pilotEmployees = found.map((e) => e._id);
   }
   if (input.leaderboardVisibility) set.leaderboardVisibility = input.leaderboardVisibility;
   if (typeof input.nominationsPerMonth === "number") set.nominationsPerMonth = input.nominationsPerMonth;

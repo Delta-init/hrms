@@ -128,7 +128,15 @@ export const overrideSchema = z.object({
 });
 
 export const programSchemaP2 = programSchema.extend({
+  audience: z.enum(["everyone", "pilot"]).optional(),
+  pilotDepartments: z.array(objectId).max(200).optional(),
+  pilotEmployees: z.array(objectId).max(2000).optional(),
   leaderboardVisibility: z.enum(["everyone", "department", "managers"]).optional(),
   nominationsPerMonth: z.number().int().min(0).max(100).optional(),
   eliteCategories: z.array(eliteCategory).max(20).optional(),
 });
+
+/* ───────────── Phase 4 ───────────── */
+export const kpiRunSchema = z.object({ day });
+export const dismissSchema = z.object({ reason: z.string().trim().max(500).nullish() });
+

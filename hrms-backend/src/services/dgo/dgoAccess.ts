@@ -75,11 +75,50 @@ export async function isOpen(orgId: string): Promise<boolean> {
   return Boolean((await programOf(orgId))?.openToEmployees);
 }
 
-/** May see the employee pages: open to all, or staff with a DGO permission, or a Super Admin. */
+/* ───────────── Who it is open to (Phase 4: a pilot group) ───────────── */
+
+export interface Audience { audience: "everyone" | "pilot"; pilotDepartments: string[]; pilotEmployees: string[] }
+
+export async function audienceOf(orgId: string): Promise<Audience> {
+  const p = await DgoProgram.findOne({ organization: orgId }).select("audience pilotDepartments pilotEmployees")
+    .lean<{ audience?: string; pilotDepartments?: unknown[]; pilotEmployees?: unknown[] }>();
+  return {
+    audience: p?.audience === "pilot" ? "pilot" : "everyone",
+    pilotDepartments: (p?.pilotDepartments ?? []).map(String),
+    pilotEmployees: (p?.pilotEmployees ?? []).map(String),
+  };
+}
+
+/** In the group DGO Points is open to: everybody, or a pilot department or named pilot person. */
+export const inAudience = (a: Audience, emp: { _id: unknown; department?: unknown }): boolean =>
+  a.audience === "everyone" || a.pilotEmployees.includes(String(emp._id)) || (emp.department != null && a.pilotDepartments.includes(String(emp.department)));
+
+/** An Employee filter for the group (an empty one for everybody). */
+export const audienceFilter = (a: Audience): Record<string, unknown> =>
+  a.audience === "everyone" ? {} : { $or: [{ _id: { $in: a.pilotEmployees.map(oid) } }, { department: { $in: a.pilotDepartments.map(oid) } }] };
+
+/**
+ * May see the employee pages: staff with a DGO permission and Super Admins
+ * always; everybody else once it is open — and, during a pilot, only people in
+ * the pilot group or heading a pilot department.
+ */
 export async function canUse(v: DgoViewer): Promise<boolean> {
   if (hasAnyDgoPermission(v)) return true;
-  return isOpen(v.orgId);
+  if (!(await isOpen(v.orgId))) return false;
+  const a = await audienceOf(v.orgId);
+  if (a.audience === "everyone") return true;
+  if (v.employee && inAudience(a, { _id: v.employee._id, department: v.employee.department })) return true;
+  return v.headOf.some((d) => a.pilotDepartments.includes(d));
 }
+
+/**
+ * The viewer the automatic feeds act as (the nightly KPI import): no login, no
+ * permissions, no departments — whatever it records goes through the same
+ * checks as anybody's, and shows as made by `name`.
+ */
+export const systemViewer = (orgId: string, tz: string, name: string): DgoViewer => ({
+  userId: null as unknown as string, name, orgId, tz, role: undefined, superAdmin: false, employee: null, headOf: [],
+});
 
 export async function assertCanUse(v: DgoViewer): Promise<void> {
   if (!(await canUse(v))) throw httpError("DGO Points isn't open yet", 403);
@@ -144,7 +183,7 @@ export function whyCannotDecide(v: DgoViewer, ev: DecidableEvent): string | null
   if ((v.employee && v.employee._id === String(ev.employee)) || (ev.user && String(ev.user) === v.userId)) {
     return "These points are for you, so someone else decides";
   }
-  if (ev.submittedBy && String(ev.submittedBy) === v.userId) return "You recorded this, so someone else decides";
+  if (ev.submittedBy && v.userId && String(ev.submittedBy) === v.userId) return "You recorded this, so someone else decides";
   switch (ev.stage) {
     case "head":
       if (v.superAdmin || (ev.department && v.headOf.includes(String(ev.department)))) return null;

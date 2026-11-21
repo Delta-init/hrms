@@ -1,10 +1,17 @@
 "use client";
-import { Award, Gauge, HeartHandshake, Lightbulb, MessageSquareHeart, Sparkles, TrendingUp, Trophy, Wrench } from "lucide-react";
+import { useState } from "react";
+import {
+  Award, Check, Gauge, HeartHandshake, Lightbulb, Loader2, MessageSquareHeart, Sparkles, TrendingUp, Trophy, Wrench, X,
+} from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
-import { useDgoRules, formatAed, dgoErrorMessage } from "@/hooks/useDgoPoints";
-import { DgoGate, Notice, Spinner, STAGE_LABEL, dayLabel } from "@/components/dgo/shared";
-import type { DgoRule } from "@/types";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  useDgoRules, useDgoSuggestions, useRecordDgoSuggestion, useDismissDgoSuggestion, formatAed, formatPoints, dgoErrorMessage,
+} from "@/hooks/useDgoPoints";
+import { DgoGate, NoteDialog, Notice, Spinner, STAGE_LABEL, dayLabel } from "@/components/dgo/shared";
+import type { DgoMe, DgoRule, DgoSuggestion, DgoSuggestionsTab } from "@/types";
 
 /** An icon per known rule; anything new an admin adds gets the plain award. */
 const ICONS: Record<string, React.ElementType> = {
@@ -27,12 +34,12 @@ function whoConfirms(rule: DgoRule): string {
 export default function DgoEarnPage() {
   return (
     <DgoGate allow={(me) => me.canUse}>
-      {() => <EarnPage />}
+      {(me) => <EarnPage me={me} />}
     </DgoGate>
   );
 }
 
-function EarnPage() {
+function EarnPage({ me }: { me: DgoMe }) {
   const { data, isLoading, error } = useDgoRules();
 
   return (
@@ -42,6 +49,7 @@ function EarnPage() {
         description="What earns points, how many, and who confirms it."
         icon={Trophy}
       />
+      {me.can.recordAwards && <Suggestions />}
       {isLoading ? (
         <Spinner />
       ) : error || !data ? (
@@ -95,3 +103,125 @@ function EarnPage() {
     </div>
   );
 }
+
+// ─── Suggestions ──────────────────────────────────────────────────────────────
+
+/**
+ * Awards somebody may record in one click — today, verified 5-star student
+ * reviews from the LMS. Recording one starts the usual request (department
+ * head, then HR); dismissing it just puts it away.
+ */
+function Suggestions() {
+  const [tab, setTab] = useState<DgoSuggestionsTab>("open");
+  const { data, isLoading, error } = useDgoSuggestions(tab);
+  const record = useRecordDgoSuggestion();
+  const dismiss = useDismissDgoSuggestion();
+  const [dismissing, setDismissing] = useState<DgoSuggestion | null>(null);
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+
+  // Nothing to suggest and nothing done yet: say nothing at all.
+  if (!isLoading && !error && data && data.counts.open === 0 && data.counts.done === 0) return null;
+
+  return (
+    <Card className="mb-4 space-y-3 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-amber-500" /> Suggestions</p>
+          <p className="text-xs text-muted-foreground">Verified 5-star student reviews worth an award. Recording one sends it for approval as usual.</p>
+        </div>
+        <div className="inline-flex shrink-0 self-start rounded-lg bg-muted p-0.5 text-xs sm:self-auto">
+          {(["open", "done"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTab(k)}
+              className={cn("rounded-md px-3 py-1 font-medium transition-colors", tab === k ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              aria-pressed={tab === k}
+            >
+              {k === "open" ? "To look at" : "Done"}
+              {data && <span className="ml-1 tabular-nums opacity-70">{data.counts[k]}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <Spinner className="py-6" />
+      ) : error || !data ? (
+        <p className="text-sm text-muted-foreground">{dgoErrorMessage(error, "The suggestions couldn't be loaded.")}</p>
+      ) : data.items.length === 0 ? (
+        <p className="py-2 text-sm text-muted-foreground">{tab === "open" ? "Nothing to look at right now." : "Nothing recorded or dismissed yet."}</p>
+      ) : (
+        <ul className="space-y-2">
+          {data.items.map((s) => (
+            <li key={s.id} className="rounded-xl border p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium leading-tight">{s.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {s.employee.name}{s.employee.department ? ` · ${s.employee.department}` : ""} · {dayLabel(s.day)}
+                  </p>
+                  {s.detail && (
+                    <blockquote className="border-l-2 border-amber-400/60 pl-2 text-sm italic text-foreground/80 break-words">
+                      &ldquo;{s.detail}&rdquo;
+                    </blockquote>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {s.ruleName} · <span className="font-semibold text-amber-700 dark:text-amber-400">{formatPoints(s.points)} pts</span>
+                  </p>
+                </div>
+                {s.status === "open" ? (
+                  s.canRecord ? (
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        size="sm"
+                        disabled={record.isPending}
+                        onClick={() => {
+                          setRecordingId(s.id);
+                          record.mutate(s.id, { onSettled: () => setRecordingId(null) });
+                        }}
+                      >
+                        {record.isPending && recordingId === s.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                        Record
+                      </Button>
+                      <Button size="sm" variant="outline" disabled={dismiss.isPending} onClick={() => setDismissing(s)}>
+                        <X className="h-4 w-4" /> Dismiss
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="shrink-0 text-xs text-muted-foreground">For their head or HR to record</span>
+                  )
+                ) : (
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      s.status === "recorded" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {s.status === "recorded" ? "Recorded" : "Dismissed"}{s.decidedByName ? ` by ${s.decidedByName}` : ""}
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <NoteDialog
+        open={!!dismissing}
+        onOpenChange={(o) => { if (!o) setDismissing(null); }}
+        title="Dismiss this suggestion?"
+        description={dismissing ? `${dismissing.title} — it won't be suggested again.` : undefined}
+        noteLabel="Why (optional)"
+        confirmLabel="Dismiss"
+        icon={X}
+        isPending={dismiss.isPending}
+        onConfirm={(note) => {
+          if (!dismissing) return;
+          dismiss.mutate({ id: dismissing.id, reason: note || undefined }, { onSuccess: () => setDismissing(null) });
+        }}
+      />
+    </Card>
+  );
+}
+

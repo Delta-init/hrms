@@ -15,7 +15,7 @@ import { programSettings, ruleDto, rulesOn, settingsOn } from "./dgoSettingsServ
 import { publicUrl } from "../uploadService.js";
 import { nominationChain, type EventDoc } from "./dgoEarningService.js";
 import {
-  assertCanUse, can, canApproveAchievers, canFulfil, canLookUpWallets, canManageRewards, canRecordAwards, canReviewAchievers,
+  assertCanUse, audienceFilter, audienceOf, can, canApproveAchievers, canFulfil, canLookUpWallets, canManageRewards, canRecordAwards, canReviewAchievers,
   canRunAchievers, canSeeFulfilment, canUse, canVerifyAchievers, isObjectId, isOpen, oid, whyCannotDecide, type DgoViewer,
 } from "./dgoAccess.js";
 
@@ -62,6 +62,8 @@ export async function me(v: DgoViewer) {
     },
     leaderboardVisibility: program.leaderboardVisibility,
     nominationsPerMonth: program.nominationsPerMonth,
+    audience: program.audience,
+    inPilot: program.audience === "everyone" || Boolean(v.employee && (program.pilotEmployees.includes(v.employee._id) || (v.employee.department && program.pilotDepartments.includes(v.employee.department)))),
     employee: v.employee ? { id: v.employee._id, name: v.employee.name, department: dept?.name ?? null } : null,
     pointValueAed: settings.pointValueAed,
     timeZone: v.tz,
@@ -420,7 +422,8 @@ export async function nominationsView(v: DgoViewer, tabIn?: string) {
 /** GET /dgo-points/colleagues?search= — anybody current in the organisation but you, to nominate. */
 export async function colleagues(v: DgoViewer, search?: string) {
   await assertCanUse(v);
-  const filter: Record<string, unknown> = { organization: v.orgId, status: { $in: ACTIVE_EMPLOYEE_STATUSES } };
+  // Only people in the group DGO Points is open to can be nominated.
+  const filter: Record<string, unknown> = { organization: v.orgId, status: { $in: ACTIVE_EMPLOYEE_STATUSES }, ...audienceFilter(await audienceOf(v.orgId)) };
   if (v.employee) filter._id = { $ne: oid(v.employee._id) };
   const s = search?.trim();
   if (s) filter.name = { $regex: s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };

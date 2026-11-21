@@ -17,11 +17,13 @@ import { attachmentKey, putObject, publicUrl, UploadError } from "../services/up
 import { extFromMime } from "../middleware/upload.js";
 import {
   recordEarningSchema, decisionSchema, reverseSchema, collectionsSchema, settingsSchema, ruleSchema, programSchemaP2,
-  nominateSchema, rewardSchema, redeemSchema, noteSchema, reasonSchema, pickSchema, adjustmentSchema, overrideSchema,
+  nominateSchema, rewardSchema, redeemSchema, noteSchema, reasonSchema, pickSchema, adjustmentSchema, overrideSchema, kpiRunSchema, dismissSchema,
 } from "../validations/dgoValidation.js";
 import * as closing from "../services/dgo/dgoCloseService.js";
 import * as control from "../services/dgo/dgoControlService.js";
 import * as reports from "../services/dgo/dgoReportService.js";
+import * as integrations from "../services/dgo/dgoIntegrationService.js";
+import { runKpiByHand } from "../services/dgo/dgoKpiImportService.js";
 
 /**
  * DGO Points routes. Thin: each builds the viewer (organisation, own employee
@@ -229,4 +231,21 @@ export const getExport = async (req: AuthenticatedRequest, res: Response, next: 
     next(error);
   }
 };
+
+/* ───────────── Phase 4 ───────────── */
+export const getIntegrations = handle(async (v) => ({ message: "Integrations", data: await integrations.integrationsView(v) }));
+export const postKpiRun = handle(async (v, req) => {
+  const out = await runKpiByHand(v, parse(kpiRunSchema, req.body).day);
+  const run = (await integrations.integrationsView(v)).runs.find((r) => r.id === out.runId) ?? null;
+  return { message: out.message, data: { run } };
+});
+export const getSuggestions = handle(async (v, req) => ({ message: "Suggestions", data: await integrations.suggestionsView(v, str(req.query.status)) }));
+export const postSuggestionRecord = handle(async (v, req) => {
+  const out = await integrations.recordSuggestion(v, idParam(req));
+  return { message: out.message, data: { suggestion: out.suggestion, event: out.event ? await read.eventDto(v, out.event as never) : null } };
+});
+export const postSuggestionDismiss = handle(async (v, req) => {
+  const out = await integrations.dismissSuggestion(v, idParam(req), parse(dismissSchema, req.body ?? {}).reason);
+  return { message: out.message, data: { suggestion: out.suggestion } };
+});
 
