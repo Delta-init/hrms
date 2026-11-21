@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Coins, History, Layers, Loader2 } from "lucide-react";
+import { Coins, History, Layers, Loader2, Undo2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Pagination } from "@/components/shared/Pagination";
@@ -8,9 +8,9 @@ import { DateRangeFilter } from "@/components/shared/DateRangeFilter";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useDgoWallet, useDgoLots, formatAed, formatPoints, dgoAed, dgoErrorMessage } from "@/hooks/useDgoPoints";
+import { useDgoWallet, useDgoLots, useReverseDgoPoints, formatAed, formatPoints, dgoAed, dgoErrorMessage } from "@/hooks/useDgoPoints";
 import {
-  DgoGate, DgoPersonSelect, LedgerPoints, LedgerTypeChip, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
+  DgoGate, DgoPersonSelect, LedgerPoints, LedgerTypeChip, NoteDialog, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
 } from "@/components/dgo/shared";
 import type { DgoLedgerType, DgoMe } from "@/types";
 
@@ -35,6 +35,10 @@ function WalletPage({ me }: { me: DgoMe }) {
   const [limit, setLimit] = useState(25);
 
   const lookingUp = !!employeeId;
+  // Finance taking back a credited award from somebody's points (a reversal row; nothing is deleted).
+  const canTakeBack = lookingUp && me.can.budgetsEdit;
+  const [takeBack, setTakeBack] = useState<{ eventId: string; description: string; points: number } | null>(null);
+  const reverse = useReverseDgoPoints();
   const noOwnRecord = !me.employee && !lookingUp;
   const wallet = useDgoWallet(
     { employeeId: employeeId || undefined, type: type || undefined, from: range.from, to: range.to, page, limit },
@@ -126,6 +130,7 @@ function WalletPage({ me }: { me: DgoMe }) {
                           <th className="px-4 py-2 font-medium">By</th>
                           <th className="px-4 py-2 font-medium">Expires</th>
                           <th className="px-4 py-2 text-right font-medium">Points</th>
+                          {canTakeBack && <th className="px-4 py-2" aria-label="Actions" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -138,6 +143,19 @@ function WalletPage({ me }: { me: DgoMe }) {
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.byName ?? "—"}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.expiresOn ? shortDay(r.expiresOn) : "—"}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-right"><LedgerPoints row={r} /></td>
+                            {canTakeBack && (
+                              <td className="whitespace-nowrap px-4 py-2 text-right">
+                                {r.type === "credit" && r.eventId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTakeBack({ eventId: r.eventId!, description: r.description, points: r.delta })}
+                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                                  >
+                                    <Undo2 className="h-3.5 w-3.5" /> Take back
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -195,6 +213,23 @@ function WalletPage({ me }: { me: DgoMe }) {
           </Card>
         </div>
       )}
+      <NoteDialog
+        open={!!takeBack}
+        onOpenChange={(o) => { if (!o) setTakeBack(null); }}
+        title="Take these points back?"
+        description={takeBack ? `${takeBack.description}: ${formatPoints(takeBack.points)} points. A reversal is added to their points; nothing is deleted.` : undefined}
+        noteLabel="Why"
+        placeholder="For example: sale refunded"
+        requireNote
+        confirmLabel="Take back"
+        tone="danger"
+        icon={Undo2}
+        isPending={reverse.isPending}
+        onConfirm={(reason) => {
+          if (!takeBack) return;
+          reverse.mutate({ id: takeBack.eventId, reason }, { onSuccess: () => setTakeBack(null) });
+        }}
+      />
     </div>
   );
 }
