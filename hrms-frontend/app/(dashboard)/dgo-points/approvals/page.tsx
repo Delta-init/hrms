@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BadgeCheck, Check, History, Inbox, Info, ListChecks, Loader2, Plus, Undo2, X } from "lucide-react";
+import { BadgeCheck, Check, FileText, History, Inbox, Info, ListChecks, Loader2, Medal, Plus, Undo2, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { ReviewDialog } from "@/components/shared/ReviewDialog";
@@ -141,18 +141,35 @@ function EventCard({
             <p className="font-semibold">{ev.employee.name}</p>
             {ev.employee.department && <span className="text-xs text-muted-foreground">{ev.employee.department}</span>}
             <StatusPill status={ev.status} />
+            {ev.origin === "nomination" && (
+              <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:text-violet-400">Nomination</span>
+            )}
+            {ev.origin === "elite" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400"><Medal className="h-3 w-3" /> Monthly achiever</span>
+            )}
           </div>
           <p className="text-sm">
             <span className="font-medium">{ev.ruleName}</span>
             <span className="text-muted-foreground"> · {shortDay(ev.day)}{ev.kpiKey ? ` · KPI ${ev.kpiKey}` : ""}</span>
           </p>
           <p className="text-sm text-muted-foreground">{ev.reason}</p>
-          {ev.evidenceNote && (
-            <p className="rounded-md bg-muted/60 px-2.5 py-1.5 text-xs"><span className="font-medium">Evidence:</span> {ev.evidenceNote}</p>
+          {(ev.evidenceNote || ev.evidenceUrl) && (
+            <div className="space-y-1 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs">
+              {ev.evidenceNote && <p><span className="font-medium">Evidence:</span> {ev.evidenceNote}</p>}
+              {ev.evidenceUrl && (
+                <a href={ev.evidenceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+                  <FileText className="h-3.5 w-3.5" /> {ev.evidenceName || "Attached file"}
+                </a>
+              )}
+            </div>
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
             <StageChain chain={ev.chain} stage={ev.stage} status={ev.status} trail={ev.trail} />
-            {ev.submittedByName && <span className="text-xs text-muted-foreground">Recorded by {ev.submittedByName} · {dateTime(ev.createdAt)}</span>}
+            {ev.submittedByName && (
+              <span className="text-xs text-muted-foreground">
+                {ev.origin === "nomination" ? "Nominated by" : "Recorded by"} {ev.submittedByName} · {dateTime(ev.createdAt)}
+              </span>
+            )}
           </div>
           {ev.trail.some((t) => t.note) && (
             <ul className="space-y-0.5 pt-1 text-xs text-muted-foreground">

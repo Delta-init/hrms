@@ -1,13 +1,20 @@
 "use client";
-import { useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Loader2, Lock, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Check, ChevronLeft, ChevronRight, FileText, Loader2, Lock, Medal, Paperclip, Trophy, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader,
+  ResponsiveDialogTitle, ResponsiveDialogDescription, ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { AsyncSelect } from "@/components/ui/async-select";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { useDgoMe, useDgoPeople, dgoErrorMessage } from "@/hooks/useDgoPoints";
-import type { DgoEventStatus, DgoLedgerType, DgoMe, DgoStage, DgoTrailEntry } from "@/types";
+import { useDgoMe, useDgoPeople, useDgoColleagues, useDgoUpload, dgoErrorMessage, formatPoints } from "@/hooks/useDgoPoints";
+import type { DgoEventStatus, DgoLedgerRow, DgoLedgerType, DgoMe, DgoRedemptionStatus, DgoStage, DgoTrailEntry, DgoUpload, DgoUploadKind } from "@/types";
 
 /*
  * Pieces every DGO Points screen shares: the gate in front of a page, the small
@@ -149,10 +156,50 @@ export const LEDGER_LABEL: Record<DgoLedgerType, string> = {
   credit: "Earned",
   reverse: "Reversed",
   expire: "Expired",
-  reserve: "Reserved",
-  release: "Released",
-  redeem: "Redeemed",
+  reserve: "Held for a reward",
+  release: "Returned",
+  redeem: "Spent on a reward",
   adjust: "Adjustment",
+};
+
+/**
+ * A ledger line's points. `delta` is what it did to spendable points; a reward
+ * being handed over spends points that were already held, so its delta is 0 and
+ * the figure that matters is what left the held pile.
+ */
+export function LedgerPoints({ row, className }: { row: Pick<DgoLedgerRow, "type" | "delta" | "reservedDelta">; className?: string }) {
+  if (row.type === "redeem") {
+    const spent = Math.abs(row.reservedDelta ?? 0);
+    return (
+      <span className={cn("font-semibold tabular-nums text-muted-foreground", className)} title="Taken from the points already held for this reward">
+        −{formatPoints(spent)}
+      </span>
+    );
+  }
+  return (
+    <span className={cn("font-semibold tabular-nums", row.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400", className)}>
+      {row.delta >= 0 ? "+" : "−"}{formatPoints(Math.abs(row.delta))}
+    </span>
+  );
+}
+
+const REDEMPTION: Record<DgoRedemptionStatus, { label: string; tone: string }> = {
+  reserved: { label: "Waiting for HR", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+  approved: { label: "Approved — on its way", tone: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
+  fulfilled: { label: "Delivered", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+  cancelled: { label: "Cancelled", tone: "bg-muted text-muted-foreground" },
+  rejected: { label: "Rejected", tone: "bg-red-500/10 text-red-700 dark:text-red-400" },
+};
+
+export function RedemptionPill({ status }: { status: DgoRedemptionStatus }) {
+  const s = REDEMPTION[status] ?? { label: status, tone: "bg-muted text-muted-foreground" };
+  return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold", s.tone)}>{s.label}</span>;
+}
+
+/** "submitted", "send_back" → "Submitted", "Send back" */
+export const actionLabel = (action: string) => {
+  const s = action.replace(/[_-]+/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 };
 
 export const STAGE_LABEL: Record<DgoStage, string> = {
@@ -244,6 +291,120 @@ export function DgoPersonSelect({
   );
 }
 
+/** Anyone active in the organisation except you — for nominating. */
+export function DgoColleagueSelect({
+  value, onChange, placeholder = "Choose a colleague…", className, disabled,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const debounced = useDebouncedValue(search, 250);
+  const { data = [], isFetching } = useDgoColleagues(debounced.trim());
+  const options = data.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sub: [p.department, p.designation].filter(Boolean).join(" · ") || undefined,
+  }));
+  return (
+    <AsyncSelect
+      value={value}
+      onChange={onChange}
+      options={options}
+      loading={isFetching}
+      search={search}
+      onSearchChange={setSearch}
+      placeholder={placeholder}
+      searchPlaceholder="Search by name…"
+      emptyText="Nobody found."
+      className={className}
+      disabled={disabled}
+    />
+  );
+}
+
+/**
+ * Attach one photo or PDF (10 MB at most). Uploads as soon as it is picked and
+ * hands back the stored key; the form keeps the key, not the file.
+ */
+export function DgoFileUpload({
+  kind, value, onChange, label = "Attach a photo or PDF", disabled,
+}: {
+  kind: DgoUploadKind;
+  value: DgoUpload | null;
+  onChange: (upload: DgoUpload | null) => void;
+  label?: string;
+  disabled?: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const upload = useDgoUpload();
+  const isImage = value?.contentType?.startsWith("image/");
+  return (
+    <div className="space-y-2">
+      <input
+        ref={input}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          upload.mutate({ file, kind }, { onSuccess: (u) => onChange(u) });
+        }}
+      />
+      {value ? (
+        <div className="flex items-center gap-3 rounded-lg border border-border p-2">
+          {isImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={value.url} alt="" className="h-12 w-12 shrink-0 rounded-md object-cover" />
+          ) : (
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-muted"><FileText className="h-5 w-5 text-muted-foreground" /></span>
+          )}
+          <a href={value.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm text-primary hover:underline">{value.fileName}</a>
+          <Button type="button" size="icon" variant="ghost" className="h-8 w-8" aria-label="Remove the file" disabled={disabled} onClick={() => onChange(null)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" disabled={disabled || upload.isPending} onClick={() => input.current?.click()}>
+          {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+          {upload.isPending ? "Uploading…" : label}
+        </Button>
+      )}
+      <p className="text-xs text-muted-foreground">JPG, PNG, WEBP or PDF, up to 10 MB.</p>
+    </div>
+  );
+}
+
+/** The two halves of the leaderboard: everyday points, and the monthly achievers. */
+export function LeaderboardTabs({ active }: { active: "points" | "achievers" }) {
+  const tabs = [
+    { key: "points", label: "Points", href: "/dgo-points/leaderboard", icon: Trophy },
+    { key: "achievers", label: "Monthly achievers", href: "/dgo-points/achievers", icon: Medal },
+  ] as const;
+  return (
+    <div className="mb-5 flex flex-wrap gap-1 border-b border-border">
+      {tabs.map((t) => (
+        <Link
+          key={t.key}
+          href={t.href}
+          className={cn(
+            "relative -mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+            active === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <t.icon className="h-4 w-4" />
+          {t.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export function MonthSwitcher({
   month, onChange, max, busy,
 }: {
@@ -271,4 +432,55 @@ export function MonthSwitcher({
 /** A table that scrolls sideways inside itself on a phone, never the page. */
 export function TableWrap({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn("overflow-x-auto", className)}>{children}</div>;
+}
+
+/**
+ * Confirm one step — approve, reject, send back, publish — with a note that is
+ * optional or, where the step needs a reason, required.
+ */
+export function NoteDialog({
+  open, onOpenChange, title, description, noteLabel = "Note (optional)", placeholder,
+  requireNote, confirmLabel, tone = "primary", icon: Icon, isPending, onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: React.ReactNode;
+  noteLabel?: string;
+  placeholder?: string;
+  requireNote?: boolean;
+  confirmLabel: string;
+  tone?: "primary" | "good" | "danger";
+  icon?: React.ElementType;
+  isPending?: boolean;
+  onConfirm: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  useEffect(() => { if (open) setNote(""); }, [open]);
+  const blocked = !!requireNote && !note.trim();
+  return (
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent desktopClassName="max-w-md">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>{title}</ResponsiveDialogTitle>
+          {description && <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">{description}</ResponsiveDialogDescription>}
+        </ResponsiveDialogHeader>
+        <div className="space-y-2 px-4 sm:px-0">
+          <Label htmlFor="dgo-step-note">{requireNote ? noteLabel.replace(/\s*\(optional\)/i, "") + " (required)" : noteLabel}</Label>
+          <Textarea id="dgo-step-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder={placeholder} />
+        </div>
+        <ResponsiveDialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>Cancel</Button>
+          <Button
+            className={cn(tone === "good" && "bg-emerald-600 hover:bg-emerald-700", tone === "danger" && "bg-red-600 hover:bg-red-700")}
+            disabled={blocked || isPending}
+            onClick={() => onConfirm(note.trim())}
+          >
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : Icon ? <Icon className="h-4 w-4" /> : null}
+            {confirmLabel}
+          </Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+  );
 }

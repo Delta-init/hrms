@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarClock, Clock, Coins, Gem, Hourglass, Trophy, Users } from "lucide-react";
+import { ArrowRight, CalendarClock, Clock, Coins, Gem, Gift, Hourglass, Trophy, Users } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useDgoDashboard, formatAed, formatPoints, dgoErrorMessage } from "@/hooks/useDgoPoints";
 import {
-  DgoGate, MonthSwitcher, Notice, Spinner, Stat, StatusPill, TableWrap, UsageBar,
+  DgoGate, LedgerPoints, MonthSwitcher, Notice, Spinner, Stat, StatusPill, TableWrap, UsageBar,
   LEDGER_LABEL, STAGE_LABEL, shortDay, dayLabel,
 } from "@/components/dgo/shared";
 import type { DgoDashboard, DgoMe } from "@/types";
@@ -55,7 +55,13 @@ function Own({ d, own, isThisMonth }: { d: DgoDashboard; own: NonNullable<DgoDas
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Available points" value={formatPoints(b.available)} sub={`= ${formatAed(own.availableAed)}`} tone="gold" icon={Coins} />
+        <Stat
+          label="Available points"
+          value={formatPoints(b.available)}
+          sub={`= ${formatAed(own.availableAed)}${b.reserved ? ` · ${formatPoints(b.reserved)} held for rewards` : ""}`}
+          tone="gold"
+          icon={Coins}
+        />
         <Stat label="Earned this month" value={`+${formatPoints(own.monthEarned)}`} sub={b.pending ? `${formatPoints(b.pending)} waiting for approval` : "Nothing waiting"} icon={Gem} />
         <Stat
           label="Your rank this month"
@@ -70,6 +76,18 @@ function Own({ d, own, isThisMonth }: { d: DgoDashboard; own: NonNullable<DgoDas
           icon={Hourglass}
         />
       </div>
+
+      <Link
+        href="/dgo-points/rewards"
+        className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm transition-colors hover:bg-amber-500/10"
+      >
+        <span className="flex items-center gap-2">
+          <Gift className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <span className="font-medium">Spend your points</span>
+          <span className="hidden text-muted-foreground sm:inline">— see what {formatPoints(b.available)} points can get you in the store.</span>
+        </span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
 
       <div className="grid gap-3 md:grid-cols-2">
         <Card className="space-y-3 p-4">
@@ -149,9 +167,7 @@ function Own({ d, own, isThisMonth }: { d: DgoDashboard; own: NonNullable<DgoDas
                     <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{shortDay(r.day)}</td>
                     <td className="px-4 py-2">{r.description}</td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">{LEDGER_LABEL[r.type]}</td>
-                    <td className={cn("px-4 py-2 text-right font-semibold tabular-nums", r.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
-                      {r.delta >= 0 ? "+" : "−"}{formatPoints(Math.abs(r.delta))}
-                    </td>
+                    <td className="px-4 py-2 text-right"><LedgerPoints row={r} /></td>
                   </tr>
                 ))}
               </tbody>

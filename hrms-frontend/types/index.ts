@@ -66,6 +66,7 @@ export const HRMS_MODULES = [
   "dgoBudgets",
   "dgoSettings",
   "dgoAudit",
+  "dgoRewards",
   "settings",
 ] as const;
 
@@ -112,6 +113,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   dgoBudgets: "DGO Points · Budgets & Finance",
   dgoSettings: "DGO Points · Rules & Settings",
   dgoAudit: "DGO Points · Audit",
+  dgoRewards: "DGO Points · Rewards",
   settings: "Settings",
 };
 

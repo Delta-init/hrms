@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Layers, ListChecks, Loader2, Pencil, Plus, Save, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Building2, Gift, Layers, ListChecks, Loader2, Pencil, Plus, Save, SlidersHorizontal, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
@@ -9,15 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   useDgoSettings, useSaveDgoSettings, useSaveDgoProgram, formatAed, dgoErrorMessage,
 } from "@/hooks/useDgoPoints";
 import { RuleDialog } from "@/components/dgo/RuleDialog";
 import { DgoGate, Notice, Spinner, TableWrap, STAGE_LABEL, dayLabel, dateTime } from "@/components/dgo/shared";
-import type { DgoMe, DgoRule, DgoSettings, DgoSettingsInput, DgoSettingsView, DgoTier } from "@/types";
+import type {
+  DgoEliteCategory, DgoEliteMetric, DgoLeaderboardVisibility, DgoMe, DgoRule, DgoSettings, DgoSettingsInput, DgoSettingsView, DgoTier,
+} from "@/types";
 
-type Tab = "general" | "rules" | "tiers" | "departments";
+type Tab = "general" | "rules" | "tiers" | "departments" | "recognition";
 
 /** The settings form, held as text so a half-typed number doesn't jump about. */
 interface Draft {
@@ -130,6 +133,7 @@ function SettingsPage({ me }: { me: DgoMe }) {
           { key: "rules", label: "Earning rules", icon: ListChecks },
           { key: "tiers", label: "Revenue tiers", icon: Layers },
           { key: "departments", label: "Departments", icon: Building2 },
+          { key: "recognition", label: "Store & achievers", icon: Gift },
         ]}
       />
       {isLoading || (data && !draft) ? (
@@ -142,8 +146,10 @@ function SettingsPage({ me }: { me: DgoMe }) {
         <Rules data={data} canEdit={canEdit} me={me} />
       ) : tab === "tiers" ? (
         <Tiers draft={draft} setDraft={setDraft} canEdit={canEdit} me={me} problem={problem} saving={save.isPending} onSave={submit} pointValueAed={data.settings.pointValueAed} />
-      ) : (
+      ) : tab === "departments" ? (
         <Departments data={data} canEdit={canEdit} />
+      ) : (
+        <Recognition data={data} canEdit={canEdit} />
       )}
     </div>
   );
@@ -511,5 +517,186 @@ function Departments({ data, canEdit }: { data: DgoSettingsView; canEdit: boolea
         </div>
       )}
     </Card>
+  );
+}
+
+// ─── Store & achievers ────────────────────────────────────────────────────────
+
+const VISIBILITY: Array<{ value: DgoLeaderboardVisibility; label: string; hint: string }> = [
+  { value: "everyone", label: "Everyone sees the whole company", hint: "Every employee sees the full ranking." },
+  { value: "department", label: "Employees see their own department", hint: "Managers and HR still see everyone." },
+  { value: "managers", label: "Managers only", hint: "Employees see only their own rank. Heads see their departments; HR sees everyone." },
+];
+
+const METRIC_LABEL: Record<DgoEliteMetric, string> = {
+  sales: "Own sales (AED)",
+  team: "Team sales (AED)",
+  cs: "CS collections (AED)",
+  cs_department: "CS department total (AED)",
+  mentor_chief: "Chief mentor KPI score",
+  mentor_senior: "Senior mentor KPI score",
+  mentor_junior: "Junior mentor KPI score",
+};
+
+interface CatDraft { code: string; name: string; metric: DgoEliteMetric; place: number; threshold: string; prizeAed: string; active: boolean }
+
+const toCatDraft = (c: DgoEliteCategory): CatDraft => ({ ...c, threshold: String(c.threshold), prizeAed: String(c.prizeAed) });
+
+function Recognition({ data, canEdit }: { data: DgoSettingsView; canEdit: boolean }) {
+  const program = useSaveDgoProgram();
+  const p = data.program;
+  const savedVisibility = p.leaderboardVisibility ?? "everyone";
+  const savedPerMonth = p.nominationsPerMonth ?? 4;
+  // Keyed on the content, not the array, so a background refetch keeps what is being typed.
+  const savedCatsKey = JSON.stringify(p.eliteCategories ?? []);
+  const savedCats = useMemo<DgoEliteCategory[]>(() => JSON.parse(savedCatsKey), [savedCatsKey]);
+
+  const [visibility, setVisibility] = useState<DgoLeaderboardVisibility>(savedVisibility);
+  const [perMonth, setPerMonth] = useState(String(savedPerMonth));
+  const [cats, setCats] = useState<CatDraft[]>(() => savedCats.map(toCatDraft));
+  // Back to what is saved whenever the server's copy changes (after a save), never on a mere refetch.
+  useEffect(() => { setVisibility(savedVisibility); setPerMonth(String(savedPerMonth)); }, [savedVisibility, savedPerMonth]);
+  useEffect(() => setCats(savedCats.map(toCatDraft)), [savedCats]);
+
+  const perMonthNum = Number(perMonth);
+  const perMonthOk = Number.isInteger(perMonthNum) && perMonthNum >= 0 && perMonthNum <= 100;
+  const storeChanged = visibility !== savedVisibility || perMonthNum !== savedPerMonth;
+
+  const eliteCeiling = Math.max(0, ...data.settings.tiers.map((t) => t.eliteAed)) || 13250;
+  const prizeTotal = cats.filter((c) => c.active).reduce((s, c) => s + (Number(c.prizeAed) || 0), 0);
+  const catProblem = cats.map((c) => {
+    const th = Number(c.threshold);
+    const pr = Number(c.prizeAed);
+    if (c.name.trim().length < 2) return `${c.code}: give it a name`;
+    if (!(th >= 0)) return `${c.name}: the threshold must be 0 or more`;
+    if (c.metric.startsWith("mentor_") && th > 100) return `${c.name}: a score threshold is out of 100`;
+    if (!(pr >= 0)) return `${c.name}: the prize must be 0 or more`;
+    return null;
+  }).find(Boolean) ?? null;
+  const catsChanged = JSON.stringify(cats.map((c) => ({ ...c, threshold: Number(c.threshold), prizeAed: Number(c.prizeAed) }))) !==
+    JSON.stringify(savedCats.map((c) => ({ code: c.code, name: c.name, metric: c.metric, place: c.place, threshold: c.threshold, prizeAed: c.prizeAed, active: c.active })));
+  const setCat = (i: number, patch: Partial<CatDraft>) => setCats((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+
+  return (
+    <div className="space-y-6">
+      <Card className="space-y-4 p-4">
+        <p className="font-semibold">Store &amp; recognition</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Who sees the leaderboard</Label>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as DgoLeaderboardVisibility)} disabled={!canEdit}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {VISIBILITY.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{VISIBILITY.find((o) => o.value === visibility)?.hint}</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="dgo-nom-limit">Nominations each person can send a month</Label>
+            <Input id="dgo-nom-limit" inputMode="numeric" value={perMonth} onChange={(e) => setPerMonth(e.target.value)} disabled={!canEdit} className="sm:w-32" />
+            <p className="text-xs text-muted-foreground">Counts every nomination sent, approved or not. 0 switches nominations off.</p>
+          </div>
+        </div>
+        {canEdit ? (
+          <div className="flex items-center justify-end gap-2">
+            {!perMonthOk && <p className="mr-auto text-xs text-red-600 dark:text-red-400">The limit must be a whole number from 0 to 100</p>}
+            <Button
+              disabled={!storeChanged || !perMonthOk || program.isPending}
+              onClick={() => program.mutate({ leaderboardVisibility: visibility, nominationsPerMonth: perMonthNum })}
+            >
+              {program.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">You can see these settings but not change them.</p>
+        )}
+      </Card>
+
+      <Card className="space-y-4 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="font-semibold">Monthly achievers</p>
+          <p className={cn("text-xs", prizeTotal > eliteCeiling ? "font-semibold text-red-600 dark:text-red-400" : "text-muted-foreground")}>
+            Prizes switched on: {formatAed(prizeTotal)} of the {formatAed(eliteCeiling)} elite pool
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Paid from the elite pool, only in a month whose confirmed collections reach the elite tier. A change applies to months not yet fetched.
+          Sales and team-leader prizes skip anyone who took a gift that month.
+        </p>
+        {cats.length === 0 ? (
+          <p className="text-sm text-muted-foreground">The achiever categories show here once the server has been updated.</p>
+        ) : (
+          <TableWrap>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="px-2 py-2 font-medium">On</th>
+                  <th className="px-2 py-2 font-medium">Category</th>
+                  <th className="px-2 py-2 font-medium">Measured by</th>
+                  <th className="px-2 py-2 font-medium">Place</th>
+                  <th className="px-2 py-2 font-medium">Qualifies at</th>
+                  <th className="px-2 py-2 font-medium">Prize (AED)</th>
+                  <th className="px-2 py-2 text-right font-medium">Points</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {cats.map((c, i) => {
+                  const mentor = c.metric.startsWith("mentor_");
+                  return (
+                    <tr key={c.code} className={cn(!c.active && "text-muted-foreground")}>
+                      <td className="px-2 py-1.5">
+                        <Switch checked={c.active} disabled={!canEdit} onCheckedChange={(v) => setCat(i, { active: v })} aria-label={`${c.name} on`} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input aria-label={`${c.code} name`} value={c.name} disabled={!canEdit} onChange={(e) => setCat(i, { name: e.target.value })} maxLength={60} className="min-w-[10rem]" />
+                        {mentor && (
+                          <span className="mt-1 block max-w-[16rem] text-[11px] text-muted-foreground">
+                            Switched off until management sets the criteria; the threshold is a score out of 100.
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-xs">{METRIC_LABEL[c.metric]}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-xs">{c.place === 1 ? "1st" : c.place === 2 ? "2nd" : `${c.place}th`}</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <Input aria-label={`${c.name} threshold`} inputMode="decimal" value={c.threshold} disabled={!canEdit} onChange={(e) => setCat(i, { threshold: e.target.value })} className="min-w-[6.5rem]" />
+                          <span className="text-xs text-muted-foreground">{mentor ? "/100" : "AED"}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input aria-label={`${c.name} prize`} inputMode="decimal" value={c.prizeAed} disabled={!canEdit} onChange={(e) => setCat(i, { prizeAed: e.target.value })} className="min-w-[6rem]" />
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                        {data.settings.pointValueAed > 0 ? Math.round((Number(c.prizeAed) || 0) / data.settings.pointValueAed).toLocaleString("en-US") : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableWrap>
+        )}
+        {canEdit && cats.length > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            {catProblem && <p className="mr-auto text-xs text-red-600 dark:text-red-400">{catProblem}</p>}
+            {catsChanged && <Button variant="outline" onClick={() => setCats(savedCats.map(toCatDraft))} disabled={program.isPending}>Undo changes</Button>}
+            <Button
+              disabled={!catsChanged || !!catProblem || program.isPending}
+              onClick={() => program.mutate({
+                eliteCategories: cats.map((c) => ({
+                  code: c.code, name: c.name.trim(), metric: c.metric, place: c.place,
+                  threshold: Number(c.threshold), prizeAed: Number(c.prizeAed), active: c.active,
+                })),
+              })}
+            >
+              {program.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save categories
+            </Button>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }

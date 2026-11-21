@@ -32,6 +32,8 @@ const dgoBudgetPeriodSchema = new Schema(
     tierBasisMonth: { type: String, default: null },
     everydayFils: { type: Number, required: true, min: 0 },
     eliteFils: { type: Number, required: true, min: 0 },
+    /** Monthly achiever prizes paid from the elite pool; only moves by a conditional increment, so it can't pass eliteFils. */
+    eliteCommittedFils: { type: Number, default: 0, min: 0 },
     /** The revenue/other grouping this month runs on, copied from the program when it opened. */
     revenueDepartments: { type: [{ type: Schema.Types.ObjectId, ref: "Department" }], default: [] },
     collections: {

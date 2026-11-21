@@ -3,7 +3,11 @@ import { DgoSettingsVersion } from "../../models/DgoSettingsVersion.js";
 import { DgoEarningRule } from "../../models/DgoEarningRule.js";
 import { Department } from "../../models/Department.js";
 import { Employee } from "../../models/Employee.js";
-import { DEFAULT_RULES, DEFAULT_SETTINGS, ACTIVE_EMPLOYEE_STATUSES, type DgoStage } from "./dgoDefaults.js";
+import {
+  DEFAULT_RULES, DEFAULT_SETTINGS, ACTIVE_EMPLOYEE_STATUSES, DEFAULT_ELITE_CATEGORIES, DEFAULT_NOMINATIONS_PER_MONTH, ELITE_CODES,
+  ELITE_RULE_PREFIX, LEADERBOARD_VISIBILITIES, MENTOR_METRICS,
+  type DgoEliteCategory, type DgoLeaderboardVisibility, type DgoStage,
+} from "./dgoDefaults.js";
 import { dayIn, previousMonth, pointsToFils, toAed, type DgoTier } from "./dgoMath.js";
 import { httpError, isDuplicateKey } from "./dgoErrors.js";
 import { dgoAudit } from "./dgoAudit.js";
@@ -81,6 +85,34 @@ export async function ensureDgoSetup(orgId: string, today: string): Promise<void
     ).catch(ignoreDup);
   }
   ready.add(orgId);
+}
+
+export interface ProgramSettings {
+  openToEmployees: boolean;
+  revenueDepartments: string[];
+  leaderboardVisibility: DgoLeaderboardVisibility;
+  nominationsPerMonth: number;
+  eliteCategories: DgoEliteCategory[];
+}
+
+/**
+ * The program row with Phase 2's settings filled in: a row written before
+ * Phase 2 has none of them, and an empty category list means the defaults.
+ */
+export async function programSettings(orgId: string): Promise<ProgramSettings> {
+  const p = await DgoProgram.findOne({ organization: orgId }).lean<Partial<ProgramSettings> & { revenueDepartments?: unknown[] }>();
+  const saved = new Map((p?.eliteCategories ?? []).map((c) => [c.code, c]));
+  return {
+    openToEmployees: Boolean(p?.openToEmployees),
+    revenueDepartments: (p?.revenueDepartments ?? []).map(String),
+    leaderboardVisibility: LEADERBOARD_VISIBILITIES.includes(p?.leaderboardVisibility as DgoLeaderboardVisibility) ? p!.leaderboardVisibility! : "everyone",
+    nominationsPerMonth: typeof p?.nominationsPerMonth === "number" ? p.nominationsPerMonth : DEFAULT_NOMINATIONS_PER_MONTH,
+    // Always all nine, in the handoff's order; what is saved overrides the defaults per code.
+    eliteCategories: DEFAULT_ELITE_CATEGORIES.map((d) => {
+      const s = saved.get(d.code);
+      return s ? { ...d, name: s.name, threshold: s.threshold, prizeAed: s.prizeAed, active: s.active } : { ...d };
+    }),
+  };
 }
 
 /** Forget the setup cache — the check script drops its database between runs. */
@@ -162,14 +194,14 @@ export async function settingsView(v: DgoViewer) {
     settingsOn(v.orgId, today),
     DgoSettingsVersion.find({ organization: v.orgId }).sort({ version: -1 }).lean<SettingsDoc[]>(),
     DgoEarningRule.find({ organization: v.orgId }).sort({ createdAt: -1, version: -1 }).lean<RuleDoc[]>(),
-    DgoProgram.findOne({ organization: v.orgId }).lean<{ openToEmployees: boolean; revenueDepartments: unknown[] }>(),
+    programSettings(v.orgId),
     Department.find({ organization: v.orgId }).select("name leader leaderKind").sort({ name: 1 }).lean<Array<{ _id: unknown; name: string; leader?: unknown; leaderKind?: string }>>(),
     Employee.aggregate<{ _id: unknown; n: number }>([
       { $match: { organization: oid(v.orgId), status: { $in: ACTIVE_EMPLOYEE_STATUSES } } },
       { $group: { _id: "$department", n: { $sum: 1 } } },
     ]),
   ]);
-  const revenue = new Set((program?.revenueDepartments ?? []).map(String));
+  const revenue = new Set(program.revenueDepartments);
   const headcount = new Map(counts.map((c) => [String(c._id), c.n]));
   const leaderIds = departments.filter((d) => d.leader).map((d) => d.leader);
   const leaders = leaderIds.length
@@ -185,7 +217,13 @@ export async function settingsView(v: DgoViewer) {
     history: versions.map(settingsDto),
     rules: [...latest.values()].sort((a, b) => DEFAULT_ORDER(a.code) - DEFAULT_ORDER(b.code) || a.code.localeCompare(b.code)).map((r) => ruleDto(r, current.pointValueAed)),
     ruleHistory: ruleVersions.map((r) => ruleDto(r, current.pointValueAed)),
-    program: { openToEmployees: Boolean(program?.openToEmployees), revenueDepartments: [...revenue] },
+    program: {
+      openToEmployees: program.openToEmployees,
+      revenueDepartments: [...revenue],
+      leaderboardVisibility: program.leaderboardVisibility,
+      nominationsPerMonth: program.nominationsPerMonth,
+      eliteCategories: program.eliteCategories,
+    },
     departments: departments.map((d) => ({
       id: String(d._id),
       name: d.name,
@@ -266,6 +304,7 @@ export async function saveRule(v: DgoViewer, code: string, input: RuleInput) {
   if (input.effectiveFrom < today) throw httpError("A change can start today or later, never earlier", 400);
   const upper = code.toUpperCase();
   if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(upper)) throw httpError("A rule code is capitals, digits and _ (e.g. CLIENT_REFERRAL)", 400);
+  if (upper.startsWith(ELITE_RULE_PREFIX)) throw httpError(`Codes starting ${ELITE_RULE_PREFIX} are kept for monthly achiever prizes`, 400);
   // Approvers always run head → HR → finance; the order is not the editor's to scramble.
   const chain = STAGE_ORDER.filter((s) => input.chain.includes(s));
   const previous = await DgoEarningRule.findOne({ organization: v.orgId, code: upper }).sort({ version: -1 }).lean<RuleDoc>();
@@ -295,10 +334,22 @@ export async function saveRule(v: DgoViewer, code: string, input: RuleInput) {
   return ruleDto(after, settings.pointValueAed);
 }
 
-/** Open or close DGO Points to every employee, and say which departments are revenue departments. */
-export async function saveProgram(v: DgoViewer, input: { openToEmployees?: boolean; revenueDepartments?: string[] }) {
+export interface ProgramInput {
+  openToEmployees?: boolean;
+  revenueDepartments?: string[];
+  leaderboardVisibility?: DgoLeaderboardVisibility;
+  nominationsPerMonth?: number;
+  eliteCategories?: Array<{ code: string; name?: string; threshold: number; prizeAed: number; active: boolean }>;
+}
+
+/**
+ * Open or close DGO Points to every employee; which departments are revenue
+ * departments; who sees the leaderboard; the nomination limit; the monthly
+ * achiever categories (a month already fetched keeps the ones it copied).
+ */
+export async function saveProgram(v: DgoViewer, input: ProgramInput) {
   if (!can(v, "dgoSettings", "edit")) throw httpError("You can't change DGO Points settings", 403);
-  const before = await DgoProgram.findOne({ organization: v.orgId }).lean();
+  const before = await programSettings(v.orgId);
   const set: Record<string, unknown> = { updatedBy: v.userId };
   if (typeof input.openToEmployees === "boolean") set.openToEmployees = input.openToEmployees;
   if (input.revenueDepartments) {
@@ -306,7 +357,21 @@ export async function saveProgram(v: DgoViewer, input: { openToEmployees?: boole
     if (found.length !== new Set(input.revenueDepartments).size) throw httpError("One of those departments isn't in this organisation", 400);
     set.revenueDepartments = found.map((d) => d._id);
   }
-  const after = await DgoProgram.findOneAndUpdate({ organization: v.orgId }, { $set: set }, { new: true, upsert: true }).lean<{ openToEmployees: boolean; revenueDepartments: unknown[] }>();
+  if (input.leaderboardVisibility) set.leaderboardVisibility = input.leaderboardVisibility;
+  if (typeof input.nominationsPerMonth === "number") set.nominationsPerMonth = input.nominationsPerMonth;
+  if (input.eliteCategories) {
+    const byCode = new Map(input.eliteCategories.map((c) => [c.code, c]));
+    if (byCode.size !== input.eliteCategories.length) throw httpError("A category is listed twice", 400);
+    for (const code of byCode.keys()) if (!ELITE_CODES.includes(code)) throw httpError(`Unknown category ${code}`, 400);
+    set.eliteCategories = before.eliteCategories.map((cur) => {
+      const c = byCode.get(cur.code);
+      if (!c) return cur;
+      if (MENTOR_METRICS.includes(cur.metric) && c.threshold > 100) throw httpError(`${cur.name}: a mentor threshold is a score out of 100`, 400);
+      return { ...cur, name: c.name?.trim() || cur.name, threshold: c.threshold, prizeAed: c.prizeAed, active: c.active };
+    });
+  }
+  await DgoProgram.updateOne({ organization: v.orgId }, { $set: set, $setOnInsert: { organization: v.orgId } }, { upsert: true });
+  const after = await programSettings(v.orgId);
   await dgoAudit(v, "program_changed", "program", v.orgId, before, after);
-  return { openToEmployees: Boolean(after?.openToEmployees), revenueDepartments: (after?.revenueDepartments ?? []).map(String) };
+  return after;
 }

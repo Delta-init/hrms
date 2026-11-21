@@ -63,3 +63,55 @@ export const programSchema = z.object({
   openToEmployees: z.boolean().optional(),
   revenueDepartments: z.array(objectId).max(200).optional(),
 });
+
+/* ───────────── Phase 2 ───────────── */
+
+const requestId = z.string().trim().min(8).max(80);
+
+export const nominateSchema = z.object({
+  employeeId: objectId,
+  ruleCode: z.string().trim().min(2).max(40),
+  day,
+  reason: z.string().trim().min(1, "Say what it was for").max(1000),
+  evidenceNote: z.string().trim().max(2000).nullish(),
+  evidenceKey: z.string().trim().max(300).nullish(),
+  evidenceName: z.string().trim().max(200).nullish(),
+  requestId,
+});
+
+export const rewardSchema = z.object({
+  name: z.string().trim().min(2, "Give it a name").max(80),
+  description: z.string().trim().max(500).optional(),
+  category: z.string().trim().min(2, "Give it a category").max(40),
+  photoKey: z.string().trim().max(300).nullish(),
+  points: z.number().int().min(1).max(10_000_000),
+  costAed: z.number().finite().min(0).max(10_000_000).nullish(),
+  stockMode: z.enum(["unlimited", "limited"]),
+  stock: z.number().int().min(0).max(1_000_000).nullish(),
+  status: z.enum(["active", "hidden"]),
+});
+
+export const redeemSchema = z.object({
+  rewardId: objectId,
+  note: z.string().trim().max(500).nullish(),
+  requestId,
+});
+
+export const noteSchema = z.object({ note: z.string().trim().max(500).nullish() });
+export const reasonSchema = z.object({ reason: z.string().trim().min(1, "Say why").max(500) });
+
+export const pickSchema = z.object({ code: z.string().trim().min(2).max(40), email: z.string().trim().min(3).max(200) });
+
+const eliteCategory = z.object({
+  code: z.string().trim().min(2).max(40),
+  name: z.string().trim().min(2).max(80).optional(),
+  threshold: z.number().finite().min(0).max(1_000_000_000),
+  prizeAed: z.number().finite().min(0).max(10_000_000),
+  active: z.boolean(),
+});
+
+export const programSchemaP2 = programSchema.extend({
+  leaderboardVisibility: z.enum(["everyone", "department", "managers"]).optional(),
+  nominationsPerMonth: z.number().int().min(0).max(100).optional(),
+  eliteCategories: z.array(eliteCategory).max(20).optional(),
+});

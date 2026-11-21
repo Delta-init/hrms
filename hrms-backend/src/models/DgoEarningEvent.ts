@@ -34,11 +34,22 @@ const dgoEarningEventSchema = new Schema(
     /** The department on the day — moving department later leaves this, and its budget, where it was. */
     department: { type: Schema.Types.ObjectId, ref: "Department", default: null },
     departmentName: { type: String, default: null },
-    rule: { type: Schema.Types.ObjectId, ref: "DgoEarningRule", required: true },
+    /** The rule version it was earned under; null for a monthly achiever prize, which has no rule. */
+    rule: { type: Schema.Types.ObjectId, ref: "DgoEarningRule", default: null },
     ruleCode: { type: String, required: true },
     ruleVersion: { type: Number, required: true },
     ruleName: { type: String, required: true },
     source: { type: String, enum: ["kpi", "award"], required: true },
+    /**
+     * How it came in: recorded by a head or HR, nominated by a colleague, or a
+     * monthly achiever prize (paid from the elite pool, not a department's).
+     */
+    origin: { type: String, enum: ["recorded", "nomination", "elite"], default: "recorded" },
+    /** The month a nomination was sent in, for the nominator's monthly limit. */
+    nominationMonth: { type: String, default: null },
+    /** A file backing it up (R2 key), with its original name. */
+    evidenceKey: { type: String, default: null },
+    evidenceName: { type: String, trim: true, maxlength: 200, default: null },
     kpiKey: { type: String, default: null },
     kpiLevel: { type: String, enum: ["met", "exceeded", null], default: null },
     points: { type: Number, required: true, min: 1 },
@@ -72,5 +83,6 @@ dgoEarningEventSchema.index({ organization: 1, employee: 1, day: 1 });
 dgoEarningEventSchema.index({ organization: 1, status: 1, stage: 1 });
 dgoEarningEventSchema.index({ organization: 1, month: 1, status: 1 });
 dgoEarningEventSchema.index({ "trail.by": 1 });
+dgoEarningEventSchema.index({ organization: 1, submittedBy: 1, origin: 1, nominationMonth: 1 });
 
 export const DgoEarningEvent = mongoose.model("DgoEarningEvent", dgoEarningEventSchema);

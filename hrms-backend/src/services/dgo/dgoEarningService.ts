@@ -7,12 +7,14 @@ import { ACTIVE_EMPLOYEE_STATUSES, type DgoStage } from "./dgoDefaults.js";
 import { capCheck, dayIn, isDay, pointsToFils, previousMonth, toAed } from "./dgoMath.js";
 import { httpError, isDuplicateKey } from "./dgoErrors.js";
 import { ruleOn, settingsOn } from "./dgoSettingsService.js";
-import { budgetRowFor, commitBudget, leftFor, releaseBudget } from "./dgoBudgetService.js";
+import { budgetRowFor, commitBudget, leftFor, releaseBudget, releaseElite } from "./dgoBudgetService.js";
+import { DgoDepartmentBudget } from "../../models/DgoDepartmentBudget.js";
+import { programSettings } from "./dgoSettingsService.js";
 import { AlreadyCredited, creditEvent, reverseEvent, type Actor } from "./dgoLedgerService.js";
 import { inTransaction } from "./dgoTxn.js";
 import { dgoAudit } from "./dgoAudit.js";
 import {
-  approverUserIds, can, departmentHasHead, isOpen, oid, whyCannotDecide, whyCannotRecordFor, type DgoViewer,
+  approverUserIds, assertCanUse, can, departmentHasHead, isOpen, oid, whyCannotDecide, whyCannotRecordFor, type DgoViewer,
 } from "./dgoAccess.js";
 
 /**
@@ -39,6 +41,10 @@ export interface EventDoc {
   department: unknown;
   departmentName: string | null;
   rule: unknown;
+  origin?: "recorded" | "nomination" | "elite";
+  nominationMonth?: string | null;
+  evidenceKey?: string | null;
+  evidenceName?: string | null;
   ruleCode: string;
   ruleVersion: number;
   ruleName: string;
@@ -96,17 +102,95 @@ export interface RecordInput {
   requestId: string;
 }
 
-/** Record points for somebody: a department head for their team, HR for anyone. */
-export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{ event: EventDoc; duplicate: boolean; message: string }> {
-  const emp = await Employee.findOne({ _id: input.employeeId, organization: v.orgId })
+interface EmpDoc { _id: Types.ObjectId; name: string; user?: unknown; department?: unknown; status: string }
+
+async function activeEmployee(v: DgoViewer, employeeId: string): Promise<EmpDoc> {
+  const emp = await Employee.findOne({ _id: employeeId, organization: v.orgId })
     .select("name user department status")
-    .lean<{ _id: Types.ObjectId; name: string; user?: unknown; department?: unknown; status: string }>();
+    .lean<EmpDoc>();
   if (!emp) throw httpError("That employee isn't in this organisation", 404);
   if (!ACTIVE_EMPLOYEE_STATUSES.includes(emp.status)) throw httpError(`${emp.name} has left, so can't earn points`, 400);
+  return emp;
+}
+
+/** Record points for somebody: a department head for their team, HR for anyone. */
+export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{ event: EventDoc; duplicate: boolean; message: string }> {
+  const emp = await activeEmployee(v, input.employeeId);
   const open = await isOpen(v.orgId);
   const refused = whyCannotRecordFor(v, emp, open);
   if (refused) throw httpError(refused, 403);
+  return createEvent(v, emp, open, input, { origin: "recorded" });
+}
 
+export interface NominateInput {
+  employeeId: string;
+  ruleCode: string;
+  day: string;
+  reason: string;
+  evidenceNote?: string | null;
+  evidenceKey?: string | null;
+  evidenceName?: string | null;
+  requestId: string;
+}
+
+/**
+ * A colleague nominating somebody for a recognition award. It becomes an
+ * earning request like any other — the nominee's department head, then HR, then
+ * finance where the rule says — and is paid inside the daily cap and the
+ * department's allowance once the last step approves. A limited number a month
+ * per person; never yourself; never the same person, award and day twice.
+ */
+export async function nominate(v: DgoViewer, input: NominateInput): Promise<{ event: EventDoc; duplicate: boolean; message: string }> {
+  await assertCanUse(v);
+  if (!v.employee) throw httpError("Your login has no employee record, so it can't nominate anyone", 403);
+  const key = `NOMINATION:${v.orgId}:${input.requestId}`;
+  const existing = await DgoEarningEvent.findOne({ idempotencyKey: key }).lean<EventDoc>();
+  if (existing) return { event: existing, duplicate: true, message: "Already sent" };
+  const emp = await activeEmployee(v, input.employeeId);
+  if (String(emp._id) === v.employee._id || (emp.user && String(emp.user) === v.userId)) {
+    await dgoAudit(v, "nomination_refused", "employee", emp._id, null, { reason: "self-nomination" });
+    throw httpError("You can't nominate yourself", 403);
+  }
+  const rule = await ruleOn(v.orgId, input.ruleCode, isDay(input.day) ? input.day : dayIn(v.tz));
+  if (rule && rule.source !== "award") throw httpError("KPI points come from the daily KPI, not from a nomination", 400);
+  const today = dayIn(v.tz);
+  const month = today.slice(0, 7);
+  const program = await programSettings(v.orgId);
+  const used = await DgoEarningEvent.countDocuments({ organization: v.orgId, submittedBy: oid(v.userId), origin: "nomination", nominationMonth: month });
+  if (used >= program.nominationsPerMonth) {
+    throw httpError(program.nominationsPerMonth === 0
+      ? "Nominations are switched off"
+      : `You've used all ${program.nominationsPerMonth} of your nominations for this month`, 409);
+  }
+  const again = await DgoEarningEvent.exists({
+    organization: v.orgId, submittedBy: oid(v.userId), origin: "nomination", employee: emp._id,
+    ruleCode: input.ruleCode.toUpperCase(), day: input.day, status: { $in: ["pending", "posted"] },
+  });
+  if (again) throw httpError(`You've already nominated ${emp.name} for this on ${input.day}`, 409);
+  const evidenceKey = input.evidenceKey?.trim() || null;
+  if (evidenceKey && !evidenceKey.startsWith(`${v.orgId}/dgo-evidence/${v.userId}/`)) throw httpError("Upload the file again", 400);
+  const open = await isOpen(v.orgId);
+  return createEvent(v, emp, open, { ...input, kpiKey: null }, {
+    origin: "nomination", key, nominationMonth: month, evidenceKey, evidenceName: input.evidenceName?.trim() || null,
+  });
+}
+
+/** The steps a nomination goes through: the department head and HR always, finance when the rule asks for it. */
+export const nominationChain = (ruleChain: DgoStage[]): DgoStage[] =>
+  (["head", "hr", "finance"] as DgoStage[]).filter((s) => s === "head" || s === "hr" || ruleChain.includes(s));
+
+interface CreateOpts {
+  origin: "recorded" | "nomination";
+  key?: string;
+  nominationMonth?: string;
+  evidenceKey?: string | null;
+  evidenceName?: string | null;
+}
+
+/** Steps 2–7 for a request somebody may make: validate, de-duplicate, cap, chain, then post or route for approval. */
+async function createEvent(
+  v: DgoViewer, emp: EmpDoc, open: boolean, input: RecordInput, opts: CreateOpts,
+): Promise<{ event: EventDoc; duplicate: boolean; message: string }> {
   const today = dayIn(v.tz);
   if (!isDay(input.day) || input.day > today) throw httpError("Pick today or an earlier day", 400);
   const month = input.day.slice(0, 7);
@@ -114,13 +198,15 @@ export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{
   const settings = await settingsOn(v.orgId, input.day);
   const rule = await ruleOn(v.orgId, input.ruleCode, input.day);
   if (!rule) throw httpError(`${input.ruleCode} isn't in force on ${input.day}`, 400);
-  if (rule.needsEvidence && !input.evidenceNote?.trim()) throw httpError(`${rule.name} needs evidence: say what shows it happened`, 400);
+  if (rule.needsEvidence && !input.evidenceNote?.trim() && !opts.evidenceKey) {
+    throw httpError(`${rule.name} needs evidence: say what shows it happened${opts.origin === "nomination" ? " or attach a file" : ""}`, 400);
+  }
   if (!input.reason?.trim()) throw httpError("Say what it was for", 400);
 
   const kpiKey = rule.source === "kpi" ? (input.kpiKey?.trim().toLowerCase() || "daily") : null;
-  const key = rule.source === "kpi"
+  const key = opts.key ?? (rule.source === "kpi"
     ? `KPI:${emp._id}:${kpiKey}:${input.day}:${rule.kpiLevel}`
-    : `AWARD:${v.orgId}:${input.requestId}`;
+    : `AWARD:${v.orgId}:${input.requestId}`);
   const existing = await DgoEarningEvent.findOne({ idempotencyKey: key }).lean<EventDoc>();
   if (existing) return { event: existing, duplicate: true, message: "Already recorded" };
 
@@ -146,7 +232,8 @@ export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{
   });
 
   // Step 7: the chain. A department with no head goes straight to HR; a head recording for their own team has done the head's step.
-  let chain: DgoStage[] = [...rule.chain];
+  // A nomination always passes the nominee's head and HR, whatever the rule's own chain (finance too when the rule says).
+  let chain: DgoStage[] = opts.origin === "nomination" ? nominationChain(rule.chain) : [...rule.chain];
   const trail = [trailEntry(null, "submitted", v)];
   if (chain.includes("head")) {
     if (!open) {
@@ -171,6 +258,8 @@ export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{
       department: emp.department ?? null, departmentName: department?.name ?? null,
       rule: rule._id, ruleCode: rule.code, ruleVersion: rule.version, ruleName: rule.name,
       source: rule.source, kpiKey, kpiLevel: rule.kpiLevel ?? null,
+      origin: opts.origin, nominationMonth: opts.nominationMonth ?? null,
+      evidenceKey: opts.evidenceKey ?? null, evidenceName: opts.evidenceName ?? null,
       points: rule.points, valueFils: pointsToFils(rule.points, settings.pointValueAed), capExempt: rule.capExempt,
       day: input.day, month, reason: input.reason.trim(), evidenceNote: input.evidenceNote?.trim() || null,
       status: cap.ok ? "pending" : "capped", chain, stage: cap.ok ? chain[0] ?? null : null, trail,
@@ -184,7 +273,7 @@ export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{
     // A KPI award for the other level got in at the same moment.
     throw httpError("Recorded by someone else at the same moment — refresh", 409);
   }
-  await dgoAudit(v, "earning_recorded", "earning_event", created._id, null, { employee: emp.name, rule: rule.code, points: rule.points, day: input.day, status: created.status });
+  await dgoAudit(v, opts.origin === "nomination" ? "nomination_sent" : "earning_recorded", "earning_event", created._id, null, { employee: emp.name, rule: rule.code, points: rule.points, day: input.day, status: created.status });
 
   if (!cap.ok) return { event: created, duplicate: false, message: `Not counted: ${cap.reason}` };
   // A KPI exceeded recorded while the met is still waiting: the met will never be paid.
@@ -200,6 +289,25 @@ export async function recordEarning(v: DgoViewer, input: RecordInput): Promise<{
   }
   await tellApprovers(v.orgId, created);
   return { event: created, duplicate: false, message: `Sent for approval: ${stageName(chain[0])}` };
+}
+
+/** Tell finance when a department's allowance for the month passes 80%, 90% or 100%. Best-effort. */
+async function budgetAlert(orgId: string, rowId: Types.ObjectId, addedFils: number, releasedFils: number) {
+  try {
+    const row = await DgoDepartmentBudget.findById(rowId).lean<{ departmentName: string; allocationFils: number; committedFils: number; month: string }>();
+    if (!row || row.allocationFils <= 0) return;
+    const now = row.committedFils;
+    const before = now - addedFils + releasedFils;
+    const crossed = [100, 90, 80].find((p) => before * 100 < p * row.allocationFils && now * 100 >= p * row.allocationFils);
+    if (!crossed) return;
+    const finance = await approverUserIds(orgId, "finance", null).catch(() => []);
+    await notify({
+      users: finance, kind: "system", tone: crossed === 100 ? "negative" : "neutral", organization: orgId,
+      title: `${row.departmentName}'s DGO allowance is ${crossed}% used`,
+      body: `AED ${toAed(now).toFixed(2)} of ${toAed(row.allocationFils).toFixed(2)}${crossed === 100 ? " — nothing more can be paid this month" : ""}`,
+      href: "/dgo-points/budgets",
+    });
+  } catch { /* an alert never stops a payment */ }
 }
 
 const stageName = (s: DgoStage | null) => (s === "head" ? "department head" : s === "hr" ? "HR" : s === "finance" ? "finance" : "posting");
@@ -231,6 +339,7 @@ export async function postEvent(actor: Actor, eventId: Types.ObjectId): Promise<
   const ev = await DgoEarningEvent.findById(eventId).lean<EventDoc>();
   if (!ev) throw httpError("That request no longer exists", 404);
   if (ev.status !== "pending") return ev;
+  if (ev.origin === "elite") throw httpError("Monthly achiever prizes are paid from the elite pool, on the Monthly Achievers page", 409);
   const orgId = String(ev.organization);
   const settings = await settingsOn(orgId, ev.day);
   const { period, rowId } = await budgetRowFor(orgId, ev.month, ev.department);
@@ -301,8 +410,17 @@ export async function postEvent(actor: Actor, eventId: Types.ObjectId): Promise<
   if (outcome === "posted") {
     await notify({
       users: [ev.user], kind: "system", tone: "positive", organization: orgId, actor: actor.userId,
-      title: `+${ev.points} DGO Points`, body: `${ev.ruleName} · ${ev.day}`, href: "/dgo-points/wallet",
+      title: `+${ev.points} DGO Points`,
+      body: ev.origin === "nomination" ? `${ev.ruleName} · nominated by ${ev.submittedByName ?? "a colleague"}` : `${ev.ruleName} · ${ev.day}`,
+      href: "/dgo-points/wallet",
     });
+    if (ev.origin === "nomination" && ev.submittedBy) {
+      await notify({
+        users: [ev.submittedBy], kind: "system", tone: "positive", organization: orgId, actor: actor.userId,
+        title: `Your nomination of ${ev.employeeName} was approved`, body: `${ev.ruleName} · ${ev.points} points`, href: "/dgo-points/nominations",
+      });
+    }
+    await budgetAlert(orgId, rowId, ev.valueFils, replaced?.status === "posted" ? replaced.valueFils : 0);
   } else if (outcome === "budget") {
     const finance = await approverUserIds(orgId, "finance", null).catch(() => []);
     await notify({
@@ -323,6 +441,7 @@ export async function decide(v: DgoViewer, eventId: string, approve: boolean, no
     if (mine) return { event: ev, message: "Already done" };
     throw httpError(`Already decided: ${ev.status.replace("_", " ")}`, 409);
   }
+  if (ev.origin === "elite") throw httpError("Monthly achiever prizes are paid from the Monthly Achievers page", 409);
   const why = whyCannotDecide(v, ev);
   // A second click landing after the first moved it on: report the first, don't refuse.
   const lastDecision = [...ev.trail].reverse().find((t) => t.action === "approved" || t.action === "rejected");
@@ -350,7 +469,11 @@ export async function decide(v: DgoViewer, eventId: string, approve: boolean, no
     ).lean<EventDoc>();
     if (!r) return { event: (await DgoEarningEvent.findById(ev._id).lean<EventDoc>())!, message: "Already decided" };
     await dgoAudit(v, "earning_rejected", "earning_event", ev._id, { status: "pending", stage }, { status: "rejected", note });
-    await notify({ users: [ev.submittedBy], kind: "approval", tone: "negative", organization: v.orgId, actor: v.userId, title: `DGO Points not approved: ${ev.ruleName} for ${ev.employeeName}`, body: note!.trim(), href: "/dgo-points/approvals" });
+    await notify({
+      users: [ev.submittedBy], kind: "approval", tone: "negative", organization: v.orgId, actor: v.userId,
+      title: ev.origin === "nomination" ? `Your nomination of ${ev.employeeName} wasn't approved` : `DGO Points not approved: ${ev.ruleName} for ${ev.employeeName}`,
+      body: note!.trim(), href: ev.origin === "nomination" ? "/dgo-points/nominations" : "/dgo-points/approvals",
+    });
     return { event: r, message: "Rejected" };
   }
   const next = ev.chain[ev.chain.indexOf(stage) + 1] ?? null;
@@ -390,7 +513,8 @@ export async function reverseEarning(v: DgoViewer, eventId: string, reason: stri
     );
     if (!claimed) return;
     await reverseEvent(ev, today, "Taken back", actorOf(v), session);
-    await releaseBudget(v.orgId, ev.month, ev.department, ev.valueFils, session);
+    if (ev.origin === "elite") await releaseElite(v.orgId, ev.month, ev.valueFils, session);
+    else await releaseBudget(v.orgId, ev.month, ev.department, ev.valueFils, session);
   });
   await dgoAudit(v, "earning_reversed", "earning_event", ev._id, { status: "posted" }, { status: "reversed", reason: reason.trim() });
   await notify({ users: [ev.user], kind: "system", tone: "negative", organization: v.orgId, actor: v.userId, title: `−${ev.points} DGO Points`, body: `${ev.ruleName} (${ev.day}) taken back: ${reason.trim()}`, href: "/dgo-points/wallet" });

@@ -1,5 +1,5 @@
 /**
- * DGO Points, Phase 1 — the shapes hrms-backend answers with (routes under /dgo-points).
+ * DGO Points, Phases 1–2 — the shapes hrms-backend answers with (routes under /dgo-points).
  *
  * Every route is under the HRMS API base (`/api/v1`, i.e. the axios `api` instance's
  * baseURL) at `/dgo-points/...`, and answers in HRMS's usual wrapper:
@@ -37,7 +37,28 @@ export interface DgoMe {
     auditView: boolean;
     /** May open somebody else's points (finance, audit, Super Admin). */
     walletLookup: boolean;
+    // Phase 2 — optional so a server from before Phase 2 still type-checks as "no".
+    /** Manage the rewards catalogue (dgoRewards create/edit/delete, or Super Admin). */
+    rewardsManage?: boolean;
+    /** Approve / reject / mark delivered redemptions (dgoRewards approve, or Super Admin). */
+    rewardsFulfil?: boolean;
+    /** See the fulfilment queue (dgoRewards view/approve, or Super Admin). */
+    rewardsView?: boolean;
+    /** Fetch achiever figures from Root and pick between exact ties (dgoSettings edit, or Super Admin). */
+    achieversRun?: boolean;
+    /** Verify achiever figures (finance: dgoBudgets approve, or Super Admin). */
+    achieversVerify?: boolean;
+    /** Approve and publish achievers (dgoSettings approve, or Super Admin). */
+    achieversApprove?: boolean;
+    /** See achiever candidates before they are published. */
+    achieversReview?: boolean;
+    /** May nominate a colleague now (has an employee record and may use DGO Points). */
+    nominate?: boolean;
   };
+  /** Who may see the points leaderboard (Phase 2). */
+  leaderboardVisibility?: DgoLeaderboardVisibility;
+  /** Nominations each person may send a month (Phase 2). */
+  nominationsPerMonth?: number;
   /** Your own employee record, or null for a login with none (then there are no own points). */
   employee: { id: string; name: string; department: string | null } | null;
   pointValueAed: number;
@@ -67,6 +88,8 @@ export interface DgoLedgerRow {
   eventId: string | null;
   byName: string | null;
   expiresOn: string | null; // for credits: when that lot expires
+  /** Change to points held for rewards: reserve +P, release −P, redeem −P (0 or absent otherwise). */
+  reservedDelta?: number;
 }
 
 /** GET /dgo-points/dashboard?month=YYYY-MM */
@@ -165,7 +188,14 @@ export interface DgoSettingsView {
   history: DgoSettings[];           // every version, newest first
   rules: DgoRule[];                 // latest version of every code, active or not
   ruleHistory: DgoRule[];           // every rule version, newest first
-  program: { openToEmployees: boolean; revenueDepartments: string[] };
+  program: {
+    openToEmployees: boolean;
+    revenueDepartments: string[];
+    // Phase 2
+    leaderboardVisibility?: DgoLeaderboardVisibility;
+    nominationsPerMonth?: number;
+    eliteCategories?: DgoEliteCategory[];
+  };
   departments: Array<{ id: string; name: string; headcount: number; group: DgoGroup; head: string | null }>;
 }
 /** PUT /dgo-points/settings  body: Omit<DgoSettings,"version"|"createdByName"|"createdAt"> (effectiveFrom ≥ today) → DgoSettings */
@@ -198,6 +228,11 @@ export interface DgoEvent {
   canDecide: boolean;
   whyNot: string | null;
   canReverse: boolean;
+  // Phase 2 — absent on a server from before Phase 2.
+  /** recorded = by a head/HR; nomination = sent in by a colleague; elite = a monthly achiever prize. */
+  origin?: "recorded" | "nomination" | "elite";
+  evidenceUrl?: string | null;   // 1-hour link, null when no file
+  evidenceName?: string | null;
 }
 
 /** GET /dgo-points/approvals?tab=mine|waiting|decided */
@@ -271,7 +306,13 @@ export interface DgoRuleInput {
   effectiveFrom: string;
 }
 
-export interface DgoProgramInput { openToEmployees?: boolean; revenueDepartments?: string[] }
+export interface DgoProgramInput {
+  openToEmployees?: boolean;
+  revenueDepartments?: string[];
+  leaderboardVisibility?: DgoLeaderboardVisibility;
+  nominationsPerMonth?: number;
+  eliteCategories?: DgoEliteCategory[];
+}
 
 export interface DgoPerson { id: string; name: string; department: string | null; designation: string | null }
 
@@ -289,4 +330,196 @@ export interface DgoAuditRow {
 export interface DgoAuditView {
   rows: DgoAuditRow[];
   pagination: { total: number; page: number; limit: number; totalPages: number };
+}
+
+// ═══ Phase 2 — nominations, rewards, redemptions, leaderboard, achievers ═══════
+
+/** POST /dgo-points/uploads?kind=evidence|reward (multipart "file"). Keep `key`; `url` is a 1-hour preview. */
+export type DgoUploadKind = "evidence" | "reward";
+export interface DgoUpload { key: string; url: string; fileName: string; contentType: string }
+
+export interface DgoNominationRule {
+  code: string; name: string; description: string; points: number; aed: number;
+  needsEvidence: boolean; chain: DgoStage[]; capExempt: boolean;
+}
+
+/** POST /dgo-points/nominations */
+export interface DgoNominateInput {
+  employeeId: string;
+  ruleCode: string;
+  day: string;
+  reason: string;
+  evidenceNote?: string | null;
+  evidenceKey?: string | null;
+  /** The uploaded file's own name, shown to approvers. */
+  evidenceName?: string | null;
+  requestId: string;
+}
+
+export type DgoNominationsTab = "sent" | "received";
+
+/** GET /dgo-points/nominations?tab=sent|received */
+export interface DgoNominationsView {
+  tab: DgoNominationsTab;
+  limit: number;
+  usedThisMonth: number;
+  left: number;
+  rules: DgoNominationRule[];
+  counts: { sent: number; received: number };
+  items: DgoEvent[];
+}
+
+/** GET /dgo-points/colleagues?search= */
+export interface DgoColleague { id: string; name: string; department: string | null; designation: string | null; photoUrl: string | null }
+
+export type DgoRewardStatus = "active" | "hidden" | "archived";
+export type DgoStockMode = "unlimited" | "limited";
+
+export interface DgoReward {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  photoUrl: string | null;
+  photoKey: string | null;
+  points: number;
+  aed: number;
+  costAed: number | null;
+  stockMode: DgoStockMode;
+  stock: number | null;
+  status: DgoRewardStatus;
+  affordable: boolean;
+  short: number;
+  redeemedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /dgo-points/rewards?manage=1 */
+export interface DgoRewardsView {
+  rewards: DgoReward[];
+  available: number;
+  minRedemption: number;
+  pointValueAed: number;
+  categories: string[];
+}
+
+/** POST /dgo-points/rewards, PUT /dgo-points/rewards/:id */
+export interface DgoRewardInput {
+  name: string;
+  description?: string;
+  category: string;
+  photoKey?: string | null;
+  points: number;
+  costAed?: number | null;
+  stockMode: DgoStockMode;
+  stock?: number | null;
+  status: "active" | "hidden";
+}
+
+export type DgoRedemptionStatus = "reserved" | "approved" | "fulfilled" | "cancelled" | "rejected";
+
+export interface DgoRedemption {
+  id: string;
+  employee: { id: string; name: string; department: string | null };
+  reward: { id: string; name: string; category: string; photoUrl: string | null };
+  points: number;
+  aed: number;
+  costAed: number | null;
+  status: DgoRedemptionStatus;
+  note: string | null;
+  fulfilmentNote: string | null;
+  trail: Array<{ action: string; byName: string | null; note: string | null; at: string }>;
+  createdAt: string;
+  updatedAt: string;
+  canCancel: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canFulfil: boolean;
+  whyNot: string | null;
+}
+
+/** POST /dgo-points/redemptions */
+export interface DgoRedeemInput { rewardId: string; note?: string | null; requestId: string }
+
+export type DgoRedemptionsTab = "mine" | "queue" | "done";
+
+/** GET /dgo-points/redemptions?tab=mine|queue|done&status= */
+export interface DgoRedemptionsView {
+  tab: DgoRedemptionsTab;
+  counts: { mine: number; queue: number; done: number };
+  items: DgoRedemption[];
+}
+
+export type DgoLeaderboardVisibility = "everyone" | "department" | "managers";
+
+/** GET /dgo-points/leaderboard?month=&department= */
+export interface DgoLeaderboardView {
+  month: string;
+  visibility: DgoLeaderboardVisibility;
+  scope: "company" | "department" | "own";
+  departments: Array<{ id: string; name: string }>;
+  department: string | null;
+  rows: Array<{ rank: number; employeeId: string; name: string; department: string | null; points: number; photoUrl: string | null; me: boolean }>;
+  me: { rank: number | null; points: number; of: number } | null;
+  note: string;
+}
+
+export type DgoAchieverStatus = "none" | "provisional" | "locked" | "verified" | "published";
+export type DgoEliteMetric = "sales" | "team" | "cs" | "cs_department" | "mentor_chief" | "mentor_senior" | "mentor_junior";
+
+export interface DgoEliteCategory {
+  code: string;
+  name: string;
+  metric: DgoEliteMetric;
+  place: number;
+  /** AED for money metrics; a score out of 100 for mentor metrics. */
+  threshold: number;
+  prizeAed: number;
+  active: boolean;
+}
+
+export interface DgoAchieverCandidate {
+  email: string;
+  name: string;
+  employeeId: string | null;
+  employeeName: string | null;
+  value: number;
+  detail: string | null;
+  eligible: boolean;
+  why: string | null;
+  tied: boolean;
+}
+
+export interface DgoAchieverCategoryResult {
+  code: string;
+  name: string;
+  metric: DgoEliteMetric;
+  place: number;
+  threshold: number;
+  prizeAed: number;
+  prizePoints: number;
+  winner: DgoAchieverCandidate | null;
+  tie: boolean;
+  pickedByName: string | null;
+  candidates: DgoAchieverCandidate[];
+  /** Set once published. `takenBack`: finance reversed the prize (reviewers only see those). */
+  award: { eventId: string; employeeName: string; points: number; takenBack?: boolean } | null;
+}
+
+/** GET /dgo-points/achievers?month= */
+export interface DgoAchieversView {
+  month: string;
+  status: DgoAchieverStatus;
+  review: boolean;
+  pool: { eliteAed: number; prizesAed: number; fits: boolean; collectionsConfirmedAed: number | null; thresholdAed: number };
+  lockedReason: string | null;
+  problems: string[];
+  fetchedAt: string | null; fetchedByName: string | null;
+  verifiedAt: string | null; verifiedByName: string | null;
+  publishedAt: string | null; publishedByName: string | null;
+  categories: DgoAchieverCategoryResult[];
+  trail: Array<{ action: string; byName: string | null; note: string | null; at: string }>;
+  months: Array<{ month: string; status: DgoAchieverStatus }>;
+  can: { fetch: boolean; pick: boolean; verify: boolean; sendBack: boolean; approve: boolean };
 }

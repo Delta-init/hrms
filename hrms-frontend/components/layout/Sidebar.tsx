@@ -41,7 +41,7 @@ import {
   Briefcase,
   Coins,
   ShieldCheck, GraduationCap, DatabaseBackup, ClipboardPen, Sprout, UserPlus,
-  Gem, Trophy, BadgeCheck, PiggyBank, SlidersHorizontal,
+  Gem, Trophy, BadgeCheck, PiggyBank, SlidersHorizontal, HeartHandshake, Gift, Medal,
 } from "lucide-react";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
@@ -100,6 +100,13 @@ export const navItems: {
   dgo?: DgoNavFlag;
   /** A small heading drawn above this entry when the labels show. */
   section?: string;
+  /**
+   * Not drawn in the menu: a page reached from another page's tab. It still
+   * names the page in the header and turns up in search, and `lightsUp` says
+   * which drawn entry is highlighted while it is open.
+   */
+  hidden?: boolean;
+  lightsUp?: string;
 }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permModule: "dashboard" },
   { href: "/first-days", label: "My First 15 Days", icon: Sprout, permModule: null, joinerOnly: true },
@@ -128,6 +135,11 @@ export const navItems: {
   { href: "/dgo-points", label: "Points Overview", icon: Gem, permModule: null, dgo: "use", section: "DGO Points" },
   { href: "/dgo-points/wallet", label: "My Points", icon: Coins, permModule: null, dgo: "use" },
   { href: "/dgo-points/earn", label: "Earn Points", icon: Trophy, permModule: null, dgo: "use" },
+  { href: "/dgo-points/nominations", label: "Nominate", icon: HeartHandshake, permModule: null, dgo: "nominate" },
+  { href: "/dgo-points/rewards", label: "Rewards", icon: Gift, permModule: null, dgo: "use" },
+  { href: "/dgo-points/leaderboard", label: "Leaderboard", icon: Medal, permModule: null, dgo: "use" },
+  // A tab of the Leaderboard page, so it lights that entry up rather than drawing its own.
+  { href: "/dgo-points/achievers", label: "Monthly Achievers", icon: Medal, permModule: null, dgo: "use", hidden: true, lightsUp: "/dgo-points/leaderboard" },
   { href: "/dgo-points/approvals", label: "Points Approvals", icon: BadgeCheck, permModule: null, dgo: "approvals" },
   { href: "/dgo-points/budgets", label: "Points Budgets", icon: PiggyBank, permModule: null, dgo: "budgets" },
   { href: "/dgo-points/settings", label: "Points Rules", icon: SlidersHorizontal, permModule: null, dgo: "settings" },
@@ -231,14 +243,16 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/documents": visaPending,
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
-  const activeHref = navItems
-    .map((n) => n.href)
-    .filter((h) => pathname === h || pathname.startsWith(h + "/"))
-    .sort((a, b) => b.length - a.length)[0];
+  const activeNav = navItems
+    .filter((n) => pathname === n.href || pathname.startsWith(n.href + "/"))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  // A hidden page (a tab of another) lights up the entry it belongs to.
+  const activeHref = activeNav?.lightsUp ?? activeNav?.href;
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment, dgo, section }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment, dgo, section, hidden }) => {
+        if (hidden) return null;
         // The longest link that matches wins, so /hiring/ad-spend lights up
         // Ad Spend and not Hiring as well.
         const isActive = activeHref === href;

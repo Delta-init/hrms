@@ -14,8 +14,16 @@ const dgoLedgerEntrySchema = new Schema(
   {
     organization: { type: Schema.Types.ObjectId, ref: "Organization", default: null },
     employee: { type: Schema.Types.ObjectId, ref: "Employee", required: true },
-    /** Signed points: +30 a credit, −20 a reversal. A reserve moves available to reserved, so its delta is −points. */
+    /**
+     * Signed change to spendable points: +30 a credit, −20 a reversal. A reserve
+     * moves points from spendable to held (−P), a release moves them back (+P), and
+     * a redeem spends held points, so it leaves spendable alone (0).
+     */
     delta: { type: Number, required: true },
+    /** Signed change to held points: reserve +P, release −P, redeem −P; 0 for everything else. */
+    reservedDelta: { type: Number, default: 0 },
+    /** The redemption a reserve, release or redeem belongs to. */
+    redemption: { type: Schema.Types.ObjectId, ref: "DgoRedemption", default: null },
     type: { type: String, enum: DGO_LEDGER_TYPES, required: true },
     lot: { type: Schema.Types.ObjectId, ref: "DgoPointLot", default: null },
     earningEvent: { type: Schema.Types.ObjectId, ref: "DgoEarningEvent", default: null },

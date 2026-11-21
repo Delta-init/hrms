@@ -11,10 +11,12 @@ import { Department } from "../../models/Department.js";
 import { ACTIVE_EMPLOYEE_STATUSES } from "./dgoDefaults.js";
 import { dayIn, isDay, isMonth, pointsToFils, tierLabel, toAed } from "./dgoMath.js";
 import { httpError } from "./dgoErrors.js";
-import { settingsOn } from "./dgoSettingsService.js";
-import type { EventDoc } from "./dgoEarningService.js";
+import { programSettings, ruleDto, rulesOn, settingsOn } from "./dgoSettingsService.js";
+import { publicUrl } from "../uploadService.js";
+import { nominationChain, type EventDoc } from "./dgoEarningService.js";
 import {
-  assertCanUse, can, canLookUpWallets, canRecordAwards, canUse, isObjectId, isOpen, oid, programOf, whyCannotDecide, type DgoViewer,
+  assertCanUse, can, canApproveAchievers, canFulfil, canLookUpWallets, canManageRewards, canRecordAwards, canReviewAchievers,
+  canRunAchievers, canSeeFulfilment, canUse, canVerifyAchievers, isObjectId, isOpen, oid, whyCannotDecide, type DgoViewer,
 } from "./dgoAccess.js";
 
 const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : "");
@@ -23,15 +25,16 @@ const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : "");
 export async function me(v: DgoViewer) {
   const today = dayIn(v.tz);
   const [program, settings, dept] = await Promise.all([
-    programOf(v.orgId),
+    programSettings(v.orgId),
     settingsOn(v.orgId, today),
     v.employee?.department ? Department.findById(v.employee.department).select("name").lean<{ name: string }>() : null,
   ]);
-  const open = Boolean(program?.openToEmployees);
+  const open = program.openToEmployees;
   const heads = open && v.headOf.length > 0;
+  const usable = await canUse(v);
   return {
     open,
-    canUse: await canUse(v),
+    canUse: usable,
     superAdmin: v.superAdmin,
     isHead: v.headOf.length > 0,
     can: {
@@ -44,7 +47,17 @@ export async function me(v: DgoViewer) {
       settingsEdit: can(v, "dgoSettings", "edit"),
       auditView: can(v, "dgoAudit", "view"),
       walletLookup: canLookUpWallets(v),
+      rewardsManage: canManageRewards(v),
+      rewardsFulfil: canFulfil(v),
+      rewardsView: canSeeFulfilment(v),
+      achieversRun: canRunAchievers(v),
+      achieversVerify: canVerifyAchievers(v),
+      achieversApprove: canApproveAchievers(v),
+      achieversReview: canReviewAchievers(v),
+      nominate: usable && Boolean(v.employee) && program.nominationsPerMonth > 0,
     },
+    leaderboardVisibility: program.leaderboardVisibility,
+    nominationsPerMonth: program.nominationsPerMonth,
     employee: v.employee ? { id: v.employee._id, name: v.employee.name, department: dept?.name ?? null } : null,
     pointValueAed: settings.pointValueAed,
     timeZone: v.tz,
@@ -54,7 +67,7 @@ export async function me(v: DgoViewer) {
 
 interface LedgerDoc {
   _id: Types.ObjectId; createdAt: Date; day: string; type: string; delta: number; description: string;
-  ruleCode: string | null; earningEvent: unknown; createdByName: string | null; lot: unknown;
+  ruleCode: string | null; earningEvent: unknown; createdByName: string | null; lot: unknown; reservedDelta?: number; redemption?: unknown;
 }
 
 async function ledgerRows(rows: LedgerDoc[]) {
@@ -67,6 +80,8 @@ async function ledgerRows(rows: LedgerDoc[]) {
     day: r.day,
     type: r.type,
     delta: r.delta,
+    reservedDelta: r.reservedDelta ?? 0,
+    redemptionId: r.redemption ? String(r.redemption) : null,
     description: r.description,
     ruleCode: r.ruleCode ?? null,
     eventId: r.earningEvent ? String(r.earningEvent) : null,
@@ -277,6 +292,9 @@ export async function eventDto(v: DgoViewer, e: EventDoc, budget?: Map<string, {
     employee: { id: String(e.employee), name: e.employeeName, department: e.departmentName ?? null },
     ruleCode: e.ruleCode,
     ruleName: e.ruleName,
+    origin: e.origin ?? "recorded",
+    evidenceUrl: e.evidenceKey ? publicUrl(e.evidenceKey) : null,
+    evidenceName: e.evidenceKey ? e.evidenceName ?? "Attachment" : null,
     points: e.points,
     aed: toAed(e.valueFils),
     day: e.day,
@@ -293,7 +311,7 @@ export async function eventDto(v: DgoViewer, e: EventDoc, budget?: Map<string, {
     budget: b ? { departmentName: b.name, leftAed: toAed(Math.max(0, b.leftFils)), afterAed: toAed(b.leftFils - (e.status === "pending" ? e.valueFils : 0)) } : null,
     canDecide: e.status === "pending" && whyCannotDecide(v, e) === null,
     whyNot: e.status === "pending" ? whyCannotDecide(v, e) : null,
-    canReverse: e.status === "posted" && can(v, "dgoBudgets", "edit") && String(e.user) !== v.userId,
+    canReverse: e.status === "posted" && can(v, "dgoBudgets", "edit") && String(e.user) !== v.userId && !(v.employee && v.employee._id === String(e.employee)),
   };
 }
 
@@ -313,7 +331,8 @@ export async function approvals(v: DgoViewer, tabIn?: string) {
   const open = await isOpen(v.orgId);
   if (!seesAll && !(open && v.headOf.length) && !canRecordAwards(v, open)) throw httpError("You have no DGO approvals", 403);
 
-  const pendingFilter: Record<string, unknown> = { organization: v.orgId, status: "pending" };
+  // Monthly achiever prizes are paid from the Achievers page, never from here.
+  const pendingFilter: Record<string, unknown> = { organization: v.orgId, status: "pending", origin: { $ne: "elite" } };
   if (!seesAll) pendingFilter.$or = [{ department: { $in: v.headOf.map(oid) } }, { submittedBy: oid(v.userId) }];
   const pending = await DgoEarningEvent.find(pendingFilter).sort({ createdAt: 1 }).limit(500).lean<EventDoc[]>();
   const mine = pending.filter((e) => whyCannotDecide(v, e) === null);
@@ -347,5 +366,57 @@ export async function audit(v: DgoViewer, q: { page?: number; limit?: number; ac
     rows: rows.map((r) => ({ id: String(r._id), at: iso(r.createdAt), actorName: r.actorName, action: r.action, entity: r.entity, entityId: r.entityId, before: r.before, after: r.after })),
     pagination: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
   };
+}
+
+/* ───────────── Phase 2: nominations ───────────── */
+
+/** GET /dgo-points/nominations?tab=sent|received */
+export async function nominationsView(v: DgoViewer, tabIn?: string) {
+  await assertCanUse(v);
+  const tab = tabIn === "received" ? "received" : "sent";
+  const today = dayIn(v.tz);
+  const month = today.slice(0, 7);
+  const [program, settings, rules] = await Promise.all([programSettings(v.orgId), settingsOn(v.orgId, today), rulesOn(v.orgId, today)]);
+  const sentFilter = { organization: v.orgId, submittedBy: oid(v.userId), origin: "nomination" };
+  const receivedFilter = v.employee ? { organization: v.orgId, employee: oid(v.employee._id), origin: "nomination", status: "posted" } : null;
+  const [used, sentCount, receivedCount] = await Promise.all([
+    DgoEarningEvent.countDocuments({ ...sentFilter, nominationMonth: month }),
+    DgoEarningEvent.countDocuments(sentFilter),
+    receivedFilter ? DgoEarningEvent.countDocuments(receivedFilter) : 0,
+  ]);
+  const rows = tab === "sent"
+    ? await DgoEarningEvent.find(sentFilter).sort({ createdAt: -1 }).limit(100).lean<EventDoc[]>()
+    : receivedFilter ? await DgoEarningEvent.find(receivedFilter).sort({ postedAt: -1 }).limit(100).lean<EventDoc[]>() : [];
+  return {
+    tab,
+    limit: program.nominationsPerMonth,
+    usedThisMonth: used,
+    left: Math.max(0, program.nominationsPerMonth - used),
+    rules: rules.filter((r) => r.active && r.source === "award").map((r) => {
+      const d = ruleDto(r, settings.pointValueAed);
+      return { code: d.code, name: d.name, description: d.description, points: d.points, aed: d.aed, needsEvidence: d.needsEvidence, chain: nominationChain(d.chain), capExempt: d.capExempt };
+    }),
+    counts: { sent: sentCount, received: receivedCount },
+    items: await Promise.all(rows.map((e) => eventDto(v, e))),
+  };
+}
+
+/** GET /dgo-points/colleagues?search= — anybody current in the organisation but you, to nominate. */
+export async function colleagues(v: DgoViewer, search?: string) {
+  await assertCanUse(v);
+  const filter: Record<string, unknown> = { organization: v.orgId, status: { $in: ACTIVE_EMPLOYEE_STATUSES } };
+  if (v.employee) filter._id = { $ne: oid(v.employee._id) };
+  const s = search?.trim();
+  if (s) filter.name = { $regex: s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+  const rows = await Employee.find(filter).select("name department designation photo user").sort({ name: 1 }).limit(50)
+    .lean<Array<{ _id: unknown; name: string; department?: unknown; designation?: string; photo?: string; user?: unknown }>>();
+  const depts = await Department.find({ _id: { $in: rows.map((r) => r.department).filter(Boolean) } }).select("name").lean<Array<{ _id: unknown; name: string }>>();
+  const dname = new Map(depts.map((d) => [String(d._id), d.name]));
+  return rows
+    .filter((r) => !(r.user && String(r.user) === v.userId))
+    .map((r) => ({
+      id: String(r._id), name: r.name, department: r.department ? dname.get(String(r.department)) ?? null : null,
+      designation: r.designation ?? null, photoUrl: r.photo ? publicUrl(r.photo) : null,
+    }));
 }
 

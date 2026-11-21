@@ -8,8 +8,16 @@ import * as read from "../services/dgo/dgoReadService.js";
 import * as earning from "../services/dgo/dgoEarningService.js";
 import * as budget from "../services/dgo/dgoBudgetService.js";
 import * as settings from "../services/dgo/dgoSettingsService.js";
+import * as rewards from "../services/dgo/dgoRewardService.js";
+import * as achievers from "../services/dgo/dgoAchieverService.js";
+import { leaderboard } from "../services/dgo/dgoLeaderboardService.js";
+import { assertCanUse, canManageRewards } from "../services/dgo/dgoAccess.js";
+import { httpError } from "../services/dgo/dgoErrors.js";
+import { attachmentKey, putObject, publicUrl, UploadError } from "../services/uploadService.js";
+import { extFromMime } from "../middleware/upload.js";
 import {
-  recordEarningSchema, decisionSchema, reverseSchema, collectionsSchema, settingsSchema, ruleSchema, programSchema,
+  recordEarningSchema, decisionSchema, reverseSchema, collectionsSchema, settingsSchema, ruleSchema, programSchemaP2,
+  nominateSchema, rewardSchema, redeemSchema, noteSchema, reasonSchema, pickSchema,
 } from "../validations/dgoValidation.js";
 
 /**
@@ -85,10 +93,77 @@ export const getSettings = handle(async (v) => ({ message: "Settings", data: awa
 export const putSettings = handle(async (v, req) => ({ message: "Saved as a new version", data: await settings.saveSettings(v, parse(settingsSchema, req.body)) }));
 export const putRule = handle(async (v, req) => ({ message: "Saved as a new version", data: await settings.saveRule(v, String(req.params.code), parse(ruleSchema, req.body)) }));
 export const putProgram = handle(async (v, req) => {
-  const data = await settings.saveProgram(v, parse(programSchema, req.body));
+  const data = await settings.saveProgram(v, parse(programSchemaP2, req.body));
   // The month in progress takes the new grouping at once; earlier months keep theirs.
   await budget.refreshGrouping(v.orgId, dayIn(v.tz).slice(0, 7));
   return { message: "Saved", data };
 });
 
 export const getAudit = handle(async (v, req) => ({ message: "Audit", data: await read.audit(v, { page: num(req.query.page), limit: num(req.query.limit), action: str(req.query.action) }) }));
+
+/* ───────────── Phase 2 ───────────── */
+
+/** A file for a nomination (evidence) or a reward (photo): stored now, its key sent back with the form. */
+export const postUpload = handle(async (v, req) => {
+  const kind = req.query.kind === "reward" ? "reward" : "evidence";
+  if (kind === "reward") {
+    if (!canManageRewards(v)) throw httpError("You can't add reward photos", 403);
+  } else {
+    await assertCanUse(v);
+  }
+  if (!req.file) throw new BadInput("No file uploaded");
+  const key = attachmentKey(v.orgId, v.userId, kind === "reward" ? "dgo-rewards" : "dgo-evidence", extFromMime(req.file.mimetype), Date.now());
+  try {
+    await putObject(key, req.file.buffer, req.file.mimetype);
+  } catch (e) {
+    // Storage errors carry `status`; the error handler reads `statusCode`.
+    if (e instanceof UploadError) throw httpError(e.message, e.status);
+    throw e;
+  }
+  return { message: "Uploaded", data: { key, url: publicUrl(key), fileName: req.file.originalname, contentType: req.file.mimetype }, status: 201 };
+});
+
+export const getNominations = handle(async (v, req) => ({ message: "Nominations", data: await read.nominationsView(v, str(req.query.tab)) }));
+export const getColleagues = handle(async (v, req) => ({ message: "Colleagues", data: await read.colleagues(v, str(req.query.search)) }));
+export const postNomination = handle(async (v, req) => {
+  const out = await earning.nominate(v, parse(nominateSchema, req.body));
+  return { message: out.message, data: { event: await read.eventDto(v, out.event), duplicate: out.duplicate }, status: out.duplicate ? 200 : 201 };
+});
+
+export const getRewards = handle(async (v, req) => ({ message: "Rewards", data: await rewards.rewardsView(v, req.query.manage === "1") }));
+export const postReward = handle(async (v, req) => ({ message: "Added", data: await rewards.createReward(v, parse(rewardSchema, req.body)), status: 201 }));
+export const putReward = handle(async (v, req) => ({ message: "Saved", data: await rewards.updateReward(v, idParam(req), parse(rewardSchema, req.body)) }));
+export const deleteReward = handle(async (v, req) => ({ message: "Removed from the store", data: await rewards.archiveReward(v, idParam(req)) }));
+
+export const getRedemptions = handle(async (v, req) => ({ message: "Redemptions", data: await rewards.redemptionsView(v, str(req.query.tab)) }));
+export const postRedemption = handle(async (v, req) => {
+  const out = await rewards.redeem(v, parse(redeemSchema, req.body));
+  return { message: out.message, data: { redemption: out.redemption, duplicate: out.duplicate }, status: out.duplicate ? 200 : 201 };
+});
+const redemptionStep = (fn: (v: DgoViewer, req: AuthenticatedRequest) => Promise<{ redemption: unknown; message: string }>) =>
+  handle(async (v, req) => {
+    const out = await fn(v, req);
+    return { message: out.message, data: { redemption: out.redemption } };
+  });
+export const postCancelRedemption = redemptionStep((v, req) => rewards.cancelRedemption(v, idParam(req)));
+export const postApproveRedemption = redemptionStep((v, req) => rewards.approveRedemption(v, idParam(req), parse(noteSchema, req.body ?? {}).note));
+export const postRejectRedemption = redemptionStep((v, req) => rewards.rejectRedemption(v, idParam(req), parse(reasonSchema, req.body).reason));
+export const postFulfilRedemption = redemptionStep((v, req) => rewards.fulfilRedemption(v, idParam(req), parse(noteSchema, req.body ?? {}).note));
+
+export const getLeaderboard = handle(async (v, req) => ({ message: "Leaderboard", data: await leaderboard(v, { month: str(req.query.month), department: str(req.query.department) }) }));
+
+const achieverStep = (fn: (v: DgoViewer, req: AuthenticatedRequest) => Promise<{ message: string } & Record<string, unknown>>) =>
+  handle(async (v, req) => {
+    const { message, ...data } = await fn(v, req);
+    return { message, data };
+  });
+export const getAchievers = handle(async (v, req) => ({ message: "Monthly achievers", data: await achievers.achieversView(v, str(req.query.month)) }));
+export const postFetchAchievers = achieverStep((v, req) => achievers.fetchAchievers(v, String(req.params.month)));
+export const postPickAchiever = achieverStep((v, req) => {
+  const b = parse(pickSchema, req.body);
+  return achievers.pickWinner(v, String(req.params.month), b.code, b.email);
+});
+export const postVerifyAchievers = achieverStep((v, req) => achievers.verifyAchievers(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
+export const postSendBackAchievers = achieverStep((v, req) => achievers.sendBackAchievers(v, String(req.params.month), parse(reasonSchema, req.body).reason));
+export const postApproveAchievers = achieverStep((v, req) => achievers.approveAchievers(v, String(req.params.month), parse(noteSchema, req.body ?? {}).note));
+

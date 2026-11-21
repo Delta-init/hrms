@@ -67,14 +67,16 @@ export const HRMS_MODULES = [
   // granted before anybody can reach the pages. See seeds/grantProgramsAccess.
   "programs",
   // DGO Points. An employee needs none of these for their own points, nominating
-  // or redeeming; these are the staff sides. Four rather than one because the
+  // or redeeming; these are the staff sides. Several rather than one because the
   // people differ: HR decides recognition, finance holds the money and closes the
-  // month, an admin changes the rules, an auditor only reads. New, so existing
+  // month, an admin changes the rules, an auditor only reads. dgoRewards (Phase 2)
+  // is the rewards store's catalogue and handing rewards over. New, so existing
   // roles carry none of them until somebody grants them on Roles & Permissions.
   "dgoApprovals",
   "dgoBudgets",
   "dgoSettings",
   "dgoAudit",
+  "dgoRewards",
   "approvalWorkflows",
   "helpdesk",
   "reports",

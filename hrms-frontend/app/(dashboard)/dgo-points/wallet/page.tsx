@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useDgoWallet, useDgoLots, formatAed, formatPoints, dgoAed, dgoErrorMessage } from "@/hooks/useDgoPoints";
 import {
-  DgoGate, DgoPersonSelect, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
+  DgoGate, DgoPersonSelect, LedgerPoints, Notice, Spinner, Stat, TableWrap, LEDGER_LABEL, dayLabel, shortDay, dateTime,
 } from "@/components/dgo/shared";
 import type { DgoLedgerType, DgoMe } from "@/types";
 
@@ -75,8 +75,8 @@ function WalletPage({ me }: { me: DgoMe }) {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             <Stat label="Available" value={formatPoints(b.available)} sub={formatAed(dgoAed(b.available, pv))} tone="gold" />
             <Stat label="Waiting for approval" value={formatPoints(b.pending)} sub="not yet yours" />
-            <Stat label="Reserved" value={formatPoints(b.reserved)} sub="held for a reward" />
-            <Stat label="Redeemed" value={formatPoints(b.redeemed)} sub="lifetime" />
+            <Stat label="Reserved" value={formatPoints(b.reserved)} sub="held for rewards until HR hands them over" />
+            <Stat label="Spent on rewards" value={formatPoints(b.redeemed)} sub="lifetime" />
             <Stat label="Expired" value={formatPoints(b.expired)} sub="after 12 months" tone={b.expired ? "warn" : undefined} />
             <Stat label="Earned in all" value={formatPoints(b.lifetimeEarned)} sub={b.reversed ? `${formatPoints(b.reversed)} reversed` : "none reversed"} />
           </div>
@@ -137,9 +137,7 @@ function WalletPage({ me }: { me: DgoMe }) {
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{LEDGER_LABEL[r.type]}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.byName ?? "—"}</td>
                             <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">{r.expiresOn ? shortDay(r.expiresOn) : "—"}</td>
-                            <td className={cn("whitespace-nowrap px-4 py-2 text-right font-semibold tabular-nums", r.delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
-                              {r.delta >= 0 ? "+" : "−"}{formatPoints(Math.abs(r.delta))}
-                            </td>
+                            <td className="whitespace-nowrap px-4 py-2 text-right"><LedgerPoints row={r} /></td>
                           </tr>
                         ))}
                       </tbody>

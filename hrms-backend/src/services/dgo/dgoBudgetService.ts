@@ -38,6 +38,7 @@ export interface PeriodDoc {
   tierBasisMonth: string | null;
   everydayFils: number;
   eliteFils: number;
+  eliteCommittedFils?: number;
   revenueDepartments: unknown[];
   collections: {
     enteredFils: number | null; enteredBy: unknown; enteredByName: string | null; enteredAt: Date | null; note: string | null;
@@ -174,6 +175,30 @@ export async function releaseBudget(orgId: string, month: string, department: un
   await DgoDepartmentBudget.updateOne(
     { period: period._id, department: department ?? null, committedFils: { $gte: fils } },
     { $inc: { committedFils: -fils } },
+    { session }
+  );
+}
+
+/**
+ * Take a monthly achiever prize from the month's elite pool, or nothing if it
+ * would pass the pool (closed months and a locked pool take nothing).
+ */
+export async function commitElite(orgId: string, month: string, fils: number, session?: ClientSession): Promise<boolean> {
+  if (fils <= 0) return true;
+  const r = await DgoBudgetPeriod.updateOne(
+    { organization: orgId, month, status: { $ne: "closed" }, $expr: { $lte: [{ $add: [{ $ifNull: ["$eliteCommittedFils", 0] }, fils] }, "$eliteFils"] } },
+    { $inc: { eliteCommittedFils: fils } },
+    { session }
+  );
+  return r.modifiedCount === 1;
+}
+
+/** Give a prize back to the elite pool (a prize taken back). */
+export async function releaseElite(orgId: string, month: string, fils: number, session?: ClientSession): Promise<void> {
+  if (fils <= 0) return;
+  await DgoBudgetPeriod.updateOne(
+    { organization: orgId, month, status: { $ne: "closed" }, eliteCommittedFils: { $gte: fils } },
+    { $inc: { eliteCommittedFils: -fils } },
     { session }
   );
 }

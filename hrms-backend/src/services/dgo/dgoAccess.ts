@@ -33,7 +33,7 @@ export interface DgoViewer {
 import { httpError } from "./dgoErrors.js";
 export { httpError };
 
-const DGO_MODULES: HrmsModule[] = ["dgoApprovals", "dgoBudgets", "dgoSettings", "dgoAudit"];
+const DGO_MODULES: HrmsModule[] = ["dgoApprovals", "dgoBudgets", "dgoSettings", "dgoAudit", "dgoRewards"];
 
 export const can = (v: DgoViewer, module: HrmsModule, action: PermissionAction): boolean =>
   v.superAdmin || hasPermission(v.role, module, action);
@@ -101,6 +101,27 @@ export function whyCannotRecordFor(v: DgoViewer, emp: { _id: unknown; user?: unk
 
 export const canRecordAwards = (v: DgoViewer, open: boolean) => can(v, "dgoApprovals", "create") || (open && v.headOf.length > 0);
 export const canLookUpWallets = (v: DgoViewer) => can(v, "dgoBudgets", "view") || can(v, "dgoAudit", "view");
+
+/* Phase 2 */
+export const canManageRewards = (v: DgoViewer) => can(v, "dgoRewards", "create") || can(v, "dgoRewards", "edit") || can(v, "dgoRewards", "delete");
+export const canFulfil = (v: DgoViewer) => can(v, "dgoRewards", "approve");
+export const canSeeFulfilment = (v: DgoViewer) => can(v, "dgoRewards", "view") || canFulfil(v);
+export const canRunAchievers = (v: DgoViewer) => can(v, "dgoSettings", "edit");
+export const canVerifyAchievers = (v: DgoViewer) => can(v, "dgoBudgets", "approve");
+export const canApproveAchievers = (v: DgoViewer) => can(v, "dgoSettings", "approve");
+export const canReviewAchievers = (v: DgoViewer) =>
+  canRunAchievers(v) || canVerifyAchievers(v) || canApproveAchievers(v) || can(v, "dgoSettings", "view") || can(v, "dgoBudgets", "view");
+/** Sees every department on the leaderboard whatever its visibility: DGO staff. */
+export const seesWholeLeaderboard = (v: DgoViewer) =>
+  can(v, "dgoApprovals", "view") || can(v, "dgoApprovals", "approve") || can(v, "dgoBudgets", "view") || can(v, "dgoSettings", "view") || can(v, "dgoAudit", "view");
+
+/** Logins holding a permission in this organisation (active users only). Best-effort, for telling people something waits. */
+export async function usersWith(orgId: string, module: HrmsModule, action: PermissionAction): Promise<string[]> {
+  const roles = await Role.find({ [`permissions.${module}.${action}`]: true, $or: [{ organization: orgId }, { organization: null }] }).select("_id").lean();
+  if (!roles.length) return [];
+  const users = await User.find({ organization: orgId, role: { $in: roles.map((r) => r._id) }, status: "active" }).select("_id").lean();
+  return users.map((u) => String(u._id));
+}
 
 export interface DecidableEvent {
   status: string;

@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
 import type {
-  ApiResponse, DgoApprovalsView, DgoAuditView, DgoBudgetView, DgoDashboard, DgoEvent, DgoLot, DgoMe,
-  DgoPerson, DgoProgramInput, DgoRecordInput, DgoRecordResult, DgoRule, DgoRuleInput, DgoRulesView,
-  DgoSettings, DgoSettingsInput, DgoSettingsView, DgoWalletView,
+  ApiResponse, DgoAchieversView, DgoApprovalsView, DgoAuditView, DgoBudgetView, DgoColleague, DgoDashboard,
+  DgoEvent, DgoLeaderboardView, DgoLot, DgoMe, DgoNominateInput, DgoNominationsTab, DgoNominationsView,
+  DgoPerson, DgoProgramInput, DgoRecordInput, DgoRecordResult, DgoRedeemInput, DgoRedemption,
+  DgoRedemptionsTab, DgoRedemptionsView, DgoReward, DgoRewardInput, DgoRewardsView, DgoRule, DgoRuleInput,
+  DgoRulesView, DgoSettings, DgoSettingsInput, DgoSettingsView, DgoUpload, DgoUploadKind, DgoWalletView,
 } from "@/types";
 
 /**
@@ -43,18 +45,25 @@ export const useDgoMe = (enabled = true) =>
     retry: false,
   });
 
-export type DgoNavFlag = "use" | "approvals" | "budgets" | "settings";
+export type DgoNavFlag = "use" | "nominate" | "approvals" | "budgets" | "settings";
 
 /** Whether a DGO menu entry is drawn for this person. Shared by the sidebar and search. */
 export function dgoAllows(flag: DgoNavFlag, me: DgoMe | undefined): boolean {
   if (!me) return false;
   switch (flag) {
     case "use": return me.canUse;
+    case "nominate": return me.canUse && !!me.can.nominate;
     case "approvals": return me.can.approvals || me.can.recordAwards;
     case "budgets": return me.can.budgetsView;
     case "settings": return me.can.settingsView;
   }
 }
+
+/** A fresh id per opening of a form, so a double submit or a retry acts once. */
+export const newRequestId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export const useDgoDashboard = (month: string, enabled = true) =>
   useQuery({
@@ -161,6 +170,72 @@ export const useDgoAudit = (params: { page: number; limit: number; action?: stri
     retry: false,
   });
 
+// ─── Phase 2 reads ────────────────────────────────────────────────────────────
+
+export const useDgoNominations = (tab: DgoNominationsTab, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "nominations", tab],
+    queryFn: async () => (await api.get<ApiResponse<DgoNominationsView>>("/dgo-points/nominations", { params: { tab } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+/** Anyone active in the organisation except you — the nominee picker. */
+export const useDgoColleagues = (search: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "colleagues", search],
+    queryFn: async () =>
+      (await api.get<ApiResponse<DgoColleague[]>>("/dgo-points/colleagues", { params: search ? { search } : {} })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+/** The store. `manage` (rewards managers) includes hidden rewards and the office's cost. */
+export const useDgoRewards = (manage = false, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "rewards", manage ? "manage" : "store"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<DgoRewardsView>>("/dgo-points/rewards", { params: manage ? { manage: "1" } : {} })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+export const useDgoRedemptions = (tab: DgoRedemptionsTab, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "redemptions", tab],
+    queryFn: async () => (await api.get<ApiResponse<DgoRedemptionsView>>("/dgo-points/redemptions", { params: { tab } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    // HR works the queue together; a stale row is the one that gets handled twice.
+    refetchInterval: tab === "queue" ? 60_000 : false,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+
+export const useDgoLeaderboard = (month: string, department: string, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "leaderboard", month, department],
+    queryFn: async () =>
+      (await api.get<ApiResponse<DgoLeaderboardView>>("/dgo-points/leaderboard", { params: { month, ...(department ? { department } : {}) } })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+/** Monthly achievers. Without a month the server picks last month. */
+export const useDgoAchievers = (month: string | undefined, enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "achievers", month ?? "default"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<DgoAchieversView>>("/dgo-points/achievers", { params: month ? { month } : {} })).data.data!,
+    enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
 // ─── Changes ──────────────────────────────────────────────────────────────────
 
 function useDgoMutation<TInput, TOutput>(
@@ -262,4 +337,114 @@ export const useSaveDgoProgram = () =>
       (await api.put<ApiResponse<DgoSettingsView["program"]>>("/dgo-points/program", input)).data.data!,
     "Saved",
     "That couldn't be saved",
+  );
+
+/**
+ * A change whose toast is the server's own words — "Already done", "Approved —
+ * now with HR" — rather than a guess made here about what happened.
+ */
+function useDgoServerMutation<TInput, TOutput>(
+  fn: (input: TInput) => Promise<{ message: string; data: TOutput }>,
+  failure: string,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (out) => {
+      qc.invalidateQueries({ queryKey: KEY });
+      toast.success(out.message || "Saved");
+    },
+    onError: (error) => toast.error(dgoErrorMessage(error, failure)),
+  });
+}
+
+const withMessage = <T,>(res: { data: ApiResponse<T> }) => ({ message: res.data.message, data: res.data.data! });
+
+// ─── Phase 2 changes ──────────────────────────────────────────────────────────
+
+/** Upload a photo or PDF; nothing is refreshed — the key goes on the form that is being filled. */
+export const useDgoUpload = () =>
+  useMutation({
+    mutationFn: async ({ file, kind }: { file: File; kind: DgoUploadKind }) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await api.post<ApiResponse<DgoUpload>>("/dgo-points/uploads", form, {
+        params: { kind },
+        headers: { "Content-Type": undefined }, // let the browser set the multipart boundary
+      });
+      return res.data.data!;
+    },
+    onError: (e) => toast.error(dgoErrorMessage(e, "The file couldn't be uploaded")),
+  });
+
+export const useNominate = () =>
+  useDgoMutation(
+    async (input: DgoNominateInput) => (await api.post<ApiResponse<DgoRecordResult>>("/dgo-points/nominations", input)).data.data!,
+    (out) => {
+      if (out.duplicate) return "Already sent — nothing new was added";
+      switch (out.event.status) {
+        case "posted": return `Approved at once — ${out.event.points} points added`;
+        case "pending": return "Nomination sent — it goes for approval now";
+        case "capped": return "Sent, but held: their daily cap is already used";
+        case "budget_blocked": return "Sent, but held: their department's budget is used up";
+        default: return "Nomination sent";
+      }
+    },
+    "The nomination couldn't be sent",
+  );
+
+export const useSaveDgoReward = () =>
+  useDgoMutation(
+    async ({ id, ...input }: DgoRewardInput & { id?: string }) =>
+      id
+        ? (await api.put<ApiResponse<DgoReward>>(`/dgo-points/rewards/${id}`, input)).data.data!
+        : (await api.post<ApiResponse<DgoReward>>("/dgo-points/rewards", input)).data.data!,
+    (out) => `"${out.name}" saved`,
+    "The reward couldn't be saved",
+  );
+
+export const useArchiveDgoReward = () =>
+  useDgoMutation(
+    async ({ id }: { id: string }) => (await api.delete<ApiResponse<unknown>>(`/dgo-points/rewards/${id}`)).data,
+    "Reward removed from the store",
+    "The reward couldn't be removed",
+  );
+
+export const useRedeemDgoReward = () =>
+  useDgoMutation(
+    async (input: DgoRedeemInput) =>
+      (await api.post<ApiResponse<{ redemption: DgoRedemption; duplicate: boolean }>>("/dgo-points/redemptions", input)).data.data!,
+    (out) => (out.duplicate ? "Already requested — nothing new was added" : `${out.redemption.points.toLocaleString("en-US")} points held — HR will approve it`),
+    "The reward couldn't be requested",
+  );
+
+type RedemptionStep = "cancel" | "approve" | "reject" | "fulfil";
+
+/** One step on a redemption. `reject` needs a reason; the others take an optional note. */
+export const useDgoRedemptionStep = () =>
+  useDgoServerMutation(
+    async ({ id, step, note }: { id: string; step: RedemptionStep; note?: string }) =>
+      withMessage(
+        await api.post<ApiResponse<{ redemption: DgoRedemption }>>(
+          `/dgo-points/redemptions/${id}/${step}`,
+          step === "reject" ? { reason: note } : step === "cancel" ? {} : note ? { note } : {},
+        ),
+      ),
+    "That couldn't be saved",
+  );
+
+type AchieverStep = "fetch" | "pick" | "verify" | "send-back" | "approve";
+
+/** One step on a month's achievers. `send-back` needs a reason; `pick` needs the category and the person. */
+export const useDgoAchieverStep = () =>
+  useDgoServerMutation(
+    async ({ month, step, note, code, email }: { month: string; step: AchieverStep; note?: string; code?: string; email?: string }) => {
+      const body =
+        step === "pick" ? { code, email }
+          : step === "send-back" ? { reason: note }
+            : step === "fetch" ? {}
+              : note ? { note } : {};
+      return withMessage(await api.post<ApiResponse<DgoAchieversView>>(`/dgo-points/achievers/${month}/${step}`, body));
+    },
+    "That couldn't be done",
   );

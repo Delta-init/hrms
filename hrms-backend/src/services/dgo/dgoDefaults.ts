@@ -49,3 +49,46 @@ export const DEFAULT_RULES: DefaultRule[] = [
 
 /** Employee statuses that still count: on the payroll, in a department's headcount, able to earn. */
 export const ACTIVE_EMPLOYEE_STATUSES = ["active", "probation", "on_leave", "notice_period"];
+
+/* ───────────── Phase 2 ───────────── */
+
+export type DgoLeaderboardVisibility = "everyone" | "department" | "managers";
+export const LEADERBOARD_VISIBILITIES: DgoLeaderboardVisibility[] = ["everyone", "department", "managers"];
+export const DEFAULT_NOMINATIONS_PER_MONTH = 4;
+
+export type DgoEliteMetric = "sales" | "team" | "cs" | "cs_department" | "mentor_chief" | "mentor_senior" | "mentor_junior";
+export const MENTOR_METRICS: DgoEliteMetric[] = ["mentor_chief", "mentor_senior", "mentor_junior"];
+
+export interface DgoEliteCategory {
+  code: string;
+  name: string;
+  metric: DgoEliteMetric;
+  place: number;
+  /** AED for money metrics; a score out of 100 for mentor metrics. */
+  threshold: number;
+  prizeAed: number;
+  active: boolean;
+}
+
+/**
+ * The handoff's elite categories (AED 13,250 in all). Mentor categories start
+ * switched off: their criteria are still for management to set, and Root's
+ * mentor KPIs score only part of the plan today.
+ */
+export const DEFAULT_ELITE_CATEGORIES: DgoEliteCategory[] = [
+  { code: "SALES_1", name: "Sales — first", metric: "sales", place: 1, threshold: 50_000, prizeAed: 2000, active: true },
+  { code: "SALES_2", name: "Sales — second", metric: "sales", place: 2, threshold: 50_000, prizeAed: 1000, active: true },
+  { code: "TEAM_LEADER", name: "Best sales team leader", metric: "team", place: 1, threshold: 100_000, prizeAed: 3000, active: true },
+  { code: "CSE_1", name: "Customer success — first", metric: "cs", place: 1, threshold: 100_000, prizeAed: 2000, active: true },
+  { code: "CSE_2", name: "Customer success — second", metric: "cs", place: 2, threshold: 100_000, prizeAed: 1000, active: true },
+  { code: "CSE_MANAGER", name: "Customer success manager", metric: "cs_department", place: 1, threshold: 350_000, prizeAed: 1500, active: true },
+  { code: "MENTOR_CHIEF", name: "Chief mentor", metric: "mentor_chief", place: 1, threshold: 80, prizeAed: 1500, active: false },
+  { code: "MENTOR_SENIOR", name: "Senior mentor", metric: "mentor_senior", place: 1, threshold: 80, prizeAed: 750, active: false },
+  { code: "MENTOR_JUNIOR", name: "Junior mentor", metric: "mentor_junior", place: 1, threshold: 80, prizeAed: 500, active: false },
+];
+export const ELITE_CODES = DEFAULT_ELITE_CATEGORIES.map((c) => c.code);
+/** Ledger and earning rule codes of achiever prizes start with this; earning rules may not. */
+export const ELITE_RULE_PREFIX = "ELITE_";
+
+/** Award rules a colleague may nominate for: every active award rule (KPI points are never nominated). */
+export const NOMINATION_SOURCE = "award" as const;
