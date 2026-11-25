@@ -256,13 +256,14 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   /**
    * The DGO Points links fold under their heading (2026-11-25 — "collapse option, the DGO points collapse and
-   * uncollapse"). Remembered in this browser; open by default, and always open while one of its pages is the
-   * one on screen, so the highlighted link is never hidden.
+   * uncollapse"). Remembered in this browser; folded by default (2026-11-25 — "default collapse"), and opened on
+   * arriving at one of its pages, so the highlighted link is never hidden.
    */
   const DGO_FOLDED = "hrms_nav_dgo_folded";
-  const [dgoFolded, setDgoFolded] = React.useState(false);
+  const [dgoFolded, setDgoFolded] = React.useState(true);
   React.useEffect(() => {
-    try { setDgoFolded(localStorage.getItem(DGO_FOLDED) === "1"); } catch { /* storage off */ }
+    // Folded unless this browser was last left with it open.
+    try { setDgoFolded(localStorage.getItem(DGO_FOLDED) !== "0"); } catch { /* storage off */ }
   }, []);
   const onDgoPage = !!activeNav?.dgo;
   // Arriving on a Points page opens the group for this visit (not remembered), so its link is visible;
