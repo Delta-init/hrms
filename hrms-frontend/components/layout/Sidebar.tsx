@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  ChevronDown,
   CalendarDays,
   Sparkles,
   LayoutDashboard,
@@ -253,6 +254,27 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   // A hidden page (a tab of another) lights up the entry it belongs to.
   const activeHref = activeNav?.lightsUp ?? activeNav?.href;
 
+  /**
+   * The DGO Points links fold under their heading (2026-11-25 — "collapse option, the DGO points collapse and
+   * uncollapse"). Remembered in this browser; open by default, and always open while one of its pages is the
+   * one on screen, so the highlighted link is never hidden.
+   */
+  const DGO_FOLDED = "hrms_nav_dgo_folded";
+  const [dgoFolded, setDgoFolded] = React.useState(false);
+  React.useEffect(() => {
+    try { setDgoFolded(localStorage.getItem(DGO_FOLDED) === "1"); } catch { /* storage off */ }
+  }, []);
+  const onDgoPage = !!activeNav?.dgo;
+  // Arriving on a Points page opens the group for this visit (not remembered), so its link is visible;
+  // the heading can still fold it again from there.
+  React.useEffect(() => { if (onDgoPage) setDgoFolded(false); }, [onDgoPage]);
+  const dgoOpen = !dgoFolded;
+  const toggleDgo = () => {
+    const next = !dgoOpen;
+    setDgoFolded(!next);
+    try { localStorage.setItem(DGO_FOLDED, next ? "0" : "1"); } catch { /* storage off */ }
+  };
+
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
       {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment, dgo, section, hidden }) => {
@@ -354,11 +376,22 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
             {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
           </Tooltip>
         );
-        if (!section || collapsed) return tip;
+        // The icon rail has no heading to click, so it always shows every link.
+        const foldedAway = !collapsed && !!dgo && !dgoOpen;
+        if (!section || collapsed) return foldedAway ? null : tip;
         return (
           <React.Fragment key={href}>
-            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{section}</p>
-            {tip}
+            <button
+              type="button"
+              onClick={toggleDgo}
+              aria-expanded={dgoOpen}
+              title={dgoOpen ? `Hide ${section}` : `Show ${section}`}
+              className="flex w-full items-center justify-between rounded-md px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {section}
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", !dgoOpen && "-rotate-90")} />
+            </button>
+            {!foldedAway && tip}
           </React.Fragment>
         );
       })}
