@@ -77,6 +77,10 @@ export const HRMS_MODULES = [
   "dgoSettings",
   "dgoAudit",
   "dgoRewards",
+  // Work HR hands out (2026-11-25). view: everyone's tasks and the counts; create/edit: assign, change, cancel;
+  // approve: approve or send back. Seeing and ticking your own tasks needs none of it. New, so no existing role
+  // carries it until it is granted on Roles & Permissions.
+  "tasks",
   "approvalWorkflows",
   "helpdesk",
   "reports",

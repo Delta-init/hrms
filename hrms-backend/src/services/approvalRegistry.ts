@@ -10,6 +10,8 @@ import { JobRequisition } from "../models/JobRequisition.js";
 import { Resignation } from "../models/Resignation.js";
 import { Application } from "../models/Application.js";
 import { Procurement } from "../models/Procurement.js";
+import { Task } from "../models/Task.js";
+import { TaskService } from "./taskService.js";
 import { LeaveService } from "./leaveService.js";
 import { RegularizationService } from "./regularizationService.js";
 import { ReimbursementService } from "./reimbursementService.js";
@@ -36,7 +38,7 @@ import type { ReviewerRole } from "./approvalWorkflowService.js";
 
 export type ApprovalModule =
   | "leave" | "regularization" | "reimbursement" | "confirmation"
-  | "hiring" | "offer" | "resignation" | "agreement" | "procurement";
+  | "hiring" | "offer" | "resignation" | "agreement" | "procurement" | "task";
 
 /** What was decided about a request, once somebody has decided it. */
 export interface Decision {
@@ -144,6 +146,7 @@ const requisition = new JobRequisitionService();
 const resignation = new ResignationService();
 const candidates = new CandidateService();
 const procurement = new ProcurementService();
+const tasks = new TaskService();
 
 const name = (v: unknown): string =>
   v && typeof v === "object" ? String((v as { name?: string }).name ?? "—") : "—";
@@ -520,6 +523,46 @@ export const ADAPTERS: Adapter[] = [
     }),
     decide: (id, approve, note, userId) =>
       procurement.review(id, { decision: approve ? "approve" : "reject", note } as never, userId),
+  },
+  {
+    // Tasks marked done, waiting for HR to approve or send back (2026-11-25). "Reject" here is send back.
+    module: "task",
+    departmentFilter: (ids) => ({ assignee: { $in: ids.employeeIds } }),
+    permissionModule: "tasks",
+    label: "Tasks",
+    model: Task as never,
+    raisedField: "submittedAt",
+    pendingFilter: { status: "submitted" },
+    populate: [{ path: "assignee", select: "name" }, { path: "category", select: "name" }],
+    decided: {
+      filter: { "reviews.0": { $exists: true } },
+      dateField: "updatedAt",
+      populate: [],
+      outcome: (d): Decision => {
+        const last = ((d.reviews ?? []) as Array<{ action?: string; at?: Date; by?: unknown; byName?: string; note?: string }>).at(-1);
+        return {
+          outcome: last?.action === "approved" ? "approved" : "rejected",
+          at: last?.at ?? null,
+          by: last ? { id: last.by ? String(last.by) : null, name: last.byName || "—" } : null,
+          note: last?.note || null,
+        };
+      },
+    },
+    toRow: (d) => ({
+      id: String(d._id),
+      title: String(d.title ?? "Task"),
+      raisedBy: person(d.assignee),
+      raisedAt: (d.submittedAt as Date) ?? null,
+      summary: [
+        { label: "Category", value: label(d.category) },
+        { label: "Due", value: day(d.dueAt) },
+        { label: "Steps", value: `${((d.steps ?? []) as Array<{ done?: boolean }>).filter((s) => s.done).length} of ${((d.steps ?? []) as unknown[]).length} ticked` },
+        { label: "Note", value: String((d.submission as { note?: string } | undefined)?.note || "—") },
+      ],
+      chain: null,
+      href: "/tasks?tab=waiting",
+    }),
+    decide: (id, approve, note, userId) => tasks.review(id, approve ? "approve" : "send_back", note, userId),
   },
 ];
 

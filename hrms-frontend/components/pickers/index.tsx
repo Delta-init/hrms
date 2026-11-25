@@ -38,6 +38,8 @@ interface BaseProps {
   /** Per-option badge / disabled state, e.g. "already a member". */
   decorate?: (option: AsyncSelectOption) => AsyncSelectOption;
   className?: string;
+  /** Called with the whole chosen option (its label too), for callers building a list of picks. */
+  onPick?: (option: AsyncSelectOption | undefined) => void;
 }
 
 /** Shared search state + optional per-row decoration. */
@@ -56,7 +58,7 @@ const STATUS_BADGE: Partial<Record<string, { label: string; tone: "warn" | "info
 };
 
 export function EmployeeSelect({
-  placeholder = "Select employee…", decorate, activeOnly = true, showStatus = false, ...rest
+  placeholder = "Select employee…", decorate, activeOnly = true, showStatus = false, onPick, ...rest
 }: BaseProps & {
   /** Hide leavers. On by default — you rarely pick one. */
   activeOnly?: boolean;
@@ -78,6 +80,7 @@ export function EmployeeSelect({
   return (
     <AsyncSelect
       {...rest}
+      onChange={(v) => { rest.onChange(v); onPick?.(options.find((o) => o.value === v)); }}
       options={options}
       loading={isFetching}
       search={search}
@@ -139,7 +142,7 @@ export function UserSelect({ placeholder = "Select user…", decorate, ...rest }
   );
 }
 
-export function DepartmentSelect({ placeholder = "Select department…", decorate, ...rest }: BaseProps) {
+export function DepartmentSelect({ placeholder = "Select department…", decorate, onPick, ...rest }: BaseProps) {
   const { search, setSearch, debounced, apply } = usePickerState(decorate);
   const { data, isFetching } = useDepartments({ limit: PAGE, ...(debounced ? { search: debounced } : {}) });
   const options = apply(
@@ -148,6 +151,7 @@ export function DepartmentSelect({ placeholder = "Select department…", decorat
   return (
     <AsyncSelect
       {...rest}
+      onChange={(v) => { rest.onChange(v); onPick?.(options.find((o) => o.value === v)); }}
       options={options}
       loading={isFetching}
       search={search}

@@ -16,6 +16,7 @@ import { AttendanceHistoryChart } from "@/components/dashboard/AttendanceHistory
 import { HrDashboard } from "@/components/dashboard/HrDashboard";
 import { FaceEnrolmentPrompt } from "@/components/dashboard/FaceEnrolmentPrompt";
 import { WalletCard } from "@/components/wallet/WalletCard";
+import { MyTasksCard } from "@/components/tasks/MyTasksCard";
 import { FirstDaysCards } from "@/components/firstDays/FirstDaysCards";
 import { useMyFirstDays } from "@/hooks/useFirstDays";
 import { Card } from "@/components/ui/card";
@@ -52,6 +53,8 @@ export default function DashboardPage() {
         <LocationCard />
         {/* New joiners waiting on this person — HR's 3CX and Zoho, a head's steps. */}
         <FirstDaysCards />
+        {/* Tasks given to this person, while any are open (2026-11-25). */}
+        <MyTasksCard />
         {/* First in the row: this month's pay as it stands (2026-11-04). */}
         <WalletCard />
         <HrDashboard />
@@ -119,6 +122,9 @@ function EmployeeDashboard() {
 
         {/* A new joiner's next step, or a head's new joiners. */}
         <FirstDaysCards />
+
+        {/* Tasks given to this person, while any are open (2026-11-25). */}
+        <MyTasksCard />
 
         {/* First in the row: this month's pay as it stands (2026-11-04). */}
         <WalletCard />

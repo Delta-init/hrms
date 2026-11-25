@@ -49,4 +49,5 @@ export const MODULE_TONE: Record<ApprovalModule, string> = {
   agreement: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400",
   procurement: "bg-orange-500/10 text-orange-600 border-orange-500/20 dark:text-orange-400",
   resignation: "bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400",
+  task: "bg-lime-500/10 text-lime-700 border-lime-500/20 dark:text-lime-400",
 };

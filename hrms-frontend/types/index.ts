@@ -67,6 +67,7 @@ export const HRMS_MODULES = [
   "dgoSettings",
   "dgoAudit",
   "dgoRewards",
+  "tasks",
   "settings",
 ] as const;
 
@@ -114,6 +115,7 @@ export const MODULE_LABELS: Record<HrmsModule, string> = {
   dgoSettings: "DGO Points · Rules & Settings",
   dgoAudit: "DGO Points · Audit",
   dgoRewards: "DGO Points · Rewards",
+  tasks: "Tasks",
   settings: "Settings",
 };
 
@@ -3125,7 +3127,7 @@ export interface SalaryAdvanceEligibility {
 // ─── Approvals console ────────────────────────────────────────────────────────
 export const APPROVAL_MODULES = [
   "leave", "regularization", "reimbursement", "confirmation",
-  "hiring", "offer", "resignation", "agreement", "procurement",
+  "hiring", "offer", "resignation", "agreement", "procurement", "task",
 ] as const;
 export type ApprovalModule = (typeof APPROVAL_MODULES)[number];
 
@@ -3140,6 +3142,7 @@ export const APPROVAL_MODULE_HREF: Record<ApprovalModule, string> = {
   resignation: "/resignations",
   agreement: "/agreements",
   procurement: "/assets",
+  task: "/tasks?tab=waiting",
 };
 
 export interface ApprovalDecision {
@@ -3780,3 +3783,55 @@ export interface VisaOutstanding {
 }
 
 export * from "./dgo";
+
+// ─── Tasks (2026-11-25) ───────────────────────────────────────────────────────
+export type TaskStatus = "todo" | "in_progress" | "submitted" | "done" | "cancelled";
+export type TaskPriority = "urgent" | "high" | "normal" | "low";
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: "To do",
+  in_progress: "In progress",
+  submitted: "Waiting for approval",
+  done: "Done",
+  cancelled: "Cancelled",
+};
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = { urgent: "Urgent", high: "High", normal: "Normal", low: "Low" };
+
+export interface TaskCategory { _id: string; name: string; color?: string; active?: boolean }
+
+export interface TaskStep { _id: string; title: string; done: boolean; doneAt?: string | null }
+
+export interface TaskReview { action: "approved" | "sent_back"; byName?: string; note?: string; at: string }
+
+export interface TaskHistoryEntry { at: string; byName?: string; action: string; note?: string }
+
+export interface Task {
+  _id: string;
+  batch: string;
+  title: string;
+  details?: string;
+  category?: TaskCategory | null;
+  priority: TaskPriority;
+  assignee: { _id: string; name: string; employeeCode?: string; designation?: string } | null;
+  assigneeUser?: string | null;
+  viaDepartment?: { _id: string; name: string } | null;
+  assignedBy?: { _id: string; name: string } | null;
+  dueAt: string;
+  steps: TaskStep[];
+  needsApproval: boolean;
+  proofRequired: boolean;
+  status: TaskStatus;
+  submission: { note: string; fileName: string; fileUrl: string; at: string | null };
+  startedAt?: string | null;
+  submittedAt?: string | null;
+  doneAt?: string | null;
+  cancelledAt?: string | null;
+  reviews: TaskReview[];
+  history?: TaskHistoryEntry[];
+  progress: { done: number; total: number };
+  overdue: boolean;
+  createdAt: string;
+}
+
+export interface TaskSummary { dueToday: number; overdue: number; waiting: number; doneThisMonth: number; onTimeRate: number | null }
+export interface MyTaskSummary { dueToday: number; overdue: number; sentBack: number; open: number; attention: number }

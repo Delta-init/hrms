@@ -175,6 +175,10 @@ export function scopeFilterFor(scope: InboxScope, module: ApprovalModule): Recor
   if (base && module === "hiring" && scope.selfEmployeeIds?.length) {
     return { ...base, replacing: { $nin: scope.selfEmployeeIds.map((id) => new mongoose.Types.ObjectId(id)) } };
   }
+  // Nobody approves their own task.
+  if (base && module === "task" && scope.selfUserId) {
+    return { ...base, assigneeUser: { $ne: new mongoose.Types.ObjectId(scope.selfUserId) } };
+  }
   if (base && module === "procurement" && scope.selfUserId) {
     return { ...base, requestedBy: { $ne: new mongoose.Types.ObjectId(scope.selfUserId) } };
   }

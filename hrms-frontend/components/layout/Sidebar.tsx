@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown,
+  ListTodo,
   CalendarDays,
   Sparkles,
   LayoutDashboard,
@@ -67,6 +68,7 @@ import { useApprovalSummary } from "@/hooks/useApprovalInbox";
 import { useMyDepartments } from "@/hooks/useDepartments";
 import { usePendingRegularizationCount } from "@/hooks/useRegularizations";
 import { useDgoMe, dgoAllows, type DgoNavFlag } from "@/hooks/useDgoPoints";
+import { useMyTaskSummary, useTaskSummary } from "@/hooks/useTasks";
 
 export const navItems: {
   href: string;
@@ -126,6 +128,8 @@ export const navItems: {
   { href: "/attendance", label: "Attendance", icon: CalendarCheck, permModule: "attendance" },
   { href: "/leave", label: "Leave", icon: CalendarClock, permModule: "leave" },
   { href: "/regularization", label: "Regularization", icon: ClipboardCheck, permModule: null },
+  // Everyone has their own tasks; HR's views are tabs on the same page (2026-11-25).
+  { href: "/tasks", label: "Tasks", icon: ListTodo, permModule: null },
   // Always reachable: the Payroll page shows admins the full "Payslips" tab
   // (gated by the payroll permission) and every employee their own "My Payslips".
   { href: "/payroll", label: "Payroll", icon: Wallet, permModule: null },
@@ -226,6 +230,9 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
   const { data: visaPending = 0 } = useVisaPendingCount(!isKioskOnly && hasPermission("employees", "edit"));
   // Asked of everybody: whether DGO Points is open, and what this person may do there.
   const { data: dgoMe } = useDgoMe(!isKioskOnly);
+  // Tasks: what needs this person's attention, plus what waits on their approval.
+  const { data: myTasks } = useMyTaskSummary(!isKioskOnly);
+  const { data: teamTasks } = useTaskSummary(!isKioskOnly && hasPermission("tasks", "approve") && hasPermission("tasks", "view"));
   /** What waits behind each link, for the badge. Absent means no badge. */
   // The approvals summary already counts every queue that waits on this
   // person, by module — so each section's link carries its own share of it.
@@ -246,6 +253,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     // Procurement lives under Assets: new requests waiting for HR.
     "/assets": mod("procurement"),
     "/documents": visaPending,
+    "/tasks": (myTasks?.attention ?? 0) + (teamTasks?.waiting ?? 0),
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
   const activeNav = navItems
