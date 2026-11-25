@@ -50,6 +50,8 @@ const nameOf = (v: unknown) => (v && typeof v === "object" ? (v as { name?: stri
 const idOf = (v: unknown) => (v && typeof v === "object" ? String((v as { _id?: string })._id ?? "") : String(v ?? ""));
 /** Editable while nobody has decided anything; withdrawable until it is fully decided. */
 const EDITABLE = ["draft", "pending"];
+/** HR may still edit these after approval, until filled or closed — each edit is recorded (2026-11-25). */
+const HR_EDITABLE_AFTER_APPROVAL = ["pending", "draft", "finance_pending", "approved", "on_hold"];
 const WITHDRAWABLE = ["draft", "pending", "finance_pending", "on_hold"];
 
 export default function HiringPage() {
@@ -81,7 +83,9 @@ export default function HiringPage() {
   const [withdrawReason, setWithdrawReason] = useState("");
   const { mutate: withdraw, isPending: withdrawing } = useWithdrawRequisition();
   const mine = (r: JobRequisition) => idOf(r.raisedBy) === String(user?._id ?? "");
-  const canEditRow = (r: JobRequisition) => (mine(r) || canEditAny) && EDITABLE.includes(r.status) && !(r.approvalTrail ?? []).length;
+  const canEditRow = (r: JobRequisition) =>
+    (canEditAny && HR_EDITABLE_AFTER_APPROVAL.includes(r.status))
+    || ((mine(r) || canEditAny) && EDITABLE.includes(r.status) && !(r.approvalTrail ?? []).length);
   const canWithdrawRow = (r: JobRequisition) => (mine(r) || canEditAny) && WITHDRAWABLE.includes(r.status);
   /** Active / closed / cancelled and the priority — the raiser's and HR's to change. */
   const canManageRow = (r: JobRequisition) => mine(r) || canEditAny;

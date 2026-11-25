@@ -234,6 +234,22 @@ export default function RequisitionDetailPage() {
               </div>
             </div>
           )}
+          {!!requisition.editsAfterApproval?.length && (
+            <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Edited after approval</p>
+              <ul className="space-y-1 text-sm">
+                {requisition.editsAfterApproval.map((e, i) => (
+                  <li key={i}>
+                    <span className="text-muted-foreground">
+                      {e.at ? new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(e.at)) : ""}
+                      {e.byName ? ` · ${e.byName}` : ""}:
+                    </span>{" "}
+                    {e.changes}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {requisition.financeReviewedAt && (
             <div className="col-span-2 sm:col-span-4 border-t border-border pt-3">
               <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Finance</p>

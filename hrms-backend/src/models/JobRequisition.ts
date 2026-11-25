@@ -94,6 +94,15 @@ const jobRequisitionSchema = new Schema<IJobRequisition>(
       _id: false,
     },
     reviewNote: { type: String, trim: true, maxlength: 1000 },
+    /**
+     * HR's edits made after a step was approved (the user, 2026-11-25: HR may edit until filled or closed, and
+     * the change is recorded). Kept apart from `approvalTrail`, which the approval steps read and count.
+     */
+    editsAfterApproval: {
+      type: [{ by: { type: Schema.Types.ObjectId, ref: "User" }, byName: String, at: Date, changes: String }],
+      default: [],
+      _id: false,
+    },
 
     // Finance's half, decided in the finance system over the integration API —
     // the same way salary advances are. Finance has no login here, so who

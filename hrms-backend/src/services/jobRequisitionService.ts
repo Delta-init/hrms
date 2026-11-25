@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import { JobRequisition } from "../models/JobRequisition.js";
 import { Employee } from "../models/Employee.js";
+import { User } from "../models/User.js";
+import { Department } from "../models/Department.js";
 import { ApprovalWorkflow } from "../models/ApprovalWorkflow.js";
 import type {
   CreateRequisitionInput, UpdateRequisitionInput, ReviewRequisitionInput, InterviewQuestionInput, SetStandingInput,
@@ -169,11 +171,58 @@ function forFinance(r: Record<string, unknown>) {
       : null,
     hrApprovedAt: hr?.at ?? r.updatedAt ?? null,
     hrApprovedBy: String(obj(hr?.by)?.name ?? ""),
+    // HR's edits since approving — so finance can see when the figures moved after HR said yes.
+    editsAfterApproval: ((r.editsAfterApproval ?? []) as Array<{ at?: Date; byName?: string; changes?: string }>)
+      .map((e) => ({ at: e.at ?? null, byName: e.byName ?? "", changes: e.changes ?? "" })),
     createdAt: r.createdAt,
   };
 }
 
 const forbidden = (message: string) => Object.assign(new Error(message), { statusCode: 403 });
+
+/** After approval, HR may still edit these until the role is filled or closed. */
+const POST_APPROVAL_EDITABLE = ["finance_pending", "approved", "on_hold"];
+
+/**
+ * What an edit after approval changed, in words, for the record kept on the requisition — "Budget AED 3000–3000 →
+ * 3000–3500 · Wanted by 25 Nov 2026 → 30 Nov 2026". Long text only says it changed. Empty when nothing did.
+ */
+async function describeChanges(before: Record<string, unknown>, after: Record<string, unknown>): Promise<string> {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(after, k);
+  const same = (a: unknown, b: unknown) => String(a ?? "") === String(b ?? "");
+  const day = (v: unknown) => (v ? new Date(v as string).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "none");
+  const out: string[] = [];
+
+  const cur = (has("currency") ? after.currency : before.currency) ?? "AED";
+  const min = has("salaryMin") ? after.salaryMin : before.salaryMin;
+  const max = has("salaryMax") ? after.salaryMax : before.salaryMax;
+  if (!same(min, before.salaryMin) || !same(max, before.salaryMax) || !same(cur, before.currency ?? "AED")) {
+    const range = (c: unknown, a: unknown, b: unknown) => `${c} ${a ?? "?"}–${b ?? "?"}`;
+    out.push(`Budget ${range(before.currency ?? "AED", before.salaryMin, before.salaryMax)} → ${range(cur, min, max)}`);
+  }
+  const plain: Array<[string, string]> = [
+    ["title", "Title"], ["headcount", "Headcount"], ["type", "Type"], ["designation", "Designation"],
+    ["location", "Location"], ["employmentType", "Employment type"], ["priority", "Priority"],
+  ];
+  for (const [k, label] of plain) if (has(k) && !same(after[k], before[k])) out.push(`${label} ${before[k] ?? "none"} → ${after[k] ?? "none"}`);
+  if (has("targetStartDate") && day(after.targetStartDate) !== day(before.targetStartDate)) {
+    out.push(`Wanted by ${day(before.targetStartDate)} → ${day(after.targetStartDate)}`);
+  }
+  if (has("department") && !same(after.department, before.department)) {
+    const ids = [before.department, after.department].filter(Boolean);
+    const names = new Map((await Department.find({ _id: { $in: ids } }).select("name").lean()).map((d) => [String(d._id), String(d.name ?? "")]));
+    out.push(`Department ${names.get(String(before.department)) ?? "none"} → ${names.get(String(after.department)) ?? "none"}`);
+  }
+  if (has("replacing") && !same(after.replacing, before.replacing)) {
+    const ids = [before.replacing, after.replacing].filter(Boolean);
+    const names = new Map((await Employee.find({ _id: { $in: ids } }).select("name").lean()).map((e) => [String(e._id), String(e.name ?? "")]));
+    out.push(`Replacing ${names.get(String(before.replacing)) ?? "nobody"} → ${names.get(String(after.replacing)) ?? "nobody"}`);
+  }
+  for (const [k, label] of [["justification", "Justification"], ["jdText", "Job description"]] as const) {
+    if (has(k) && !same(after[k], before[k])) out.push(`${label} changed`);
+  }
+  return out.join(" · ").slice(0, 1000);
+}
 
 /**
  * The login of whoever a replacement requisition would backfill. They are
@@ -427,22 +476,37 @@ export class JobRequisitionService {
     }
     const record = await JobRequisition.findOne(scoped({ _id: id }));
     if (!record) throw Object.assign(new Error("Requisition not found"), { statusCode: 404 });
-    if (record.status !== "pending" && record.status !== "draft") {
+    const untouched = (record.status === "pending" || record.status === "draft") && !(record.approvalTrail ?? []).length;
+    /**
+     * HR (hiring edit, not a head admitted on their department) may also edit after approval — waiting for finance,
+     * active or on hold — until it is filled or closed (the user, 2026-11-25). Each such edit is recorded with what
+     * changed, and the status is left alone: finance decides on whatever the figures are when it decides.
+     */
+    const hrAfterApproval = !untouched && !headOnly && POST_APPROVAL_EDITABLE.includes(record.status);
+    if (!untouched && !hrAfterApproval) {
       throw Object.assign(
-        new Error(record.status === "finance_pending"
-          ? "This requisition is waiting for finance and can no longer be edited"
-          : `This requisition has already been ${record.status} and can no longer be edited`),
-        { statusCode: 400 }
-      );
-    }
-    if ((record.approvalTrail ?? []).length > 0) {
-      throw Object.assign(
-        new Error("Someone has already approved a step on this requisition. Cancel it and raise a new one."),
+        new Error(headOnly && POST_APPROVAL_EDITABLE.includes(record.status)
+          ? "It has been approved — only HR can edit it now"
+          : (record.approvalTrail ?? []).length && (record.status === "pending" || record.status === "draft")
+            ? "Someone has already approved a step on this requisition — only HR can edit it now"
+            : `This requisition is ${STATUS_WORDS[record.status] ?? record.status} and can no longer be edited`),
         { statusCode: 400 }
       );
     }
 
     const { interviewQuestions, ...details } = input;
+    if (hrAfterApproval) {
+      // An edit is not a decision: the status stays where the approvals left it.
+      delete (details as { status?: unknown }).status;
+      const changes = await describeChanges(record.toObject() as unknown as Record<string, unknown>, details as Record<string, unknown>);
+      if (changes) {
+        const who = viewerUserId ? await User.findById(viewerUserId).select("name").lean<{ name?: string } | null>() : null;
+        record.editsAfterApproval = [
+          ...(record.editsAfterApproval ?? []),
+          { by: (viewerUserId ?? null) as never, byName: String(who?.name ?? ""), at: new Date(), changes },
+        ] as never;
+      }
+    }
     Object.assign(record, details);
     if (interviewQuestions) {
       record.set("interviewQuestions", questionsFrom(interviewQuestions, record.interviewQuestions));

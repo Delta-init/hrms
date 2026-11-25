@@ -2141,6 +2141,8 @@ export interface IJobRequisition extends Document {
   workflowTotalSteps?: number | null;
   approvalSteps?: IApprovalStepSnapshot[];
   approvalTrail?: IApprovalTrailEntry[];
+  /** HR's edits after a step was approved: who, when, and what changed. */
+  editsAfterApproval?: Array<{ by?: Types.ObjectId | null; byName?: string; at?: Date; changes?: string }>;
   reviewNote?: string;
   /** Finance's decision, made in the finance system (HIRING_FINANCE_STEP=on). */
   financeReviewedAt?: Date | null;

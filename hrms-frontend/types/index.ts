@@ -2802,6 +2802,8 @@ export interface JobRequisition {
   withdrawnAt?: string | null;
   withdrawReason?: string;
   approvalTrail?: { step: number; roleName?: string; by?: { _id: string; name: string } | string; action: string; note?: string; at: string }[];
+  /** HR's edits after a step was approved: who, when, what changed. */
+  editsAfterApproval?: { byName?: string; at?: string; changes?: string }[];
   reviewNote?: string;
   /** Finance's decision, made in the finance system. */
   financeReviewedAt?: string | null;
