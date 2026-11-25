@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmployeeSelect, DepartmentSelect } from "@/components/pickers";
 import { useCreateTask, useUpdateTask, useTaskCategories, useCreateTaskCategory } from "@/hooks/useTasks";
 import { TASK_PRIORITY_LABELS, type Task, type TaskPriority } from "@/types";
+import { RepeatFields, DEFAULT_REPEAT, repeatPayload, type RepeatValue } from "./RepeatFields";
 
 interface Props {
   open: boolean;
@@ -59,12 +60,13 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
   const [needsApproval, setNeedsApproval] = useState(true);
   const [proofRequired, setProofRequired] = useState(false);
   const [error, setError] = useState("");
+  const [repeat, setRepeat] = useState<RepeatValue>(DEFAULT_REPEAT);
 
   const stepsLocked = editing && (task?.steps ?? []).some((s) => s.done);
 
   useEffect(() => {
     if (!open) return;
-    setError(""); setNewCategory(""); setPickPerson(""); setPickDept(""); setStepDraft("");
+    setError(""); setNewCategory(""); setPickPerson(""); setPickDept(""); setStepDraft(""); setRepeat(DEFAULT_REPEAT);
     if (task) {
       const due = new Date(task.dueAt);
       setTitle(task.title); setDetails(task.details ?? ""); setCategory(task.category?._id ?? NONE);
@@ -102,6 +104,7 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
     if (title.trim().length < 2) { setError("Give the task a title"); return; }
     if (!editing && !people.length && !depts.length) { setError("Choose who gets it"); return; }
     if (!date) { setError("Choose when it's due"); return; }
+    if (!editing && repeat.kind !== "once" && repeat.ends.kind === "date" && (!repeat.ends.date || repeat.ends.date < date)) { setError("Pick a last date on or after the first"); return; }
     const dueAt = new Date(`${date}T${time || "18:00"}`).toISOString();
     const base = {
       title: title.trim(), details: details.trim(), category: category === NONE ? null : category, priority,
@@ -110,7 +113,10 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
     if (editing) {
       update({ id: task!._id, data: { ...base, ...(stepsLocked ? {} : { steps }) } }, { onSuccess: () => onOpenChange(false) });
     } else {
-      create({ ...base, employees: people.map((p) => p.id), departments: depts.map((d) => d.id), steps }, { onSuccess: () => onOpenChange(false) });
+      create({
+        ...base, employees: people.map((p) => p.id), departments: depts.map((d) => d.id), steps,
+        ...(repeat.kind !== "once" ? { repeat: repeatPayload(repeat) } : {}),
+      }, { onSuccess: () => onOpenChange(false) });
     }
   };
 
@@ -203,7 +209,7 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="task-date">Due *</Label>
+              <Label htmlFor="task-date">{!editing && repeat.kind !== "once" ? "Starts *" : "Due *"}</Label>
               <Input id="task-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
@@ -211,7 +217,8 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
               <Input id="task-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
             </div>
           </div>
-          {dueLabel && <p className="-mt-2 text-xs text-muted-foreground">Due {dueLabel}</p>}
+          {dueLabel && (editing || repeat.kind === "once") && <p className="-mt-2 text-xs text-muted-foreground">Due {dueLabel}</p>}
+          {!editing && <RepeatFields value={repeat} onChange={setRepeat} startDate={date} dueTime={time} />}
 
           <div className="space-y-1.5">
             <Label htmlFor="task-details">Details</Label>

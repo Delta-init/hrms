@@ -52,7 +52,11 @@ const taskSchema = new Schema(
     organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
     /** Copies created together share this, so the list can show "9 people" as one row. */
     batch: { type: String, required: true, index: true },
-    series: { type: Schema.Types.ObjectId, default: null },
+    /** The repeating series this copy came from (Part 2), and which of its dates — "YYYY-MM-DD" in office time. */
+    series: { type: Schema.Types.ObjectId, ref: "TaskSeries", default: null, index: true },
+    occurrenceDate: { type: String, default: null },
+    /** Set once the overdue notice has gone, so it goes once. */
+    overdueNotifiedAt: { type: Date, default: null },
     title: { type: String, required: true, trim: true, maxlength: 150 },
     details: { type: String, trim: true, maxlength: 4000, default: "" },
     category: { type: Schema.Types.ObjectId, ref: "TaskCategory", default: null },
@@ -86,6 +90,8 @@ const taskSchema = new Schema(
 
 taskSchema.index({ organization: 1, status: 1, dueAt: 1 });
 taskSchema.index({ organization: 1, assigneeUser: 1, status: 1 });
+// One copy per person per date of a series, however often the job runs.
+taskSchema.index({ series: 1, assignee: 1, occurrenceDate: 1 }, { unique: true, partialFilterExpression: { series: { $type: "objectId" } } });
 
 export const Task = mongoose.model("Task", taskSchema);
 
@@ -102,3 +108,62 @@ const categorySchema = new Schema(
 categorySchema.index({ organization: 1, name: 1 }, { unique: true });
 
 export const TaskCategory = mongoose.model("TaskCategory", categorySchema);
+
+/*
+ * A repeating task (Part 2): the plan that makes a copy for each person on each date it falls due. The people are
+ * fixed when it's created (departments expanded then); a leaver's copies simply stop. Editing changes what is made
+ * from now on, plus today's untouched copies.
+ */
+const seriesSchema = new Schema(
+  {
+    organization: { type: Schema.Types.ObjectId, ref: "Organization", index: true, default: null },
+    title: { type: String, required: true, trim: true, maxlength: 150 },
+    details: { type: String, trim: true, maxlength: 4000, default: "" },
+    category: { type: Schema.Types.ObjectId, ref: "TaskCategory", default: null },
+    priority: { type: String, enum: TASK_PRIORITIES, default: "normal" },
+    steps: { type: [String], default: [] },
+    needsApproval: { type: Boolean, default: true },
+    proofRequired: { type: Boolean, default: false },
+    assignees: {
+      type: [{ employee: { type: Schema.Types.ObjectId, ref: "Employee" }, user: { type: Schema.Types.ObjectId, ref: "User", default: null }, viaDepartment: { type: Schema.Types.ObjectId, ref: "Department", default: null } }],
+      default: [],
+      _id: false,
+    },
+    repeat: {
+      kind: { type: String, enum: ["daily", "weekly", "interval"], required: true },
+      weekdays: { type: [Number], default: [] },
+      everyDays: { type: Number, default: null },
+    },
+    startDate: { type: String, required: true },
+    dueTime: { type: String, default: "18:00" },
+    timeZone: { type: String, default: "Asia/Dubai" },
+    ends: {
+      kind: { type: String, enum: ["count", "date", "never"], default: "never" },
+      count: { type: Number, default: null },
+      date: { type: String, default: null },
+    },
+    /** Dates made so far, and the last one — so the job knows where it left off. */
+    made: { type: Number, default: 0 },
+    lastDate: { type: String, default: null },
+    /** After a pause, dates before this are skipped rather than made late. */
+    skipBefore: { type: String, default: null },
+    state: { type: String, enum: ["active", "paused", "ended"], default: "active", index: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    history: {
+      type: [{ at: Date, by: { type: Schema.Types.ObjectId, ref: "User", default: null }, byName: String, action: String, note: String }],
+      default: [],
+      _id: false,
+    },
+  },
+  { timestamps: true, versionKey: false }
+);
+
+export const TaskSeries = mongoose.model("TaskSeries", seriesSchema);
+
+/** Marks that a once-a-day notice went for an organisation's day, so a restart can't send it twice. */
+const digestSchema = new Schema(
+  { organization: { type: Schema.Types.ObjectId, ref: "Organization", default: null }, day: String, kind: String },
+  { timestamps: true, versionKey: false }
+);
+digestSchema.index({ organization: 1, day: 1, kind: 1 }, { unique: true });
+export const TaskDigest = mongoose.model("TaskDigest", digestSchema);

@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import api from "@/lib/axios";
-import type { ApiResponse, MyTaskSummary, Task, TaskCategory, TaskSummary } from "@/types";
+import type { ApiResponse, MyTaskSummary, Task, TaskCategory, TaskEnds, TaskRepeat, TaskSeries, TaskSummary } from "@/types";
 
 /* Tasks HR hands out (2026-11-25). Your own need no permission; everyone else's need `tasks`. */
 
@@ -68,6 +68,8 @@ export interface TaskInput {
   title: string; details?: string; category?: string | null; priority: string;
   employees: string[]; departments: string[]; dueAt: string; steps: string[];
   needsApproval: boolean; proofRequired: boolean;
+  /** Repeating (Part 2); absent or kind "once" for a one-off task. */
+  repeat?: { kind: "once" | TaskRepeat["kind"]; weekdays?: number[]; everyDays?: number | null; ends: TaskEnds };
 }
 
 export const useCreateTask = () => {
@@ -129,5 +131,38 @@ export const useReviewTask = () => {
       (await api.patch<ApiResponse<Task>>(`/tasks/${id}/review`, { decision, note })).data,
     onSuccess: (r) => { invalidate(qc); toast.success(r.message ?? "Done"); },
     onError: (e) => toast.error(errMsg(e, "Couldn't save the decision")),
+  });
+};
+
+// ── Repeating tasks (Part 2) ─────────────────────────────────────────────────
+
+export const useTaskSeriesList = (enabled = true) =>
+  useQuery({
+    queryKey: [...KEY, "series"],
+    queryFn: async () => (await api.get<ApiResponse<TaskSeries[]>>("/tasks/series")).data.data ?? [],
+    enabled,
+  });
+
+export interface SeriesInput {
+  title?: string; details?: string; category?: string | null; priority?: string; steps?: string[];
+  needsApproval?: boolean; proofRequired?: boolean; dueTime?: string;
+  repeat?: { kind: TaskRepeat["kind"]; weekdays?: number[]; everyDays?: number | null; ends: TaskEnds };
+}
+
+export const useUpdateTaskSeries = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: SeriesInput }) => (await api.put<ApiResponse<TaskSeries>>(`/tasks/series/${id}`, data)).data.data!,
+    onSuccess: () => { invalidate(qc); toast.success("Repeating task updated"); },
+    onError: (e) => toast.error(errMsg(e, "Couldn't update it")),
+  });
+};
+
+export const useSetTaskSeriesState = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, state }: { id: string; state: TaskSeries["state"] }) => (await api.patch<ApiResponse<TaskSeries>>(`/tasks/series/${id}/state`, { state })).data,
+    onSuccess: (r) => { invalidate(qc); toast.success(r.message ?? "Saved"); },
+    onError: (e) => toast.error(errMsg(e, "Couldn't change it")),
   });
 };

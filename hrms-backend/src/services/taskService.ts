@@ -30,6 +30,7 @@ const POP = [
   { path: "assignedBy", select: "name" },
   { path: "category", select: "name color" },
   { path: "viaDepartment", select: "name" },
+  { path: "series", select: "repeat state" },
 ];
 
 async function nameOf(userId: string) {
@@ -64,6 +65,29 @@ function log(task: InstanceType<typeof Task>, action: string, by: string | null,
   task.history.push({ at: new Date(), by: by as never, byName, action, note } as never);
 }
 
+/**
+ * Who a task is for: the chosen people, plus everyone in the chosen departments now. Leavers are skipped; a
+ * department picked alongside one of its own people doesn't give that person two copies.
+ */
+export async function resolvePeople(employees: string[], departments: string[]) {
+  const picked = employees.length
+    ? await Employee.find(scoped({ _id: { $in: employees }, status: stillHere() })).select("_id user").lean<Array<{ _id: Types.ObjectId; user?: Types.ObjectId | null }>>()
+    : [];
+  if (picked.length !== new Set(employees).size) throw fail("Some of the people chosen weren't found or have left", 400);
+  const viaDept = new Map<string, string>();
+  const fromDepts = departments.length
+    ? await Employee.find(scoped({ department: { $in: departments }, status: stillHere() })).select("_id user department").lean<Array<{ _id: Types.ObjectId; user?: Types.ObjectId | null; department?: Types.ObjectId }>>()
+    : [];
+  for (const e of fromDepts) viaDept.set(String(e._id), String(e.department));
+  const people = new Map<string, { _id: Types.ObjectId; user?: Types.ObjectId | null }>();
+  for (const e of [...picked, ...fromDepts]) people.set(String(e._id), e);
+  if (!people.size) throw fail("Nobody to give it to — the departments chosen have no current staff", 400);
+  for (const e of picked) viaDept.delete(String(e._id));
+  return { people, viaDept };
+}
+
+export { nameOf, todayBounds, fail as taskFail };
+
 export class TaskService {
   // ── Categories ────────────────────────────────────────────────────────────
   async categories(includeInactive = false) {
@@ -89,22 +113,12 @@ export class TaskService {
   /** One copy per person: the chosen people, plus everyone in the chosen departments now. Leavers are skipped. */
   async create(input: CreateTaskInput, actorId: string) {
     if (input.category && !(await TaskCategory.exists(scoped({ _id: input.category })))) throw fail("Category not found", 404);
-
-    const picked = input.employees.length
-      ? await Employee.find(scoped({ _id: { $in: input.employees }, status: stillHere() })).select("_id user").lean<Array<{ _id: Types.ObjectId; user?: Types.ObjectId | null }>>()
-      : [];
-    if (picked.length !== new Set(input.employees).size) throw fail("Some of the people chosen weren't found or have left", 400);
-    const viaDept = new Map<string, string>();
-    const fromDepts = input.departments.length
-      ? await Employee.find(scoped({ department: { $in: input.departments }, status: stillHere() })).select("_id user department").lean<Array<{ _id: Types.ObjectId; user?: Types.ObjectId | null; department?: Types.ObjectId }>>()
-      : [];
-    for (const e of fromDepts) viaDept.set(String(e._id), String(e.department));
-    const people = new Map<string, { _id: Types.ObjectId; user?: Types.ObjectId | null }>();
-    for (const e of [...picked, ...fromDepts]) people.set(String(e._id), e);
-    if (!people.size) throw fail("Nobody to give it to — the departments chosen have no current staff", 400);
-    // A department picked alongside one of its own people shouldn't give that person two copies.
-    for (const e of picked) viaDept.delete(String(e._id));
-
+    // Repeating: a series that makes the copies, date by date (Part 2).
+    if (input.repeat && input.repeat.kind !== "once") {
+      const { createSeries } = await import("./taskSeriesService.js");
+      return createSeries(input, actorId);
+    }
+    const { people, viaDept } = await resolvePeople(input.employees, input.departments);
     const byName = await nameOf(actorId);
     const batch = randomUUID();
     const now = new Date();
@@ -136,7 +150,7 @@ export class TaskService {
       href: "/tasks",
       actor: actorId,
     });
-    return { batch, created: created.length };
+    return { batch, created: created.length, series: null as string | null };
   }
 
   // ── Read ──────────────────────────────────────────────────────────────────
@@ -151,6 +165,7 @@ export class TaskService {
     if (q.category) filter.category = q.category;
     if (q.assignee) filter.assignee = q.assignee;
     if (q.department) filter.viaDepartment = q.department;
+    if (q.series) filter.series = q.series;
     if (q.dueFrom || q.dueTo) {
       filter.dueAt = { ...(filter.dueAt as object ?? {}), ...(q.dueFrom ? { $gte: q.dueFrom } : {}), ...(q.dueTo ? { $lt: q.dueTo } : {}) };
     }

@@ -24,6 +24,7 @@ import { startAdSpendReminderCron } from "./jobs/adSpendReminderJob.js";
 import { startDocumentReminderCron } from "./jobs/documentReminderJob.js";
 import { startHolidayReminderCron } from "./jobs/holidayReminderJob.js";
 import { startReminderCron } from "./jobs/reminderJob.js";
+import { startTaskCron } from "./jobs/taskJob.js";
 import { startProbationCron } from "./jobs/probationJob.js";
 import { startMeetingReminderCron } from "./jobs/meetingReminderJob.js";
 import { startOfferInboxCron } from "./jobs/offerInboxJob.js";
@@ -115,6 +116,7 @@ const start = async () => {
   startDocumentReminderCron();
   startHolidayReminderCron();
   startReminderCron();
+  startTaskCron();
   startProbationCron();
   startMeetingReminderCron();
   startOfferInboxCron();

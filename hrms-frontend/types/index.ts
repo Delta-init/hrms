@@ -3805,9 +3805,41 @@ export interface TaskReview { action: "approved" | "sent_back"; byName?: string;
 
 export interface TaskHistoryEntry { at: string; byName?: string; action: string; note?: string }
 
+export interface TaskRepeat { kind: "daily" | "weekly" | "interval"; weekdays?: number[]; everyDays?: number | null }
+export interface TaskEnds { kind: "count" | "date" | "never"; count?: number | null; date?: string | null }
+
+/** A repeating task (Part 2): the plan that makes a copy per person on each date. */
+export interface TaskSeries {
+  _id: string;
+  title: string;
+  details?: string;
+  category?: TaskCategory | null;
+  priority: TaskPriority;
+  steps: string[];
+  needsApproval: boolean;
+  proofRequired: boolean;
+  assignees: Array<{ employee: { _id: string; name: string } | string | null; viaDepartment?: string | null }>;
+  repeat: TaskRepeat;
+  startDate: string;
+  dueTime: string;
+  timeZone: string;
+  ends: TaskEnds;
+  made: number;
+  lastDate?: string | null;
+  state: "active" | "paused" | "ended";
+  createdBy?: { _id: string; name: string } | null;
+  repeatText: string;
+  next: string[];
+  copies: { open: number; done: number; total: number };
+  createdAt: string;
+}
+
 export interface Task {
   _id: string;
   batch: string;
+  /** Set when it came from a repeating task. */
+  series?: { _id: string; repeat: TaskRepeat; state: string } | string | null;
+  occurrenceDate?: string | null;
   title: string;
   details?: string;
   category?: TaskCategory | null;

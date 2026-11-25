@@ -164,6 +164,8 @@ const envSchema = z.object({
    * close to on time, the same reasoning as the punch reminder's own cadence.
    */
   REMINDER_CRON: z.string().default("*/5 * * * *"),
+  // Tasks Part 2: makes repeating tasks' copies, sends overdue notices and the 8 am list. "off" to stop.
+  TASK_CRON: z.string().default("*/10 * * * *"),
 
   // Cloudflare R2 (S3-compatible) object storage for employee documents/photos.
   // When unset, document upload is disabled (routes return a clear error).

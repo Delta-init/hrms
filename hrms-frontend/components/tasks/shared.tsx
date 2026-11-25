@@ -1,5 +1,7 @@
 "use client";
+import { Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { describe } from "@/lib/taskRepeat";
 import { TASK_STATUS_LABELS, TASK_PRIORITY_LABELS, type Task, type TaskPriority, type TaskStatus } from "@/types";
 
 /* Small pieces every task screen shares — the status pill, the progress bar, the due line (2026-11-25). */
@@ -79,3 +81,10 @@ export const HISTORY_WORDS: Record<string, string> = {
   assigned: "Assigned", edited: "Edited", started: "Started", step_done: "Ticked", step_undone: "Unticked",
   submitted: "Marked done", done: "Marked done", approved: "Approved", sent_back: "Sent back", cancelled: "Cancelled",
 };
+
+/** "↻ Every Mon" on a copy made by a repeating task (Part 2). */
+export function RepeatTag({ task }: { task: Task }) {
+  const s = task.series && typeof task.series === "object" ? task.series : null;
+  if (!s) return null;
+  return <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Repeat className="h-3 w-3" />{describe(s.repeat as never)}</span>;
+}

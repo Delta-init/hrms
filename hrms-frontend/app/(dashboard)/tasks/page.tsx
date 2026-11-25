@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Send, UserRound, Users } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Repeat, Send, UserRound, Users, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTasks, useTaskSummary, useTaskCategories } from "@/hooks/useTasks";
 import { TaskDialog } from "@/components/tasks/TaskDialog";
 import { TaskPanel } from "@/components/tasks/TaskPanel";
-import { StatusPill, Progress, DueLine, PriorityText, wasSentBack } from "@/components/tasks/shared";
+import { StatusPill, Progress, DueLine, PriorityText, wasSentBack, RepeatTag } from "@/components/tasks/shared";
+import { SeriesList } from "@/components/tasks/SeriesList";
 import { cn, getInitials } from "@/lib/utils";
 import { TASK_STATUS_LABELS, type Task, type TaskStatus } from "@/types";
 
@@ -43,6 +44,7 @@ function TasksScreen() {
     canCreate && { key: "assigned", label: "Assigned by me", icon: Send },
     (canView || canApprove) && { key: "waiting", label: "Waiting for approval", icon: ClipboardCheck },
     canView && { key: "all", label: "All tasks", icon: ListChecks },
+    canView && { key: "repeating", label: "Repeating", icon: Repeat },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
   const [tab, setTab] = useState(() => params.get("tab") ?? "mine");
   const active = tabs.some((t) => t.key === tab) ? tab : "mine";
@@ -52,6 +54,8 @@ function TasksScreen() {
   if (waitingTab && summary?.waiting) waitingTab.count = summary.waiting;
 
   const [openId, setOpenId] = useState<string | null>(null);
+  /** "See copies" from the Repeating tab: All tasks narrowed to one series. */
+  const [seriesFilter, setSeriesFilter] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ open: boolean; task: Task | null }>({ open: false, task: null });
 
   return (
@@ -66,8 +70,11 @@ function TasksScreen() {
 
       {active === "mine" ? (
         <MyTasks onOpen={setOpenId} />
+      ) : active === "repeating" ? (
+        <SeriesList onShowCopies={(id) => { setSeriesFilter(id); setTab("all"); }} />
       ) : (
-        <TeamTasks scope={active as "assigned" | "waiting" | "all"} showSummary={canView} summary={summary} onOpen={setOpenId} />
+        <TeamTasks key={`${active}-${seriesFilter ?? ""}`} scope={active as "assigned" | "waiting" | "all"} showSummary={canView} summary={summary} onOpen={setOpenId}
+          series={active === "all" ? seriesFilter : null} onClearSeries={() => setSeriesFilter(null)} />
       )}
 
       <TaskPanel taskId={openId} onOpenChange={(o) => !o && setOpenId(null)} onEdit={(t) => { setOpenId(null); setDialog({ open: true, task: t }); }} />
@@ -146,6 +153,7 @@ function MyTaskCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void
             {task.category && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{task.category.name}</span>}
             <DueLine task={task} />
             <PriorityText p={task.priority} />
+            <RepeatTag task={task} />
           </div>
         </div>
         <StatusPill task={task} />
@@ -160,20 +168,23 @@ function MyTaskCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void
 
 // ── HR's views ───────────────────────────────────────────────────────────────
 
-function TeamTasks({ scope, showSummary, summary, onOpen }: {
+function TeamTasks({ scope, showSummary, summary, onOpen, series = null, onClearSeries }: {
   scope: "assigned" | "waiting" | "all";
   showSummary: boolean;
   summary?: { dueToday: number; overdue: number; waiting: number; onTimeRate: number | null };
   onOpen: (id: string) => void;
+  series?: string | null;
+  onClearSeries?: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL);
-  const [status, setStatus] = useState(scope === "waiting" ? "submitted" : "open");
+  const [status, setStatus] = useState(scope === "waiting" ? "submitted" : series ? ALL : "open");
   const { data: categories = [] } = useTaskCategories();
 
   const query: Record<string, string> = { scope: scope === "assigned" ? "assigned_by_me" : scope === "waiting" ? "waiting" : "all", limit: "200" };
   if (search.trim()) query.search = search.trim();
   if (category !== ALL) query.category = category;
+  if (series) query.series = series;
   if (scope !== "waiting") {
     if (status === "open") query.open = "true";
     else if (status === "overdue") query.overdue = "true";
@@ -199,6 +210,12 @@ function TeamTasks({ scope, showSummary, summary, onOpen }: {
         </div>
       )}
 
+      {series && (
+        <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <Repeat className="h-4 w-4 text-primary" />Copies made by one repeating task
+          <button type="button" onClick={onClearSeries} className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"><X className="h-3 w-3" />Show all</button>
+        </div>
+      )}
       <Card className="flex flex-wrap items-end gap-3 p-4">
         <Input placeholder="Search tasks or people…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 min-w-[200px] flex-1" />
         <Select value={category} onValueChange={setCategory}>
@@ -280,6 +297,7 @@ function TitleCell({ task }: { task: Task }) {
       <div className="mt-0.5 flex flex-wrap items-center gap-2">
         {task.category && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{task.category.name}</span>}
         <PriorityText p={task.priority} />
+        <RepeatTag task={task} />
         {!task.needsApproval && <span className="text-[11px] text-muted-foreground">No approval</span>}
       </div>
     </>

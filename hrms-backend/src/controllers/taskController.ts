@@ -3,13 +3,14 @@ import type { AuthenticatedRequest } from "../types/index.js";
 import { TaskService } from "../services/taskService.js";
 import {
   createTaskSchema, updateTaskSchema, stepToggleSchema, submitTaskSchema, reviewTaskSchema, cancelTaskSchema,
-  listTaskSchema, categorySchema,
+  listTaskSchema, categorySchema, updateSeriesSchema, seriesStateSchema,
 } from "../validations/taskValidation.js";
 import { sendSuccess, sendError, buildPagination } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
 import { extFromMime } from "../middleware/upload.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { hasPermission } from "../middleware/permissions.js";
+import { listSeries, getSeries, updateSeries, setSeriesState } from "../services/taskSeriesService.js";
 
 const service = new TaskService();
 type Handler = (req: AuthenticatedRequest, res: Response, next: NextFunction) => Promise<void>;
@@ -117,5 +118,35 @@ export const updateTaskCategory: Handler = async (req, res, next) => {
     const parsed = categorySchema.partial().safeParse(req.body);
     if (!parsed.success) { bad(res, parsed.error); return; }
     sendSuccess(res, "Category updated", await service.updateCategory(req.params.id, parsed.data));
+  } catch (e) { next(e); }
+};
+
+// ── Repeating tasks (Part 2) ─────────────────────────────────────────────────
+
+export const listTaskSeries: Handler = async (req, res, next) => {
+  try {
+    const state = typeof req.query.state === "string" && ["active", "paused", "ended"].includes(req.query.state) ? req.query.state : undefined;
+    sendSuccess(res, "Repeating tasks", await listSeries(state));
+  } catch (e) { next(e); }
+};
+
+export const getTaskSeries: Handler = async (req, res, next) => {
+  try { sendSuccess(res, "Repeating task", await getSeries(req.params.id)); } catch (e) { next(e); }
+};
+
+export const updateTaskSeries: Handler = async (req, res, next) => {
+  try {
+    const parsed = updateSeriesSchema.safeParse(req.body);
+    if (!parsed.success) { bad(res, parsed.error); return; }
+    sendSuccess(res, "Repeating task updated", await updateSeries(req.params.id, parsed.data, req.user!.userId));
+  } catch (e) { next(e); }
+};
+
+export const setTaskSeriesState: Handler = async (req, res, next) => {
+  try {
+    const parsed = seriesStateSchema.safeParse(req.body);
+    if (!parsed.success) { bad(res, parsed.error); return; }
+    const words = { active: "Resumed", paused: "Paused", ended: "Stopped" } as const;
+    sendSuccess(res, words[parsed.data.state], await setSeriesState(req.params.id, parsed.data.state, req.user!.userId));
   } catch (e) { next(e); }
 };
