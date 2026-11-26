@@ -253,3 +253,39 @@ export const uploadExtraSingle = (req: Request, res: Response, next: NextFunctio
     next();
   });
 };
+
+/**
+ * Files HR attaches when giving a task (2026-11-26): photos, PDFs, and Word or Excel documents, up to 10. Office
+ * files are also recognised by extension, since browsers disagree on their mime types.
+ */
+const OFFICE = new Map([
+  ["doc", "application/msword"],
+  ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ["xls", "application/vnd.ms-excel"],
+  ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+]);
+const extOfName = (name: string) => (name.split(".").pop() ?? "").toLowerCase();
+const attachmentFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (ALLOWED.has(file.mimetype) || [...OFFICE.values()].includes(file.mimetype) || OFFICE.has(extOfName(file.originalname))) return cb(null, true);
+  cb(new Error(`${file.originalname}: only photos, PDFs, and Word or Excel files can be attached.`));
+};
+const attachmentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE, files: 10 }, fileFilter: attachmentFilter })
+  .array("files", 10);
+
+export const uploadTaskAttachments = (req: Request, res: Response, next: NextFunction) => {
+  attachmentUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "A file is too large (max 10MB each)." : err.code === "LIMIT_FILE_COUNT" || err.code === "LIMIT_UNEXPECTED_FILE" ? "At most 10 files." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};
+
+/** The extension and type to store an attachment under — Office files often arrive as octet-stream. */
+export function attachmentType(file: Express.Multer.File): { ext: string; mime: string } {
+  const byName = OFFICE.get(extOfName(file.originalname));
+  if (byName) return { ext: extOfName(file.originalname), mime: byName };
+  return { ext: extFromMime(file.mimetype), mime: file.mimetype };
+}

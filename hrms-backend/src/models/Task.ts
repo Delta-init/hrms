@@ -73,6 +73,8 @@ const taskSchema = new Schema(
     steps: { type: [stepSchema], default: [] },
     needsApproval: { type: Boolean, default: true },
     proofRequired: { type: Boolean, default: false },
+    /** Files HR attached when giving it (2026-11-26) — the same stored files on every person's copy. */
+    attachments: { type: [{ key: { type: String, required: true }, name: { type: String, default: "" } }], default: [], _id: false },
     status: { type: String, enum: TASK_STATUSES, default: "todo", index: true },
     submission: {
       note: { type: String, trim: true, maxlength: 2000, default: "" },
@@ -134,6 +136,8 @@ const seriesSchema = new Schema(
     steps: { type: [String], default: [] },
     needsApproval: { type: Boolean, default: true },
     proofRequired: { type: Boolean, default: false },
+    /** HR's files, copied onto each day's copy. */
+    attachments: { type: [{ key: { type: String, required: true }, name: { type: String, default: "" } }], default: [], _id: false },
     assignees: {
       type: [{ employee: { type: Schema.Types.ObjectId, ref: "Employee" }, user: { type: Schema.Types.ObjectId, ref: "User", default: null }, viaDepartment: { type: Schema.Types.ObjectId, ref: "Department", default: null } }],
       default: [],

@@ -75,7 +75,14 @@ export interface TaskInput {
 export const useCreateTask = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: TaskInput) => (await api.post<ApiResponse<{ created: number }>>("/tasks", data)).data,
+    // With files: the task as JSON in `data`, HR's attachments under `files` (2026-11-26).
+    mutationFn: async ({ files, ...data }: TaskInput & { files?: File[] }) => {
+      if (!files?.length) return (await api.post<ApiResponse<{ created: number }>>("/tasks", data)).data;
+      const form = new FormData();
+      form.append("data", JSON.stringify(data));
+      for (const f of files) form.append("files", f);
+      return (await api.post<ApiResponse<{ created: number }>>("/tasks", form, { timeout: 120_000, headers: { "Content-Type": "multipart/form-data" } })).data;
+    },
     onSuccess: (r) => { invalidate(qc); toast.success(r.message ?? "Task assigned"); },
     onError: (e) => toast.error(errMsg(e, "Couldn't assign the task")),
   });
@@ -117,7 +124,9 @@ export const useSubmitTask = () => {
       const form = new FormData();
       if (note) form.append("note", note);
       for (const f of files ?? []) form.append("files", f);
-      return (await api.post<ApiResponse<Task>>(`/tasks/${id}/submit`, form, { timeout: 120_000 })).data;
+      // Said outright: the shared client labels every request JSON, and axios then turns FormData into JSON and the
+      // files are lost — which is why proof never arrived (fixed 2026-11-26).
+      return (await api.post<ApiResponse<Task>>(`/tasks/${id}/submit`, form, { timeout: 120_000, headers: { "Content-Type": "multipart/form-data" } })).data;
     },
     onSuccess: (r) => { invalidate(qc); toast.success(r.message ?? "Sent to HR for approval"); },
     onError: (e) => toast.error(errMsg(e, "Couldn't mark it done")),

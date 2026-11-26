@@ -44,7 +44,7 @@ const ruleOf = (s: SeriesDoc | Record<string, unknown>): RepeatRule => {
   return { kind: x.repeat.kind, weekdays: x.repeat.weekdays ?? [], everyDays: x.repeat.everyDays ?? undefined, startDate: x.startDate, ends: x.ends };
 };
 
-export async function createSeries(input: CreateTaskInput, actorId: string) {
+export async function createSeries(input: CreateTaskInput, actorId: string, attachments: Array<{ key: string; name: string }> = []) {
   const r = input.repeat!;
   const { people, viaDept } = await resolvePeople(input.employees, input.departments);
   const tz = await orgTimeZone();
@@ -60,6 +60,7 @@ export async function createSeries(input: CreateTaskInput, actorId: string) {
     steps: input.steps,
     needsApproval: input.needsApproval,
     proofRequired: input.proofRequired,
+    attachments,
     assignees: [...people.values()].map((e) => ({ employee: e._id, user: e.user ?? null, viaDepartment: viaDept.get(String(e._id)) ?? null })),
     repeat: { kind: r.kind, weekdays: r.kind === "weekly" ? r.weekdays : [], everyDays: r.kind === "interval" ? r.everyDays : null },
     startDate,
@@ -82,6 +83,7 @@ export async function createSeries(input: CreateTaskInput, actorId: string) {
     {
       title: input.title, details: input.details, category: input.category, priority: input.priority, steps: input.steps,
       needsApproval: input.needsApproval, proofRequired: input.proofRequired, repeatText: describe(r as never), dueTime: series.dueTime,
+      attachments: attachments.length,
       next: upcoming(ruleOf(series), startDate, 0, 3),
       endsText: r.ends.kind === "count" ? `After ${r.ends.count} times` : r.ends.kind === "date" && r.ends.date ? `On ${r.ends.date}` : "No end date",
     },
@@ -138,6 +140,7 @@ export async function makeDue(series: SeriesDoc, now = new Date()): Promise<numb
       steps: (series.steps ?? []).map((title) => ({ title })),
       needsApproval: series.needsApproval,
       proofRequired: series.proofRequired,
+      attachments: (series.attachments ?? []).map((a) => ({ key: a.key, name: a.name })),
       history: [{ at: createdNow, by: null, byName: "", action: "assigned", note: `${describe(ruleOf(series))} · ${date}` }],
     }));
     if (docs.length) {

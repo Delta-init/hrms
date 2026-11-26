@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Repeat, Send, UserRound, Users, X } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronDown, Paperclip, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Repeat, Send, UserRound, Users, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
@@ -178,6 +178,7 @@ function MyTaskCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void
             <DueLine task={task} />
             <PriorityText p={task.priority} />
             <RepeatTag task={task} />
+            <DocCount task={task} />
           </div>
         </div>
         <StatusPill task={task} />
@@ -322,9 +323,22 @@ function TitleCell({ task }: { task: Task }) {
         {task.category && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{task.category.name}</span>}
         <PriorityText p={task.priority} />
         <RepeatTag task={task} />
+        <DocCount task={task} />
         {!task.needsApproval && <span className="text-[11px] text-muted-foreground">No approval</span>}
       </div>
     </>
+  );
+}
+
+/** 📎 What was handed in, and HR's own files, without opening the task (2026-11-26). */
+function DocCount({ task }: { task: Task }) {
+  const handedIn = task.submission?.files?.length ?? (task.submission?.fileName ? 1 : 0);
+  const fromHr = task.attachments?.length ?? 0;
+  if (!handedIn && !fromHr) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={[handedIn && `${handedIn} handed in`, fromHr && `${fromHr} from HR`].filter(Boolean).join(" · ")}>
+      <Paperclip className="h-3 w-3" />{handedIn ? <span className="font-medium text-foreground">{handedIn} handed in</span> : null}{handedIn && fromHr ? " · " : ""}{fromHr ? `${fromHr} from HR` : ""}
+    </span>
   );
 }
 

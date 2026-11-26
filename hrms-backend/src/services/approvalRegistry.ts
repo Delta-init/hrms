@@ -558,6 +558,7 @@ export const ADAPTERS: Adapter[] = [
         { label: "Due", value: day(d.dueAt) },
         { label: "Steps", value: `${((d.steps ?? []) as Array<{ done?: boolean }>).filter((s) => s.done).length} of ${((d.steps ?? []) as unknown[]).length} ticked` },
         { label: "Note", value: String((d.submission as { note?: string } | undefined)?.note || "—") },
+        { label: "Documents", value: (() => { const s = d.submission as { files?: unknown[]; fileKey?: string } | undefined; const n = s?.files?.length || (s?.fileKey ? 1 : 0); return n ? String(n) : "None"; })() },
       ],
       chain: null,
       href: "/tasks?tab=waiting",

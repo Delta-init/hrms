@@ -108,6 +108,22 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
 
               {task.details && <p className="whitespace-pre-wrap text-sm">{task.details}</p>}
 
+              {/* HR's files for the task (2026-11-26). */}
+              {!!task.attachments?.length && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Files from HR ({task.attachments.length})</p>
+                  <ul className="space-y-1">
+                    {task.attachments.map((f, i) => (
+                      <li key={`${f.url}-${i}`}>
+                        <a href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-muted/50">
+                          <Paperclip className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 truncate">{f.name}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {task.steps.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between"><p className="text-xs font-medium text-muted-foreground">Steps</p><Progress task={task} wide /></div>

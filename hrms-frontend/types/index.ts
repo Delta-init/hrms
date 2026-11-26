@@ -3861,6 +3861,8 @@ export interface Task {
   status: TaskStatus;
   /** `files`: every document handed in (2026-11-26), each round's kept; absent from an older server. */
   submission: { note: string; fileName: string; fileUrl: string; at: string | null; files?: Array<{ name: string; url: string; at: string | null }> };
+  /** Files HR attached when giving it. */
+  attachments?: Array<{ name: string; url: string }>;
   startedAt?: string | null;
   submittedAt?: string | null;
   doneAt?: string | null;

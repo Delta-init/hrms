@@ -7,7 +7,7 @@ import {
 } from "../validations/taskValidation.js";
 import { sendSuccess, sendError, buildPagination } from "../utils/response.js";
 import { putObject, attachmentKey } from "../services/uploadService.js";
-import { extFromMime } from "../middleware/upload.js";
+import { extFromMime, attachmentType } from "../middleware/upload.js";
 import { getOrgId } from "../utils/orgContext.js";
 import { hasPermission } from "../middleware/permissions.js";
 import { listSeries, getSeries, updateSeries, setSeriesState } from "../services/taskSeriesService.js";
@@ -42,11 +42,24 @@ export const getTask: Handler = async (req, res, next) => {
   catch (e) { next(e); }
 };
 
+/** Assign — JSON, or multipart with the task as JSON in `data` and HR's attachments under `files` (2026-11-26). */
 export const createTask: Handler = async (req, res, next) => {
   try {
-    const parsed = createTaskSchema.safeParse(req.body);
+    let body: unknown = req.body;
+    if (typeof req.body?.data === "string") {
+      try { body = JSON.parse(req.body.data); } catch { sendError(res, "The task details couldn't be read", 400); return; }
+    }
+    const parsed = createTaskSchema.safeParse(body);
     if (!parsed.success) { bad(res, parsed.error); return; }
-    const out = await service.create(parsed.data, req.user!.userId);
+    // Stored once; every person's copy points at the same files.
+    const attachments: Array<{ key: string; name: string }> = [];
+    for (const [i, f] of ((req.files ?? []) as Express.Multer.File[]).entries()) {
+      const { ext, mime } = attachmentType(f);
+      const key = attachmentKey(getOrgId(), req.user!.userId, "task-files", ext, Date.now() + i);
+      await putObject(key, f.buffer, mime);
+      attachments.push({ key, name: f.originalname });
+    }
+    const out = await service.create(parsed.data, req.user!.userId, attachments);
     sendSuccess(res, out.created === 1 ? "Task assigned" : `Task assigned to ${out.created} people`, out, 201);
   } catch (e) { next(e); }
 };

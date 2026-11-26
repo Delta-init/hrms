@@ -84,8 +84,11 @@ async function categoryName(id: unknown) {
 interface TaskLike {
   title: string; details?: string; category?: unknown; priority?: string; steps: string[];
   needsApproval: boolean; proofRequired: boolean;
+  /** How many files HR attached — named, not linked: file links expire within the hour. */
+  attachments?: number;
 }
 const extras = (t: TaskLike) => [
+  t.attachments ? `${t.attachments} file${t.attachments === 1 ? " is" : "s are"} attached to it in HRMS.` : "",
   t.needsApproval ? "When you mark it done, it goes to HR to approve." : "",
   t.proofRequired ? "Attach a photo or file as proof when you mark it done." : "",
 ].filter(Boolean).join(" ");

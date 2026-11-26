@@ -6,7 +6,7 @@ import {
 } from "../controllers/taskController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
-import { uploadTaskFiles } from "../middleware/upload.js";
+import { uploadTaskFiles, uploadTaskAttachments } from "../middleware/upload.js";
 import {
   listDayPlans, getDayPlan, createDayPlan, updateDayPlan, dayOfPlan, myDays, tickDayItem, tickDayStep, addDayItem,
   reorderDay, setDayItemLength, removeDayItem, dayRoundDone,
@@ -47,7 +47,7 @@ router.put("/my-day/:dayId/order", reorderDay);
 router.post("/my-day/:dayId/rounds", dayRoundDone);
 
 router.get("/", listTasks);
-router.post("/", checkPermission("tasks", "create"), createTask);
+router.post("/", checkPermission("tasks", "create"), uploadTaskAttachments, createTask);
 router.get("/:id", getTask);
 router.put("/:id", checkPermission("tasks", "edit"), updateTask);
 router.patch("/:id/cancel", checkPermission("tasks", "edit"), cancelTask);

@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { Building2, GripVertical, Loader2, Plus, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, GripVertical, Loader2, Paperclip, Plus, X } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter,
   ResponsiveDialogDescription,
@@ -59,6 +59,9 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
   const [stepDraft, setStepDraft] = useState("");
   const [needsApproval, setNeedsApproval] = useState(true);
   const [proofRequired, setProofRequired] = useState(false);
+  /** HR's files for the task (2026-11-26): photos, PDFs, Word, Excel — up to 10, 10 MB each. */
+  const [files, setFiles] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [repeat, setRepeat] = useState<RepeatValue>(DEFAULT_REPEAT);
 
@@ -66,7 +69,7 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    setError(""); setNewCategory(""); setPickPerson(""); setPickDept(""); setStepDraft(""); setRepeat(DEFAULT_REPEAT);
+    setError(""); setNewCategory(""); setPickPerson(""); setPickDept(""); setStepDraft(""); setRepeat(DEFAULT_REPEAT); setFiles([]);
     if (task) {
       const due = new Date(task.dueAt);
       setTitle(task.title); setDetails(task.details ?? ""); setCategory(task.category?._id ?? NONE);
@@ -116,6 +119,7 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
       create({
         ...base, employees: people.map((p) => p.id), departments: depts.map((d) => d.id), steps,
         ...(repeat.kind !== "once" ? { repeat: repeatPayload(repeat) } : {}),
+        files,
       }, { onSuccess: () => onOpenChange(false) });
     }
   };
@@ -264,6 +268,34 @@ export function TaskDialog({ open, onOpenChange, task = null }: Props) {
               <Switch checked={proofRequired} onCheckedChange={setProofRequired} aria-label="Proof required" />
             </label>
           </div>
+
+          {!editing && (
+            <div className="space-y-1.5">
+              <Label>Attachments</Label>
+              <input ref={fileRef} type="file" multiple className="hidden" aria-label="Attach files"
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  const tooBig = picked.filter((f) => f.size > 10 * 1024 * 1024);
+                  const all = [...files, ...picked.filter((f) => f.size <= 10 * 1024 * 1024)];
+                  setFiles(all.slice(0, 10));
+                  setError(tooBig.length ? `${tooBig.map((f) => f.name).join(", ")} ${tooBig.length === 1 ? "is" : "are"} over 10 MB` : all.length > 10 ? "At most 10 files; the first 10 are kept." : "");
+                }} />
+              {files.map((f, i) => (
+                <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{f.size < 1024 * 1024 ? `${Math.max(1, Math.round(f.size / 1024))} KB` : `${(f.size / 1024 / 1024).toFixed(1)} MB`}</span>
+                  <button type="button" aria-label={`Remove ${f.name}`} className="rounded p-0.5 text-muted-foreground hover:bg-muted" onClick={() => setFiles((xs) => xs.filter((_, j) => j !== i))}><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+              {files.length < 10 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}><Paperclip className="h-3.5 w-3.5" />{files.length ? "Add more" : "Attach files"}</Button>
+              )}
+              <p className="text-xs text-muted-foreground">Photos, PDFs, Word or Excel, up to 10 files. Everyone the task goes to can open them.</p>
+            </div>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

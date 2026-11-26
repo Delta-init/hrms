@@ -62,6 +62,7 @@ function shape(t: Record<string, unknown>, now = new Date()): Record<string, unk
       note: sub.note ?? "", fileName: sub.fileName ?? "", fileUrl: sub.fileKey ? publicUrl(sub.fileKey) : "", at: sub.at ?? null,
       files: files.map((f) => ({ name: f.name || "Document", url: publicUrl(f.key), at: f.at ?? null })),
     },
+    attachments: ((t.attachments ?? []) as Array<{ key: string; name?: string }>).map((a) => ({ name: a.name || "File", url: publicUrl(a.key) })),
     progress: { done: steps.filter((s) => s.done).length, total: steps.length },
     overdue: OPEN.includes(status) && status !== "submitted" && new Date(t.dueAt as string) < now,
   };
@@ -117,12 +118,12 @@ export class TaskService {
 
   // ── Assign ────────────────────────────────────────────────────────────────
   /** One copy per person: the chosen people, plus everyone in the chosen departments now. Leavers are skipped. */
-  async create(input: CreateTaskInput, actorId: string) {
+  async create(input: CreateTaskInput, actorId: string, attachments: Array<{ key: string; name: string }> = []) {
     if (input.category && !(await TaskCategory.exists(scoped({ _id: input.category })))) throw fail("Category not found", 404);
     // Repeating: a series that makes the copies, date by date (Part 2).
     if (input.repeat && input.repeat.kind !== "once") {
       const { createSeries } = await import("./taskSeriesService.js");
-      return createSeries(input, actorId);
+      return createSeries(input, actorId, attachments);
     }
     const { people, viaDept } = await resolvePeople(input.employees, input.departments);
     const byName = await nameOf(actorId);
@@ -143,6 +144,7 @@ export class TaskService {
       steps: input.steps.map((title) => ({ title })),
       needsApproval: input.needsApproval,
       proofRequired: input.proofRequired,
+      attachments,
       history: [{ at: now, by: actorId, byName, action: "assigned", note: "" }],
     }));
     const created = await Task.insertMany(docs);
@@ -159,7 +161,7 @@ export class TaskService {
     // The task itself by email, in the background (2026-11-26).
     await emailTaskAssigned(
       [...people.values()].map((e) => ({ user: e.user, employee: e._id })),
-      { title: input.title, details: input.details, category: input.category, priority: input.priority, steps: input.steps, needsApproval: input.needsApproval, proofRequired: input.proofRequired, dueAt: input.dueAt },
+      { title: input.title, details: input.details, category: input.category, priority: input.priority, steps: input.steps, needsApproval: input.needsApproval, proofRequired: input.proofRequired, dueAt: input.dueAt, attachments: attachments.length },
       byName, getOrgId(),
     );
     return { batch, created: created.length, series: null as string | null };
