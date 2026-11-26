@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Repeat, Send, UserRound, Users, X } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ListChecks, ListTodo, Loader2, Plus, Repeat, Send, UserRound, Users, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
@@ -14,6 +14,9 @@ import { TaskDialog } from "@/components/tasks/TaskDialog";
 import { TaskPanel } from "@/components/tasks/TaskPanel";
 import { StatusPill, Progress, DueLine, PriorityText, wasSentBack, RepeatTag } from "@/components/tasks/shared";
 import { SeriesList } from "@/components/tasks/SeriesList";
+import { MyDayPlan } from "@/components/tasks/MyDayPlan";
+import { DayPlansAdmin } from "@/components/tasks/DayPlansAdmin";
+import { useMyDay } from "@/hooks/useDayPlans";
 import { cn, getInitials } from "@/lib/utils";
 import { TASK_STATUS_LABELS, type Task, type TaskStatus } from "@/types";
 
@@ -45,6 +48,7 @@ function TasksScreen() {
     (canView || canApprove) && { key: "waiting", label: "Waiting for approval", icon: ClipboardCheck },
     canView && { key: "all", label: "All tasks", icon: ListChecks },
     canView && { key: "repeating", label: "Repeating", icon: Repeat },
+    canView && { key: "dayplans", label: "Day plans", icon: CalendarClock },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
   const [tab, setTab] = useState(() => params.get("tab") ?? "mine");
   const active = tabs.some((t) => t.key === tab) ? tab : "mine";
@@ -70,6 +74,8 @@ function TasksScreen() {
 
       {active === "mine" ? (
         <MyTasks onOpen={setOpenId} />
+      ) : active === "dayplans" ? (
+        <DayPlansAdmin />
       ) : active === "repeating" ? (
         <SeriesList onShowCopies={(id) => { setSeriesFilter(id); setTab("all"); }} />
       ) : (
@@ -86,6 +92,7 @@ function TasksScreen() {
 // ── My tasks ─────────────────────────────────────────────────────────────────
 
 function MyTasks({ onOpen }: { onOpen: (id: string) => void }) {
+  const { data: days = [] } = useMyDay();
   const { data, isLoading } = useTasks({ scope: "mine", limit: "200" });
   const [showDone, setShowDone] = useState(false);
   const groups = useMemo(() => {
@@ -107,8 +114,15 @@ function MyTasks({ onOpen }: { onOpen: (id: string) => void }) {
 
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   const anything = groups.some((g) => g.key !== "done" && g.rows.length);
-  const done = groups.find((g) => g.key === "done")!;
-
+  // Someone with a day plan sees their day by the clock first; one-off tasks follow below.
+  if (days.length) {
+    return (
+      <div className="space-y-8">
+        {days.map((d) => <MyDayPlan key={d._id} day={d} />)}
+        {anything && <div className="mx-auto max-w-2xl"><h2 className="mb-3 text-sm font-semibold text-muted-foreground">Other tasks</h2><TaskGroups groups={groups} showDone={showDone} setShowDone={setShowDone} onOpen={onOpen} /></div>}
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       {!anything && (
@@ -118,6 +132,16 @@ function MyTasks({ onOpen }: { onOpen: (id: string) => void }) {
           <p className="text-sm text-muted-foreground">Tasks HR gives you will appear here, with a notice when they arrive.</p>
         </Card>
       )}
+      <TaskGroups groups={groups} showDone={showDone} setShowDone={setShowDone} onOpen={onOpen} />
+    </div>
+  );
+}
+
+type Group = { key: string; label: string; tone: string; rows: Task[] };
+function TaskGroups({ groups, showDone, setShowDone, onOpen }: { groups: Group[]; showDone: boolean; setShowDone: (f: (v: boolean) => boolean) => void; onOpen: (id: string) => void }) {
+  const done = groups.find((g) => g.key === "done")!;
+  return (
+    <div className="space-y-6">
       {groups.filter((g) => g.key !== "done" && g.rows.length).map((g) => (
         <section key={g.key} className="space-y-2">
           <h2 className={cn("flex items-center justify-between text-[11px] font-bold uppercase tracking-wider",

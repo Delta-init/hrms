@@ -3867,3 +3867,28 @@ export interface Task {
 
 export interface TaskSummary { dueToday: number; overdue: number; waiting: number; doneThisMonth: number; onTimeRate: number | null }
 export interface MyTaskSummary { dueToday: number; overdue: number; sentBack: number; open: number; attention: number }
+
+// ─── Day plans (2026-11-26) ───────────────────────────────────────────────────
+export interface DayPlanRoutineItem { _id?: string; title: string; mins: number; steps: string[]; fixedAt?: string | null; kind: "task" | "break" }
+export interface DayPlanRoutine {
+  _id: string;
+  name: string;
+  employee: { _id: string; name: string; employeeCode?: string; designation?: string } | null;
+  weekdays: number[];
+  startAt: string;
+  roundEveryMins: number;
+  items: DayPlanRoutineItem[];
+  active: boolean;
+}
+export interface DayPlanStep { _id: string; title: string; done: boolean; doneAt?: string | null }
+export interface DayPlanItem {
+  _id: string; title: string; mins: number; steps: DayPlanStep[]; fixedAt?: string | null; kind: "task" | "break";
+  plannedAt?: string | null; addedByHim?: boolean; done: boolean; doneAt?: string | null;
+  start: string; end: string; free: number; over: number;
+}
+export interface DayPlanDayView {
+  _id: string; plan: string; date: string; startAt: string; endsAt: string; planName?: string;
+  items: DayPlanItem[];
+  rounds: Array<{ due: string; doneAt: string | null }>;
+  progress: { done: number; total: number };
+}

@@ -7,6 +7,10 @@ import {
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
 import { uploadSingle } from "../middleware/upload.js";
+import {
+  listDayPlans, getDayPlan, createDayPlan, updateDayPlan, dayOfPlan, myDays, tickDayItem, tickDayStep, addDayItem,
+  reorderDay, setDayItemLength, removeDayItem, dayRoundDone,
+} from "../controllers/dayPlanController.js";
 
 /*
  * Tasks (2026-11-25). Your own tasks — listing, ticking steps, marking done — need no permission: the service only
@@ -26,6 +30,21 @@ router.get("/series", checkPermission("tasks", "view"), listTaskSeries);
 router.get("/series/:id", checkPermission("tasks", "view"), getTaskSeries);
 router.put("/series/:id", checkPermission("tasks", "edit"), updateTaskSeries);
 router.patch("/series/:id/state", checkPermission("tasks", "edit"), setTaskSeriesState);
+
+// Day plans (2026-11-26): HR's routines, and each person's own day.
+router.get("/day-plans", checkPermission("tasks", "view"), listDayPlans);
+router.post("/day-plans", checkPermission("tasks", "create"), createDayPlan);
+router.get("/day-plans/:id", checkPermission("tasks", "view"), getDayPlan);
+router.put("/day-plans/:id", checkPermission("tasks", "edit"), updateDayPlan);
+router.get("/day-plans/:id/day", checkPermission("tasks", "view"), dayOfPlan);
+router.get("/my-day", myDays);
+router.patch("/my-day/:dayId/items/:itemId", tickDayItem);
+router.patch("/my-day/:dayId/items/:itemId/steps/:stepId", tickDayStep);
+router.patch("/my-day/:dayId/items/:itemId/length", setDayItemLength);
+router.delete("/my-day/:dayId/items/:itemId", removeDayItem);
+router.post("/my-day/:dayId/items", addDayItem);
+router.put("/my-day/:dayId/order", reorderDay);
+router.post("/my-day/:dayId/rounds", dayRoundDone);
 
 router.get("/", listTasks);
 router.post("/", checkPermission("tasks", "create"), createTask);

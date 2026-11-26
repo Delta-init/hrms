@@ -4,6 +4,7 @@ import { ArrowUpRight, ListTodo } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useMyTaskSummary } from "@/hooks/useTasks";
+import { useMyDay } from "@/hooks/useDayPlans";
 
 /**
  * The dashboard's "your tasks" line (2026-11-25). Shown only while something is open — an empty card every day
@@ -11,7 +12,9 @@ import { useMyTaskSummary } from "@/hooks/useTasks";
  */
 export function MyTasksCard() {
   const { data } = useMyTaskSummary();
-  if (!data || !data.open) return null;
+  const { data: days = [] } = useMyDay();
+  const plan = days.reduce((a, d) => ({ done: a.done + d.progress.done, total: a.total + d.progress.total }), { done: 0, total: 0 });
+  if (!data || (!data.open && !plan.total)) return null;
   const bits = [
     data.sentBack ? { n: data.sentBack, label: "sent back", tone: "bad" } : null,
     data.overdue ? { n: data.overdue, label: "overdue", tone: "bad" } : null,
@@ -24,7 +27,8 @@ export function MyTasksCard() {
         <div className="min-w-0 flex-1">
           <p className="font-medium">Your tasks</p>
           <p className="text-sm text-muted-foreground">
-            {data.open} open{bits.map((b) => (
+            {plan.total > 0 && <>Today&apos;s plan {plan.done} of {plan.total} done{data.open ? " · " : ""}</>}
+            {data.open > 0 && <>{data.open} open</>}{bits.map((b) => (
               <span key={b.label}> · <span className={cn("font-medium", b.tone === "bad" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400")}>{b.n} {b.label}</span></span>
             ))}
           </p>
