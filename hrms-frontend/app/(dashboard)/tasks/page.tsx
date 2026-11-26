@@ -5,6 +5,7 @@ import { CalendarClock, CheckCircle2, ChevronDown, Paperclip, ChevronRight, Clip
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Tabs } from "@/components/shared/Tabs";
 import { Card } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -273,12 +274,13 @@ function TeamTasks({ scope, showSummary, summary, onOpen, series = null, onClear
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-3 font-medium">Task</th>
                   <th className="px-4 py-3 font-medium">Assigned to</th>
                   <th className="px-4 py-3 font-medium">Progress</th>
+                  <th className="px-4 py-3 font-medium">Documents</th>
                   <th className="px-4 py-3 font-medium">Due</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
@@ -323,7 +325,6 @@ function TitleCell({ task }: { task: Task }) {
         {task.category && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">{task.category.name}</span>}
         <PriorityText p={task.priority} />
         <RepeatTag task={task} />
-        <DocCount task={task} />
         {!task.needsApproval && <span className="text-[11px] text-muted-foreground">No approval</span>}
       </div>
     </>
@@ -342,6 +343,52 @@ function DocCount({ task }: { task: Task }) {
   );
 }
 
+/**
+ * The Documents column (2026-11-26): how many files were handed in and how many HR attached, and the files
+ * themselves on a click — without opening the task. For a task given to several people, everyone's, by person.
+ */
+function DocsCell({ tasks }: { tasks: Task[] }) {
+  const handedIn = (t: Task) => t.submission?.files?.length ? t.submission.files : t.submission?.fileName ? [{ name: t.submission.fileName, url: t.submission.fileUrl, at: t.submission.at }] : [];
+  const fromHr = tasks[0]?.attachments ?? [];
+  const people = tasks.map((t) => ({ t, files: handedIn(t) })).filter((x) => x.files.length);
+  const total = people.reduce((n, x) => n + x.files.length, 0);
+  if (!total && !fromHr.length) return <span className="text-xs text-muted-foreground">—</span>;
+  const link = (f: { name: string; url: string }, i: number) => (
+    <li key={`${f.url}-${i}`}>
+      <a href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded px-1.5 py-1 text-sm text-primary hover:bg-muted">
+        <Paperclip className="h-3.5 w-3.5 shrink-0" /><span className="min-w-0 truncate">{f.name}</span>
+      </a>
+    </li>
+  );
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs hover:border-primary/40 hover:bg-muted/50">
+          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+          {total > 0 && <span className="font-medium">{total} handed in</span>}
+          {total > 0 && fromHr.length > 0 && <span className="text-muted-foreground">·</span>}
+          {fromHr.length > 0 && <span className="text-muted-foreground">{fromHr.length} from HR</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 space-y-3 p-3" onClick={(e) => e.stopPropagation()}>
+        {people.map(({ t, files }) => (
+          <div key={t._id}>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">{tasks.length > 1 ? `${t.assignee?.name ?? "—"} · ` : ""}Handed in ({files.length})</p>
+            <ul>{files.map(link)}</ul>
+          </div>
+        ))}
+        {fromHr.length > 0 && (
+          <div>
+            <p className="mb-1 text-xs font-medium text-muted-foreground">From HR ({fromHr.length})</p>
+            <ul>{fromHr.map(link)}</ul>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Person({ name }: { name?: string }) {
   return (
     <span className="inline-flex items-center gap-2">
@@ -357,6 +404,7 @@ function TaskRow({ task, onOpen, nested = false }: { task: Task; onOpen: (id: st
       <td className={cn("px-4 py-3", nested && "pl-10")}>{nested ? <span className="text-xs text-muted-foreground">{task.assignee?.name}&apos;s copy</span> : <TitleCell task={task} />}</td>
       <td className="px-4 py-3"><Person name={task.assignee?.name} /></td>
       <td className="px-4 py-3"><Progress task={task} /></td>
+      <td className="px-4 py-3"><DocsCell tasks={[task]} /></td>
       <td className="px-4 py-3"><DueLine task={task} /></td>
       <td className="px-4 py-3"><StatusPill task={task} /></td>
     </tr>
@@ -388,6 +436,7 @@ function GroupRows({ group, open, onToggle, onOpen, doneCount, waiting, late }: 
             <span className="text-xs tabular-nums text-muted-foreground">{doneCount}/{group.length} done</span>
           </span>
         </td>
+        <td className="px-4 py-3"><DocsCell tasks={group} /></td>
         <td className="px-4 py-3"><DueLine task={first} /></td>
         <td className="px-4 py-3 text-xs">
           {waiting > 0 && <span className="mr-2 font-medium text-amber-600 dark:text-amber-400">{waiting} waiting</span>}
