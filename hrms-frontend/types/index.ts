@@ -828,6 +828,8 @@ export interface LeaveBalance {
   /** What this period grants them — the full days once eligible, else 0. */
   accrued: number;
   carriedForward: number;
+  /** Manual corrections and imported opening balances. */
+  adjustment?: number;
   used: number;
   balance: number;
   eligibleAfterMonths: number;
@@ -3891,4 +3893,12 @@ export interface DayPlanDayView {
   items: DayPlanItem[];
   rounds: Array<{ due: string; doneAt: string | null }>;
   progress: { done: number; total: number };
+}
+
+/** Someone's balances as HR sees them, with the manual edits made (2026-11-26). */
+export interface EmployeeLeaveBalances {
+  employee: { _id: string; name: string; employeeCode?: string };
+  year: number;
+  balances: LeaveBalance[];
+  history: Array<{ type: string; month: number | null; at: string; byName?: string; from: number; to: number; delta: number; reason: string }>;
 }

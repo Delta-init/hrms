@@ -5,6 +5,7 @@ import { useLeavePolicies, useDeleteLeavePolicy, useMyLeaveBalances } from "@/ho
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LeavePolicyDialog } from "@/components/leave/LeavePolicyDialog";
+import { EmployeeLeaveBalances } from "@/components/leave/EmployeeLeaveBalances";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import { LEAVE_TYPE_LABELS, type LeavePolicy, leaveTypeLabel } from "@/types";
@@ -109,6 +110,9 @@ export function LeaveBalances({ canManage }: Props) {
         </Card>
       )}
 
+      {/* HR and the Super Admin look up and edit anyone's balance (2026-11-26). */}
+      {canManage && <EmployeeLeaveBalances />}
+
       <Card className="p-5">
         <div className="mb-4 flex items-center gap-2"><Wallet className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">My Leave Balance · {new Date().getFullYear()}</h3></div>
         {balancesLoading ? (
@@ -134,6 +138,9 @@ export function LeaveBalances({ canManage }: Props) {
                       <span>{b.period === "month" ? `Carried from ${lastMonthName()}` : "Carried forward"}</span>
                       <span className="tabular-nums text-emerald-600">+{b.carriedForward}</span>
                     </div>
+                  )}
+                  {!!b.adjustment && (
+                    <div className="flex justify-between"><span>Adjusted by HR</span><span className={cn("tabular-nums", b.adjustment > 0 ? "text-emerald-600" : "text-red-500")}>{b.adjustment > 0 ? "+" : ""}{b.adjustment}</span></div>
                   )}
                   <div className="flex justify-between"><span>Used</span><span className="tabular-nums">−{b.used}</span></div>
                 </div>

@@ -36,6 +36,17 @@ const leaveAdjustmentSchema = new Schema(
     reason: { type: String, trim: true, maxlength: 300 },
     /** Set by an import so its rows can be told from a human's correction. */
     source: { type: String, trim: true, maxlength: 40, default: "manual" },
+    /**
+     * For a monthly leave type, the month (1–12) the correction belongs to; null applies to the whole year, as
+     * imported rows always have. A manual edit of a monthly balance is that month's only (2026-11-26).
+     */
+    month: { type: Number, min: 1, max: 12, default: null },
+    /** Each manual edit: who, when, the balance before and after, and why. */
+    history: {
+      type: [{ at: Date, by: { type: Schema.Types.ObjectId, ref: "User", default: null }, byName: String, from: Number, to: Number, delta: Number, reason: String }],
+      default: [],
+      _id: false,
+    },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true, versionKey: false }

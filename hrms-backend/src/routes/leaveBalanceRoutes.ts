@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   createLeavePolicy, getLeavePolicies, updateLeavePolicy, deleteLeavePolicy,
-  getMyLeaveBalances, getLeaveBalancesFor,
+  getMyLeaveBalances, getLeaveBalancesFor, getEmployeeLeaveBalances, adjustEmployeeLeaveBalance,
 } from "../controllers/leaveBalanceController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/permissions.js";
@@ -17,6 +17,9 @@ router.get("/policies", checkPermission("leave", "view"), getLeavePolicies);
 router.post("/policies", checkPermission("leave", "create"), createLeavePolicy);
 router.put("/policies/:id", checkPermission("leave", "edit"), updateLeavePolicy);
 router.delete("/policies/:id", checkPermission("leave", "delete"), deleteLeavePolicy);
+// Someone's balances by employee, and HR's / the Super Admin's edit of them (2026-11-26).
+router.get("/employee/:employeeId", checkPermission("leave", "view"), getEmployeeLeaveBalances);
+router.post("/employee/:employeeId/adjust", checkPermission("leave", "edit"), adjustEmployeeLeaveBalance);
 router.get("/:userId", checkPermission("leave", "view"), getLeaveBalancesFor);
 
 export default router;

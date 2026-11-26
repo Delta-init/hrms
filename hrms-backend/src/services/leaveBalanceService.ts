@@ -107,11 +107,14 @@ export class LeaveBalanceService {
       Employee.findOne(scoped({ user: userId })).select("joiningDate workMode").lean(),
       // Corrections the rules cannot derive — an opening balance carried over
       // from another system, or a manual credit HR owes somebody.
-      LeaveAdjustment.find(scoped({ user: userId, year })).select("type days").lean(),
+      LeaveAdjustment.find(scoped({ user: userId, year })).select("type days month").lean(),
     ]);
+    // Whole-year rows count for every period, as before; a month's row only in that month (2026-11-26).
     const adjustedBy = new Map<string, number>();
+    const adjustedInMonth = new Map<string, number>();
     for (const a of adjustments) {
-      adjustedBy.set(a.type, (adjustedBy.get(a.type) ?? 0) + a.days);
+      if (a.month) adjustedInMonth.set(`${a.type}:${a.month}`, (adjustedInMonth.get(`${a.type}:${a.month}`) ?? 0) + a.days);
+      else adjustedBy.set(a.type, (adjustedBy.get(a.type) ?? 0) + a.days);
     }
     const joiningDate = employee?.joiningDate ? new Date(employee.joiningDate) : null;
     const policies = index.for(scheduleId, employee?.workMode ?? null);
@@ -140,7 +143,8 @@ export class LeaveBalanceService {
             await usedInPeriod(userId, policy.type, "year", new Date(Date.UTC(year - 1, 0, 1))))
         : await carriedIntoMonth(policy, userId, joiningDate, on);
 
-      const adjustment = adjustedBy.get(policy.type) ?? 0;
+      const adjustment = (adjustedBy.get(policy.type) ?? 0)
+        + (policy.period === "month" ? adjustedInMonth.get(`${policy.type}:${on.getUTCMonth() + 1}`) ?? 0 : 0);
 
       results.push({
         type: policy.type,
