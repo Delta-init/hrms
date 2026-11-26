@@ -75,19 +75,20 @@ export const toggleTaskStep: Handler = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
-/** Mark done — JSON, or multipart with a proof file and a `note` field. */
+/** Mark done — JSON, or multipart with documents (`files`, up to 10; `file`, one, as before) and a `note` field. */
 export const submitTask: Handler = async (req, res, next) => {
   try {
     const parsed = submitTaskSchema.safeParse(req.body ?? {});
     if (!parsed.success) { bad(res, parsed.error); return; }
-    let fileKey: string | undefined;
-    let fileName: string | undefined;
-    if (req.file) {
-      fileKey = attachmentKey(getOrgId(), req.user!.userId, "task-proof", extFromMime(req.file.mimetype), Date.now());
-      await putObject(fileKey, req.file.buffer, req.file.mimetype);
-      fileName = req.file.originalname;
+    const sent = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
+    const uploads = [...(sent.file ?? []), ...(sent.files ?? [])];
+    const files: Array<{ key: string; name: string }> = [];
+    for (const [i, f] of uploads.entries()) {
+      const key = attachmentKey(getOrgId(), req.user!.userId, "task-proof", extFromMime(f.mimetype), Date.now() + i);
+      await putObject(key, f.buffer, f.mimetype);
+      files.push({ key, name: f.originalname });
     }
-    const task = await service.submit(req.params.id, { note: parsed.data.note, fileKey, fileName }, req.user!.userId);
+    const task = await service.submit(req.params.id, { note: parsed.data.note, files }, req.user!.userId);
     sendSuccess(res, task.status === "done" ? "Task done" : "Sent to HR for approval", task);
   } catch (e) { next(e); }
 };

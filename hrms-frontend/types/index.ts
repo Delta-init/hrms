@@ -3805,7 +3805,11 @@ export interface TaskStep { _id: string; title: string; done: boolean; doneAt?: 
 
 export interface TaskReview { action: "approved" | "sent_back"; byName?: string; note?: string; at: string }
 
-export interface TaskHistoryEntry { at: string; byName?: string; action: string; note?: string }
+export interface TaskHistoryEntry {
+  at: string; byName?: string; action: string; note?: string;
+  /** Documents handed in with this submission, by name (2026-11-26). */
+  files?: string[];
+}
 
 export interface TaskRepeat { kind: "daily" | "weekly" | "interval"; weekdays?: number[]; everyDays?: number | null }
 export interface TaskEnds { kind: "count" | "date" | "never"; count?: number | null; date?: string | null }
@@ -3855,7 +3859,8 @@ export interface Task {
   needsApproval: boolean;
   proofRequired: boolean;
   status: TaskStatus;
-  submission: { note: string; fileName: string; fileUrl: string; at: string | null };
+  /** `files`: every document handed in (2026-11-26), each round's kept; absent from an older server. */
+  submission: { note: string; fileName: string; fileUrl: string; at: string | null; files?: Array<{ name: string; url: string; at: string | null }> };
   startedAt?: string | null;
   submittedAt?: string | null;
   doneAt?: string | null;

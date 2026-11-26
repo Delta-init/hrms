@@ -44,6 +44,24 @@ export const uploadSingle = (req: Request, res: Response, next: NextFunction) =>
   });
 };
 
+/** A task's documents (2026-11-26): up to 10 under `files`, or one under `file` as before. */
+const taskUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE, files: 11 },
+  fileFilter,
+}).fields([{ name: "file", maxCount: 1 }, { name: "files", maxCount: 10 }]);
+
+export const uploadTaskFiles = (req: Request, res: Response, next: NextFunction) => {
+  taskUpload(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === "LIMIT_FILE_SIZE" ? "A file is too large (max 10MB each)." : err.code === "LIMIT_UNEXPECTED_FILE" || err.code === "LIMIT_FILE_COUNT" ? "At most 10 files at a time." : err.message;
+      return next(Object.assign(new Error(msg), { statusCode: 400 }));
+    }
+    if (err instanceof Error) return next(Object.assign(err, { statusCode: 400 }));
+    next();
+  });
+};
+
 export function extFromMime(mime: string): string {
   switch (mime) {
     case "image/jpeg":

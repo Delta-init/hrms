@@ -50,20 +50,25 @@ async function todayBounds(now = new Date()) {
 
 /** A task as the API hands it out: the proof file as a short-lived link, and whether it's late. */
 function shape(t: Record<string, unknown>, now = new Date()): Record<string, unknown> & { status: string } {
-  const sub = (t.submission ?? {}) as { fileKey?: string; fileName?: string; note?: string; at?: Date | null };
+  const sub = (t.submission ?? {}) as { fileKey?: string; fileName?: string; note?: string; at?: Date | null; files?: Array<{ key: string; name?: string; at?: Date }> };
+  // Every document handed in; a task from before keeps its one file.
+  const files = sub.files?.length ? sub.files : sub.fileKey ? [{ key: sub.fileKey, name: sub.fileName ?? "", at: sub.at ?? undefined }] : [];
   const steps = (t.steps ?? []) as Array<{ done?: boolean }>;
   const status = String(t.status);
   return {
     ...t,
     status,
-    submission: { note: sub.note ?? "", fileName: sub.fileName ?? "", fileUrl: sub.fileKey ? publicUrl(sub.fileKey) : "", at: sub.at ?? null },
+    submission: {
+      note: sub.note ?? "", fileName: sub.fileName ?? "", fileUrl: sub.fileKey ? publicUrl(sub.fileKey) : "", at: sub.at ?? null,
+      files: files.map((f) => ({ name: f.name || "Document", url: publicUrl(f.key), at: f.at ?? null })),
+    },
     progress: { done: steps.filter((s) => s.done).length, total: steps.length },
     overdue: OPEN.includes(status) && status !== "submitted" && new Date(t.dueAt as string) < now,
   };
 }
 
-function log(task: InstanceType<typeof Task>, action: string, by: string | null, byName: string, note = "") {
-  task.history.push({ at: new Date(), by: by as never, byName, action, note } as never);
+function log(task: InstanceType<typeof Task>, action: string, by: string | null, byName: string, note = "", files?: string[]) {
+  task.history.push({ at: new Date(), by: by as never, byName, action, note, ...(files?.length ? { files } : {}) } as never);
 }
 
 /**
@@ -287,7 +292,7 @@ export class TaskService {
   }
 
   /** Mark done. Every step ticked, or a note saying why not; a proof file when HR asked for one. */
-  async submit(id: string, input: { note?: string; fileKey?: string; fileName?: string }, userId: string) {
+  async submit(id: string, input: { note?: string; files?: Array<{ key: string; name: string }> }, userId: string) {
     const t = await this.mine(id, userId);
     if (!["todo", "in_progress"].includes(t.status)) {
       throw fail(t.status === "submitted" ? "It's already waiting for approval" : `This task is ${t.status}`, 400);
@@ -295,13 +300,19 @@ export class TaskService {
     const note = (input.note ?? "").trim();
     const openSteps = t.steps.filter((s) => !s.done).length;
     if (openSteps && note.length < 3) throw fail(`${openSteps} step${openSteps === 1 ? " isn't" : "s aren't"} ticked — tick them, or add a note saying why`, 400);
-    if (t.proofRequired && !input.fileKey && !t.submission?.fileKey) throw fail("This task needs a photo or file as proof", 400);
+    const added = input.files ?? [];
+    const before = (t.submission?.files ?? []) as unknown as Array<{ key: string; name: string; at: Date }>;
+    const old = !before.length && t.submission?.fileKey ? [{ key: t.submission.fileKey, name: t.submission.fileName ?? "", at: t.submission.at ?? new Date() }] : [];
+    if (t.proofRequired && !added.length && !before.length && !old.length) throw fail("This task needs a photo or file as proof", 400);
 
     const now = new Date();
+    // Each round's documents are kept: one handed in before a send-back stays, the new ones join it.
+    const files = [...old, ...before, ...added.map((f) => ({ key: f.key, name: f.name, at: now }))];
     t.submission = {
       note,
-      fileKey: input.fileKey ?? t.submission?.fileKey ?? "",
-      fileName: input.fileName ?? t.submission?.fileName ?? "",
+      fileKey: files[0]?.key ?? "",
+      fileName: files[0]?.name ?? "",
+      files,
       at: now,
     } as never;
     t.submittedAt = now;
@@ -309,11 +320,11 @@ export class TaskService {
     const name = await nameOf(userId);
     if (t.needsApproval) {
       t.status = "submitted";
-      log(t, "submitted", userId, name, note);
+      log(t, "submitted", userId, name, note, added.map((f) => f.name));
     } else {
       t.status = "done";
       t.doneAt = now;
-      log(t, "done", userId, name, note);
+      log(t, "done", userId, name, note, added.map((f) => f.name));
     }
     await t.save();
 

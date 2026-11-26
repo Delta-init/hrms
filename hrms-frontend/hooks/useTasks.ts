@@ -113,11 +113,11 @@ export const useToggleTaskStep = () => {
 export const useSubmitTask = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, note, file }: { id: string; note?: string; file?: File | null }) => {
+    mutationFn: async ({ id, note, files }: { id: string; note?: string; files?: File[] }) => {
       const form = new FormData();
       if (note) form.append("note", note);
-      if (file) form.append("file", file);
-      return (await api.post<ApiResponse<Task>>(`/tasks/${id}/submit`, form, { timeout: 60_000 })).data;
+      for (const f of files ?? []) form.append("files", f);
+      return (await api.post<ApiResponse<Task>>(`/tasks/${id}/submit`, form, { timeout: 120_000 })).data;
     },
     onSuccess: (r) => { invalidate(qc); toast.success(r.message ?? "Sent to HR for approval"); },
     onError: (e) => toast.error(errMsg(e, "Couldn't mark it done")),

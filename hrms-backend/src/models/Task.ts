@@ -43,6 +43,8 @@ const historySchema = new Schema(
     /** assigned · edited · started · submitted · approved · sent_back · cancelled · step_done · step_undone */
     action: { type: String, required: true },
     note: { type: String, default: "" },
+    /** The documents handed in with a submission (2026-11-26), by name. */
+    files: { type: [String], default: undefined },
   },
   { _id: false }
 );
@@ -76,6 +78,14 @@ const taskSchema = new Schema(
       note: { type: String, trim: true, maxlength: 2000, default: "" },
       fileKey: { type: String, default: "" },
       fileName: { type: String, default: "" },
+      /**
+       * Every document handed in (2026-11-26: "submit all your credentials" — several at once), each round's kept: a
+       * submission after a send-back adds to these. `fileKey`/`fileName` stay as the first, for older screens.
+       */
+      files: {
+        type: [new Schema({ key: { type: String, required: true }, name: { type: String, default: "" }, at: { type: Date, required: true } }, { _id: false })],
+        default: [],
+      },
       at: { type: Date, default: null },
     },
     startedAt: { type: Date, default: null },

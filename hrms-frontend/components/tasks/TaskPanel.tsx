@@ -29,7 +29,8 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
   const { mutate: cancel, isPending: cancelling } = useCancelTask();
 
   const [note, setNote] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  // Several documents at once (2026-11-26: "submit all your credentials"), up to 10.
+  const [files, setFiles] = useState<File[]>([]);
   const [finishing, setFinishing] = useState(false);
   const [reason, setReason] = useState("");
   const [sendingBack, setSendingBack] = useState(false);
@@ -37,7 +38,7 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setNote(""); setFile(null); setFinishing(false); setReason(""); setSendingBack(false); setConfirmCancel(false); setError(""); }, [taskId]);
+  useEffect(() => { setNote(""); setFiles([]); setFinishing(false); setReason(""); setSendingBack(false); setConfirmCancel(false); setError(""); }, [taskId]);
 
   const mine = !!task && !!user?._id && task.assigneeUser === user._id;
   const canApprove = hasPermission("tasks", "approve") && !mine;
@@ -45,13 +46,23 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
   const working = !!task && mine && (task.status === "todo" || task.status === "in_progress");
   const openSteps = task ? task.steps.filter((s) => !s.done).length : 0;
   const lastReview = task?.reviews?.at(-1);
+  // What has been handed in so far — every round's documents; an older server gives only the one file.
+  const handedIn = task
+    ? task.submission.files ?? (task.submission.fileName ? [{ name: task.submission.fileName, url: task.submission.fileUrl, at: task.submission.at }] : [])
+    : [];
+  const addFiles = (list: FileList | null) => {
+    const picked = Array.from(list ?? []);
+    const all = [...files, ...picked];
+    setFiles(all.slice(0, 10));
+    setError(all.length > 10 ? "At most 10 files at a time — the first 10 are kept." : "");
+  };
 
   const markDone = () => {
     if (!task) return;
     if (openSteps && note.trim().length < 3) { setError(`${openSteps} step${openSteps === 1 ? " isn't" : "s aren't"} ticked. Tick ${openSteps === 1 ? "it" : "them"}, or say why in the note.`); return; }
-    if (task.proofRequired && !file) { setError("Attach a photo or file as proof."); return; }
+    if (task.proofRequired && !files.length && !handedIn.length) { setError("Attach a photo or file as proof."); return; }
     setError("");
-    submit({ id: task._id, note: note.trim() || undefined, file }, { onSuccess: () => { setFinishing(false); setNote(""); setFile(null); } });
+    submit({ id: task._id, note: note.trim() || undefined, files }, { onSuccess: () => { setFinishing(false); setNote(""); setFiles([]); } });
   };
 
   const sendBack = () => {
@@ -129,14 +140,26 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
                 </div>
               )}
 
-              {(task.submission.note || task.submission.fileName) && task.status !== "todo" && (
-                <div className="space-y-1 rounded-xl border border-border p-3 text-sm">
+              {/* What was handed in — always shown once marked done, so an empty submission is plain to see (2026-11-26). */}
+              {task.submission.at && task.status !== "todo" && (
+                <div className="space-y-1.5 rounded-xl border border-border p-3 text-sm">
                   <p className="text-xs font-medium text-muted-foreground">Marked done {when(task.submission.at)}</p>
                   {task.submission.note && <p className="whitespace-pre-wrap">{task.submission.note}</p>}
-                  {task.submission.fileName && (
-                    task.submission.fileUrl
-                      ? <a href={task.submission.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-primary hover:underline"><Paperclip className="h-3.5 w-3.5" />{task.submission.fileName}</a>
-                      : <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Paperclip className="h-3.5 w-3.5" />{task.submission.fileName}</span>
+                  {handedIn.length ? (
+                    <ul className="space-y-1">
+                      <li className="text-xs font-medium text-muted-foreground">Documents ({handedIn.length})</li>
+                      {handedIn.map((f, i) => (
+                        <li key={`${f.url}-${i}`} className="flex items-center gap-1.5">
+                          <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          {f.url
+                            ? <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary hover:underline">{f.name}</a>
+                            : <span className="min-w-0 truncate text-muted-foreground">{f.name}</span>}
+                          {f.at && <span className="ml-auto shrink-0 text-xs text-muted-foreground">{when(f.at)}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400"><Paperclip className="h-3.5 w-3.5" />Nothing attached</p>
                   )}
                 </div>
               )}
@@ -155,15 +178,20 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
                       placeholder={openSteps ? `Why ${openSteps === 1 ? "one step isn't" : `${openSteps} steps aren't`} ticked` : "Anything HR should know"} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Proof {task.proofRequired ? "*" : "(optional)"}</Label>
-                    <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                    {file ? (
-                      <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{file.name}</span>
-                        <button type="button" onClick={() => setFile(null)} aria-label="Remove file" className="rounded p-0.5 hover:bg-muted"><X className="h-3.5 w-3.5" /></button>
+                    <Label>Documents {task.proofRequired && !handedIn.length ? "*" : "(optional)"}</Label>
+                    <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
+                      onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+                    {!!handedIn.length && <p className="text-xs text-muted-foreground">{handedIn.length} handed in before {handedIn.length === 1 ? "stays" : "stay"} — add any more here.</p>}
+                    {files.map((f, i) => (
+                      <div key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{f.name}</span>
+                        <button type="button" onClick={() => setFiles((now) => now.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="rounded p-0.5 hover:bg-muted"><X className="h-3.5 w-3.5" /></button>
                       </div>
-                    ) : (
-                      <Button type="button" variant="outline" className="w-full" onClick={() => fileRef.current?.click()}><Paperclip className="h-4 w-4" />Attach a photo or PDF</Button>
+                    ))}
+                    {files.length < 10 && (
+                      <Button type="button" variant="outline" className="w-full" onClick={() => fileRef.current?.click()}>
+                        <Paperclip className="h-4 w-4" />{files.length ? "Add another file" : "Attach photos or PDFs"}
+                      </Button>
                     )}
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
@@ -223,6 +251,7 @@ export function TaskPanel({ taskId, onOpenChange, onEdit }: { taskId: string | n
                       <li key={i} className="text-xs">
                         <span className="font-medium">{HISTORY_WORDS[h.action] ?? h.action}</span>
                         {h.note ? <span className="text-muted-foreground"> · {h.note}</span> : null}
+                        {h.files?.length ? <span className="block text-muted-foreground"><Paperclip className="mr-1 inline h-3 w-3" />{h.files.join(", ")}</span> : null}
                         <span className="block text-muted-foreground">{[h.byName, when(h.at)].filter(Boolean).join(" · ")}</span>
                       </li>
                     ))}
