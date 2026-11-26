@@ -3,6 +3,7 @@ import { Employee } from "../models/Employee.js";
 import { hasLeftFilter } from "../utils/employeeStatus.js";
 import { User } from "../models/User.js";
 import { Holiday } from "../models/Holiday.js";
+import { LeaveAdjustment } from "../models/LeaveAdjustment.js";
 import type { CreateLeaveInput, UpdateLeaveInput, ReviewLeaveInput, SetLeaveStatusInput } from "../validations/leaveValidation.js";
 import { assertMonthEditable } from "./payrollBatchService.js";
 import type { PaginationQuery, LeaveType } from "../types/index.js";
@@ -85,13 +86,31 @@ async function joiningDateFor(userId: unknown): Promise<Date | null> {
   return emp?.joiningDate ? new Date(emp.joiningDate) : null;
 }
 
+/**
+ * Adjustments that limit what someone can request, for the period `on` falls in (the user, 2026-11-26).
+ *
+ * Opening balances imported from greytHR show on the balance card but have never limited requests, and still
+ * don't on their own — counting them would refuse sick leave to the 35 people whose imported sick balance is
+ * negative. Once HR edits a type for someone (Leave → Balances → Employee balances), HR has set their real figure
+ * from the card, so from then on everything the card counts for that type counts here too, and the two agree.
+ * The same rows as the card: whole-year rows, plus a monthly type's own month.
+ */
+async function hrAdjustmentFor(userId: unknown, type: string, period: string, on: Date): Promise<number> {
+  const rows = await LeaveAdjustment.find(scoped({
+    user: userId, type, year: on.getUTCFullYear(),
+    month: period === "month" ? { $in: [null, on.getUTCMonth() + 1] } : null,
+  })).select("days source").lean();
+  if (!rows.some((r) => /^manual/.test(String(r.source ?? "")))) return 0;
+  return rows.reduce((n, r) => n + (r.days ?? 0), 0);
+}
+
 /** What is left of `policy` for the period `startDate` falls in. */
 async function remainingFor(
   policy: EffectivePolicy,
   userId: unknown,
   startDate: Date,
   excludeId: string | null
-): Promise<{ remaining: number; used: number; accrued: number; carried: number }> {
+): Promise<{ remaining: number; used: number; accrued: number; carried: number; adjusted: number }> {
   const joiningDate = await joiningDateFor(userId);
   const accrued = accruedFor(policy, joiningDate, startDate);
   // Pending requests count: two requests that each fit would otherwise both be
@@ -105,7 +124,8 @@ async function remainingFor(
     ? carriedForward(policy, joiningDate, startDate.getUTCFullYear(),
         await usedInPeriod(userId, policy.type, "year", new Date(Date.UTC(startDate.getUTCFullYear() - 1, 0, 1))))
     : await carriedIntoMonth(policy, userId, joiningDate, startDate);
-  return { remaining: Math.round((accrued + carried - used) * 100) / 100, used, accrued, carried };
+  const adjusted = await hrAdjustmentFor(userId, policy.type, policy.period, startDate);
+  return { remaining: Math.round((accrued + carried + adjusted - used) * 100) / 100, used, accrued, carried, adjusted };
 }
 
 /**
@@ -186,7 +206,7 @@ async function assertLeaveAllowed(
   }
 
   if (UNLIMITED.has(type)) return;
-  const { remaining, used, carried } = await remainingFor(policy, userId, startDate, excludeId);
+  const { remaining, used, carried, adjusted } = await remainingFor(policy, userId, startDate, excludeId);
   if (days > remaining) {
     const per = policy.period === "month" ? "this month" : "this year";
     // Name the carried days too, or "1/month, 2 already booked" reads as a mistake.
@@ -194,7 +214,8 @@ async function assertLeaveAllowed(
     throw Object.assign(
       new Error(
         `Only ${remaining} day${remaining === 1 ? "" : "s"} of ${policy.label} left ${per} ` +
-        `(${policy.days}/${policy.period}${carried > 0 ? ` + ${carried} ${from}` : ""}, ${used} already booked)`
+        `(${policy.days}/${policy.period}${carried > 0 ? ` + ${carried} ${from}` : ""}` +
+        `${adjusted ? ` ${adjusted > 0 ? "+" : "−"} ${Math.abs(adjusted)} changed by HR` : ""}, ${used} already booked)`
       ),
       { statusCode: 400 }
     );
@@ -759,14 +780,16 @@ export async function leaveOptionsFor(userId: string, month?: string) {
           await usedInPeriod(userId, p.type, "year", new Date(Date.UTC(on.getUTCFullYear() - 1, 0, 1))))
       : 0;
     const eligibility = eligibilityFor(p, joiningDate, on);
+    const adjusted = await hrAdjustmentFor(userId, p.type, p.period, on);
     options.push({
       type: p.type,
       label: p.label,
-      days: p.days,
+      // What they have to spend, HR's edits included, so "30 left of 30" can't read "30 left of 14".
+      days: Math.round((p.days + adjusted) * 100) / 100,
       period: p.period,
       paid: p.paid,
       used,
-      remaining: Math.max(0, Math.round((accrued + carried - used) * 100) / 100),
+      remaining: Math.max(0, Math.round((accrued + carried + adjusted - used) * 100) / 100),
       eligible: eligibility.eligible,
       eligibleOn: eligibility.eligibleOn ? eligibility.eligibleOn.toISOString() : null,
       eligibleAfterMonths: p.eligibleAfterMonths,
