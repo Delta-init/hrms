@@ -8,6 +8,8 @@ import { todayInTz } from "../utils/schedule.js";
 import { weekdayOf } from "../utils/taskRepeat.js";
 import { schedule, toHHMM, toMin } from "../utils/dayPlan.js";
 import { notify } from "./notificationService.js";
+import { emailDayPlanCreated } from "./taskEmail.js";
+import { User } from "../models/User.js";
 import type { DayPlanInput, AddDayItemInput } from "../validations/dayPlanValidation.js";
 
 /*
@@ -106,6 +108,7 @@ export async function createPlan(input: DayPlanInput, actorId: string) {
   if (emp.user) {
     await notify({ users: [emp.user], kind: "reminder", title: `Your day plan: ${input.name}`, body: "Open Tasks to see your day by the clock", href: "/tasks", actor: actorId });
   }
+  await sendDayPlanEmail(plan, input.employee, actorId);
   return getPlan(String(plan._id));
 }
 
@@ -232,4 +235,22 @@ export async function roundDone(dayId: string, due: string, userId: string) {
   if (!shaped.rounds.some((r) => r.due === due)) throw fail("No round is due at that time", 400);
   if (!d.rounds.some((r) => r.due === due)) d.rounds.push({ due, doneAt: new Date() } as never);
   return done(d, "round", due);
+}
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const daysText = (w: number[]) => (w.length === 7 ? "Every day" : w.length === 6 && !w.includes(6) ? "Monday to Saturday" : w.length === 5 && w.every((d) => d < 5) ? "Monday to Friday" : [...w].sort().map((d) => DAY_NAMES[d]).join(", "));
+
+/** The plan's timeline by email (2026-11-26). Exported so a plan made before this existed can be sent once. */
+export async function sendDayPlanEmail(plan: { name: string; weekdays: number[]; startAt: string; roundEveryMins: number; items: Array<{ title: string; mins: number; steps?: string[]; fixedAt?: string | null; kind: string }>; user?: unknown; organization?: unknown }, employee: unknown, actorId: string | null) {
+  const slots = schedule(plan.startAt, plan.items);
+  const actor = actorId ? await User.findById(actorId).select("name").lean<{ name?: string } | null>() : null;
+  emailDayPlanCreated(
+    { user: plan.user, employee },
+    {
+      name: plan.name, daysText: daysText(plan.weekdays), rounds: plan.roundEveryMins,
+      items: plan.items.map((it, i) => ({ start: toHHMM(slots[i].start), title: it.title, mins: it.mins, checks: (it.steps ?? []).length, kind: it.kind })),
+    },
+    actor?.name && actor.name !== "Super Admin" ? actor.name : "HR",
+    plan.organization ?? getOrgId(),
+  );
 }

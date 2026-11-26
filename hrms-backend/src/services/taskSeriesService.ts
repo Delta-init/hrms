@@ -8,6 +8,7 @@ import { LEFT_STATUSES } from "../utils/employeeStatus.js";
 import { todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { datesToMake, upcoming, finished, describe, addDays, type RepeatRule } from "../utils/taskRepeat.js";
 import { notify } from "./notificationService.js";
+import { emailSeriesCreated } from "./taskEmail.js";
 import { resolvePeople, nameOf, taskFail as fail } from "./taskService.js";
 import type { CreateTaskInput, UpdateSeriesInput } from "../validations/taskValidation.js";
 
@@ -76,6 +77,16 @@ export async function createSeries(input: CreateTaskInput, actorId: string) {
     href: "/tasks",
     actor: actorId,
   });
+  await emailSeriesCreated(
+    [...people.values()].map((e) => ({ user: e.user, employee: e._id })),
+    {
+      title: input.title, details: input.details, category: input.category, priority: input.priority, steps: input.steps,
+      needsApproval: input.needsApproval, proofRequired: input.proofRequired, repeatText: describe(r as never), dueTime: series.dueTime,
+      next: upcoming(ruleOf(series), startDate, 0, 3),
+      endsText: r.ends.kind === "count" ? `After ${r.ends.count} times` : r.ends.kind === "date" && r.ends.date ? `On ${r.ends.date}` : "No end date",
+    },
+    byName, getOrgId(),
+  );
   const made = await makeDue(series, new Date());
   return { batch: null as string | null, created: made, series: String(series._id) };
 }

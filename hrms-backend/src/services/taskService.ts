@@ -9,6 +9,7 @@ import { searchRegex } from "../utils/query.js";
 import { stillHere } from "../utils/employeeStatus.js";
 import { todayInTz, zonedTimeToUtc } from "../utils/schedule.js";
 import { notify } from "./notificationService.js";
+import { emailTaskAssigned, emailSentBack } from "./taskEmail.js";
 import { watchersFor } from "./watchers.js";
 import { publicUrl } from "./uploadService.js";
 import type { CreateTaskInput, UpdateTaskInput, ListTaskQuery, CategoryInput } from "../validations/taskValidation.js";
@@ -150,6 +151,12 @@ export class TaskService {
       href: "/tasks",
       actor: actorId,
     });
+    // The task itself by email, in the background (2026-11-26).
+    await emailTaskAssigned(
+      [...people.values()].map((e) => ({ user: e.user, employee: e._id })),
+      { title: input.title, details: input.details, category: input.category, priority: input.priority, steps: input.steps, needsApproval: input.needsApproval, proofRequired: input.proofRequired, dueAt: input.dueAt },
+      byName, getOrgId(),
+    );
     return { batch, created: created.length, series: null as string | null };
   }
 
@@ -351,6 +358,8 @@ export class TaskService {
         actor: actorId,
       });
     }
+    // Sent back: the reason by email too, since they have to act on it.
+    if (!approve) emailSentBack({ user: t.assigneeUser, employee: t.assignee }, t.title, note ?? "", byName, t.organization);
     return this.get(id, { userId: actorId, canView: true });
   }
 }
