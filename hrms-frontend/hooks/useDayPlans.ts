@@ -18,6 +18,8 @@ export const usePlanDay = (id?: string | null, date?: string) =>
     queryKey: [...KEY, "day", id, date ?? "today"],
     queryFn: async () => (await api.get<ApiResponse<{ date: string; day: DayPlanDayView | null }>>(`/tasks/day-plans/${id}/day`, { params: date ? { date } : {} })).data.data!,
     enabled: !!id,
+    // HR watches it live: ticks show up within the minute.
+    refetchInterval: 60_000,
   });
 
 export interface RoutineInput {
@@ -36,7 +38,8 @@ export const useSaveDayPlan = () => {
 };
 
 export const useMyDay = (enabled = true) =>
-  useQuery({ queryKey: [...MINE], queryFn: async () => (await api.get<ApiResponse<DayPlanDayView[]>>("/tasks/my-day")).data.data ?? [], enabled, staleTime: 30_000 });
+  // Refreshed each minute, so a change HR makes reaches him without a reload.
+  useQuery({ queryKey: [...MINE], queryFn: async () => (await api.get<ApiResponse<DayPlanDayView[]>>("/tasks/my-day")).data.data ?? [], enabled, staleTime: 30_000, refetchInterval: 60_000 });
 
 /**
  * Every change to his day goes through here: the server answers with the whole day re-timed, which replaces the
@@ -53,5 +56,24 @@ export const useDayAction = () => {
       if (v.message) toast.success(v.message);
     },
     onError: (e) => { toast.error(errMsg(e, "Couldn't save that")); qc.invalidateQueries({ queryKey: [...MINE] }); },
+  });
+};
+
+/** Whether this person is in the HR department (or the Super Admin) — who sees everyone's day plans (2026-11-26). */
+export const useDayPlanAccess = () =>
+  useQuery({
+    queryKey: [...KEY, "access"],
+    queryFn: async () => (await api.get<ApiResponse<{ allowed: boolean }>>("/tasks/day-plans/access")).data.data?.allowed ?? false,
+    staleTime: 10 * 60_000,
+  });
+
+/** The HR department changing someone's today: add, move, resize, remove. The answer is the re-timed day. */
+export const useHrDayAction = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ method, url, body }: { method: "patch" | "post" | "put" | "delete"; url: string; body?: unknown; message?: string }) =>
+      (await api.request<ApiResponse<DayPlanDayView>>({ method, url: `/tasks/day-plans/day/${url}`, data: body })).data.data!,
+    onSuccess: (_day, v) => { qc.invalidateQueries({ queryKey: KEY }); if (v.message) toast.success(v.message); },
+    onError: (e) => { toast.error(errMsg(e, "Couldn't change the plan")); qc.invalidateQueries({ queryKey: KEY }); },
   });
 };

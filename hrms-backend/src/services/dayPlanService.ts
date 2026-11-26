@@ -151,9 +151,13 @@ export async function myDays(userId: string) {
   return out;
 }
 
-async function myDay(dayId: string, userId: string) {
+/**
+ * The day, for whoever may change it: its owner — or the HR department, which can add, move, resize and remove
+ * (never tick) on someone's today (2026-11-26). Either way, only today.
+ */
+async function myDay(dayId: string, userId: string, asHr = false) {
   const d = await DayPlanDay.findOne(scoped({ _id: dayId }));
-  if (!d || String(d.user) !== userId) throw fail("Day plan not found", 404);
+  if (!d || (!asHr && String(d.user) !== userId)) throw fail("Day plan not found", 404);
   if (d.date !== (await today())) throw fail("That day is over, so it can't be changed", 400);
   return d;
 }
@@ -162,9 +166,11 @@ const itemOf = (d: DayDoc, itemId: string) => {
   if (!it) throw fail("Task not found on today's plan", 404);
   return it;
 };
-const done = async (d: DayDoc, action: string, note = "") => {
-  d.history.push({ at: new Date(), action, note } as never);
+const done = async (d: DayDoc, action: string, note = "", hr?: { userId: string; tell: string }) => {
+  d.history.push({ at: new Date(), action: hr ? `hr_${action}` : action, note } as never);
   await d.save();
+  // HR changed his day: he hears about it at once.
+  if (hr && d.user) await notify({ users: [d.user], kind: "reminder", title: hr.tell, body: "Open Tasks to see today's plan", href: "/tasks", actor: hr.userId });
   return shapeDay(d.toObject() as Record<string, unknown>);
 };
 
@@ -194,39 +200,41 @@ export async function tickStep(dayId: string, itemId: string, stepId: string, is
   return done(d, isDone ? "step_done" : "step_undone", `${it.title}: ${s.title}`);
 }
 
-export async function addItem(dayId: string, input: AddDayItemInput, userId: string) {
-  const d = await myDay(dayId, userId);
+export async function addItem(dayId: string, input: AddDayItemInput, userId: string, asHr = false) {
+  const d = await myDay(dayId, userId, asHr);
   const at = input.afterId ? d.items.findIndex((i) => String(i._id) === input.afterId) + 1 : d.items.length;
   if (input.afterId && at === 0) throw fail("Task not found on today's plan", 404);
-  d.items.splice(at, 0, { title: input.title, mins: input.mins, steps: (input.steps ?? []).map((title) => ({ title })), addedByHim: true, kind: "task" } as never);
-  return done(d, "added", input.title);
+  d.items.splice(at, 0, { title: input.title, mins: input.mins, steps: (input.steps ?? []).map((title) => ({ title })), addedByHim: !asHr, addedByHr: asHr, kind: "task" } as never);
+  const start = shapeDay(d.toObject() as Record<string, unknown>).items[at]?.start;
+  return done(d, "added", input.title, asHr ? { userId, tell: `HR added "${input.title}" at ${start ?? ""} today` } : undefined);
 }
 
 /** New order of the same tasks. A fixed-time task can't move. */
-export async function reorder(dayId: string, ids: string[], userId: string) {
-  const d = await myDay(dayId, userId);
+export async function reorder(dayId: string, ids: string[], userId: string, asHr = false) {
+  const d = await myDay(dayId, userId, asHr);
   const now = d.items.map((i) => String(i._id));
   if (ids.length !== now.length || new Set(ids).size !== ids.length || !ids.every((x) => now.includes(x))) throw fail("The list changed — reload and try again", 409);
   d.items.forEach((it, i) => { if (it.fixedAt && ids[i] !== String(it._id)) throw fail(`"${it.title}" has a fixed time and stays where it is`, 400); });
   const byId = new Map(d.items.map((i) => [String(i._id), i.toObject()]));
   d.set("items", ids.map((x) => byId.get(x)));
-  return done(d, "reordered");
+  return done(d, "reordered", "", asHr ? { userId, tell: "HR changed the order of today's plan" } : undefined);
 }
 
-export async function setLength(dayId: string, itemId: string, mins: number, userId: string) {
-  const d = await myDay(dayId, userId);
+export async function setLength(dayId: string, itemId: string, mins: number, userId: string, asHr = false) {
+  const d = await myDay(dayId, userId, asHr);
   const it = itemOf(d, itemId);
   if (it.fixedAt) throw fail("A fixed-time task keeps its length", 400);
   it.mins = mins;
-  return done(d, "length", `${it.title}: ${mins} min`);
+  return done(d, "length", `${it.title}: ${mins} min`, asHr ? { userId, tell: `HR gave "${it.title}" ${mins} min today` } : undefined);
 }
 
-export async function removeItem(dayId: string, itemId: string, userId: string) {
-  const d = await myDay(dayId, userId);
+export async function removeItem(dayId: string, itemId: string, userId: string, asHr = false) {
+  const d = await myDay(dayId, userId, asHr);
   const it = itemOf(d, itemId);
-  if (!it.addedByHim) throw fail("Only tasks you added can be removed", 400);
+  // He can remove what he added; HR can take anything off today except the fixed times (open up, lunch, close).
+  if (asHr ? !!it.fixedAt : !it.addedByHim) throw fail(asHr ? "A fixed-time task stays — change it in the routine" : "Only tasks you added can be removed", 400);
   d.items.pull(it._id);
-  return done(d, "removed", it.title);
+  return done(d, "removed", it.title, asHr ? { userId, tell: `HR took "${it.title}" off today's plan` } : undefined);
 }
 
 export async function roundDone(dayId: string, due: string, userId: string) {
@@ -253,4 +261,15 @@ export async function sendDayPlanEmail(plan: { name: string; weekdays: number[];
     actor?.name && actor.name !== "Super Admin" ? actor.name : "HR",
     plan.organization ?? getOrgId(),
   );
+}
+
+/**
+ * Who may see and change everyone's day plans: the HR department (a department named "HR…" or "Human Resources…")
+ * and the Super Admin — the user, 2026-11-26: "HR department only".
+ */
+export async function inHrDepartment(userId: string, isSuperAdmin: boolean) {
+  if (isSuperAdmin) return true;
+  const e = await Employee.findOne(scoped({ user: userId, status: { $nin: [...LEFT_STATUSES] } }))
+    .populate({ path: "department", select: "name" }).select("department").lean<{ department?: { name?: string } | null } | null>();
+  return /^\s*(hr\b|human\s+resources?)/i.test(String(e?.department?.name ?? ""));
 }

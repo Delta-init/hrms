@@ -41,3 +41,21 @@ export const reorderDay = handle(reorderSchema, "body", "Moved", (req, d) => svc
 export const setDayItemLength = handle(lengthSchema, "body", "Saved", (req, d) => svc.setLength(req.params.dayId, req.params.itemId, d.mins, me(req)));
 export const removeDayItem = handle(null, "body", "Removed", (req) => svc.removeItem(req.params.dayId, req.params.itemId, me(req)));
 export const dayRoundDone = handle(roundSchema, "body", "Round recorded", (req, d) => svc.roundDone(req.params.dayId, d.due, me(req)));
+
+// ── The HR department (2026-11-26): access, and changes to someone's today ───
+
+const isSuperAdmin = (req: AuthenticatedRequest) => !!req.user?.role?.isSystemRole && req.user.role.roleName === "Super Admin";
+
+/** Day plans are the HR department's (and the Super Admin's) — "HR department only". */
+export const requireHrDepartment: Handler = async (req, res, next) => {
+  try {
+    if (await svc.inHrDepartment(req.user!.userId, isSuperAdmin(req))) { next(); return; }
+    sendError(res, "Day plans are for the HR department", 403);
+  } catch (e) { next(e); }
+};
+
+export const dayPlanAccess = handle(null, "body", "Day plan access", async (req) => ({ allowed: await svc.inHrDepartment(req.user!.userId, isSuperAdmin(req)) }));
+export const hrAddDayItem = handle(addDayItemSchema, "body", "Added", (req, d) => svc.addItem(req.params.dayId, d, me(req), true), 201);
+export const hrReorderDay = handle(reorderSchema, "body", "Moved", (req, d) => svc.reorder(req.params.dayId, d.ids, me(req), true));
+export const hrSetDayItemLength = handle(lengthSchema, "body", "Saved", (req, d) => svc.setLength(req.params.dayId, req.params.itemId, d.mins, me(req), true));
+export const hrRemoveDayItem = handle(null, "body", "Removed", (req) => svc.removeItem(req.params.dayId, req.params.itemId, me(req), true));

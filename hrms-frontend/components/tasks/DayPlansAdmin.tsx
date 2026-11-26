@@ -16,7 +16,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDayPlans, useSaveDayPlan, usePlanDay } from "@/hooks/useDayPlans";
 import { schedule, toHHMM, toMin } from "@/lib/dayPlan";
 import { OFFICE_BOY_ROUTINE } from "@/lib/dayPlanPresets";
-import { clock } from "./MyDayPlan";
+import { clock, MyDayPlan } from "./MyDayPlan";
 import type { DayPlanRoutine, DayPlanRoutineItem } from "@/types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -87,6 +87,11 @@ function DayView({ planId, name }: { planId: string; name: string }) {
   const at = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true }) : "");
   const late = (doneAt: string | null | undefined, end: string) => { if (!doneAt) return false; const d = new Date(doneAt); return d.getHours() * 60 + d.getMinutes() > toMin(end) + 10; };
   const work = day?.items.filter((i) => i.kind !== "break") ?? [];
+  const todayKey = new Date().toLocaleDateString("en-CA");
+  const live = !!day && day.date === todayKey;
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const current = day?.items.find((i) => !i.done && i.kind !== "break") ?? null;
+  const behind = current ? nowMin - toMin(current.end) : 0;
 
   return (
     <Card className="overflow-hidden">
@@ -96,7 +101,28 @@ function DayView({ planId, name }: { planId: string; name: string }) {
       </div>
       {isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         : !day ? <p className="p-8 text-center text-sm text-muted-foreground">Nothing for this day. Either it isn&apos;t a working day on this plan, or the plan wasn&apos;t opened.</p>
-        : (
+        : live ? (
+          // Today, live (2026-11-26): where they are, and the day itself — HR can add, move, resize and remove; only they tick.
+          <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+            <div className="space-y-3">
+              <div className={cn("rounded-xl p-3 text-sm", !current ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : behind > 0 ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-primary/10 text-primary")}>
+                {!current ? <p className="font-semibold">Everything done for today</p> : (
+                  <>
+                    <p className="font-semibold">On {current.title}{behind > 0 ? `, ${behind} min behind` : ", on time"}</p>
+                    <p className="text-xs opacity-90">Should finish by {clock(current.end)} · {current.steps.filter((s) => s.done).length} of {current.steps.length} checks ticked</p>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Stat label="Done" value={`${day.progress.done}/${day.progress.total}`} />
+                <Stat label="Done late" value={work.filter((i) => late(i.doneAt, i.end)).length} tone="warn" />
+                <Stat label="Rounds" value={`${day.rounds.filter((r) => r.doneAt).length}/${day.rounds.filter((r) => toMin(r.due) <= nowMin).length}`} />
+              </div>
+              <p className="text-xs text-muted-foreground">Changes here are for today only, and they get a notice. To change every day, use Edit on the plan card. Refreshes every minute.</p>
+            </div>
+            <MyDayPlan day={day} mode="hr" />
+          </div>
+        ) : (
           <>
             <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
               <Stat label="Done" value={`${day.progress.done} / ${day.progress.total}`} />

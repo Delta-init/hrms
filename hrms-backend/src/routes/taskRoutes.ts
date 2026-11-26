@@ -10,6 +10,7 @@ import { uploadTaskFiles, uploadTaskAttachments } from "../middleware/upload.js"
 import {
   listDayPlans, getDayPlan, createDayPlan, updateDayPlan, dayOfPlan, myDays, tickDayItem, tickDayStep, addDayItem,
   reorderDay, setDayItemLength, removeDayItem, dayRoundDone,
+  requireHrDepartment, dayPlanAccess, hrAddDayItem, hrReorderDay, hrSetDayItemLength, hrRemoveDayItem,
 } from "../controllers/dayPlanController.js";
 
 /*
@@ -32,11 +33,18 @@ router.put("/series/:id", checkPermission("tasks", "edit"), updateTaskSeries);
 router.patch("/series/:id/state", checkPermission("tasks", "edit"), setTaskSeriesState);
 
 // Day plans (2026-11-26): HR's routines, and each person's own day.
-router.get("/day-plans", checkPermission("tasks", "view"), listDayPlans);
-router.post("/day-plans", checkPermission("tasks", "create"), createDayPlan);
-router.get("/day-plans/:id", checkPermission("tasks", "view"), getDayPlan);
-router.put("/day-plans/:id", checkPermission("tasks", "edit"), updateDayPlan);
-router.get("/day-plans/:id/day", checkPermission("tasks", "view"), dayOfPlan);
+// The HR department's — not a permission (the user, 2026-11-26: "HR department only").
+router.get("/day-plans/access", dayPlanAccess);
+router.get("/day-plans", requireHrDepartment, listDayPlans);
+router.post("/day-plans", requireHrDepartment, createDayPlan);
+router.get("/day-plans/:id", requireHrDepartment, getDayPlan);
+router.put("/day-plans/:id", requireHrDepartment, updateDayPlan);
+router.get("/day-plans/:id/day", requireHrDepartment, dayOfPlan);
+// HR changing someone's today: add, move, resize, remove — not tick.
+router.post("/day-plans/day/:dayId/items", requireHrDepartment, hrAddDayItem);
+router.put("/day-plans/day/:dayId/order", requireHrDepartment, hrReorderDay);
+router.patch("/day-plans/day/:dayId/items/:itemId/length", requireHrDepartment, hrSetDayItemLength);
+router.delete("/day-plans/day/:dayId/items/:itemId", requireHrDepartment, hrRemoveDayItem);
 router.get("/my-day", myDays);
 router.patch("/my-day/:dayId/items/:itemId", tickDayItem);
 router.patch("/my-day/:dayId/items/:itemId/steps/:stepId", tickDayStep);

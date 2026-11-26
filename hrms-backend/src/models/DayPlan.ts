@@ -52,6 +52,8 @@ const dayItem = new Schema(
     /** Its start in the routine as HR set it — "HH:MM"; null for one he added. */
     plannedAt: { type: String, default: null },
     addedByHim: { type: Boolean, default: false },
+    /** Added to today by the HR department (2026-11-26). */
+    addedByHr: { type: Boolean, default: false },
     done: { type: Boolean, default: false },
     doneAt: { type: Date, default: null },
   },

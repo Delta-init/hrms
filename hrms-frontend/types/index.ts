@@ -3892,7 +3892,7 @@ export interface DayPlanRoutine {
 export interface DayPlanStep { _id: string; title: string; done: boolean; doneAt?: string | null }
 export interface DayPlanItem {
   _id: string; title: string; mins: number; steps: DayPlanStep[]; fixedAt?: string | null; kind: "task" | "break";
-  plannedAt?: string | null; addedByHim?: boolean; done: boolean; doneAt?: string | null;
+  plannedAt?: string | null; addedByHim?: boolean; addedByHr?: boolean; done: boolean; doneAt?: string | null;
   start: string; end: string; free: number; over: number;
 }
 export interface DayPlanDayView {

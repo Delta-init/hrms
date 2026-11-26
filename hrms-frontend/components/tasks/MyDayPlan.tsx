@@ -1,19 +1,21 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Clock, GripVertical, Loader2, Lock, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Clock, Loader2, Lock, Plus } from "lucide-react";
 import {
   ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogHeader, ResponsiveDialogTitle, ResponsiveDialogFooter, ResponsiveDialogDescription,
 } from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toMin } from "@/lib/dayPlan";
-import { useDayAction } from "@/hooks/useDayPlans";
+import { useDayAction, useHrDayAction } from "@/hooks/useDayPlans";
 import type { DayPlanDayView, DayPlanItem } from "@/types";
 
 /** "13:05" → "1:05 pm". */
 export const clock = (hhmm: string) => { const m = toMin(hhmm); const h = Math.floor(m / 60); return `${h % 12 || 12}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`; };
+const short = (hhmm: string) => clock(hhmm).replace(/ (am|pm)$/, "");
 const at = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true }) : "");
 const nowHHMM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
@@ -21,15 +23,22 @@ const DURS = [10, 15, 20, 30, 45, 60];
 const QUICK: Array<[string, number]> = [["Clean meeting room after a meeting", 15], ["Urgent cleaning", 15], ["Restock tissues", 10], ["Tea for guests", 10]];
 
 /**
- * His day by the clock (2026-11-26). Tasks follow one another; adding one moves everything after it later, up to
- * the next fixed time. Every area and every checklist item inside it has a tick. Changes are for today only.
+ * A day by the clock (2026-11-26, version 2: built for a phone). What's being done now sits at the top with big
+ * ticks; what's done folds away; the rest is a compact list. One Add button asks where; Edit shows the move and
+ * length controls. Adding moves everything after it later, up to the next fixed time.
+ *
+ * `mode="hr"` is the HR department's live view of someone's today: the same day, with add / move / resize / remove,
+ * but no ticks — only the person ticks, so a done time is always theirs.
  */
-export function MyDayPlan({ day }: { day: DayPlanDayView }) {
-  const { mutate, isPending, variables } = useDayAction();
+export function MyDayPlan({ day, mode = "mine" }: { day: DayPlanDayView; mode?: "mine" | "hr" }) {
+  const hr = mode === "hr";
+  const mine = useDayAction();
+  const theirs = useHrDayAction();
+  const { mutate, isPending, variables } = hr ? theirs : mine;
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ after: string | null } | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(hr);
+  const [showDone, setShowDone] = useState(false);
   const [now, setNow] = useState(nowHHMM());
   useEffect(() => { const t = setInterval(() => setNow(nowHHMM()), 30_000); return () => clearInterval(t); }, []);
 
@@ -44,6 +53,7 @@ export function MyDayPlan({ day }: { day: DayPlanDayView }) {
   }, [day.items]);
 
   const act = (method: "patch" | "post" | "put" | "delete", url: string, body?: unknown, message?: string) => mutate({ method, url: `${day._id}/${url}`, body, message });
+  const busy = (url: string) => isPending && variables?.url === `${day._id}/${url}`;
   const reorder = (ids: string[], message: string) => act("put", "order", { ids }, message);
   const move = (i: number, dir: -1 | 1) => {
     const ids = day.items.map((x) => x._id); const j = i + dir;
@@ -52,194 +62,236 @@ export function MyDayPlan({ day }: { day: DayPlanDayView }) {
   };
   const canSwap = (i: number, dir: -1 | 1) => { const j = i + dir; return j >= 0 && j < day.items.length && !day.items[j].fixedAt && !day.items[i].fixedAt; };
 
-  const nextRound = day.rounds.find((r) => !r.doneAt);
-  const roundDue = !!nextRound && toMin(now) >= toMin(nextRound.due) - 10;
+  const current = useMemo(() => day.items.find((i) => !i.done && i.kind !== "break") ?? null, [day.items]);
+  const doneItems = day.items.filter((i) => i.done);
+  const later = day.items.filter((i) => !i.done && i._id !== current?._id);
   const last = day.items[day.items.length - 1];
-  const nowIndex = useMemo(() => day.items.findIndex((it) => toMin(it.start) > toMin(now)), [day.items, now]);
-  const busy = (url: string) => isPending && variables?.url === `${day._id}/${url}`;
+  const behind = current ? toMin(now) - toMin(current.end) : 0;
+  const nextRound = day.rounds.find((r) => !r.doneAt);
+  const roundDue = !hr && !!nextRound && toMin(now) >= toMin(nextRound.due) - 10;
+  const pct = day.progress.total ? Math.round((day.progress.done / day.progress.total) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-xl space-y-3">
-      <div className="space-y-2 rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <div className="mx-auto w-full max-w-xl">
+      {/* Stays in view while scrolling: progress, finish time, the next round, Edit. */}
+      <div className="sticky top-0 z-10 -mx-1 space-y-2 border-b border-border bg-background/95 px-1 pb-2.5 pt-1 backdrop-blur">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold">{day.planName ?? "Today"}</h2>
-          <span className={cn("text-xs", last?.over ? "font-medium text-red-600 dark:text-red-400" : "text-muted-foreground")}>
-            {last?.over ? `Runs ${last.over} min past ${clock(last.fixedAt ?? last.start)}` : `Finishes ${clock(day.endsAt)}`}
+          <h2 className="truncate text-base font-semibold">{hr ? "Today" : day.planName ?? "Today"}</h2>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {day.progress.done} of {day.progress.total} done ·{" "}
+            {last?.over ? <span className="font-medium text-red-600 dark:text-red-400">runs {last.over} min late</span> : <>ends {clock(day.endsAt)}</>}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${day.progress.total ? Math.round(day.progress.done / day.progress.total * 100) : 0}%` }} /></div>
-          <span className="text-sm tabular-nums text-muted-foreground">{day.progress.done} of {day.progress.total}</span>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500 transition-[width]" style={{ width: `${pct}%` }} /></div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-primary">
+            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{nextRound ? (roundDue ? "Office round due now" : `Round at ${clock(nextRound.due)}`) : day.rounds.length ? "All rounds done" : "No rounds"}</span>
+          </span>
+          {!hr && nextRound && (
+            <Button size="sm" className="h-8 rounded-full px-3" disabled={!roundDue || busy("rounds")} onClick={() => act("post", "rounds", { due: nextRound.due }, `Round at ${clock(nextRound.due)} recorded`)}>Round done</Button>
+          )}
+          <Button size="sm" variant={editing ? "default" : "outline"} className="h-8 rounded-full px-3" onClick={() => setEditing((e) => !e)}>{editing ? "Done editing" : "Edit"}</Button>
         </div>
-        {nextRound && (
-          <div className="flex items-center justify-between gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm text-primary">
-            <span className="flex items-center gap-1.5"><Clock className="h-4 w-4" />Office round {roundDue ? "due now" : `at ${clock(nextRound.due)}`}</span>
-            <Button size="sm" disabled={!roundDue || busy("rounds")} onClick={() => act("post", "rounds", { due: nextRound.due }, `Round at ${clock(nextRound.due)} recorded`)}>Round done</Button>
+      </div>
+
+      <div className="space-y-3 pb-20 pt-3 md:pb-4">
+        {doneItems.length > 0 && (
+          <div>
+            <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone}
+              className="flex w-full items-center justify-between rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-emerald-500" />{doneItems.length} done</span>
+              <span className="flex items-center gap-0.5 text-xs">{showDone ? "Hide" : "Show"}{showDone ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</span>
+            </button>
+            {showDone && <List items={doneItems} />}
           </div>
         )}
-      </div>
 
-      <ol className="space-y-0">
-        {day.items.map((it, i) => (
-          <li key={it._id}>
-            {it.free > 0 && <Gap>{it.free} min free</Gap>}
-            {it.over > 0 && <Gap bad>Running {it.over} min into {it.kind === "break" ? "lunch" : it.title}</Gap>}
-            {nowIndex === i && <NowLine />}
-            <div
-              className={cn("relative grid grid-cols-[58px_1fr] gap-2", overId === it._id && dragId !== it._id && "before:absolute before:left-[66px] before:right-0 before:top-0 before:h-0.5 before:rounded before:bg-primary")}
-              draggable={!it.fixedAt}
-              onDragStart={(e) => { setDragId(it._id); e.dataTransfer.effectAllowed = "move"; }}
-              onDragEnd={() => { setDragId(null); setOverId(null); }}
-              onDragOver={(e) => { if (dragId && !it.fixedAt) { e.preventDefault(); setOverId(it._id); } }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (!dragId || dragId === it._id) return;
-                const ids = day.items.map((x) => x._id).filter((x) => x !== dragId);
-                ids.splice(ids.indexOf(it._id), 0, dragId);
-                reorder(ids, "Moved");
-                setDragId(null); setOverId(null);
-              }}
-            >
-              <div className="pt-3 text-right">
-                <p className="text-sm font-semibold tabular-nums">{clock(it.start).replace(/ (am|pm)/, "")}</p>
-                <p className="text-[10.5px] text-muted-foreground">{clock(it.start).slice(-2)}</p>
-                {moved[it._id] && <p className="text-[10.5px] leading-tight text-amber-600 dark:text-amber-400">was {clock(moved[it._id]).replace(/ (am|pm)/, "")}</p>}
-              </div>
-              <Card item={it} index={i} open={open === it._id} moved={!!moved[it._id]} dragging={dragId === it._id}
-                onToggle={() => setOpen(open === it._id ? null : it._id)}
-                onTick={(d) => act("patch", `items/${it._id}`, { done: d })}
-                onStep={(stepId, d) => act("patch", `items/${it._id}/steps/${stepId}`, { done: d })}
-                onMove={(dir) => move(i, dir)} canUp={canSwap(i, -1)} canDown={canSwap(i, 1)}
-                onLength={(m) => act("patch", `items/${it._id}/length`, { mins: m }, `"${it.title}" is now ${m} min`)}
-                onRemove={() => act("delete", `items/${it._id}`, undefined, `Removed "${it.title}"`)}
-                busyTick={busy(`items/${it._id}`)} />
+        {/* What's being done now: big ticks, a button to finish it. */}
+        {current && (
+          <div className="rounded-2xl border-2 border-primary bg-card p-3.5 shadow-sm">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-primary">
+              Now
+              <span className="ml-auto font-medium normal-case tracking-normal text-muted-foreground tabular-nums">
+                {short(current.start)}–{clock(current.end)} · {current.mins} min
+                {behind > 0 && <span className="font-semibold text-red-600 dark:text-red-400"> · {behind} min behind</span>}
+              </span>
             </div>
-            {i < day.items.length - 1 && (
-              <div className="grid grid-cols-[58px_1fr] gap-2">
-                <button type="button" onClick={() => setAdding({ after: it._id })}
-                  className="col-start-2 h-6 rounded-lg border border-dashed border-transparent px-2 text-left text-[11.5px] text-muted-foreground hover:border-primary hover:text-primary focus-visible:border-primary">
-                  + add here
-                </button>
-              </div>
+            <h3 className="mt-1 text-lg font-semibold leading-snug">{current.title}</h3>
+            {(current.addedByHim || current.addedByHr) && <p className="text-xs text-primary">{current.addedByHr ? "Added by HR" : hr ? "Added by them" : "Added by you"}</p>}
+            {current.steps.length > 0 && <Checks item={current} canTick={!hr} onStep={(id, d) => act("patch", `items/${current._id}/steps/${id}`, { done: d })} />}
+            {!hr ? (
+              <Button className="mt-2 h-11 w-full text-[15px]" disabled={busy(`items/${current._id}`)} onClick={() => act("patch", `items/${current._id}`, { done: true }, `${current.title} done`)}>
+                {busy(`items/${current._id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {current.steps.length && current.steps.some((s) => !s.done) ? `Mark all done (${current.steps.filter((s) => s.done).length}/${current.steps.length})` : "Done"}
+              </Button>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">{current.steps.filter((s) => s.done).length} of {current.steps.length} checks ticked. Only they can tick.</p>
             )}
-          </li>
-        ))}
-      </ol>
-      <Button className="w-full" onClick={() => setAdding({ after: day.items.length > 1 ? day.items[day.items.length - 2]._id : null })}><Plus className="h-4 w-4" />Add a task</Button>
-      <p className="text-center text-xs text-muted-foreground">Your changes are for today. Tomorrow starts from HR&apos;s plan again.</p>
-
-      <AddSheet day={day} after={adding?.after ?? null} open={!!adding} onOpenChange={(o) => !o && setAdding(null)}
-        onAdd={(title, mins) => act("post", "items", { title, mins, afterId: adding?.after ?? null }, `Added "${title}"`)} />
-    </div>
-  );
-}
-
-function Gap({ children, bad }: { children: React.ReactNode; bad?: boolean }) {
-  return <div className="grid grid-cols-[58px_1fr] gap-2"><p className={cn("col-start-2 ml-2 border-l-2 border-dotted py-0.5 pl-3 text-[11.5px]", bad ? "border-red-400 text-red-600 dark:text-red-400" : "border-border text-muted-foreground")}>{children}</p></div>;
-}
-function NowLine() {
-  return <div className="grid grid-cols-[58px_1fr] items-center gap-2 py-1"><span className="text-right text-[10.5px] font-bold text-red-600">NOW</span><span className="relative h-0.5 rounded bg-red-500 before:absolute before:-left-1 before:-top-[3px] before:h-2 before:w-2 before:rounded-full before:bg-red-500" /></div>;
-}
-
-function Card({ item: it, open, moved, dragging, onToggle, onTick, onStep, onMove, canUp, canDown, onLength, onRemove, busyTick }: {
-  item: DayPlanItem; index: number; open: boolean; moved: boolean; dragging: boolean; onToggle: () => void; onTick: (d: boolean) => void;
-  onStep: (stepId: string, d: boolean) => void; onMove: (dir: -1 | 1) => void; canUp: boolean; canDown: boolean;
-  onLength: (m: number) => void; onRemove: () => void; busyTick: boolean;
-}) {
-  const brk = it.kind === "break";
-  const stepsDone = it.steps.filter((s) => s.done).length;
-  const late = it.done && it.doneAt && it.plannedAt ? (() => { const d = new Date(it.doneAt); return d.getHours() * 60 + d.getMinutes() > toMin(it.end) + 10; })() : false;
-  return (
-    <div className={cn("my-1 rounded-2xl border bg-card p-3 transition-colors",
-      it.fixedAt ? "border-dashed bg-muted/40" : "border-border", it.addedByHim && "border-primary/40",
-      moved && "bg-amber-100 dark:bg-amber-900/30", dragging && "opacity-40")}>
-      <div className="flex items-center gap-2.5">
-        {!brk && (
-          <button type="button" aria-pressed={it.done} aria-label={`Mark ${it.title} ${it.done ? "not done" : "done"}`} disabled={busyTick} onClick={() => onTick(!it.done)}
-            className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition-colors", it.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/40 hover:border-emerald-500")}>
-            {busyTick ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : it.done ? <Check className="h-3.5 w-3.5" /> : null}
-          </button>
+            {editing && <div className="mt-2"><RowTools item={current} index={day.items.indexOf(current)} hr={hr} canSwap={canSwap} move={move} act={act} onAdd={() => setAdding({ after: current._id })} /></div>}
+          </div>
         )}
-        <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className={cn("min-w-0 flex-1 font-medium leading-snug", it.done && "text-muted-foreground line-through")}>{it.title}</span>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{it.mins} min</span>
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
-        </button>
-        {!it.fixedAt && <GripVertical className="hidden h-4 w-4 shrink-0 cursor-grab text-muted-foreground sm:block" aria-hidden />}
+
+        {later.length > 0 && (
+          <div>
+            <p className="mb-1.5 flex justify-between px-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span>Later today</span><span className="tabular-nums">{later.filter((i) => i.kind !== "break").length}</span>
+            </p>
+            <List items={later} />
+          </div>
+        )}
+
+        {!current && !later.length && <p className="py-6 text-center text-sm text-muted-foreground">Everything&apos;s done for today.</p>}
+        {!hr && <p className="text-center text-xs text-muted-foreground">Changes you make are for today. Tomorrow starts from HR&apos;s plan.</p>}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-[34px] text-[11px]">
-        {it.fixedAt && <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-muted-foreground"><Lock className="h-2.5 w-2.5" />Fixed time</span>}
-        {it.addedByHim && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">Added by you</span>}
-        {it.steps.length > 0 && <span className="rounded-full bg-muted px-2 py-0.5 tabular-nums text-muted-foreground">{stepsDone}/{it.steps.length} checks</span>}
-        {it.done && it.doneAt && <span className={cn("rounded-full px-2 py-0.5", late ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400")}>Done {at(it.doneAt)}</span>}
-      </div>
-      {open && (
-        <div className="mt-3 space-y-3 border-t border-border pt-3">
-          {it.steps.length > 0 && (
-            <ul className="space-y-1">
-              {it.steps.map((s) => (
-                <li key={s._id}>
-                  <button type="button" aria-pressed={s.done} onClick={() => onStep(s._id, !s.done)}
-                    className="flex w-full items-start gap-2.5 rounded-lg px-1.5 py-1.5 text-left text-sm hover:bg-muted/60">
-                    <span className={cn("mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border-2", s.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/40")}>
-                      {s.done && <Check className="h-3 w-3" />}
-                    </span>
-                    <span className={cn("min-w-0 flex-1", s.done && "text-muted-foreground line-through")}>{s.title}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {!it.fixedAt && (
-            <div className="flex flex-wrap gap-1.5">
-              <Button size="sm" variant="outline" disabled={!canUp} onClick={() => onMove(-1)}>↑ Earlier</Button>
-              <Button size="sm" variant="outline" disabled={!canDown} onClick={() => onMove(1)}>↓ Later</Button>
-              <Button size="sm" variant="outline" disabled={it.mins <= 5} onClick={() => onLength(it.mins - 5)}>−5 min</Button>
-              <Button size="sm" variant="outline" onClick={() => onLength(it.mins + 5)}>+5 min</Button>
-              {it.addedByHim && <Button size="sm" variant="ghost" className="text-destructive" onClick={onRemove}>Remove</Button>}
+
+      {/* Where the thumb is on a phone — just above the app's bottom tab bar (10px up, 64px tall, phones only); in the flow on a computer. */}
+      <Button onClick={() => setAdding({ after: current?._id ?? null })}
+        className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+86px)] right-4 z-30 h-12 rounded-full px-5 shadow-lg md:static md:h-10 md:w-full md:rounded-md md:shadow-none">
+        <Plus className="h-4 w-4" />Add task
+      </Button>
+
+      <AddSheet day={day} after={adding?.after ?? null} open={!!adding} hr={hr} onOpenChange={(o) => !o && setAdding(null)}
+        onAdd={(title, mins, afterId) => act("post", "items", { title, mins, afterId }, `Added "${title}"`)} />
+    </div>
+  );
+
+  function List({ items }: { items: DayPlanItem[] }) {
+    return (
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        {items.map((it) => {
+          const i = day.items.indexOf(it);
+          const brk = it.kind === "break";
+          const fixedOnly = !!it.fixedAt && brk;
+          const stepsDone = it.steps.filter((s) => s.done).length;
+          const late = it.done && it.doneAt ? (() => { const d = new Date(it.doneAt); return d.getHours() * 60 + d.getMinutes() > toMin(it.end) + 10; })() : false;
+          return (
+            <div key={it._id} className="border-t border-border first:border-t-0">
+              {it.free > 0 && <p className="border-b border-border px-3 py-1 pl-[68px] text-[11.5px] text-muted-foreground">{it.free} min free</p>}
+              {it.over > 0 && <p className="border-b border-border px-3 py-1 pl-[68px] text-[11.5px] text-red-600 dark:text-red-400">Running {it.over} min into {brk ? "lunch" : it.title.toLowerCase()}</p>}
+              <div className={cn("relative grid grid-cols-[52px_1fr_auto] items-center gap-2 px-3 transition-colors",
+                fixedOnly ? "min-h-[38px] bg-muted/40" : "min-h-[52px] py-1.5", moved[it._id] && "bg-amber-100 dark:bg-amber-900/30",
+                (it.addedByHim || it.addedByHr) && "before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded before:bg-primary")}>
+                <div className="tabular-nums">
+                  <p className={cn("text-[13px] font-semibold", fixedOnly && "text-muted-foreground")}>{short(it.start)}</p>
+                  {moved[it._id] && <p className="text-[10px] leading-tight text-amber-700 dark:text-amber-400">was {short(moved[it._id])}</p>}
+                </div>
+                <button type="button" onClick={() => it.steps.length && setOpen(open === it._id ? null : it._id)} aria-expanded={open === it._id} className="min-w-0 text-left">
+                  <p className={cn("flex items-center gap-1 truncate font-medium", fixedOnly ? "text-[13px] text-muted-foreground" : "text-sm", it.done && "text-muted-foreground line-through")}>
+                    {it.fixedAt && <Lock className="h-3 w-3 shrink-0 opacity-60" />}<span className="truncate">{it.title}</span>
+                  </p>
+                  <p className="truncate text-[11.5px] text-muted-foreground">
+                    {it.mins} min
+                    {it.steps.length > 0 && ` · ${stepsDone}/${it.steps.length} checks`}
+                    {it.addedByHr ? " · added by HR" : it.addedByHim ? (hr ? " · added by them" : " · added by you") : ""}
+                    {it.done && it.doneAt && <span className={late ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}> · done {at(it.doneAt)}</span>}
+                  </p>
+                </button>
+                {editing && !it.done ? <RowTools item={it} index={i} hr={hr} canSwap={canSwap} move={move} act={act} compact />
+                  : !brk && !hr ? (
+                    <button type="button" aria-pressed={it.done} aria-label={`Mark ${it.title} ${it.done ? "not done" : "done"}`} disabled={busy(`items/${it._id}`)}
+                      onClick={() => act("patch", `items/${it._id}`, { done: !it.done })}
+                      className={cn("flex h-9 w-9 items-center justify-center rounded-xl border-2 transition-colors", it.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/30 hover:border-emerald-500")}>
+                      {busy(`items/${it._id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : it.done ? <Check className="h-4 w-4" /> : null}
+                    </button>
+                  ) : <span />}
+              </div>
+              {open === it._id && it.steps.length > 0 && <div className="px-3 pb-2 pl-[60px]"><Checks item={it} canTick={!hr && !it.done} onStep={(id, d) => act("patch", `items/${it._id}/steps/${id}`, { done: d })} /></div>}
+              {editing && !it.done && i < day.items.length - 1 && (
+                <button type="button" onClick={() => setAdding({ after: it._id })}
+                  className="w-full border-t border-dashed border-border py-1.5 pl-[68px] text-left text-xs font-medium text-primary hover:bg-primary/5">+ add here</button>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          );
+        })}
+      </div>
+    );
+  }
+}
+
+function Checks({ item, canTick, onStep }: { item: DayPlanItem; canTick: boolean; onStep: (stepId: string, done: boolean) => void }) {
+  return (
+    <ul className="mt-2 space-y-0.5">
+      {item.steps.map((s) => (
+        <li key={s._id}>
+          <button type="button" aria-pressed={s.done} disabled={!canTick} onClick={() => onStep(s._id, !s.done)}
+            className="flex min-h-[40px] w-full items-center gap-3 rounded-lg px-1.5 text-left text-sm enabled:hover:bg-muted/60 enabled:active:bg-muted">
+            <span className={cn("flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border-2", s.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/40")}>
+              {s.done && <Check className="h-3.5 w-3.5" />}
+            </span>
+            <span className={cn("min-w-0 flex-1", s.done && "text-muted-foreground line-through")}>{s.title}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** ↑ ↓ − + and remove — shown in Edit. HR can take any non-fixed task off today; they can only remove what they added. */
+function RowTools({ item, index, hr, canSwap, move, act, compact, onAdd }: {
+  item: DayPlanItem; index: number; hr: boolean; canSwap: (i: number, d: -1 | 1) => boolean; move: (i: number, d: -1 | 1) => void;
+  act: (m: "patch" | "post" | "put" | "delete", url: string, body?: unknown, msg?: string) => void; compact?: boolean; onAdd?: () => void;
+}) {
+  if (item.fixedAt) return <span className="text-[11px] text-muted-foreground">fixed</span>;
+  const canRemove = hr || item.addedByHim;
+  const b = "flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-sm disabled:opacity-30";
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      <button type="button" className={b} aria-label="Earlier" disabled={!canSwap(index, -1)} onClick={() => move(index, -1)}>↑</button>
+      <button type="button" className={b} aria-label="Later" disabled={!canSwap(index, 1)} onClick={() => move(index, 1)}>↓</button>
+      <button type="button" className={b} aria-label="5 minutes shorter" disabled={item.mins <= 5} onClick={() => act("patch", `items/${item._id}/length`, { mins: item.mins - 5 }, `"${item.title}" is now ${item.mins - 5} min`)}>−</button>
+      <button type="button" className={b} aria-label="5 minutes longer" onClick={() => act("patch", `items/${item._id}/length`, { mins: item.mins + 5 }, `"${item.title}" is now ${item.mins + 5} min`)}>+</button>
+      {canRemove && <button type="button" className={cn(b, "w-auto px-2 text-xs text-destructive")} onClick={() => act("delete", `items/${item._id}`, undefined, `Removed "${item.title}"`)}>{compact ? "✕" : "Remove"}</button>}
+      {onAdd && !compact && <button type="button" className={cn(b, "w-auto px-2 text-xs text-primary")} onClick={onAdd}>+ add after</button>}
     </div>
   );
 }
 
-function AddSheet({ day, after, open, onOpenChange, onAdd }: { day: DayPlanDayView; after: string | null; open: boolean; onOpenChange: (o: boolean) => void; onAdd: (title: string, mins: number) => void }) {
+function AddSheet({ day, after, open, hr, onOpenChange, onAdd }: {
+  day: DayPlanDayView; after: string | null; open: boolean; hr: boolean; onOpenChange: (o: boolean) => void; onAdd: (title: string, mins: number, afterId: string | null) => void;
+}) {
   const [title, setTitle] = useState("");
   const [mins, setMins] = useState(15);
-  useEffect(() => { if (open) { setTitle(""); setMins(15); } }, [open]);
-  const prev = day.items.find((x) => x._id === after);
-  const submit = () => { if (!title.trim()) return; onAdd(title.trim(), mins); onOpenChange(false); };
+  const [where, setWhere] = useState("");
+  const options = day.items.filter((i, idx) => !i.done && idx < day.items.length - 1);
+  useEffect(() => { if (open) { setTitle(""); setMins(15); setWhere(after ?? options[0]?._id ?? ""); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prev = day.items.find((x) => x._id === where);
+  const submit = () => { if (!title.trim()) return; onAdd(title.trim(), mins, where || null); onOpenChange(false); };
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent desktopClassName="max-w-md">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Add a task</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">
-            {prev ? <>After {prev.title}, at {clock(prev.end)}. Everything after it moves {mins} min later.</> : <>At the end of the day.</>}
-          </ResponsiveDialogDescription>
+          <ResponsiveDialogTitle>{hr ? "Add to their day" : "Add a task"}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">For today only.{hr ? " They'll get a notice." : ""}</ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <div className="space-y-4 px-4 pb-2 sm:px-0">
           <div className="flex flex-wrap gap-1.5">
-            {QUICK.map(([t, m]) => <button key={t} type="button" onClick={() => { setTitle(t); setMins(m); }} className="rounded-full border border-border bg-muted/60 px-3 py-1 text-xs hover:bg-muted">{t}</button>)}
+            {QUICK.map(([t, m]) => <button key={t} type="button" onClick={() => { setTitle(t); setMins(m); }} className="rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs hover:bg-muted">{t}</button>)}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="day-add-title">Task</Label>
-            <Input id="day-add-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="Clean the meeting room after the 11 am meeting" autoFocus
+            <Input id="day-add-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="Clean the meeting room after the 11 am meeting"
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Where</Label>
+            <Select value={where} onValueChange={setWhere}>
+              <SelectTrigger><SelectValue placeholder="Choose where" /></SelectTrigger>
+              <SelectContent>{options.map((o) => <SelectItem key={o._id} value={o._id}>After {o.title} ({short(o.end)})</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>How long</Label>
             <div className="flex flex-wrap gap-1.5">
               {DURS.map((d) => (
                 <button key={d} type="button" aria-pressed={mins === d} onClick={() => setMins(d)}
-                  className={cn("rounded-lg border px-3 py-1.5 text-sm", mins === d ? "border-primary bg-primary font-medium text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted")}>
+                  className={cn("min-h-[36px] rounded-lg border px-3 text-sm", mins === d ? "border-primary bg-primary font-medium text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted")}>
                   {d < 60 ? `${d} min` : "1 hour"}
                 </button>
               ))}
             </div>
           </div>
+          {prev && <p className="rounded-lg bg-primary/10 px-3 py-2 text-xs text-primary">Starts {clock(prev.end)}. Everything after it moves {mins} min later, up to the next fixed time.</p>}
         </div>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

@@ -17,7 +17,7 @@ import { StatusPill, Progress, DueLine, PriorityText, wasSentBack, RepeatTag } f
 import { SeriesList } from "@/components/tasks/SeriesList";
 import { MyDayPlan } from "@/components/tasks/MyDayPlan";
 import { DayPlansAdmin } from "@/components/tasks/DayPlansAdmin";
-import { useMyDay } from "@/hooks/useDayPlans";
+import { useMyDay, useDayPlanAccess } from "@/hooks/useDayPlans";
 import { cn, getInitials } from "@/lib/utils";
 import { TASK_STATUS_LABELS, type Task, type TaskStatus } from "@/types";
 
@@ -42,6 +42,7 @@ function TasksScreen() {
   const canCreate = hasPermission("tasks", "create");
   const canApprove = hasPermission("tasks", "approve");
   const params = useSearchParams();
+  const { data: dayPlanAccess = false } = useDayPlanAccess();
 
   const tabs = [
     { key: "mine", label: "My tasks", icon: ListTodo },
@@ -49,7 +50,8 @@ function TasksScreen() {
     (canView || canApprove) && { key: "waiting", label: "Waiting for approval", icon: ClipboardCheck },
     canView && { key: "all", label: "All tasks", icon: ListChecks },
     canView && { key: "repeating", label: "Repeating", icon: Repeat },
-    canView && { key: "dayplans", label: "Day plans", icon: CalendarClock },
+    // The HR department's, not a permission (2026-11-26: "HR department only").
+    dayPlanAccess && { key: "dayplans", label: "Day plans", icon: CalendarClock },
   ].filter(Boolean) as { key: string; label: string; icon: React.ElementType; count?: number }[];
   const [tab, setTab] = useState(() => params.get("tab") ?? "mine");
   const active = tabs.some((t) => t.key === tab) ? tab : "mine";
