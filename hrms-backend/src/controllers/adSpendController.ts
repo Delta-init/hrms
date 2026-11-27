@@ -4,6 +4,7 @@ import { AdSpendService } from "../services/adSpendService.js";
 import { saveWeekSchema, updateSettingsSchema, monthParam } from "../validations/adSpendValidation.js";
 import { hasPermission } from "../middleware/permissions.js";
 import { sendSuccess, sendError } from "../utils/response.js";
+import { inHrDepartment } from "../services/dayPlanService.js";
 
 const service = new AdSpendService();
 
@@ -21,6 +22,33 @@ function month(req: AuthenticatedRequest, res: Response, name: "from" | "to"): s
   return parsed.data;
 }
 
+/*
+ * The HR department (the user, 2026-11-27: "hr department can see and add in ad spend also"): everybody in a department
+ * named "HR…" or "Human Resources…" — the same test Day plans uses — may read ad spend and log or correct a week, with
+ * its files, whatever their role says. Setting the platforms and budget, deleting a week and exporting stay with the
+ * roles that hold them.
+ */
+const HR_DEPARTMENT_MAY = new Set(["view", "create"]);
+const isSuperAdmin = (req: AuthenticatedRequest) => !!req.user?.role?.isSystemRole && req.user.role.roleName === "Super Admin";
+
+/** The role's `adSpend` permission for this action — or, for reading and logging, being in the HR department. */
+export const adSpendAccess = (action: "view" | "create" | "edit" | "delete") =>
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (hasPermission(req.user?.role, "adSpend", action)) { next(); return; }
+      if (HR_DEPARTMENT_MAY.has(action) && req.user && await inHrDepartment(req.user.userId, isSuperAdmin(req))) { next(); return; }
+      sendError(res, `Access denied: you do not have '${action}' permission on 'adSpend'`, 403);
+    } catch (e) { next(e); }
+  };
+
+/** What this person may do on the Ad spend page — the role's permission and, for reading and logging, the HR department. */
+export const getAccess = route(async (req, res) => {
+  const role = req.user?.role;
+  const hr = !!req.user && await inHrDepartment(req.user.userId, isSuperAdmin(req));
+  const can = (a: "view" | "create" | "edit" | "delete" | "export") => hasPermission(role, "adSpend", a) || (hr && HR_DEPARTMENT_MAY.has(a));
+  sendSuccess(res, "Ad spend access", { view: can("view"), create: can("create"), edit: can("edit"), delete: can("delete"), export: can("export"), hrDepartment: hr });
+});
+
 /**
  * Who may read the platform names. The candidate form's source list needs
  * them, and the people adding candidates hold `hiring`, not `adSpend` — the
@@ -29,7 +57,8 @@ function month(req: AuthenticatedRequest, res: Response, name: "from" | "to"): s
 export const canReadPlatforms = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   const role = req.user?.role;
   if (hasPermission(role, "adSpend", "view") || hasPermission(role, "hiring", "view")) { next(); return; }
-  sendError(res, "Access denied", 403);
+  // The HR department reads the ad spend page, so its platforms too.
+  void adSpendAccess("view")(req, res, next);
 };
 
 export const getSettings = route(async (_req, res) => {

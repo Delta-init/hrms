@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRequisitions, useHiringWorkflow, useReviewRequisition, useDeleteRequisition, useWithdrawRequisition } from "@/hooks/useHiring";
 import { usePendingOffers, useDecideOffer } from "@/hooks/useCandidates";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdSpendAccess } from "@/hooks/useAdSpend";
 import { useTableQuery } from "@/hooks/useTableQuery";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
@@ -56,6 +57,7 @@ const WITHDRAWABLE = ["draft", "pending", "finance_pending", "on_hold"];
 
 export default function HiringPage() {
   const { hasPermission, user } = useAuth();
+  const { data: adSpendAccess } = useAdSpendAccess();
   // A department head without the hiring permission: their own departments'
   // requisitions, raising new ones for them, and nothing company-wide — the
   // server scopes the list and refuses the rest.
@@ -218,7 +220,7 @@ export default function HiringPage() {
         icon={Briefcase}
         action={
           <div className="flex items-center gap-2">
-            {hasPermission("adSpend", "view") && <Button asChild variant="outline"><Link href="/hiring/ad-spend"><Coins className="h-4 w-4" />Ad spend</Link></Button>}
+            {(hasPermission("adSpend", "view") || adSpendAccess?.view) && <Button asChild variant="outline"><Link href="/hiring/ad-spend"><Coins className="h-4 w-4" />Ad spend</Link></Button>}
             {!headOnly && <Button asChild variant="outline"><Link href="/hiring/candidates"><Users className="h-4 w-4" />Candidates</Link></Button>}
             {canCreate && <Button onClick={() => setDialogOpen(true)} className="shadow-sm"><Plus className="h-4 w-4" />Raise requisition</Button>}
           </div>

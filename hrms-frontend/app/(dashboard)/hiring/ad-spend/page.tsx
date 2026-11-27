@@ -8,7 +8,7 @@ import { Tabs } from "@/components/shared/Tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import { useAdSpendOverview, useAdSpendSettings, useAdSpendWeeks } from "@/hooks/useAdSpend";
+import { useAdSpendAccess, useAdSpendOverview, useAdSpendSettings, useAdSpendWeeks } from "@/hooks/useAdSpend";
 import { AdSpendOverview } from "@/components/adSpend/AdSpendOverview";
 import { WeeksList } from "@/components/adSpend/WeeksList";
 import { WeekEntry } from "@/components/adSpend/WeekEntry";
@@ -38,8 +38,10 @@ export default function AdSpendPage() {
  */
 function AdSpendScreen() {
   const { hasPermission } = useAuth();
-  const canView = hasPermission("adSpend", "view");
-  const canLog = hasPermission("adSpend", "create");
+  // The role's permission, or the server's word for the HR department, which may read and log weeks (2026-11-27).
+  const { data: access } = useAdSpendAccess();
+  const canView = hasPermission("adSpend", "view") || !!access?.view;
+  const canLog = hasPermission("adSpend", "create") || !!access?.create;
   const canSettings = hasPermission("adSpend", "edit");
   const canDelete = hasPermission("adSpend", "delete");
   const canExport = hasPermission("adSpend", "export");

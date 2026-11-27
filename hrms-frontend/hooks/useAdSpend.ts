@@ -12,6 +12,19 @@ function errMsg(error: unknown, fallback: string) {
   return (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback;
 }
 
+export interface AdSpendAccess { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean; hrDepartment: boolean }
+
+/**
+ * What this person may do on the Ad spend page — the server's word, since the HR department (a department named
+ * "HR…" / "Human Resources…") may read and log weeks whatever its role says (2026-11-27).
+ */
+export const useAdSpendAccess = () =>
+  useQuery({
+    queryKey: [...KEY, "access"],
+    queryFn: async () => (await api.get<ApiResponse<AdSpendAccess>>("/ad-spend/access")).data.data!,
+    staleTime: 5 * 60_000,
+  });
+
 export const useAdSpendSettings = (enabled = true) =>
   useQuery({
     queryKey: [...KEY, "settings"],

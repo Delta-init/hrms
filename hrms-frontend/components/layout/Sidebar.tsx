@@ -61,6 +61,7 @@ import {
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { usePendingLeaveCount } from "@/hooks/useLeaves";
 import { useMyInterviews } from "@/hooks/useInterviews";
+import { useAdSpendAccess } from "@/hooks/useAdSpend";
 import { useMyFirstDays, useTeamFirstDays } from "@/hooks/useFirstDays";
 import { useVisaPendingCount } from "@/hooks/useVisa";
 import { actionsFor } from "@/components/firstDays/FirstDaysSteps";
@@ -89,6 +90,8 @@ export const navItems: {
   newJoinersOnly?: boolean;
   /** Also drawn for someone who heads a department, even without the permission. */
   orHeadsADepartment?: boolean;
+  /** Also drawn when the server says so — Ad spend for the HR department (2026-11-27). */
+  orAdSpendAccess?: boolean;
   /**
    * For such a head, link to their own department's page instead of `href` —
    * the Departments list is company-wide and would refuse them. Pages that
@@ -167,7 +170,7 @@ export const navItems: {
   // Heads see their own departments' requisitions and raise new ones; the
   // page and the server scope everything else away.
   { href: "/hiring", label: "Hiring", icon: Briefcase, permModule: "hiring", orHeadsADepartment: true },
-  { href: "/hiring/ad-spend", label: "Ad Spend", icon: Coins, permModule: "adSpend" },
+  { href: "/hiring/ad-spend", label: "Ad Spend", icon: Coins, permModule: "adSpend", orAdSpendAccess: true },
   { href: "/my-interviews", label: "My Interviews", icon: ClipboardPen, permModule: null, panelOnly: true },
   { href: "/first-days/team", label: "New Joiners", icon: UserPlus, permModule: null, newJoinersOnly: true },
   { href: "/documents", label: "Documents", icon: FolderOpen, permModule: "employees" },
@@ -256,6 +259,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
     "/tasks": (myTasks?.attention ?? 0) + (teamTasks?.waiting ?? 0),
   };
   const isSuperAdmin = !!user?.role?.isSystemRole && user.role.roleName === "Super Admin";
+  const { data: adSpendAccess } = useAdSpendAccess();
   const activeNav = navItems
     .filter((n) => pathname === n.href || pathname.startsWith(n.href + "/"))
     .sort((a, b) => b.href.length - a.href.length)[0];
@@ -286,7 +290,7 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
 
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
-      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, headLandsOnOwnDepartment, dgo, section, hidden }) => {
+      {navItems.map(({ href, label, icon: Icon, permModule, permAction, superAdminOnly, approvalsOnly, panelOnly, joinerOnly, newJoinersOnly, orHeadsADepartment, orAdSpendAccess, headLandsOnOwnDepartment, dgo, section, hidden }) => {
         if (hidden) return null;
         // The longest link that matches wins, so /hiring/ad-spend lights up
         // Ad Spend and not Hiring as well.
@@ -311,6 +315,8 @@ function NavLinks({ collapsed = false, onNavigate }: { collapsed?: boolean; onNa
                 ? newJoiners.length > 0
               : orHeadsADepartment
                 ? hasBasePermission || myDepartments.length > 0
+              : orAdSpendAccess
+                ? hasBasePermission || !!adSpendAccess?.view
                 : permModule === null ? true : hasBasePermission;
         if (!allowed) return null;
 
