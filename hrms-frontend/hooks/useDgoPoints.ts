@@ -442,6 +442,35 @@ export const useSaveDgoReward = () =>
     "The reward couldn't be saved",
   );
 
+/**
+ * Rewards from a spreadsheet, saved one by one through the Add reward endpoint (2026-11-28), so each is checked and
+ * audited as if typed in. A row the server refuses is reported and the rest carry on; one toast for the lot.
+ */
+export function useImportDgoRewards() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (rows: DgoRewardInput[]) => {
+      const results: Array<{ name: string; error: string | null }> = [];
+      for (const input of rows) {
+        try {
+          await api.post<ApiResponse<DgoReward>>("/dgo-points/rewards", input);
+          results.push({ name: input.name, error: null });
+        } catch (e) {
+          results.push({ name: input.name, error: dgoErrorMessage(e, "Couldn't be saved") });
+        }
+      }
+      return results;
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: (results) => {
+      const saved = results.filter((r) => !r.error).length;
+      const failed = results.length - saved;
+      if (failed) toast.error(`${saved} reward${saved === 1 ? "" : "s"} added, ${failed} not`);
+      else toast.success(`${saved} reward${saved === 1 ? "" : "s"} added`);
+    },
+  });
+}
+
 export const useArchiveDgoReward = () =>
   useDgoMutation(
     async ({ id }: { id: string }) => (await api.delete<ApiResponse<unknown>>(`/dgo-points/rewards/${id}`)).data,

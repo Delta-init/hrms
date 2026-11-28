@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Archive, Check, ClipboardList, Coins, Gift, History, Inbox, Loader2, PackageCheck, Pencil, Plus, Save,
+  Archive, Check, ClipboardList, Coins, FileSpreadsheet, Gift, History, Inbox, Loader2, PackageCheck, Pencil, Plus, Save,
   ShoppingBag, Store, Truck, X,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -22,11 +22,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import {
   useDgoRewards, useDgoRedemptions, useRedeemDgoReward, useDgoRedemptionStep, useSaveDgoReward, useArchiveDgoReward,
+  useImportDgoRewards,
   newRequestId, dgoAed, formatAed, formatPoints, dgoErrorMessage,
 } from "@/hooks/useDgoPoints";
 import {
   DgoFileUpload, DgoGate, NoteDialog, Notice, PurchasePill, RedemptionPill, Spinner, TableWrap, actionLabel, dateTime,
 } from "@/components/dgo/shared";
+import { readRewardRows, readSheet, type ImportRow } from "@/lib/dgoRewardImport";
 import type { DgoMe, DgoRedemption, DgoRedemptionsTab, DgoReward, DgoRewardsView, DgoUpload } from "@/types";
 
 type Tab = "store" | "mine" | "fulfilment" | "catalogue";
@@ -415,6 +417,7 @@ function CatalogueTab({ me }: { me: DgoMe }) {
   const archive = useArchiveDgoReward();
   const [editing, setEditing] = useState<DgoReward | "new" | null>(null);
   const [archiving, setArchiving] = useState<DgoReward | null>(null);
+  const [importing, setImporting] = useState(false);
 
   if (isLoading) return <Spinner />;
   if (error || !data) return <Notice text={dgoErrorMessage(error, "The catalogue couldn't be loaded. Try again in a moment.")} />;
@@ -423,7 +426,10 @@ function CatalogueTab({ me }: { me: DgoMe }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Hidden rewards stay out of the store. Removing one keeps past redemptions as they were.</p>
-        <Button onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> Add reward</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setImporting(true)}><FileSpreadsheet className="h-4 w-4" /> Import from Excel</Button>
+          <Button onClick={() => setEditing("new")}><Plus className="h-4 w-4" /> Add reward</Button>
+        </div>
       </div>
       {data.rewards.length === 0 ? (
         <Notice icon={Gift} text="No rewards yet. Add the first one." />
@@ -481,6 +487,13 @@ function CatalogueTab({ me }: { me: DgoMe }) {
         minRedemption={data.minRedemption}
         pointValueAed={data.pointValueAed || me.pointValueAed}
         categories={data.categories}
+      />
+      <ImportRewardsDialog
+        open={importing}
+        onOpenChange={setImporting}
+        minRedemption={data.minRedemption}
+        pointValueAed={data.pointValueAed || me.pointValueAed}
+        existingNames={data.rewards.map((r) => r.name)}
       />
       <ConfirmDialog
         open={!!archiving}
@@ -650,6 +663,174 @@ function RewardDialog({
             {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save
           </Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+  );
+}
+
+// ─── Import from Excel ────────────────────────────────────────────────────────
+
+function ImportRewardsDialog({
+  open, onOpenChange, minRedemption, pointValueAed, existingNames,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  minRedemption: number;
+  pointValueAed: number;
+  existingNames: string[];
+}) {
+  const save = useImportDgoRewards();
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [rows, setRows] = useState<ImportRow[] | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [inStore, setInStore] = useState(false);
+  const [results, setResults] = useState<Array<{ name: string; error: string | null }> | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setFileName(null); setRows(null); setReadError(null); setInStore(false); setResults(null);
+  }, [open]);
+
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    setFileName(file.name); setRows(null); setReadError(null); setResults(null);
+    try {
+      const read = readRewardRows(await readSheet(file), { minRedemption, pointValueAed, existingNames });
+      if (!read.length) setReadError("No rewards found. The first row must hold the column names: Name, Description, Category, Price in points…");
+      setRows(read);
+    } catch {
+      setReadError("That file couldn't be read. Use an Excel (.xlsx) or CSV file.");
+    }
+  };
+
+  const setCost = (line: number, value: string) => setRows((rs) => rs && rs.map((r) => {
+    if (r.line !== line) return r;
+    const n = value.trim() ? Number(value.replace(/,/g, "")) : null;
+    return { ...r, costFromPoints: false, input: { ...r.input, costAed: n !== null && Number.isFinite(n) ? n : r.input.costAed } };
+  }));
+
+  const ready = (rows ?? []).filter((r) => !r.problem && !r.duplicate);
+  const skipped = (rows ?? []).length - ready.length;
+  const photos = ready.filter((r) => r.photoName).length;
+
+  const submit = () => {
+    if (!ready.length) return;
+    save.mutate(ready.map((r) => ({ ...r.input, status: inStore ? "active" : "hidden" })), { onSuccess: setResults });
+  };
+
+  return (
+    <ResponsiveDialog open={open} onOpenChange={(o) => !save.isPending && onOpenChange(o)}>
+      <ResponsiveDialogContent desktopClassName="max-w-4xl">
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Import rewards from Excel</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="px-4 pt-1 sm:px-0">
+            Columns as on the Add reward form: Name, Description, Category, Price in points, What it costs us (AED), Stock, Buy one for each redemption. Nothing is saved until you press Add.
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-4 sm:px-0">
+          {results ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{results.filter((r) => !r.error).length} of {results.length} added{inStore ? " to the store" : ", hidden"}.</p>
+              <ul className="divide-y divide-border rounded-lg border border-border text-sm">
+                {results.map((r, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span className="min-w-0 truncate">{r.name}</span>
+                    {r.error ? <span className="text-xs text-destructive">{r.error}</span> : <Check className="h-4 w-4 shrink-0 text-emerald-600" aria-label="Added" />}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <>
+              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border p-5 text-center text-sm hover:bg-muted/40">
+                <FileSpreadsheet className="h-6 w-6 text-muted-foreground" />
+                <span className="font-medium">{fileName ?? "Choose an Excel or CSV file"}</span>
+                <span className="text-xs text-muted-foreground">The first sheet is read; the first row is the column names.</span>
+                <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+              {readError && <p className="text-sm text-destructive">{readError}</p>}
+              {!!rows?.length && (
+                <>
+                  <TableWrap>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-muted-foreground">
+                          <th className="px-3 py-2 font-medium">Row</th>
+                          <th className="px-3 py-2 font-medium">Reward</th>
+                          <th className="px-3 py-2 text-right font-medium">Points</th>
+                          <th className="px-3 py-2 text-right font-medium">Costs us (AED)</th>
+                          <th className="px-3 py-2 font-medium">Stock</th>
+                          <th className="px-3 py-2 font-medium">Bought each time</th>
+                          <th className="px-3 py-2 font-medium">Check</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {rows.map((r) => {
+                          const off = !!r.problem || r.duplicate;
+                          return (
+                            <tr key={`${fileName}-${r.line}`} className={cn(off && "text-muted-foreground")}>
+                              <td className="px-3 py-2 tabular-nums">{r.line}</td>
+                              <td className="px-3 py-2">
+                                <p className="min-w-[12rem] font-medium">{r.input.name || "—"}</p>
+                                <p className="text-xs text-muted-foreground">{r.input.category}</p>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                                {formatPoints(r.input.points)}
+                                <span className="block text-xs text-muted-foreground">{formatAed(dgoAed(r.input.points, pointValueAed))}</span>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <Input
+                                  aria-label={`What ${r.input.name} costs us`} inputMode="decimal" disabled={off}
+                                  className="ml-auto h-8 w-28 text-right tabular-nums"
+                                  defaultValue={r.input.costAed != null ? String(r.input.costAed) : ""}
+                                  onBlur={(e) => setCost(r.line, e.target.value)}
+                                />
+                                {r.costFromPoints && <span className="mt-0.5 block text-[11px] text-amber-700 dark:text-amber-400">blank in the sheet — the points&apos; worth</span>}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2">{r.input.stockMode === "unlimited" ? "No limit" : formatPoints(r.input.stock ?? 0)}</td>
+                              <td className="px-3 py-2">{r.input.buyPerRedemption ? "Yes" : "No"}</td>
+                              <td className="px-3 py-2 text-xs">
+                                {r.problem ? <span className="text-destructive">{r.problem}</span>
+                                  : r.duplicate ? <span>Already in the catalogue — skipped</span>
+                                    : <span className="text-emerald-700 dark:text-emerald-400">Ready</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </TableWrap>
+                  {photos > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      The sheet names photos, but files can&apos;t come in through it: add each reward&apos;s photo afterwards with the edit button.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Show them in the store now</p>
+                      <p className="text-xs text-muted-foreground">Off adds them hidden, so you can add photos and check them first.</p>
+                    </div>
+                    <Switch checked={inStore} onCheckedChange={setInStore} aria-label="Show them in the store now" />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+        <ResponsiveDialogFooter>
+          {!results && rows && <p className="mr-auto self-center text-xs text-muted-foreground">{ready.length} to add{skipped ? `, ${skipped} skipped` : ""}</p>}
+          {results ? (
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={save.isPending}>Cancel</Button>
+              <Button onClick={submit} disabled={!ready.length || save.isPending}>
+                {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Add {ready.length || ""} reward{ready.length === 1 ? "" : "s"}
+              </Button>
+            </>
+          )}
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
